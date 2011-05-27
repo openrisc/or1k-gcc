@@ -135,6 +135,9 @@ mips*-*-*)
 	cpu_type=mips
 	tmake_file=mips/t-mips
 	;;
+or32-*-*-*)
+  cpu_type=or32
+  ;;
 powerpc*-*-*)
 	cpu_type=rs6000
 	;;
@@ -805,6 +808,10 @@ moxie-*-rtems*)
 	# Don't use default.
 	extra_parts=
 	;;
+or32*-*-*)
+  tmake_file="$tmake_file or32/t-or32 or32/t-linux"
+  extra_parts="crtbegin.o crtbeginS.o crtbeginT.o crtend.o crtendS.o crti.o crtn.o"
+  ;;
 pdp11-*-*)
 	tmake_file="pdp11/t-pdp11 t-fdpbit"
 	;;
