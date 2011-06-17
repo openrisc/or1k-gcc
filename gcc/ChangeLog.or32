@@ -1,6 +1,7 @@
 2011-06-17  Giuseppe Scrivano  <giuseppe@southpole.se>
 
 	* common/config/or32/or32-common.c: New file.
+	* config/or32/or32.h (LINK_SPEC): Support -shared.
 	* config/or32/or32.c (TARGET_EXCEPT_UNWIND_INFO): Remove definition.
 	* config/or32/or32.c (or32_pass_by_reference): Change type of CUM to
 	cumulative_args_t.
