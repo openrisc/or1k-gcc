@@ -1,3 +1,9 @@
+2011-06-20  Giuseppe Scrivano  <giuseppe@southpole.se>
+
+	* config/or32/or32.c: Define GOT_SYMBOL_NAME and GOT_REGISTER.
+	(or32_expand_prologue): Store the GOT location in the GOT_REGISTER if
+	PIC code is generated.
+
 2011-06-17  Giuseppe Scrivano  <giuseppe@southpole.se>
 
 	* common/config/or32/or32-common.c: New file.

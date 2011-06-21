@@ -55,6 +55,9 @@
 #include "dwarf2.h"
 
 
+#define GOT_SYMBOL_NAME "_GLOBAL_OFFSET_TABLE_"
+#define GOT_REGISTER 10
+
 /* ========================================================================== */
 /* Local macros                                                               */
 
@@ -703,6 +706,14 @@ or32_expand_prologue (void)
       else
 	emit_frame_insn (insn);
     }
+
+  if (flag_pic)
+    {
+      rtx value_rtx = gen_rtx_REG (Pmode, GOT_REGISTER);
+      or32_emit_set_const32 (value_rtx,
+                             gen_rtx_SYMBOL_REF (Pmode, GOT_SYMBOL_NAME));
+    }
+
 
 }	/* or32_expand_prologue () */
 
