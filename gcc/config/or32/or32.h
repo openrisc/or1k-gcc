@@ -62,7 +62,7 @@ Boston, MA 02111-1307, USA.  */
 
 /* Specify the newlib library path if necessary */
 #undef LINK_SPEC
-#define LINK_SPEC "%{mnewlib:-L%(target_prefix)/newlib}%{shared:-shared}"
+#define LINK_SPEC "%{mnewlib:-L%(target_prefix)/newlib}%{static:-static}%{shared:-shared}"
 
 /* Override previous definitions (linux.h). Newlib doesn't have a profiling
    version of the library, but it does have a debugging version (libg.a) */
