@@ -551,6 +551,8 @@ enum reg_class
 #define GP_ARG_RETURN  11 
 #define GP_ARG_RETURNH 12 
 
+#define PIC_OFFSET_TABLE_REGNUM 10
+
 /* A C expression to create an RTX representing the place where a library
    function returns a value of mode mode.
 

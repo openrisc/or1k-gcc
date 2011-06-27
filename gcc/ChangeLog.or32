@@ -1,3 +1,9 @@
+2011-06-27  Giuseppe Scrivano  <giuseppe@southpole.se>
+
+	* config/or32/or32.h: Define PIC_OFFSET_TABLE_REGNUM.
+	* config/or32/or32.c: Remove definition for GOT_SYMBOL_NAME and
+	GOT_REGISTER.
+
 2011-06-20  Giuseppe Scrivano  <giuseppe@southpole.se>
 
 	* config/or32/or32.c: Define GOT_SYMBOL_NAME and GOT_REGISTER.
