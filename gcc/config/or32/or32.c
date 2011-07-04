@@ -1,6 +1,6 @@
 /* Subroutines for insn-output.c for GNU compiler.  OpenRISC 1000 version.
    Copyright (C) 1987, 1992, 1997, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010  Free Software Foundation, Inc
+   2005, 2006, 2007, 2008, 2009, 2010, 2011  Free Software Foundation, Inc
    Copyright (C) 2010 Embecosm Limited
 
    Contributed by Damjan Lampret <damjanl@bsemi.com> in 1999.
@@ -53,7 +53,6 @@
 #include "langhooks.h"
 #include "df.h"
 #include "dwarf2.h"
-
 
 /* ========================================================================== */
 /* Local macros                                                               */
@@ -443,6 +442,73 @@ calculate_stack_size (int  vars,
 
 }	/* calculate_stack_size () */
 
+static void
+or32_print_operand_address (FILE *stream, rtx addr)
+{
+  rtx offset;
+
+  switch (GET_CODE (addr))
+    {
+    case MEM:
+      if (GET_CODE (XEXP (addr, 0)) == REG)
+        fprintf (stream, "%s", reg_names[REGNO (addr)]);
+      else
+        abort ();
+      break;
+
+    case REG:
+      fprintf (stream, "0(%s)", reg_names[REGNO (addr)]);
+      break;
+
+    case PLUS:
+      offset = 0;
+
+      if (GET_CODE (XEXP (addr, 0)) == REG)
+        {
+          offset = XEXP (addr, 1);
+          addr   = XEXP (addr, 0);
+        }
+      else if (GET_CODE (XEXP (addr, 1)) == REG)
+        {
+          offset = XEXP (addr, 0);
+          addr   = XEXP (addr, 1);
+        }
+
+      if (GET_CODE (offset) != CONST || GET_CODE (XEXP (offset, 0)) != UNSPEC)
+        {
+          output_address (offset);
+          fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
+        }
+      else
+        {
+          rtx unspec = XEXP (offset, 0);
+          rtx sym = XEXP (XEXP (unspec, 0), 0);
+
+          or32_print_operand_address (stream, sym);
+
+          if (XEXP (unspec, 1) == UNSPEC_GOTOFF)
+            fprintf (stream, "@GOTOFF");
+
+          fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
+        }
+      break;
+
+    case SYMBOL_REF:
+      if (SYMBOL_REF_DECL (addr))
+        assemble_external (SYMBOL_REF_DECL (addr));
+
+      if (XSTR (addr, 0)[0] == '*')
+        fputs (&XSTR (addr, 0)[1], stream);
+      else
+        {
+          asm_fprintf (stream, "%U%s", XSTR (addr, 0));
+        }
+      break;
+
+    default:
+      output_addr_const (stream, addr);
+    }
+}
 
 /* -------------------------------------------------------------------------- */
 /*!Is this a value suitable for an OR32 address displacement?
@@ -518,6 +584,116 @@ or32_regnum_ok_for_base_p (HOST_WIDE_INT  num,
     }
 }	/* or32_regnum_ok_for_base_p () */
 
+static rtx
+expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED, rtx op)
+{
+  rtx result;
+  result = gen_rtx_UNSPEC (Pmode, gen_rtvec (1, op), UNSPEC_GOTOFF);
+  result = gen_rtx_CONST (Pmode, result);
+  result = gen_rtx_PLUS (Pmode, pic_offset_table_rtx, result);
+  result = gen_const_mem (Pmode, result);
+  return result;
+}
+
+bool
+or32_expand_move (enum machine_mode mode, rtx operands[])
+{
+  if (flag_pic)
+    {
+      if (GET_CODE (operands[0]) == MEM)
+        {
+          rtx addr = XEXP (operands[0], 0);
+          if (GET_CODE (addr) == SYMBOL_REF)
+            {
+              rtx ptr_reg, result;
+
+              if (reload_in_progress)
+                df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+
+              addr = expand_pic_symbol_ref (mode, addr);
+              ptr_reg = gen_reg_rtx (Pmode);
+              emit_move_insn (ptr_reg, addr);
+              result = gen_rtx_MEM (mode, ptr_reg);
+              operands[0] = result;
+            }
+        }
+
+      if (GET_CODE (operands[1]) == SYMBOL_REF
+          || GET_CODE (operands[1]) == LABEL_REF)
+        {
+          rtx result;
+          if (reload_in_progress)
+            df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+          result = expand_pic_symbol_ref (mode, operands[1]);
+          if (GET_CODE (operands[0]) != REG)
+            {
+              rtx ptr_reg = gen_reg_rtx (Pmode);
+              emit_move_insn (ptr_reg, result);
+              emit_move_insn (operands[0], ptr_reg);
+            }
+          else
+            {
+              emit_move_insn (operands[0], result);
+            }
+          return true;
+        }
+      else if (GET_CODE (operands[1]) == MEM &&
+               GET_CODE (XEXP (operands[1], 0)) == SYMBOL_REF)
+        {
+          rtx result;
+          rtx ptr_reg;
+          if (reload_in_progress)
+            df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+          result = expand_pic_symbol_ref (mode, XEXP (operands[1], 0));
+
+          ptr_reg = gen_reg_rtx (Pmode);
+
+          emit_move_insn (ptr_reg, result);
+          result = gen_rtx_MEM (mode, ptr_reg);
+          emit_move_insn (operands[0], result);
+          return true;
+        }
+    }
+
+  if (flag_pic && (reload_in_progress | reload_completed))
+    return false;
+
+  /* Working with CONST_INTs is easier, so convert
+     a double if needed.  */
+
+  if (GET_CODE (operands[1]) == CONST_DOUBLE) {
+    operands[1] = GEN_INT (CONST_DOUBLE_LOW (operands[1]));
+  }
+
+  /* Handle sets of MEM first.  */
+  if (GET_CODE (operands[0]) == MEM)
+    {
+      if (register_operand(operands[1], SImode)
+          || (operands[1] == const0_rtx))
+        goto movsi_is_ok;
+
+      if (! reload_in_progress)
+        {
+          operands[0] = validize_mem (operands[0]);
+          operands[1] = force_reg (SImode, operands[1]);
+        }
+    }
+
+  /* This makes sure we will not get rematched due to splittage.  */
+  if (! CONSTANT_P (operands[1]) || input_operand (operands[1], SImode))
+    ;
+  else if (CONSTANT_P (operands[1])
+           && GET_CODE (operands[1]) != HIGH
+           && GET_CODE (operands[1]) != LO_SUM)
+    {
+      or32_emit_set_const32 (operands[0], operands[1]);
+      return true;
+    }
+ movsi_is_ok:
+  ;
+
+  return false;
+}
 
 /* -------------------------------------------------------------------------- */
 /*!Emit a move from SRC to DEST.
@@ -703,6 +879,13 @@ or32_expand_prologue (void)
       else
 	emit_frame_insn (insn);
     }
+
+  if (flag_pic && df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM))
+    {
+      SET_REGNO (pic_offset_table_rtx, PIC_OFFSET_TABLE_REGNUM);
+      emit_insn (gen_set_got (pic_offset_table_rtx));
+    }
+
 }	/* or32_expand_prologue () */
 
 
@@ -1108,6 +1291,40 @@ or32_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
 
 }	/* or32_expand_sibcall () */
 
+static bool
+or32_output_addr_const_extra (FILE *fp, rtx x)
+{
+  if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_PIC_LABEL)
+    {
+      char label[256];
+      int labelno = INTVAL (XVECEXP (x, 0, 0));
+
+      ASM_GENERATE_INTERNAL_LABEL (label, "LPIC", labelno);
+      assemble_name_raw (fp, label);
+
+      return TRUE;
+    }
+  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_SYMBOL_OFFSET)
+    {
+      output_addr_const (fp, XVECEXP (x, 0, 0));
+      fputs ("-(", fp);
+      output_addr_const (fp, XVECEXP (x, 0, 1));
+      fputc (')', fp);
+      return TRUE;
+    }
+  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_PCREL)
+    {
+      /* TODO.  */
+      return TRUE;
+    }
+  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_GOTOFF)
+    {
+      fputs ("", fp);
+      return TRUE;
+    }
+
+  return FALSE;
+}
 
 /* -------------------------------------------------------------------------- */
 /*!Load a 32-bit constant.
@@ -1820,11 +2037,10 @@ or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
      code. So for now this is a placeholder, and this code is not used.
 
      if (or32_legitimate_displacement_p (mode, x))
-       {
-         return  1;
-       }
+     {
+     return  1;
+     }
   */
-
   /* Addresses consisting of a register and 16-bit displacement are also
      suitable. We need the mode, since for double words, we had better be
      able to address the full 8 bytes. */
@@ -1834,16 +2050,21 @@ or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
 
       /* If valid register... */
       if ((GET_CODE(reg) == REG)
-	  && or32_regnum_ok_for_base_p (REGNO (reg), strict))
-	{
-	  rtx offset = XEXP(x,1);
+          && or32_regnum_ok_for_base_p (REGNO (reg), strict))
+        {
+          rtx offset = XEXP(x,1);
 
-	  /* ...and valid offset */
-	  if (or32_legitimate_displacement_p (mode, offset))
-	    {
-	      return 1;
-	    }
-	}
+          /* ...and valid offset */
+          if (or32_legitimate_displacement_p (mode, offset))
+            {
+              return 1;
+            }
+
+          if (GET_CODE (offset) == CONST && GET_CODE (XEXP(offset, 0)) == UNSPEC)
+            {
+              return 1;
+            }
+        }
     }
 
   /* Addresses consisting of just a register are OK. They can be built into
@@ -1853,8 +2074,20 @@ or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
     && or32_regnum_ok_for_base_p(REGNO(x),strict)) {
       return 1;
   }
- 
+
   return 0;
+}
+
+static rtx
+or32_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
+                         enum machine_mode mode)
+{
+  if (GET_CODE(x) == SYMBOL_REF && flag_pic)
+    {
+      ///TODO
+    }
+
+  return x;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2235,7 +2468,7 @@ or32_handle_option (size_t code, const char *arg ATTRIBUTE_UNUSED,
 static bool
 or32_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 {
-  return GET_CODE(x) != CONST_DOUBLE || GET_MODE (x) == VOIDmode;
+  return GET_CODE(x) != CONST_DOUBLE || (GET_MODE (x) == VOIDmode && !flag_pic);
 }
 #undef TARGET_LEGITIMATE_CONSTANT_P
 #define TARGET_LEGITIMATE_CONSTANT_P or32_legitimate_constant_p
@@ -2296,6 +2529,15 @@ or32_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
 
 #undef TARGET_FUNCTION_ARG_ADVANCE
 #define TARGET_FUNCTION_ARG_ADVANCE or32_function_arg_advance
+
+#undef TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA
+#define TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA or32_output_addr_const_extra
+
+#undef TARGET_LEGITIMIZE_ADDRESS
+#define TARGET_LEGITIMIZE_ADDRESS or32_legitimize_address
+
+#undef TARGET_PRINT_OPERAND_ADDRESS
+#define TARGET_PRINT_OPERAND_ADDRESS or32_print_operand_address
 
 /* Trampoline stubs are yet to be written. */
 /* #define TARGET_ASM_TRAMPOLINE_TEMPLATE */
@@ -2386,6 +2628,8 @@ or32_data_alignment (tree t, int align)
     }
   return align;
 }
+
+INITIALIZER;
 
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;

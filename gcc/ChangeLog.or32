@@ -1,3 +1,21 @@
+2011-07-07  Giuseppe Scrivano  <giuseppe@southpole.se>
+
+	* config/or32/or32.c (or32_print_operand_address): New function.
+	(expand_pic_symbol_ref): Likewise.
+	(or32_expand_move): Likewise.
+	(or32_expand_prologue): Set the PIC register.
+	(or32_output_addr_const_extra): Likewise.
+	(or32_legitimate_address_p): Handle UNSPEC.
+	(or32_legitimate_constant_p): When PIC is used don't allow
+	constants in VOIDmode.
+	(TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA, TARGET_LEGITIMIZE_ADDRESS): Define
+	hooks.
+
+	* config/or32/or32.md (UNSPEC_GOTOFF, UNSPEC_PCREL): Define.
+	(UNSPEC_PIC_LABEL, UNSPEC_SYMBOL_OFFSET, UNSPEC_SET_GOT): Likewise.
+	(set_got): New function.
+	(movhi_internal): Delegate to or32_expand_move.
+
 2011-06-27  Giuseppe Scrivano  <giuseppe@southpole.se>
 
 	* config/or32/or32.h: Define PIC_OFFSET_TABLE_REGNUM.

@@ -1211,46 +1211,6 @@ enum reg_class
     output_addr_const (stream, x);					\
 }
 
-/* Print a memory operand whose address is "addr", on file "stream".
-   This uses a function in output-vax.c.  */
-#define PRINT_OPERAND_ADDRESS(stream, addr)				\
-{									\
-  rtx offset;								\
-									\
-  switch (GET_CODE (addr))						\
-    {									\
-    case MEM:								\
-      if (GET_CODE (XEXP (addr, 0)) == REG)				\
-	fprintf (stream, "%s", reg_names[REGNO (addr)]);		\
-      else								\
-	abort ();							\
-      break;								\
-									\
-    case REG:								\
-      fprintf (stream, "0(%s)", reg_names[REGNO (addr)]);		\
-      break;								\
-									\
-    case PLUS:								\
-      offset = 0;							\
-      if (GET_CODE (XEXP (addr, 0)) == REG)				\
-	{								\
-          offset = XEXP (addr, 1);					\
-	  addr   = XEXP (addr, 0);					\
-	}								\
-      else if (GET_CODE (XEXP (addr, 1)) == REG)			\
-	{								\
-          offset = XEXP (addr, 0);					\
-	  addr   = XEXP (addr, 1);					\
-	}								\
-      output_address (offset);						\
-      fprintf (stream, "(%s)", reg_names[REGNO (addr)]);		\
-      break;								\
-									\
-    default:								\
-      output_addr_const (stream, addr);					\
-    }									\
-}
-
 /* The size of the trampoline in bytes. This is a block of code followed by
    two words specifying the function address and static chain pointer. */
 #define TRAMPOLINE_SIZE							\
