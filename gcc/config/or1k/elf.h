@@ -1,5 +1,5 @@
-/* Definitions for rtems targeting an OpenRisc OR32 using COFF
-   ??? this is for OR32, but the rest of the above seems bogus.
+/* Definitions for rtems targeting an OpenRisc OR1K using COFF
+   ??? this is for OR1K, but the rest of the above seems bogus.
    Copyright (C) 1996, 1997, 2005 Free Software Foundation, Inc.
    Contributed by Joel Sherrill (joel@OARcorp.com).
 
@@ -24,7 +24,7 @@ Boston, MA 02111-1307, USA.  */
 #undef  OBJECT_FORMAT_ELF
 #define OBJECT_FORMAT_ELF
 
-/* or32 debug info support is controlled by tm.h header files we include:
+/* or1k debug info support is controlled by tm.h header files we include:
    dbxelf.h enables optional stabs debug info.
    elfos.h sets PREFERRED_DEBUGGING_TYPE to DWARF2_DEBUG .  */
 

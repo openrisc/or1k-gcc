@@ -1,4 +1,4 @@
-/* Definitions for or32 running Linux-based GNU systems using ELF
+/* Definitions for or1k running Linux-based GNU systems using ELF
    Copyright (C) 2002, 2005
    Free Software Foundation, Inc.
    Contributed by Marko Mlinar <markom@opencores.org>

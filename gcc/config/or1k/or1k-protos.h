@@ -1,4 +1,4 @@
-/* Definitions of target machine for GNU compiler, OR32 cpu.
+/* Definitions of target machine for GNU compiler, OR1K cpu.
 
    Copyright (C) 2010 Embecosm Limited
 
@@ -18,39 +18,39 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#ifndef GCC_OR32_PROTOS_H
-#define GCC_OR32_PROTOS_H
+#ifndef GCC_OR1K_PROTOS_H
+#define GCC_OR1K_PROTOS_H
 
 /* The following are for general support. */
-extern int         or32_trampoline_code_size (void);
+extern int         or1k_trampoline_code_size (void);
 
 /* The following are only needed when handling the machine definition. */
 #ifdef RTX_CODE
-extern void        or32_expand_prologue (void);
-extern void        or32_expand_epilogue (rtx sibcall);
-extern const char *or32_output_move_double (rtx *operands);
-extern void        or32_expand_conditional_branch (rtx               *operands,
+extern void        or1k_expand_prologue (void);
+extern void        or1k_expand_epilogue (rtx sibcall);
+extern const char *or1k_output_move_double (rtx *operands);
+extern void        or1k_expand_conditional_branch (rtx               *operands,
 						   enum machine_mode  mode);
-extern int         or32_emit_cmove (rtx  dest,
+extern int         or1k_emit_cmove (rtx  dest,
 				    rtx  op,
 				    rtx  true_cond,
 				    rtx  false_cond);
-extern const char *or32_output_bf (rtx * operands);
-extern const char *or32_output_cmov (rtx * operands);
-extern void        or32_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
+extern const char *or1k_output_bf (rtx * operands);
+extern const char *or1k_output_cmov (rtx * operands);
+extern void        or1k_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
 					rtx  addr,
 					rtx  args_size);
-extern void        or32_emit_set_const32 (rtx  op0,
+extern void        or1k_emit_set_const32 (rtx  op0,
 					  rtx  op1);
 #endif
 
 #endif
-extern int or32_struct_alignment (tree);
-extern int or32_data_alignment (tree, int);
+extern int or1k_struct_alignment (tree);
+extern int or1k_data_alignment (tree, int);
 
-extern int or32_initial_elimination_offset (int, int);
-extern bool or32_save_reg_p_cached (int regno);
-extern void or32_print_jump_restore (rtx jump_address);
+extern int or1k_initial_elimination_offset (int, int);
+extern bool or1k_save_reg_p_cached (int regno);
+extern void or1k_print_jump_restore (rtx jump_address);
 
 
 /* For RETURN_ADDR_RTX */

@@ -22,19 +22,19 @@ along with GNU CC; see the file COPYING.  If not, write to
 the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
-#ifndef _OR32_H_
-#define _OR32_H_
+#ifndef _OR1K_H_
+#define _OR1K_H_
 
 /* Target CPU builtins */
 #define TARGET_CPU_CPP_BUILTINS()		\
   do						\
     {						\
-      builtin_define_std ("OR32");		\
-      builtin_define_std ("or32");		\
-      if (or32_libc == or32_libc_uclibc)	\
+      builtin_define_std ("OR1K");		\
+      builtin_define_std ("or1k");		\
+      if (or1k_libc == or1k_libc_uclibc)	\
 	builtin_define ("__UCLIBC__");		\
-      builtin_assert ("cpu=or32");		\
-      builtin_assert ("machine=or32");		\
+      builtin_assert ("cpu=or1k");		\
+      builtin_assert ("machine=or1k");		\
     }						\
   while (0)
 
@@ -71,8 +71,8 @@ Boston, MA 02111-1307, USA.  */
 		   "%{pthread:"						 \
 		     "--whole-archive -lpthread --no-whole-archive} 	 \
 		   %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}               \
-                  %{mnewlib:%{!g:-lc -lor32 -lboard -u free -lc}         \
-                            %{g:-lg -lor32 -lboard -u free -lg}	         \
+                  %{mnewlib:%{!g:-lc -lor1k -lboard -u free -lc}         \
+                            %{g:-lg -lor1k -lboard -u free -lg}	         \
                             %{mboard=*:-L%(target_prefix)/lib/boards/%*} \
 			    %{!mboard=*:-L%(target_prefix)/lib/boards/or1ksim}}"
 
@@ -80,7 +80,7 @@ Boston, MA 02111-1307, USA.  */
 
 /* Define this if most significant bit is lowest numbered
    in instructions that operate on numbered bit-fields.
-   This is not true on the or32.  */
+   This is not true on the or1k.  */
 #define BITS_BIG_ENDIAN 0
 
 /* Define this if most significant byte of a word is the lowest numbered.  */
@@ -141,7 +141,7 @@ Boston, MA 02111-1307, USA.  */
     || TREE_CODE (STRUCT) == QUAL_UNION_TYPE)           \
    && !TYPE_PACKED (STRUCT)				\
    && TYPE_FIELDS (STRUCT) != 0                         \
-     ? MAX (MAX ((COMPUTED), (SPECIFIED)), or32_struct_alignment (STRUCT)) \
+     ? MAX (MAX ((COMPUTED), (SPECIFIED)), or1k_struct_alignment (STRUCT)) \
      : MAX ((COMPUTED), (SPECIFIED)))                   \
 
 /* Make strings word-aligned so strcpy from constants will be faster.  */
@@ -165,18 +165,18 @@ Boston, MA 02111-1307, USA.  */
 */ /* CHECK - btw code gets bigger with this one */
 #define DATA_ALIGNMENT(TYPE, ALIGN) \
   ((ALIGN) < FASTEST_ALIGNMENT \
-   ? or32_data_alignment ((TYPE), (ALIGN)) : (ALIGN))
+   ? or1k_data_alignment ((TYPE), (ALIGN)) : (ALIGN))
 
 #define LOCAL_ALIGNMENT(TYPE, ALIGN) \
   ((ALIGN) < FASTEST_ALIGNMENT \
-   ? or32_data_alignment ((TYPE), (ALIGN)) : (ALIGN))
+   ? or1k_data_alignment ((TYPE), (ALIGN)) : (ALIGN))
 
 /* Define this if move instructions will actually fail to work
    when given unaligned data.  */
 #define STRICT_ALIGNMENT 1 /* CHECK */
 
 /* Align an address */
-#define OR32_ALIGN(n,a) (((n) + (a) - 1) & ~((a) - 1))
+#define OR1K_ALIGN(n,a) (((n) + (a) - 1) & ~((a) - 1))
 
 /* Define if operations between registers always perform the operation
    on the full register even if a narrower mode is specified.  */
@@ -219,16 +219,16 @@ Boston, MA 02111-1307, USA.  */
    All registers that the compiler knows about must be given numbers,
    even those that are not normally considered general registers.  */
 
-#define OR32_LAST_ACTUAL_REG       31
-#define ARG_POINTER_REGNUM     (OR32_LAST_ACTUAL_REG + 1)
+#define OR1K_LAST_ACTUAL_REG       31
+#define ARG_POINTER_REGNUM     (OR1K_LAST_ACTUAL_REG + 1)
 #define FRAME_POINTER_REGNUM   (ARG_POINTER_REGNUM + 1)
-#define OR32_LAST_INT_REG      FRAME_POINTER_REGNUM
-#define OR32_FLAGS_REG         (OR32_LAST_INT_REG + 1)
-#define FIRST_PSEUDO_REGISTER  (OR32_FLAGS_REG + 1)
+#define OR1K_LAST_INT_REG      FRAME_POINTER_REGNUM
+#define OR1K_FLAGS_REG         (OR1K_LAST_INT_REG + 1)
+#define FIRST_PSEUDO_REGISTER  (OR1K_FLAGS_REG + 1)
 
 /* 1 for registers that have pervasive standard uses
    and are not available for the register allocator.
-   On the or32, these are r1 as stack pointer and 
+   On the or1k, these are r1 as stack pointer and 
    r2 as frame/arg pointer.  r9 is link register, r0
    is zero, r10 is linux thread */
 #define FIXED_REGISTERS { \
@@ -256,7 +256,7 @@ Boston, MA 02111-1307, USA.  */
    to hold something of mode MODE.
    This is ordinarily the length in words of a value of mode MODE
    but can be less for certain modes in special long registers.
-   On the or32, all registers are one word long.  */
+   On the or1k, all registers are one word long.  */
 #define HARD_REGNO_NREGS(REGNO, MODE)   \
  ((GET_MODE_SIZE (MODE) + UNITS_PER_WORD - 1) / UNITS_PER_WORD)
 
@@ -309,7 +309,7 @@ Boston, MA 02111-1307, USA.  */
    that function. The arguments to that function are the same as to this
    macro.
 
-   JPB 31-Aug-10. Is this really correct? I suppose the OR32 only takes one
+   JPB 31-Aug-10. Is this really correct? I suppose the OR1K only takes one
                   cycle, notionally, to access memory, but surely that will
                   often stall the  pipeline. Needs more investigation. */
 #define MEMORY_MOVE_COST(mode, class, in)  2
@@ -326,7 +326,7 @@ Boston, MA 02111-1307, USA.  */
                   specify the cost of a branch insn; roughly the number of
                   extra insns that should be added to avoid a branch.
 
-		  Set this to 3 on the or32 since that is roughly the average
+		  Set this to 3 on the or1k since that is roughly the average
 		  cost of an unscheduled conditional branch.
 
 		  Cost of 2 and 3 give equal and ~0.7% bigger binaries
@@ -366,8 +366,8 @@ Boston, MA 02111-1307, USA.  */
 		|| df_regs_ever_live_p (LINK_REGNUM)) ? 4 : 0)		\
       + (frame_pointer_needed ? 4 : 0)					\
       + offset								\
-      + OR32_ALIGN (crtl->outgoing_args_size, 4)			\
-      + OR32_ALIGN (get_frame_size(), 4);				\
+      + OR1K_ALIGN (crtl->outgoing_args_size, 4)			\
+      + OR1K_ALIGN (get_frame_size(), 4);				\
   }
 
 /* Register in which static-chain is passed to a function.  */
@@ -399,7 +399,7 @@ Boston, MA 02111-1307, USA.  */
    Also, registers outside this class are allocated only when
    instructions express preferences for them.
 
-   GENERAL_REGS and BASE_REGS classess are the same on or32.
+   GENERAL_REGS and BASE_REGS classess are the same on or1k.
 
    The classes must be numbered in nondecreasing order; that is,
    a larger-numbered class must never be contained completely
@@ -408,7 +408,7 @@ Boston, MA 02111-1307, USA.  */
    For any two classes, it is very desirable that there be another
    class that represents their union.  */
    
-/* The or32 has only one kind of registers, so NO_REGS, GENERAL_REGS
+/* The or1k has only one kind of registers, so NO_REGS, GENERAL_REGS
    and ALL_REGS are the only classes.  */
 /* JPB 26-Aug-10: Based on note from Mikhael (mirekez@gmail.com), we don't
    need CR_REGS and it is in the wrong place for later things! */
@@ -444,7 +444,7 @@ enum reg_class
    initializer for the type `HARD_REG_SET' which is defined in
    `hard-reg-set.h'.
 
-   For the OR32 we have the minimal set. GENERAL_REGS is all except r0, which
+   For the OR1K we have the minimal set. GENERAL_REGS is all except r0, which
    it permanently zero. */
 #define REG_CLASS_CONTENTS						\
   {									\
@@ -460,7 +460,7 @@ enum reg_class
 
    ??? 0 is not really a register, but a constant.  */
 #define REGNO_REG_CLASS(regno)						\
-  ((0 == regno) ? ALL_REGS : ((1 <= regno) && (regno <= OR32_LAST_INT_REG))		\
+  ((0 == regno) ? ALL_REGS : ((1 <= regno) && (regno <= OR1K_LAST_INT_REG))		\
    ? GENERAL_REGS : NO_REGS)
 
 /* The class value for index registers, and the one for base regs.  */
@@ -476,7 +476,7 @@ enum reg_class
 /* Return the maximum number of consecutive registers needed to represent mode
    MODE in a register of class CLASS.
 
-   On the or32, this is always the size of MODE in words, since all registers
+   On the or1k, this is always the size of MODE in words, since all registers
    are the same size.  */
 #define CLASS_MAX_NREGS(CLASS, MODE)					\
   ((GET_MODE_SIZE (MODE) + UNITS_PER_WORD - 1) / UNITS_PER_WORD)
@@ -507,19 +507,19 @@ enum reg_class
    in a register.  The value is the number of bytes allocated to this
    area.
 
-   No such allocation for OR32. */
+   No such allocation for OR1K. */
 /* #define REG_PARM_STACK_SPACE(FNDECL) (UNITS_PER_WORD * GP_ARG_NUM_REG) */
 
 /* Define this if the above stack space is to be considered part of the
    space allocated by the caller.
 
-   N/a for OR32. */
+   N/a for OR1K. */
 /* #define OUTGOING_REG_PARM_STACK_SPACE */   
 
 /* Define this macro if `REG_PARM_STACK_SPACE' is defined, but the
    stack parameters don't skip the area specified by it.
 
-   N/a for OR32. */
+   N/a for OR1K. */
 /* #define STACK_PARMS_IN_REG_PARM_AREA */
 
 /* If nonzero, the maximum amount of space required for outgoing arguments
@@ -530,7 +530,7 @@ enum reg_class
 
    Setting both PUSH_ARGS and ACCUMULATE_OUTGOING_ARGS is not proper.
 
-   This is the approached used by OR32. */
+   This is the approached used by OR1K. */
 #define ACCUMULATE_OUTGOING_ARGS 1
 
 #define ELIMINABLE_REGS							\
@@ -540,7 +540,7 @@ enum reg_class
  { FRAME_POINTER_REGNUM, HARD_FRAME_POINTER_REGNUM}}
 
 #define INITIAL_ELIMINATION_OFFSET(FROM, TO, OFFSET) \
-  (OFFSET) = or32_initial_elimination_offset ((FROM), (TO))
+  (OFFSET) = or1k_initial_elimination_offset ((FROM), (TO))
 
 /* Minimum and maximum general purpose registers used to hold arguments.  */
 #define GP_ARG_MIN_REG 3
@@ -560,7 +560,7 @@ enum reg_class
    routine, used to perform arithmetic, whose name is known specially by the
    compiler and was not mentioned in the C code being compiled.
 
-   For the OR32, return value is in R11 (GP_ARG_RETURN).  */   
+   For the OR1K, return value is in R11 (GP_ARG_RETURN).  */   
 #define LIBCALL_VALUE(mode)                                             \
   gen_rtx_REG(								\
 	   ((GET_MODE_CLASS (mode) != MODE_INT				\
@@ -572,7 +572,7 @@ enum reg_class
 /* Define this if PCC uses the nonreentrant convention for returning
    structure and union values. 
 
-   Not needed for OR32. */
+   Not needed for OR1K. */
 /*#define PCC_STATIC_STRUCT_RETURN */
 
 /* A C expression that is nonzero if regno is the number of a hard register in
@@ -588,7 +588,7 @@ enum reg_class
    function use different registers for the return value, this macro should
    recognize only the caller's register numbers.
 
-   For OR32, we must check if we have the return register.
+   For OR1K, we must check if we have the return register.
 
    From GCC 4.6, this will be replaced by TARGET_FUNCION_VALUE_REGNO_P target
    hook function. */
@@ -634,30 +634,30 @@ enum reg_class
    being processed. Thus, each time this macro is called, either "libname" or
    "fntype" is nonzero, but never both of them at once.
 
-   For the OR32, we set "cum" to zero each time.
+   For the OR1K, we set "cum" to zero each time.
    JPB 29-Aug-10: Is this correct? */
 #define INIT_CUMULATIVE_ARGS(cum, fntype, libname, fndecl, n_named_args) \
   (cum = 0)
 
 /* -------------------------------------------------------------------------- */
 /* Define intermediate macro to compute the size (in registers) of an argument
-   for the or32.
+   for the or1k.
 
-   The OR32_ROUND_ADVANCE* macros are local to this file.  */
+   The OR1K_ROUND_ADVANCE* macros are local to this file.  */
 
 /* Round "size" up to a word boundary.  */
-#define OR32_ROUND_ADVANCE(size)					\
+#define OR1K_ROUND_ADVANCE(size)					\
   (((size) + UNITS_PER_WORD - 1) / UNITS_PER_WORD)
 
 /* Round arg "mode"/"type" up to the next word boundary.  */
-#define OR32_ROUND_ADVANCE_ARG(mode, type)				\
+#define OR1K_ROUND_ADVANCE_ARG(mode, type)				\
   ((mode) == BLKmode							\
-   ? OR32_ROUND_ADVANCE (int_size_in_bytes (type))			\
-   : OR32_ROUND_ADVANCE (GET_MODE_SIZE (mode)))
+   ? OR1K_ROUND_ADVANCE (int_size_in_bytes (type))			\
+   : OR1K_ROUND_ADVANCE (GET_MODE_SIZE (mode)))
 
 /* Round "cum" up to the necessary point for argument "mode"/"type".  This is
    either rounded to nearest reg or nearest double-reg boundary */
-#define OR32_ROUND_ADVANCE_CUM(cum, mode, type)				\
+#define OR1K_ROUND_ADVANCE_CUM(cum, mode, type)				\
   ((((mode) == BLKmode ? TYPE_ALIGN (type) : GET_MODE_BITSIZE (mode))	\
     > BITS_PER_WORD)                                                  \
    ? (((cum) + 1) & ~1)                                               \
@@ -675,16 +675,16 @@ enum reg_class
    `__builtin_va_alist') as unnamed.
 
    This macro is only used in this file.  */
-#define OR32_PASS_IN_REG_P(cum, mode, type, named)			\
+#define OR1K_PASS_IN_REG_P(cum, mode, type, named)			\
   ((named)                         					\
-   && ((OR32_ROUND_ADVANCE_CUM ((cum), (mode), (type))			\
-	+ OR32_ROUND_ADVANCE_ARG ((mode), (type))			\
+   && ((OR1K_ROUND_ADVANCE_CUM ((cum), (mode), (type))			\
+	+ OR1K_ROUND_ADVANCE_ARG ((mode), (type))			\
 	<= GP_ARG_NUM_REG)))
 
 /* Output assembler code to FILE to increment profiler label # LABELNO
    for profiling a function entry.
 
-   JPB 29-Aug-10: This patently doesn't work. It is not even OR32 code! */
+   JPB 29-Aug-10: This patently doesn't work. It is not even OR1K code! */
 #define FUNCTION_PROFILER(FILE, LABELNO)  \
    fprintf (FILE, "\tl.load32u\tr0,LP%d\n\tcall\tmcount\n", (LABELNO));
 
@@ -692,7 +692,7 @@ enum reg_class
    stack pointer does not matter.  The value is tested only in functions that
    have frame pointers.  No definition is equivalent to always zero.
 
-   The default suffices for OR32. */
+   The default suffices for OR1K. */
 #define EXIT_IGNORE_STACK 0
 
 /* A C expression whose value is RTL representing the location of the
@@ -743,23 +743,23 @@ enum reg_class
                   it can't get set by the user. */
 #ifdef REG_OK_STRICT
 #define REGNO_OK_FOR_BASE_P(num)					     \
-  (   ((0 < (num))             && ((num)             <= OR32_LAST_INT_REG))  \
-   || ((0 < reg_renumber[num]) && (reg_renumber[num] <= OR32_LAST_INT_REG)))
+  (   ((0 < (num))             && ((num)             <= OR1K_LAST_INT_REG))  \
+   || ((0 < reg_renumber[num]) && (reg_renumber[num] <= OR1K_LAST_INT_REG)))
 
 #else
 /* Accept an int register or a pseudo reg.
 
    JPB 1-Sep-10: Should this allow r0, if the strict version does not? */
-#define REGNO_OK_FOR_BASE_P(num) ((num) <= OR32_LAST_INT_REG ||		\
+#define REGNO_OK_FOR_BASE_P(num) ((num) <= OR1K_LAST_INT_REG ||		\
 				  (num) >= FIRST_PSEUDO_REGISTER)
 #endif
 
-/* OR32 doesn't have any indexed addressing. */
+/* OR1K doesn't have any indexed addressing. */
 #define REG_OK_FOR_INDEX_P(X) 0
 #define REGNO_OK_FOR_INDEX_P(X) 0
 
 
-/* OR32 addresses do not depend on the machine mode they are being used in. */
+/* OR1K addresses do not depend on the machine mode they are being used in. */
 #define GO_IF_MODE_DEPENDENT_ADDRESS(addr,label)
 
 /* Specify the machine mode that this machine uses for the index in the
@@ -921,7 +921,7 @@ enum reg_class
    previous stack frame at the start of a function, before the prologue */
 #define INCOMING_FRAME_SP_OFFSET  0
 
-/* This doesn't work for the OR32 assembler at present. If it did, we'd have
+/* This doesn't work for the OR1K assembler at present. If it did, we'd have
    more compact debug tables. */
 /* #undef  DWARF2_ASM_LINE_DEBUG_INFO */
 /* #define DWARF2_ASM_LINE_DEBUG_INFO 1 */
@@ -999,7 +999,7 @@ enum reg_class
 
 /* This is how to output an assembler line defining a long double constant.
 
-   JPB 29-Aug-10: Do we really mean this. I thought long double on OR32 was
+   JPB 29-Aug-10: Do we really mean this. I thought long double on OR1K was
                   the same as double. */
 #define ASM_OUTPUT_LONG_DOUBLE(stream, value)				\
   { long l[4];								\
@@ -1202,7 +1202,7 @@ enum reg_class
 	abort ();							\
     }									\
   else if (code == 'J')							\
-    or32_print_jump_restore (x);					\
+    or1k_print_jump_restore (x);					\
   else if (GET_CODE (x) == REG)						\
     fprintf (stream, "%s", reg_names[REGNO (x)]);			\
   else if (GET_CODE (x) == MEM)						\
@@ -1214,19 +1214,19 @@ enum reg_class
 /* The size of the trampoline in bytes. This is a block of code followed by
    two words specifying the function address and static chain pointer. */
 #define TRAMPOLINE_SIZE							\
-  (or32_trampoline_code_size () + GET_MODE_SIZE (ptr_mode) * 2)
+  (or1k_trampoline_code_size () + GET_MODE_SIZE (ptr_mode) * 2)
 
 /* Alignment required for trampolines, in bits.
 
-   For the OR32, there is no need for anything other than word alignment. */
+   For the OR1K, there is no need for anything other than word alignment. */
 #define TRAMPOLINE_ALIGNMENT  32
 
 /* Mark functions for garbage collection. */
-extern GTY(()) rtx or32_compare_op0;
-extern GTY(()) rtx or32_compare_op1;
+extern GTY(()) rtx or1k_compare_op0;
+extern GTY(()) rtx or1k_compare_op1;
 
 /* GLIBC is not implemented, but we handle the selection for consistency
    with the Linux framework.  */
-enum or32_libc_kind {  or32_libc_newlib, or32_libc_uclibc, or32_libc_glibc };
+enum or1k_libc_kind {  or1k_libc_newlib, or1k_libc_uclibc, or1k_libc_glibc };
 
-#endif /* _OR32_H_ */
+#endif /* _OR1K_H_ */

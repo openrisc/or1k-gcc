@@ -1,4 +1,4 @@
-/* Definitions of target machine for GNU compiler for OR32.
+/* Definitions of target machine for GNU compiler for OR1K.
    Copyright (C) 1996, 1997, 1998, 2005 Free Software Foundation, Inc.
    Copyright (C) 2010 Embecosm Limited
    Contributed by Damjan Lampret <damjanl@bsemi.com> in 1999.
@@ -22,7 +22,7 @@ the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 
 #undef CPP_PREDEFINES
 #define CPP_PREDEFINES \
- "-D__or32__ -D__ELF__ -Dunix -Dlinux -Asystem(unix) -Asystem(linux) -Acpu(or32) -Amachine(or32)"
+ "-D__or1k__ -D__ELF__ -Dunix -Dlinux -Asystem(unix) -Asystem(linux) -Acpu(or1k) -Amachine(or1k)"
 
 #undef	CPP_OS_DEFAULT_SPEC
 #define CPP_OS_DEFAULT_SPEC "%(cpp_os_linux)"

@@ -4,7 +4,7 @@
 #   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008
 #   Free Software Foundation, Inc.
 
-timestamp='2008-12-18'
+timestamp='2012-02-09'
 
 # This file is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by
@@ -925,8 +925,8 @@ EOF
 	    }'`"
 	test x"${CPU}" != x && { echo "${CPU}-unknown-linux-gnu"; exit; }
 	;;
-    or32:Linux:*:*)
-	echo or32-unknown-linux-gnu
+    or1k:Linux:*:*)
+	echo or1k-unknown-linux-gnu
 	exit ;;
     ppc:Linux:*:*)
 	echo powerpc-unknown-linux-gnu
