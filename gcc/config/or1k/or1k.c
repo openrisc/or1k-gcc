@@ -58,19 +58,19 @@
 /* Local macros                                                               */
 
 /* Construct a l.movhi instruction for the given reg and value */
-#define OR32_MOVHI(rd, k)						\
+#define OR1K_MOVHI(rd, k)						\
   ((0x6 << 26) | ((rd) << 21) | (k))
 
 /* Construct a l.ori instruction for the given two regs and value */
-#define OR32_ORI(rd, ra, k)						\
+#define OR1K_ORI(rd, ra, k)						\
   ((0x2a << 26) | ((rd) << 21) | ((ra) << 16) | (k))
 
 /* Construct a l.lwz instruction for the given two registers and offset */
-#define OR32_LWZ(rd, ra, i)						\
+#define OR1K_LWZ(rd, ra, i)						\
   ((0x21 << 26) | ((rd) << 21) | ((ra) << 16) | (i))
 
 /* Construct a l.jr instruction for the given register */
-#define OR32_JR(rb)							\
+#define OR1K_JR(rb)							\
   ((0x11 << 26) | ((rb) << 11))
 
 /* ========================================================================== */
@@ -79,8 +79,8 @@
 
 /* Save information from a "cmpxx" pattern until the branch or scc is
    emitted. These record the two operands of the "cmpxx" */
-rtx  or32_compare_op0;
-rtx  or32_compare_op1;
+rtx  or1k_compare_op0;
+rtx  or1k_compare_op1;
 
 /*!Stack layout we use for pushing and poping saved registers */
 static struct
@@ -112,10 +112,10 @@ static struct
             (FALSE) otherwise.                                                */
 /* -------------------------------------------------------------------------- */
 static bool
-or32_save_reg_p (int regno)
+or1k_save_reg_p (int regno)
 {
   /* No need to save the faked cc0 register.  */
-  if (regno == OR32_FLAGS_REG)
+  if (regno == OR1K_FLAGS_REG)
     return false;
 
   /* Check call-saved registers.  */
@@ -134,10 +134,10 @@ or32_save_reg_p (int regno)
 
   return false;
 
-}	/* or32_save_reg_p () */
+}	/* or1k_save_reg_p () */
 
 bool
-or32_save_reg_p_cached (int regno)
+or1k_save_reg_p_cached (int regno)
 {
   return (frame_info.mask & ((HOST_WIDE_INT) 1 << regno)) != 0;
 }
@@ -154,7 +154,7 @@ or32_save_reg_p_cached (int regno)
    @return  Total size of stack frame.                                        */
 /* -------------------------------------------------------------------------- */
 static HOST_WIDE_INT
-or32_compute_frame_size (HOST_WIDE_INT size)
+or1k_compute_frame_size (HOST_WIDE_INT size)
 {
   HOST_WIDE_INT args_size;
   HOST_WIDE_INT vars_size;
@@ -165,11 +165,11 @@ or32_compute_frame_size (HOST_WIDE_INT size)
   int regno;
 
   args_size = crtl->outgoing_args_size;
-  vars_size = OR32_ALIGN (size, 4);
+  vars_size = OR1K_ALIGN (size, 4);
 
   frame_info.args_size = args_size;
   frame_info.vars_size = vars_size;
-  frame_info.gpr_frame = interrupt_p ? or32_redzone : 0;
+  frame_info.gpr_frame = interrupt_p ? or1k_redzone : 0;
 
   /* If the function has local variables, we're committed to
      allocating it anyway.  Otherwise reclaim it here.  */
@@ -180,7 +180,7 @@ or32_compute_frame_size (HOST_WIDE_INT size)
   stack_offset = 0;
 
   /* Save link register right at the bottom.  */
-  if (or32_save_reg_p (LINK_REGNUM))
+  if (or1k_save_reg_p (LINK_REGNUM))
     {
       stack_offset = stack_offset - UNITS_PER_WORD;
       frame_info.lr_save_offset = stack_offset;
@@ -202,14 +202,14 @@ or32_compute_frame_size (HOST_WIDE_INT size)
   frame_info.gpr_size = 0;
   frame_info.mask = 0;
 
-  for (regno = 0; regno <= OR32_LAST_ACTUAL_REG; regno++)
+  for (regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
     {
       if (regno == LINK_REGNUM
 	  || (frame_pointer_needed && regno == HARD_FRAME_POINTER_REGNUM))
 	/* These have already been saved if so needed.  */
 	continue;
 
-      if (or32_save_reg_p (regno))
+      if (or1k_save_reg_p (regno))
 	{
 	  frame_info.gpr_size += UNITS_PER_WORD;
 	  frame_info.mask |= ((HOST_WIDE_INT) 1 << regno);
@@ -237,7 +237,7 @@ or32_compute_frame_size (HOST_WIDE_INT size)
   frame_info.gpr_offset = stack_offset;
   frame_info.late_frame = frame_info.total_size;
 
-  if (save_size > or32_redzone
+  if (save_size > or1k_redzone
       || (frame_info.gpr_frame
 	  && (frame_info.gpr_frame + frame_info.late_frame <= 32767)))
     {
@@ -248,14 +248,14 @@ or32_compute_frame_size (HOST_WIDE_INT size)
       frame_info.fp_save_offset += save_size;
       frame_info.gpr_offset += save_size;
       frame_info.late_frame -= save_size;
-      /* FIXME: check in TARGET_OVERRIDE_OPTIONS for invalid or32_redzone.  */
+      /* FIXME: check in TARGET_OVERRIDE_OPTIONS for invalid or1k_redzone.  */
       gcc_assert (frame_info.gpr_frame <= 32767);
       gcc_assert ((frame_info.gpr_frame & 3) == 0);
     }
 
   return frame_info.total_size;
 
-}	/* or32_compute_frame_size () */
+}	/* or1k_compute_frame_size () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -304,7 +304,7 @@ stack_disp_mem (HOST_WIDE_INT disp)
    @return  RTX for the comparison.                                           */
 /* -------------------------------------------------------------------------- */
 static rtx
-or32_expand_int_compare (enum rtx_code  code,
+or1k_expand_int_compare (enum rtx_code  code,
 			 rtx            op0,
 			 rtx            op1)
 {
@@ -312,7 +312,7 @@ or32_expand_int_compare (enum rtx_code  code,
   rtx tmp, flags;
 
   cmpmode = SELECT_CC_MODE (code, op0, op1);
-  flags = gen_rtx_REG (cmpmode, OR32_FLAGS_REG);
+  flags = gen_rtx_REG (cmpmode, OR1K_FLAGS_REG);
 
   /* This is very simple, but making the interface the same as in the
      FP case makes the rest of the code easier.  */
@@ -323,7 +323,7 @@ or32_expand_int_compare (enum rtx_code  code,
      the bcc, scc, or cmov instruction.  */
   return gen_rtx_fmt_ee (code, VOIDmode, flags, const0_rtx);
 
-}	/* or32_expand_int_compare () */
+}	/* or1k_expand_int_compare () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -340,11 +340,11 @@ or32_expand_int_compare (enum rtx_code  code,
    @return  RTX for the comparison.                                           */
 /* -------------------------------------------------------------------------- */
 static rtx
-or32_expand_compare (enum rtx_code code, rtx op0, rtx op1)
+or1k_expand_compare (enum rtx_code code, rtx op0, rtx op1)
 {
-  return or32_expand_int_compare (code, op0, op1);
+  return or1k_expand_int_compare (code, op0, op1);
 
-}	/* or32_expand_compare () */
+}	/* or1k_expand_compare () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -360,24 +360,24 @@ or32_expand_compare (enum rtx_code code, rtx op0, rtx op1)
    @return  Non-zero (TRUE) if insns were emitted, zero (FALSE) otherwise.    */
 /* -------------------------------------------------------------------------- */
 static int
-or32_emit_int_cmove (rtx  dest,
+or1k_emit_int_cmove (rtx  dest,
 		     rtx  op,
 		     rtx  true_cond,
 		     rtx  false_cond)
 {
   rtx condition_rtx, cr;
 
-  if ((GET_MODE (or32_compare_op0) != SImode) &&
-      (GET_MODE (or32_compare_op0) != HImode) &&
-      (GET_MODE (or32_compare_op0) != QImode))
+  if ((GET_MODE (or1k_compare_op0) != SImode) &&
+      (GET_MODE (or1k_compare_op0) != HImode) &&
+      (GET_MODE (or1k_compare_op0) != QImode))
     {
       return 0;
     }
 
   /* We still have to do the compare, because cmov doesn't do a compare, it
      just looks at the FLAG bit set by a previous compare instruction.  */
-  condition_rtx = or32_expand_compare (GET_CODE (op),
-				       or32_compare_op0, or32_compare_op1);
+  condition_rtx = or1k_expand_compare (GET_CODE (op),
+				       or1k_compare_op0, or1k_compare_op1);
 
   cr = XEXP (condition_rtx, 0);
 
@@ -385,7 +385,7 @@ or32_emit_int_cmove (rtx  dest,
 
   return 1;
 
-}	/* or32_emit_int_cmove () */
+}	/* or1k_emit_int_cmove () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -403,7 +403,7 @@ or32_emit_int_cmove (rtx  dest,
    sapce required to save the return address, frame pointer and outgoing
    arguments.
 
-   Throughout adjust for OR32 alignment requirements.
+   Throughout adjust for OR1K alignment requirements.
 
    @param[in]  vars           Bytes required for local variables (if any).
    @param[out] lr_save_area   Space required for return address (if any).
@@ -435,15 +435,15 @@ calculate_stack_size (int  vars,
   *lr_save_area = (!current_function_is_leaf
 		   || df_regs_ever_live_p(LINK_REGNUM)) ? 4 : 0;
   *fp_save_area = frame_pointer_needed ? 4 : 0;
-  *save_area    = (OR32_ALIGN (crtl->outgoing_args_size, 4)
+  *save_area    = (OR1K_ALIGN (crtl->outgoing_args_size, 4)
 		   + *lr_save_area + *fp_save_area);
 
-  return *save_area + *gpr_save_area + OR32_ALIGN (vars, 4);
+  return *save_area + *gpr_save_area + OR1K_ALIGN (vars, 4);
 
 }	/* calculate_stack_size () */
 
 static void
-or32_print_operand_address (FILE *stream, rtx addr)
+or1k_print_operand_address (FILE *stream, rtx addr)
 {
   rtx offset;
 
@@ -484,7 +484,7 @@ or32_print_operand_address (FILE *stream, rtx addr)
           rtx unspec = XEXP (offset, 0);
           rtx sym = XEXP (XEXP (unspec, 0), 0);
 
-          or32_print_operand_address (stream, sym);
+          or1k_print_operand_address (stream, sym);
 
           if (XEXP (unspec, 1) == UNSPEC_GOTOFF)
             fprintf (stream, "@GOTOFF");
@@ -511,7 +511,7 @@ or32_print_operand_address (FILE *stream, rtx addr)
 }
 
 /* -------------------------------------------------------------------------- */
-/*!Is this a value suitable for an OR32 address displacement?
+/*!Is this a value suitable for an OR1K address displacement?
 
    Must be an integer (signed) which fits into 16-bits. If the result is a
    double word, we had better also check that we can also get at the second
@@ -525,7 +525,7 @@ or32_print_operand_address (FILE *stream, rtx addr)
             otherwise.                                                        */
 /* -------------------------------------------------------------------------- */
 static int
-or32_legitimate_displacement_p (enum machine_mode  mode,
+or1k_legitimate_displacement_p (enum machine_mode  mode,
 				rtx                x)
 {
   if (CONST_INT == GET_CODE(x))
@@ -546,7 +546,7 @@ or32_legitimate_displacement_p (enum machine_mode  mode,
     {
       return  0;
     }
-}	/* or32_legitimate_displacement_p () */
+}	/* or1k_legitimate_displacement_p () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -569,20 +569,20 @@ or32_legitimate_displacement_p (enum machine_mode  mode,
             zero (FALSE) otherwise.                                           */
 /* -------------------------------------------------------------------------- */
 static bool
-or32_regnum_ok_for_base_p (HOST_WIDE_INT  num,
+or1k_regnum_ok_for_base_p (HOST_WIDE_INT  num,
 			   bool           strict)
 {
   if (strict)
     {
       return (num < FIRST_PSEUDO_REGISTER)
-	? (num > 0) && (num <= OR32_LAST_INT_REG)
-	: (reg_renumber[num] > 0) && (reg_renumber[num] <= OR32_LAST_INT_REG);
+	? (num > 0) && (num <= OR1K_LAST_INT_REG)
+	: (reg_renumber[num] > 0) && (reg_renumber[num] <= OR1K_LAST_INT_REG);
     }
   else
     {
-      return (num <= OR32_LAST_INT_REG) || (num >= FIRST_PSEUDO_REGISTER);
+      return (num <= OR1K_LAST_INT_REG) || (num >= FIRST_PSEUDO_REGISTER);
     }
-}	/* or32_regnum_ok_for_base_p () */
+}	/* or1k_regnum_ok_for_base_p () */
 
 static rtx
 expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED, rtx op)
@@ -596,7 +596,7 @@ expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED, rtx op)
 }
 
 bool
-or32_expand_move (enum machine_mode mode, rtx operands[])
+or1k_expand_move (enum machine_mode mode, rtx operands[])
 {
   if (flag_pic)
     {
@@ -686,7 +686,7 @@ or32_expand_move (enum machine_mode mode, rtx operands[])
            && GET_CODE (operands[1]) != HIGH
            && GET_CODE (operands[1]) != LO_SUM)
     {
-      or32_emit_set_const32 (operands[0], operands[1]);
+      or1k_emit_set_const32 (operands[0], operands[1]);
       return true;
     }
  movsi_is_ok:
@@ -709,13 +709,13 @@ or32_expand_move (enum machine_mode mode, rtx operands[])
    @return  RTX for the move.                                                 */
 /* -------------------------------------------------------------------------- */
 static rtx
-or32_emit_move (rtx dest, rtx src)
+or1k_emit_move (rtx dest, rtx src)
 {
   return (can_create_pseudo_p ()
 	  ? emit_move_insn (dest, src)
 	  : emit_move_insn_1 (dest, src));
 
-}	/* or32_emit_move () */
+}	/* or1k_emit_move () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -727,7 +727,7 @@ or32_emit_move (rtx dest, rtx src)
    @param[in] op1     Second operand.                                         */
 /* -------------------------------------------------------------------------- */
 static void
-or32_emit_binary (enum rtx_code  code,
+or1k_emit_binary (enum rtx_code  code,
 		  rtx            target,
 		  rtx            op0,
 		  rtx            op1)
@@ -735,7 +735,7 @@ or32_emit_binary (enum rtx_code  code,
   emit_insn (gen_rtx_SET (VOIDmode, target,
 			  gen_rtx_fmt_ee (code, GET_MODE (target), op0, op1)));
 
-}	/* or32_emit_binary () */
+}	/* or1k_emit_binary () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -752,7 +752,7 @@ or32_emit_binary (enum rtx_code  code,
    @return  The RTX for the new register.                                     */
 /* -------------------------------------------------------------------------- */
 static rtx
-or32_force_binary (enum machine_mode  mode,
+or1k_force_binary (enum machine_mode  mode,
 		   enum rtx_code      code,
 		   rtx                op0,
 		   rtx                op1)
@@ -760,11 +760,11 @@ or32_force_binary (enum machine_mode  mode,
   rtx  reg;
 
   reg = gen_reg_rtx (mode);
-  or32_emit_binary (code, reg, op0, op1);
+  or1k_emit_binary (code, reg, op0, op1);
 
   return reg;
 
-}	/* or32_force_binary () */
+}	/* or1k_force_binary () */
 
 
 /* ========================================================================== */
@@ -774,7 +774,7 @@ or32_force_binary (enum machine_mode  mode,
 /* Return the size in bytes of the trampoline code.
 
    Padded to TRAMPOLINE_ALIGNMENT bits. The code sequence is documented in
-   or32_trampoline_init ().
+   or1k_trampoline_init ().
 
    This is just the code size. the static chain pointer and target function
    address immediately follow.
@@ -782,14 +782,14 @@ or32_force_binary (enum machine_mode  mode,
    @return  The size of the trampoline code in bytes.                         */
 /* -------------------------------------------------------------------------- */
 int
-or32_trampoline_code_size (void)
+or1k_trampoline_code_size (void)
 {
   const int  TRAMP_BYTE_ALIGN = TRAMPOLINE_ALIGNMENT / 8;
 
   /* Five 32-bit code words are needed */
   return (5 * 4 + TRAMP_BYTE_ALIGN - 1) / TRAMP_BYTE_ALIGN * TRAMP_BYTE_ALIGN;
 
-}	/* or32_trampoline_code_size () */
+}	/* or1k_trampoline_code_size () */
 
 
 /* ========================================================================== */
@@ -806,13 +806,13 @@ or32_trampoline_code_size (void)
    some cases, it might be necessary to emit a barrier instruction as the last
    insn to prevent such scheduling.
 
-   For the OR32 this is currently controlled by the -mlogue option. It should
+   For the OR1K this is currently controlled by the -mlogue option. It should
    be the default, once it is proved to work.                                 */
 /* -------------------------------------------------------------------------- */
 void
-or32_expand_prologue (void)
+or1k_expand_prologue (void)
 {
-  int total_size = or32_compute_frame_size (get_frame_size ());
+  int total_size = or1k_compute_frame_size (get_frame_size ());
   rtx insn;
 
   if (!total_size)
@@ -843,7 +843,7 @@ or32_expand_prologue (void)
       int offset = 0;
       int regno;
 
-      for (regno = 0; regno <= OR32_LAST_ACTUAL_REG; regno++)
+      for (regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
 	{
 	  if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
 	    continue;
@@ -864,7 +864,7 @@ or32_expand_prologue (void)
       rtx note = insn;
       rtx value_rtx = gen_rtx_REG (Pmode, PROLOGUE_TMP);
 
-      or32_emit_set_const32 (value_rtx, GEN_INT (-total_size));
+      or1k_emit_set_const32 (value_rtx, GEN_INT (-total_size));
       if (frame_info.save_fp_p)
 	insn = gen_frame_alloc_fp (value_rtx);
       else
@@ -886,7 +886,7 @@ or32_expand_prologue (void)
       emit_insn (gen_set_got (pic_offset_table_rtx));
     }
 
-}	/* or32_expand_prologue () */
+}	/* or1k_expand_prologue () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -899,16 +899,16 @@ or32_expand_prologue (void)
    In some cases, it might be necessary to emit a barrier instruction as the
    first insn to prevent such scheduling.
 
-   For the OR32 this is currently controlled by the -mlogue option. It should
+   For the OR1K this is currently controlled by the -mlogue option. It should
    be the default, once it is proved to work.
 
    @param[in] sibcall  The sibcall epilogue insn if this is a sibcall return,
                        NULL_RTX otherwise.                                             */
 /* -------------------------------------------------------------------------- */
 void
-or32_expand_epilogue (rtx sibcall)
+or1k_expand_epilogue (rtx sibcall)
 {
-  int total_size = or32_compute_frame_size (get_frame_size ());
+  int total_size = or1k_compute_frame_size (get_frame_size ());
   int sibcall_regno = FIRST_PSEUDO_REGISTER;
 
   if (sibcall)
@@ -942,7 +942,7 @@ or32_expand_epilogue (rtx sibcall)
       if (total_size > 32767)
 	{
 	  value_rtx = gen_rtx_REG (Pmode, EPILOGUE_TMP);
-	  or32_emit_set_const32 (value_rtx, GEN_INT (total_size));
+	  or1k_emit_set_const32 (value_rtx, GEN_INT (total_size));
 	}
       else if (frame_info.late_frame)
 	value_rtx = GEN_INT (total_size);
@@ -962,7 +962,7 @@ or32_expand_epilogue (rtx sibcall)
       int offset = 0;
       int regno;
 
-      for (regno = 0; regno <= OR32_LAST_ACTUAL_REG; regno++)
+      for (regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
 	{
 	  if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
 	    continue;
@@ -981,14 +981,14 @@ or32_expand_epilogue (rtx sibcall)
   if (!sibcall)
     emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, 9)));
 
-}	/* or32_expand_epilogue () */
+}	/* or1k_expand_epilogue () */
 
 /* We are outputting a jump which needs JUMP_ADDRESS, which is the
    register it uses as jump destination, restored,
    e.g. a sibcall using a callee-saved register.
    Emit the register restore as delay slot insn.  */
 void
-or32_print_jump_restore (rtx jump_address)
+or1k_print_jump_restore (rtx jump_address)
 {
   int regno, jump_regno;
   HOST_WIDE_INT offset = frame_info.gpr_offset;
@@ -997,7 +997,7 @@ or32_print_jump_restore (rtx jump_address)
   jump_regno = REGNO (jump_address);
   for (regno = 0; regno != jump_regno; regno++)
     {
-      gcc_assert (regno <= OR32_LAST_ACTUAL_REG);
+      gcc_assert (regno <= OR1K_LAST_ACTUAL_REG);
       if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
 	continue;
       offset = offset + UNITS_PER_WORD;
@@ -1016,7 +1016,7 @@ or32_print_jump_restore (rtx jump_address)
             output here).                                                     */
 /* -------------------------------------------------------------------------- */
 const char *
-or32_output_move_double (rtx *operands)
+or1k_output_move_double (rtx *operands)
 {
   rtx xoperands[3];
 
@@ -1146,7 +1146,7 @@ or32_output_move_double (rtx *operands)
     default:
       abort ();
     }
-}	/* or32_output_move_double () */
+}	/* or1k_output_move_double () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1156,7 +1156,7 @@ or32_output_move_double (rtx *operands)
    @param[in] mode      Mode of the comparison.                               */
 /* -------------------------------------------------------------------------- */
 void
-or32_expand_conditional_branch (rtx               *operands,
+or1k_expand_conditional_branch (rtx               *operands,
 				enum machine_mode  mode)
 {
   rtx tmp;
@@ -1165,7 +1165,7 @@ or32_expand_conditional_branch (rtx               *operands,
   switch (mode)
     {
     case SImode:
-      tmp = or32_expand_compare (test_code, operands[1], operands[2]);
+      tmp = or1k_expand_compare (test_code, operands[1], operands[2]);
       tmp = gen_rtx_IF_THEN_ELSE (VOIDmode,
 				  tmp,
 				  gen_rtx_LABEL_REF (VOIDmode, operands[3]),
@@ -1174,7 +1174,7 @@ or32_expand_conditional_branch (rtx               *operands,
       return;
       
     case SFmode:
-      tmp = or32_expand_compare (test_code, operands[1], operands[2]);
+      tmp = or1k_expand_compare (test_code, operands[1], operands[2]);
       tmp = gen_rtx_IF_THEN_ELSE (VOIDmode,
 				  tmp,
 				  gen_rtx_LABEL_REF (VOIDmode, operands[3]),
@@ -1186,7 +1186,7 @@ or32_expand_conditional_branch (rtx               *operands,
       abort ();
     }
 
-}	/* or32_expand_conditional_branch () */
+}	/* or1k_expand_conditional_branch () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1204,7 +1204,7 @@ or32_expand_conditional_branch (rtx               *operands,
             (FALSE) otherwise.                                                */
 /* -------------------------------------------------------------------------- */
 int
-or32_emit_cmove (rtx  dest,
+or1k_emit_cmove (rtx  dest,
 		 rtx  op,
 		 rtx  true_cond,
 		 rtx  false_cond)
@@ -1218,9 +1218,9 @@ or32_emit_cmove (rtx  dest,
     return 0;
 
   /* First, work out if the hardware can do this at all */
-  return or32_emit_int_cmove (dest, op, true_cond, false_cond);
+  return or1k_emit_int_cmove (dest, op, true_cond, false_cond);
 
-}	/* or32_emit_cmove () */
+}	/* or1k_emit_cmove () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1231,20 +1231,20 @@ or32_emit_cmove (rtx  dest,
    @return  The assembler string to use.                                      */
 /* -------------------------------------------------------------------------- */
 const char *
-or32_output_bf (rtx * operands)
+or1k_output_bf (rtx * operands)
 {
   enum rtx_code code;
   enum machine_mode mode_calc, mode_got;
 
   code      = GET_CODE (operands[1]);
-  mode_calc = SELECT_CC_MODE (code, or32_compare_op0, or32_compare_op1);
+  mode_calc = SELECT_CC_MODE (code, or1k_compare_op0, or1k_compare_op1);
   mode_got  = GET_MODE (operands[2]);
 
   if (mode_calc != mode_got)
     return "l.bnf\t%l0%(";
   else
     return "l.bf\t%l0%(";
-}	/* or32_output_bf () */
+}	/* or1k_output_bf () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1255,13 +1255,13 @@ or32_output_bf (rtx * operands)
    @return  The assembler string to use.                                      */
 /* -------------------------------------------------------------------------- */
 const char *
-or32_output_cmov (rtx * operands)
+or1k_output_cmov (rtx * operands)
 {
   enum rtx_code code;
   enum machine_mode mode_calc, mode_got;
 
   code      = GET_CODE (operands[1]);
-  mode_calc = SELECT_CC_MODE (code, or32_compare_op0, or32_compare_op1);
+  mode_calc = SELECT_CC_MODE (code, or1k_compare_op0, or1k_compare_op1);
   mode_got  = GET_MODE (operands[4]);
 
   if (mode_calc != mode_got)
@@ -1269,7 +1269,7 @@ or32_output_cmov (rtx * operands)
   else
     return "\tl.cmov\t%0,%2,%3";
 
-}	/* or32_output_cmov () */
+}	/* or1k_output_cmov () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1283,16 +1283,16 @@ or32_output_cmov (rtx * operands)
    @param[in] args_size  Not sure. RTX for the size of the args (in bytes?)?  */
 /* -------------------------------------------------------------------------- */
 void
-or32_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
+or1k_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
 		     rtx  addr,
 		     rtx  args_size)
 {
   emit_call_insn (gen_sibcall_internal (addr, args_size));
 
-}	/* or32_expand_sibcall () */
+}	/* or1k_expand_sibcall () */
 
 static bool
-or32_output_addr_const_extra (FILE *fp, rtx x)
+or1k_output_addr_const_extra (FILE *fp, rtx x)
 {
   if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_PIC_LABEL)
     {
@@ -1336,7 +1336,7 @@ or32_output_addr_const_extra (FILE *fp, rtx x)
    @param[in] op1  RTX for the (constant) source.                             */
 /* -------------------------------------------------------------------------- */
 void
-or32_emit_set_const32 (rtx  op0,
+or1k_emit_set_const32 (rtx  op0,
 		       rtx  op1)
 {
   enum machine_mode mode = GET_MODE (op0);
@@ -1376,13 +1376,13 @@ or32_emit_set_const32 (rtx  op0,
     }
   else
     {
-      /* since or32 bfd can not deal with relocs that are not of type
-         OR32_CONSTH_RELOC + OR32_CONST_RELOC (ie move high must be
+      /* since or1k bfd can not deal with relocs that are not of type
+         OR1K_CONSTH_RELOC + OR1K_CONST_RELOC (ie move high must be
          followed by exactly one lo_sum)
        */
       emit_insn (gen_movsi_insn_big (op0, op1));
     }
-}	/* or32_emit_set_const32 () */
+}	/* or1k_emit_set_const32 () */
 
 
 /* ========================================================================== */
@@ -1442,7 +1442,7 @@ or32_emit_set_const32 (rtx  op0,
    @param[in] size  Number of bytes of storage needed for local variables.    */
 /* -------------------------------------------------------------------------- */
 static void
-or32_output_function_prologue (FILE          *file,
+or1k_output_function_prologue (FILE          *file,
 			       HOST_WIDE_INT  size)
 {
   int save_area;
@@ -1505,7 +1505,7 @@ or32_output_function_prologue (FILE          *file,
   if (fp_save_area)
     {
       char *l     = dwarf2out_cfi_label (false);
-      int  offset = OR32_ALIGN (crtl->outgoing_args_size, 4) + lr_save_area;
+      int  offset = OR1K_ALIGN (crtl->outgoing_args_size, 4) + lr_save_area;
 
       fprintf (file, "\tl.sw\t%d(r%d),r%d\n", offset,
 	       STACK_POINTER_REGNUM, HARD_FRAME_POINTER_REGNUM);
@@ -1527,7 +1527,7 @@ or32_output_function_prologue (FILE          *file,
   if (lr_save_area)
     {
       char *l     = dwarf2out_cfi_label (false);
-      int  offset = OR32_ALIGN (crtl->outgoing_args_size, 4);
+      int  offset = OR1K_ALIGN (crtl->outgoing_args_size, 4);
 
       fprintf (file, "\tl.sw\t%d(r%d),r%d\n", offset, STACK_POINTER_REGNUM,
 	       LINK_REGNUM);
@@ -1538,7 +1538,7 @@ or32_output_function_prologue (FILE          *file,
       dwarf2out_reg_save (l, HARD_FRAME_POINTER_REGNUM, offset - stack_size);
     }
 
-  save_area = (OR32_ALIGN (crtl->outgoing_args_size, 4)
+  save_area = (OR1K_ALIGN (crtl->outgoing_args_size, 4)
 	       + lr_save_area + fp_save_area);
 
   /* Save any callee saved registers */
@@ -1559,7 +1559,7 @@ or32_output_function_prologue (FILE          *file,
 	  save_area += 4;
 	}
     }
-}	/* or32_output_function_prologue () */
+}	/* or1k_output_function_prologue () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1571,7 +1571,7 @@ or32_output_function_prologue (FILE          *file,
    control to the caller. This macro takes the same arguments as the macro
    TARGET_ASM_FUNCTION_PROLOGUE, and the registers to restore are determined
    from regs_ever_live and CALL_USED_REGISTERS in the same way (@see
-   or32_output_function_prologue ()) .
+   or1k_output_function_prologue ()) .
 
    On some machines, there is a single instruction that does all the work of
    returning from the function. On these machines, give that instruction the
@@ -1613,7 +1613,7 @@ or32_output_function_prologue (FILE          *file,
    @param[in] size  Number of bytes of storage needed for local variables.    */
 /* -------------------------------------------------------------------------- */
 static void
-or32_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
+or1k_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
 {
   int save_area;
   int gpr_save_area;
@@ -1638,7 +1638,7 @@ or32_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
   if (lr_save_area)
     {
       fprintf (file, "\tl.lwz\tr%d,%d(r%d)\n", LINK_REGNUM,
-	       OR32_ALIGN (crtl->outgoing_args_size, 4),
+	       OR1K_ALIGN (crtl->outgoing_args_size, 4),
 	       STACK_POINTER_REGNUM);
     }
 
@@ -1646,11 +1646,11 @@ or32_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
   if (fp_save_area)
     {
       fprintf (file, "\tl.lwz\tr%d,%d(r%d)\n", HARD_FRAME_POINTER_REGNUM,
-	       OR32_ALIGN (crtl->outgoing_args_size, 4)
+	       OR1K_ALIGN (crtl->outgoing_args_size, 4)
 	       + lr_save_area, STACK_POINTER_REGNUM);
     }
 
-  save_area = (OR32_ALIGN (crtl->outgoing_args_size, 4)
+  save_area = (OR1K_ALIGN (crtl->outgoing_args_size, 4)
 	       + lr_save_area + fp_save_area);
 
   /* Restore any callee-saved registers */
@@ -1688,7 +1688,7 @@ or32_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
 
       fprintf (file, "\tl.nop\n");		/* Delay slot */
     }
-}	/* or32_output_function_epilogue () */
+}	/* or1k_output_function_epilogue () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1731,7 +1731,7 @@ or32_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
    types, because these are returned in another way. See
    TARGET_STRUCT_VALUE_RTX and related macros.
 
-   For the OR32, we can just use the result of LIBCALL_VALUE, since all
+   For the OR1K, we can just use the result of LIBCALL_VALUE, since all
    functions return their result in the same place (register rv = r11).
 
    JPB 30-Aug-10: What about 64-bit scalar returns (long long int, double),
@@ -1746,13 +1746,13 @@ or32_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
    @return  A RTX representing where the result can be found.                 */
 /* -------------------------------------------------------------------------- */
 static rtx
-or32_function_value (const_tree  ret_type,
+or1k_function_value (const_tree  ret_type,
 		     const_tree  func ATTRIBUTE_UNUSED,
                      bool        outgoing ATTRIBUTE_UNUSED)
 {
   return LIBCALL_VALUE (TYPE_MODE(ret_type));
 
-}	/* or32_function_value () */
+}	/* or1k_function_value () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1769,7 +1769,7 @@ or32_function_value (const_tree  ret_type,
    successful sibling call optimization may vary greatly between different
    architectures.
 
-   For the OR32, we currently allow sibcall optimization whenever
+   For the OR1K, we currently allow sibcall optimization whenever
    -foptimize-sibling-calls is enabled.
 
    @param[in] decl  The function for which we may optimize
@@ -1779,12 +1779,12 @@ or32_function_value (const_tree  ret_type,
             otherwise.                                                        */
 /* -------------------------------------------------------------------------- */
 static bool
-or32_function_ok_for_sibcall (tree  decl ATTRIBUTE_UNUSED,
+or1k_function_ok_for_sibcall (tree  decl ATTRIBUTE_UNUSED,
 			      tree  exp ATTRIBUTE_UNUSED)
 {
   /* Assume up to 31 registers of 4 bytes might be saved.  */
-  return or32_redzone >= 31 * 4;
-}	/* or32_function_ok_for_sibcall () */
+  return or1k_redzone >= 31 * 4;
+}	/* or1k_function_ok_for_sibcall () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1800,7 +1800,7 @@ or32_function_ok_for_sibcall (tree  decl ATTRIBUTE_UNUSED,
    pointer is passed in whatever way is appropriate for passing a pointer to
    that type.
 
-   For the OR32, all aggregates and arguments greater than 8 bytes are passed
+   For the OR1K, all aggregates and arguments greater than 8 bytes are passed
    this way.
 
    @param[in] cum    Position of argument under consideration.
@@ -1812,14 +1812,14 @@ or32_function_ok_for_sibcall (tree  decl ATTRIBUTE_UNUSED,
             zero (FALSE) otherwise.                                           */
 /* -------------------------------------------------------------------------- */
 static bool
-or32_pass_by_reference (cumulative_args_t  cum ATTRIBUTE_UNUSED,
+or1k_pass_by_reference (cumulative_args_t  cum ATTRIBUTE_UNUSED,
                         enum machine_mode  mode ATTRIBUTE_UNUSED,
                         const_tree         type,
                         bool               named ATTRIBUTE_UNUSED)
 {
   return (type && (AGGREGATE_TYPE_P (type) || int_size_in_bytes (type) > 8));
 
-}	/* or32_pass_by_reference () */
+}	/* or1k_pass_by_reference () */
 
 
 #if 0
@@ -1847,7 +1847,7 @@ or32_pass_by_reference (cumulative_args_t  cum ATTRIBUTE_UNUSED,
 
    Default return value is false.
 
-   For the OR32 we do not need the frame pointer, so the default would have
+   For the OR1K we do not need the frame pointer, so the default would have
    sufficed.
 
    JPB 30-Aug-10: The version supplied returned TRUE, which is patently the
@@ -1858,17 +1858,17 @@ or32_pass_by_reference (cumulative_args_t  cum ATTRIBUTE_UNUSED,
             otherwise.                                                        */
 /* -------------------------------------------------------------------------- */
 static bool
-or32_frame_pointer_required (void)
+or1k_frame_pointer_required (void)
 {
 	return 1;
 
-}	/* or32_frame_pointer_required () */
+}	/* or1k_frame_pointer_required () */
 #endif
 
 int
-or32_initial_elimination_offset(int from, int to)
+or1k_initial_elimination_offset(int from, int to)
 {
-  or32_compute_frame_size (get_frame_size ());
+  or1k_compute_frame_size (get_frame_size ());
   return ((from == FRAME_POINTER_REGNUM
 	   ? frame_info.gpr_offset : frame_info.gpr_frame)
 	  + (to == STACK_POINTER_REGNUM ? frame_info.late_frame : 0));
@@ -1895,7 +1895,7 @@ or32_initial_elimination_offset(int from, int to)
    used by the caller for this argument; likewise FUNCTION_INCOMING_ARG, for
    the called function.
 
-   On the OR32 we never split argumetns between registers and memory.
+   On the OR1K we never split argumetns between registers and memory.
 
    JPB 30-Aug-10: Is this correct? Surely we should allow this. The ABI spec
                   is incomplete on this point.
@@ -1908,14 +1908,14 @@ or32_initial_elimination_offset(int from, int to)
    @return  The number of bytes of the argument to go into registers          */
 /* -------------------------------------------------------------------------- */
 static int
-or32_arg_partial_bytes (cumulative_args_t cum ATTRIBUTE_UNUSED,
+or1k_arg_partial_bytes (cumulative_args_t cum ATTRIBUTE_UNUSED,
                         enum machine_mode  mode ATTRIBUTE_UNUSED,
                         tree               type ATTRIBUTE_UNUSED,
                         bool               named ATTRIBUTE_UNUSED)
 {
   return 0;
 
-}	/* or32_arg_partial_bytes () */
+}	/* or1k_arg_partial_bytes () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -1938,7 +1938,7 @@ or32_arg_partial_bytes (cumulative_args_t cum ATTRIBUTE_UNUSED,
    define the hook to "default_promote_function_mode_always_promote" if you
    would like to apply the same rules given by PROMOTE_MODE.
 
-   For the OR32, if the size of the mode is integral and less than 4, we
+   For the OR1K, if the size of the mode is integral and less than 4, we
    promote to SImode, otherwise we return the mode we are supplied.
 
    @param[in]  type        Not sure. Type of the argument?
@@ -1950,7 +1950,7 @@ or32_arg_partial_bytes (cumulative_args_t cum ATTRIBUTE_UNUSED,
    @return  The new mode.                                                     */
 /* -------------------------------------------------------------------------- */
 static enum machine_mode
-or32_promote_function_mode (const_tree         type ATTRIBUTE_UNUSED,
+or1k_promote_function_mode (const_tree         type ATTRIBUTE_UNUSED,
 			    enum machine_mode  mode,
 			    int               *punsignedp ATTRIBUTE_UNUSED,
 			    const_tree         fntype ATTRIBUTE_UNUSED,
@@ -1959,7 +1959,7 @@ or32_promote_function_mode (const_tree         type ATTRIBUTE_UNUSED,
   return (   (GET_MODE_CLASS (mode) == MODE_INT)
 	  && (GET_MODE_SIZE (mode) < 4)) ? SImode : mode;
 
-}	/* or32_promote_function_mode () */
+}	/* or1k_promote_function_mode () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -2014,7 +2014,7 @@ or32_promote_function_mode (const_tree         type ATTRIBUTE_UNUSED,
   earlier in this section. Using the hook is usually simpler because it limits
   the number of files that are recompiled when changes are made.
 
-   The OR32 only has a single addressing mode, which is a base register with
+   The OR1K only has a single addressing mode, which is a base register with
    16-bit displacement. We can accept just 16-bit constants as addresses (they
    can use r0 as base address, and we can accept plain registers as addresses
    (they can use a displacement of zero).
@@ -2028,7 +2028,7 @@ or32_promote_function_mode (const_tree         type ATTRIBUTE_UNUSED,
             otherwise.                                                        */
 /* -------------------------------------------------------------------------- */
 static bool
-or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
+or1k_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
 			   rtx                x,
 			   bool               strict)
 {
@@ -2036,7 +2036,7 @@ or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
      addresses using r0 as the base. However this seems to lead to defective
      code. So for now this is a placeholder, and this code is not used.
 
-     if (or32_legitimate_displacement_p (mode, x))
+     if (or1k_legitimate_displacement_p (mode, x))
      {
      return  1;
      }
@@ -2050,12 +2050,12 @@ or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
 
       /* If valid register... */
       if ((GET_CODE(reg) == REG)
-          && or32_regnum_ok_for_base_p (REGNO (reg), strict))
+          && or1k_regnum_ok_for_base_p (REGNO (reg), strict))
         {
           rtx offset = XEXP(x,1);
 
           /* ...and valid offset */
-          if (or32_legitimate_displacement_p (mode, offset))
+          if (or1k_legitimate_displacement_p (mode, offset))
             {
               return 1;
             }
@@ -2071,7 +2071,7 @@ or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
      addresses using an offset of zero (and an offset of four if double
      word). */
   if (GET_CODE(x) == REG
-    && or32_regnum_ok_for_base_p(REGNO(x),strict)) {
+    && or1k_regnum_ok_for_base_p(REGNO(x),strict)) {
       return 1;
   }
 
@@ -2079,7 +2079,7 @@ or32_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
 }
 
 static rtx
-or32_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
+or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
                          enum machine_mode mode)
 {
   if (GET_CODE(x) == SYMBOL_REF && flag_pic)
@@ -2137,7 +2137,7 @@ or32_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
    enabling stack execution, these actions should be performed after
    initializing the trampoline proper.
 
-   For the OR32, no static chain register is used. We choose to use the return
+   For the OR1K, no static chain register is used. We choose to use the return
    value (rv) register. The code is based on that for MIPS.
    The trampoline code is:
 
@@ -2150,7 +2150,7 @@ or32_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
               .word   <static chain>
               .word   <nested_function>
 
-   @note For the OR32 we need to flush the instruction cache, which is a
+   @note For the OR1K we need to flush the instruction cache, which is a
          privileged operation. Needs fixing.
 
    @param[in] m_tramp      The lowest address of the trampoline on the stack.
@@ -2159,7 +2159,7 @@ or32_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
                            function.                                          */
 /* -------------------------------------------------------------------------- */
 static void
-or32_trampoline_init (rtx   m_tramp,
+or1k_trampoline_init (rtx   m_tramp,
 		      tree  fndecl,
 		      rtx   chain_value)
 {
@@ -2182,13 +2182,13 @@ or32_trampoline_init (rtx   m_tramp,
 
   /* Work out the offsets of the pointers from the start of the trampoline
      code.  */
-  end_addr_offset        = or32_trampoline_code_size ();
+  end_addr_offset        = or1k_trampoline_code_size ();
   static_chain_offset    = end_addr_offset;
   target_function_offset = static_chain_offset + GET_MODE_SIZE (ptr_mode);
 
   /* Get pointers in registers to the beginning and end of the code block.  */
   addr     = force_reg (Pmode, XEXP (m_tramp, 0));
-  end_addr = or32_force_binary (Pmode, PLUS, addr, GEN_INT (end_addr_offset));
+  end_addr = or1k_force_binary (Pmode, PLUS, addr, GEN_INT (end_addr_offset));
 
   /* Build up the code in TRAMPOLINE.
 
@@ -2209,51 +2209,51 @@ or32_trampoline_init (rtx   m_tramp,
 
   /* Emit the l.movhi, adding an operation to OR in the high bits from the
      RTX. */
-  opcode = gen_int_mode (OR32_MOVHI (11, 0), SImode);
+  opcode = gen_int_mode (OR1K_MOVHI (11, 0), SImode);
   trampoline[i++] = expand_simple_binop (SImode, IOR, opcode, high, NULL,
 					 false, OPTAB_WIDEN); 
   
   /* Emit the l.ori, adding an operations to OR in the low bits from the
      RTX. */
-  opcode = gen_int_mode (OR32_ORI (11, 11, 0), SImode);
+  opcode = gen_int_mode (OR1K_ORI (11, 11, 0), SImode);
   trampoline[i++] = expand_simple_binop (SImode, IOR, opcode, low, NULL,
 					 false, OPTAB_WIDEN); 
 
   /* Emit the l.lwz of the function address. No bits to OR in here, so we can
      do the opcode directly. */
   trampoline[i++] =
-    gen_int_mode (OR32_LWZ (13, 11, target_function_offset - end_addr_offset),
+    gen_int_mode (OR1K_LWZ (13, 11, target_function_offset - end_addr_offset),
 		  SImode);
 
   /* Emit the l.jr of the function. No bits to OR in here, so we can do the
      opcode directly. */
-  trampoline[i++] = gen_int_mode (OR32_JR (13), SImode);
+  trampoline[i++] = gen_int_mode (OR1K_JR (13), SImode);
 
   /* Emit the l.lwz of the static chain. No bits to OR in here, so we can
      do the opcode directly. */
   trampoline[i++] =
-    gen_int_mode (OR32_LWZ (STATIC_CHAIN_REGNUM, 11,
+    gen_int_mode (OR1K_LWZ (STATIC_CHAIN_REGNUM, 11,
 			    static_chain_offset - end_addr_offset), SImode);
 
   /* Copy the trampoline code.  Leave any padding uninitialized.  */
   for (j = 0; j < i; j++)
     {
       mem = adjust_address (m_tramp, SImode, j * GET_MODE_SIZE (SImode));
-      or32_emit_move (mem, trampoline[j]);
+      or1k_emit_move (mem, trampoline[j]);
     }
 
   /* Set up the static chain pointer field.  */
   mem = adjust_address (m_tramp, ptr_mode, static_chain_offset);
-  or32_emit_move (mem, chain_value);
+  or1k_emit_move (mem, chain_value);
 
   /* Set up the target function field.  */
   mem = adjust_address (m_tramp, ptr_mode, target_function_offset);
-  or32_emit_move (mem, XEXP (DECL_RTL (fndecl), 0));
+  or1k_emit_move (mem, XEXP (DECL_RTL (fndecl), 0));
 
   /* Flushing the trampoline from the instruction cache needs to be done
      here. */
 
-}	/* or32_trampoline_init () */
+}	/* or1k_trampoline_init () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -2269,24 +2269,24 @@ or32_trampoline_init (rtx   m_tramp,
    "dwarf2out_reg_save" as appropriate from TARGET_ASM_FUNCTION_PROLOGUE if
    you don’t.
 
-   For the OR32, it should be sufficient to return DW_CC_normal in all cases.
+   For the OR1K, it should be sufficient to return DW_CC_normal in all cases.
 
    @param[in] function  The function requiring debug information
 
    @return  The enum of the DW_CC tag.                                        */
 /* -------------------------------------------------------------------------- */
 static int
-or32_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
+or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 {
   return  DW_CC_normal;
 
-}	/* or32_dwarf_calling_convention () */
+}	/* or1k_dwarf_calling_convention () */
 
 /* If DELTA doesn't fit into a 16 bit signed number, emit instructions to
    add the highpart to DST; return the signed-16-bit lowpart of DELTA.
    TMP_REGNO is a register that may be used to load a constant.  */
 static HOST_WIDE_INT
-or32_output_highadd (FILE *file,
+or1k_output_highadd (FILE *file,
 		     const char *dst, int tmp_regno, HOST_WIDE_INT delta)
 {
   if (delta < -32768 || delta > 32767)
@@ -2314,7 +2314,7 @@ or32_output_highadd (FILE *file,
 
 /* Output a tailcall to FUNCTION.  The caller will fill in the delay slot.  */
 static void
-or32_output_tailcall (FILE *file, tree function)
+or1k_output_tailcall (FILE *file, tree function)
 {
   /* We'll need to add more code if we want to fully support PIC.  */
   gcc_assert (!flag_pic || (*targetm.binds_local_p) (function));
@@ -2325,7 +2325,7 @@ or32_output_tailcall (FILE *file, tree function)
 }
 
 static void
-or32_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
+or1k_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 		      HOST_WIDE_INT delta, HOST_WIDE_INT vcall_offset,
 		      tree function)
 {
@@ -2334,9 +2334,9 @@ or32_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
   const char *this_name = reg_names[this_regno];
 
 
-  delta = or32_output_highadd (file, this_name, PROLOGUE_TMP, delta);
+  delta = or1k_output_highadd (file, this_name, PROLOGUE_TMP, delta);
   if (!vcall_offset)
-    or32_output_tailcall (file, function);
+    or1k_output_tailcall (file, function);
   if (delta || !vcall_offset)
     asm_fprintf (file, "\tl.addi\t%s,%s,%d\n",
 		 this_name, this_name, (int) delta);
@@ -2352,29 +2352,29 @@ or32_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 
       asm_fprintf (file, "\tl.lwz\t%s,0(%s)\n",
                    tmp_name, this_name);
-      vcall_offset = or32_output_highadd (file, tmp_name,
+      vcall_offset = or1k_output_highadd (file, tmp_name,
 					  STATIC_CHAIN_REGNUM, vcall_offset);
       asm_fprintf (file, "\tl.lwz\t%s,%d(%s)\n",
                    tmp_name, (int) vcall_offset, tmp_name);
-      or32_output_tailcall (file, function);
+      or1k_output_tailcall (file, function);
       asm_fprintf (file, "\tl.add\t%s,%s,%s\n", this_name, this_name, tmp_name);
     }
 }
 
 static bool
-or32_handle_option (size_t code, const char *arg ATTRIBUTE_UNUSED,
+or1k_handle_option (size_t code, const char *arg ATTRIBUTE_UNUSED,
 		    int value ATTRIBUTE_UNUSED)
 {
   switch (code)
     {
     case OPT_mnewlib:
-      or32_libc = or32_libc_newlib;
+      or1k_libc = or1k_libc_newlib;
       return true;
     case OPT_muclibc:
-      or32_libc = or32_libc_uclibc;
+      or1k_libc = or1k_libc_uclibc;
       return true;
     case OPT_mglibc:
-      or32_libc = or32_libc_glibc;
+      or1k_libc = or1k_libc_glibc;
       return false;
     default:
       return true;
@@ -2395,34 +2395,34 @@ or32_handle_option (size_t code, const char *arg ATTRIBUTE_UNUSED,
    The final declaration is of the global "targetm" structure. */
 
 #undef TARGET_HANDLE_OPTION
-#define TARGET_HANDLE_OPTION or32_handle_option
+#define TARGET_HANDLE_OPTION or1k_handle_option
 
 /* Output assembly directives to switch to section name. The section should
    have attributes as specified by flags, which is a bit mask of the SECTION_*
    flags defined in ‘output.h’. If decl is non-NULL, it is the VAR_DECL or
    FUNCTION_DECL with which this section is associated.
 
-   For OR32, we use the default ELF sectioning. */
+   For OR1K, we use the default ELF sectioning. */
 #undef  TARGET_ASM_NAMED_SECTION
 #define TARGET_ASM_NAMED_SECTION  default_elf_asm_named_section
 
 #undef  TARGET_ASM_FUNCTION_PROLOGUE
-#define TARGET_ASM_FUNCTION_PROLOGUE or32_output_function_prologue
+#define TARGET_ASM_FUNCTION_PROLOGUE or1k_output_function_prologue
 
 #undef  TARGET_ASM_FUNCTION_EPILOGUE
-#define TARGET_ASM_FUNCTION_EPILOGUE or32_output_function_epilogue
+#define TARGET_ASM_FUNCTION_EPILOGUE or1k_output_function_epilogue
 
 #undef  TARGET_FUNCTION_VALUE
-#define TARGET_FUNCTION_VALUE or32_function_value
+#define TARGET_FUNCTION_VALUE or1k_function_value
 
 #undef  TARGET_FUNCTION_OK_FOR_SIBCALL
-#define TARGET_FUNCTION_OK_FOR_SIBCALL or32_function_ok_for_sibcall
+#define TARGET_FUNCTION_OK_FOR_SIBCALL or1k_function_ok_for_sibcall
 
 #undef  TARGET_PASS_BY_REFERENCE
-#define TARGET_PASS_BY_REFERENCE or32_pass_by_reference
+#define TARGET_PASS_BY_REFERENCE or1k_pass_by_reference
 
 #undef  TARGET_ARG_PARTIAL_BYTES
-#define TARGET_ARG_PARTIAL_BYTES or32_arg_partial_bytes
+#define TARGET_ARG_PARTIAL_BYTES or1k_arg_partial_bytes
 
 /* This target hook returns TRUE if an argument declared in a prototype as an
    integral type smaller than int should actually be passed as an int. In
@@ -2431,25 +2431,25 @@ or32_handle_option (size_t code, const char *arg ATTRIBUTE_UNUSED,
 
    The default is to not promote prototypes.
 
-   For the OR32 we do require this, so use a utility hook, which always
+   For the OR1K we do require this, so use a utility hook, which always
    returns TRUE. */
 #undef  TARGET_PROMOTE_PROTOTYPES
 #define TARGET_PROMOTE_PROTOTYPES hook_bool_const_tree_true
 
 #undef  TARGET_PROMOTE_FUNCTION_MODE
-#define TARGET_PROMOTE_FUNCTION_MODE or32_promote_function_mode
+#define TARGET_PROMOTE_FUNCTION_MODE or1k_promote_function_mode
 
 #undef  TARGET_LEGITIMATE_ADDRESS_P
-#define TARGET_LEGITIMATE_ADDRESS_P  or32_legitimate_address_p
+#define TARGET_LEGITIMATE_ADDRESS_P  or1k_legitimate_address_p
 
 #undef  TARGET_TRAMPOLINE_INIT
-#define TARGET_TRAMPOLINE_INIT  or32_trampoline_init
+#define TARGET_TRAMPOLINE_INIT  or1k_trampoline_init
 
 #undef TARGET_DWARF_CALLING_CONVENTION
-#define TARGET_DWARF_CALLING_CONVENTION  or32_dwarf_calling_convention
+#define TARGET_DWARF_CALLING_CONVENTION  or1k_dwarf_calling_convention
 
 #undef TARGET_ASM_OUTPUT_MI_THUNK
-#define TARGET_ASM_OUTPUT_MI_THUNK or32_output_mi_thunk
+#define TARGET_ASM_OUTPUT_MI_THUNK or1k_output_mi_thunk
 
 #undef TARGET_ASM_CAN_OUTPUT_MI_THUNK
 #define TARGET_ASM_CAN_OUTPUT_MI_THUNK hook_bool_const_tree_hwi_hwi_const_tree_true
@@ -2466,22 +2466,22 @@ or32_handle_option (size_t code, const char *arg ATTRIBUTE_UNUSED,
 
    JPB 1-Sep-10: Is this correct. We can only do 16-bit immediates directly. */
 static bool
-or32_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
+or1k_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 {
   return GET_CODE(x) != CONST_DOUBLE || (GET_MODE (x) == VOIDmode && !flag_pic);
 }
 #undef TARGET_LEGITIMATE_CONSTANT_P
-#define TARGET_LEGITIMATE_CONSTANT_P or32_legitimate_constant_p
+#define TARGET_LEGITIMATE_CONSTANT_P or1k_legitimate_constant_p
 
-/* On the OR32, no functions pop their arguments.
+/* On the OR1K, no functions pop their arguments.
    JPB 29-Aug-10: Is this really correct? */
 static int
-or32_return_pops_args (tree fundecl, tree funtype, int size)
+or1k_return_pops_args (tree fundecl, tree funtype, int size)
 {
   return 0;
 }
 #undef TARGET_RETURN_POPS_ARGS
-#define TARGET_RETURN_POPS_ARGS or32_return_pops_args
+#define TARGET_RETURN_POPS_ARGS or1k_return_pops_args
 
 /* Determine where to put an argument to a function.  Value is zero to push
    the argument on the stack, or a hard register in which to store the
@@ -2501,43 +2501,43 @@ or32_return_pops_args (tree fundecl, tree funtype, int size)
     On the ARC the first MAX_ARC_PARM_REGS args are normally in registers and
     the rest are pushed.  */
 static rtx
-or32_function_arg (cumulative_args_t cum, enum machine_mode mode,
+or1k_function_arg (cumulative_args_t cum, enum machine_mode mode,
                      const_tree type, bool named)
 {
   CUMULATIVE_ARGS *cum_pnt = get_cumulative_args (cum);
 
-  if (OR32_PASS_IN_REG_P (*cum_pnt, mode, type, named))
-    return gen_rtx_REG (mode, OR32_ROUND_ADVANCE_CUM (*cum_pnt, mode, type)
+  if (OR1K_PASS_IN_REG_P (*cum_pnt, mode, type, named))
+    return gen_rtx_REG (mode, OR1K_ROUND_ADVANCE_CUM (*cum_pnt, mode, type)
                           + GP_ARG_MIN_REG);
   else
     return 0;
 }
 #undef TARGET_FUNCTION_ARG
-#define TARGET_FUNCTION_ARG or32_function_arg
+#define TARGET_FUNCTION_ARG or1k_function_arg
 /* Update the data in "cum" to advance over an argument of mode "mode" and
    data type "type".  ("type" is null for libcalls where that information may
    not be available.)  */
 static void
-or32_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
+or1k_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
                            const_tree type, bool named)
 {
   CUMULATIVE_ARGS *cum_pnt = get_cumulative_args (cum);
 
-  *cum_pnt = OR32_ROUND_ADVANCE_CUM (*cum_pnt, mode, type)
-    + OR32_ROUND_ADVANCE_ARG (mode, type);
+  *cum_pnt = OR1K_ROUND_ADVANCE_CUM (*cum_pnt, mode, type)
+    + OR1K_ROUND_ADVANCE_ARG (mode, type);
 }
 
 #undef TARGET_FUNCTION_ARG_ADVANCE
-#define TARGET_FUNCTION_ARG_ADVANCE or32_function_arg_advance
+#define TARGET_FUNCTION_ARG_ADVANCE or1k_function_arg_advance
 
 #undef TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA
-#define TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA or32_output_addr_const_extra
+#define TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA or1k_output_addr_const_extra
 
 #undef TARGET_LEGITIMIZE_ADDRESS
-#define TARGET_LEGITIMIZE_ADDRESS or32_legitimize_address
+#define TARGET_LEGITIMIZE_ADDRESS or1k_legitimize_address
 
 #undef TARGET_PRINT_OPERAND_ADDRESS
-#define TARGET_PRINT_OPERAND_ADDRESS or32_print_operand_address
+#define TARGET_PRINT_OPERAND_ADDRESS or1k_print_operand_address
 
 /* Trampoline stubs are yet to be written. */
 /* #define TARGET_ASM_TRAMPOLINE_TEMPLATE */
@@ -2547,7 +2547,7 @@ or32_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
    more efficiently.  But don't increase the size of one or two byte
    structs.  */
 int
-or32_struct_alignment (tree t)
+or1k_struct_alignment (tree t)
 {
   unsigned HOST_WIDE_INT total = 0;
   int default_align_fields = 0;
@@ -2616,7 +2616,7 @@ or32_struct_alignment (tree t)
    Note that this can cause more struct copies to be inlined, so code
    size might increase, but so should perfromance.  */
 int
-or32_data_alignment (tree t, int align)
+or1k_data_alignment (tree t, int align)
 {
   if (align < FASTEST_ALIGNMENT && TREE_CODE (t) == ARRAY_TYPE)
     {

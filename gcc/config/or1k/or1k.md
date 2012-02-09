@@ -65,14 +65,14 @@
 ;;
 ;; I think this is all incorrect for the OR1K. The latency says when the
 ;; result will be ready, not how long the pipeline takes to execute.
-(define_cpu_unit "or32_alu")
-(define_insn_reservation "bit_unit" 3 (eq_attr "type" "shift") "or32_alu")
-(define_insn_reservation "lsu_load" 3 (eq_attr "type" "load") "or32_alu*3")
-(define_insn_reservation "lsu_store" 2 (eq_attr "type" "store") "or32_alu")
+(define_cpu_unit "or1k_alu")
+(define_insn_reservation "bit_unit" 3 (eq_attr "type" "shift") "or1k_alu")
+(define_insn_reservation "lsu_load" 3 (eq_attr "type" "load") "or1k_alu*3")
+(define_insn_reservation "lsu_store" 2 (eq_attr "type" "store") "or1k_alu")
 (define_insn_reservation "alu_unit" 2
                          (eq_attr "type" "add,logic,extend,move,compare")
-			 "or32_alu")
-(define_insn_reservation "mul_unit" 16 (eq_attr "type" "mul") "or32_alu*16")
+			 "or1k_alu")
+(define_insn_reservation "mul_unit" 16 (eq_attr "type" "mul") "or1k_alu*16")
 
 
 ;; Called after register allocation to add any instructions needed for the
@@ -86,7 +86,7 @@
   [(use (const_int 1))]
   "TARGET_SCHED_LOGUE"
 {
-  or32_expand_prologue ();
+  or1k_expand_prologue ();
   DONE;
 })
 
@@ -100,7 +100,7 @@
   [(use (const_int 2))]
   "TARGET_SCHED_LOGUE"
 {
-  or32_expand_epilogue (NULL_RTX);
+  or1k_expand_epilogue (NULL_RTX);
   DONE;
 })
 
@@ -111,7 +111,7 @@
   ""
   [(pc)]
 {
-  or32_expand_epilogue (curr_insn);
+  or1k_expand_epilogue (curr_insn);
   DONE;
 })
 
@@ -170,7 +170,7 @@
   ""
   "
 {
-  or32_expand_sibcall (0, XEXP (operands[0], 0), operands[1]); 
+  or1k_expand_sibcall (0, XEXP (operands[0], 0), operands[1]); 
   DONE;
 }")
 
@@ -181,7 +181,7 @@
   ""
   "
 {
-  or32_expand_sibcall (operands[0], XEXP (operands[1], 0), operands[2]); 
+  or1k_expand_sibcall (operands[0], XEXP (operands[1], 0), operands[2]); 
   DONE; 
 }")
 
@@ -293,7 +293,7 @@
 	(match_operand:SI 1 "general_operand" ""))]
   ""
 {
-  if (or32_expand_move (SImode, operands)) DONE;
+  if (or1k_expand_move (SImode, operands)) DONE;
 })
 
 ;;
@@ -338,7 +338,7 @@
 	(match_operand:SI 1 "immediate_operand" "i"))]
   "GET_CODE (operands[1]) != CONST_INT"
   "l.movhi \t%0,hi(%1)\;l.ori   \t%0,%0,lo(%1)"
-  ;; the switch of or32 bfd to Rela allows us to schedule insns separately.
+  ;; the switch of or1k bfd to Rela allows us to schedule insns separately.
   "(GET_CODE (operands[1]) != CONST_INT
     || ! (CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'I', \"I\")
 	  || CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'K', \"K\")
@@ -396,7 +396,7 @@
   "TARGET_MASK_CMOV"
   "
 {
-  if (or32_emit_cmove (operands[0], operands[1], operands[2], operands[3]))
+  if (or1k_emit_cmove (operands[0], operands[1], operands[2], operands[3]))
     DONE;
 }")
 
@@ -437,7 +437,7 @@
 	 (match_operand:SI 3 "register_operand" "r")))]
   "TARGET_MASK_CMOV"
   "*
-   return or32_output_cmov(operands);
+   return or1k_output_cmov(operands);
   ")
 
 ;;
@@ -481,8 +481,8 @@
 ;;  {
 ;;   if (GET_CODE (operands[0]) == MEM && GET_CODE (operands[1]) == MEM)
 ;;      operands[0] = force_reg (SImode, operands[0]);
-;;      or32_compare_op0 = operands[0];
-;;     or32_compare_op1 = operands[1];
+;;      or1k_compare_op0 = operands[0];
+;;     or1k_compare_op1 = operands[1];
 ;;      DONE;
 ;;      })
 
@@ -494,8 +494,8 @@
 ;;   {
 ;;    if (GET_CODE (operands[0]) == MEM && GET_CODE (operands[1]) == MEM)
 ;;       operands[0] = force_reg (SFmode, operands[0]);
-;;       or32_compare_op0 = operands[0];
-;;       or32_compare_op1 = operands[1];
+;;       or1k_compare_op0 = operands[0];
+;;       or1k_compare_op1 = operands[1];
 ;;       DONE;
 ;;       })
 
@@ -506,7 +506,7 @@
    (match_operand 3 "")]
    ""
    {
-   or32_expand_conditional_branch (operands, SImode);
+   or1k_expand_conditional_branch (operands, SImode);
    DONE;
    })
 
@@ -517,7 +517,7 @@
    (match_operand 3 "")]
    "TARGET_HARD_FLOAT"
    {
-   or32_expand_conditional_branch (operands, SFmode);
+   or1k_expand_conditional_branch (operands, SFmode);
    DONE;
    })
 
@@ -675,7 +675,7 @@
 		      (pc)))]
   ""
   "*
-   return or32_output_bf(operands);
+   return or1k_output_bf(operands);
   "
   [(set_attr "type" "branch")
    (set_attr "length" "1")])
@@ -691,7 +691,7 @@
 	(match_operand:DI 1 "general_operand"      " r, m, r, n"))]
   ""
   "*
-    return or32_output_move_double (operands);
+    return or1k_output_move_double (operands);
   "
   "&& reload_completed && CONSTANT_P (operands[1])"
   [(set (match_dup 2) (match_dup 3)) (set (match_dup 4) (match_dup 5))]
@@ -709,7 +709,7 @@
 	(match_operand:DF 1 "general_operand"      " r, m, r, i"))]
   ""
   "*
-    return or32_output_move_double (operands);
+    return or1k_output_move_double (operands);
   "
   [(set_attr "length" "2,2,2,3")])
 

@@ -1,4 +1,4 @@
-; Options for the OR32 port of the compiler
+; Options for the OR1K port of the compiler
 ; This file is part of GCC.
 ;
 ; Copyright (C) 2010 Embecosm Limited
@@ -66,7 +66,7 @@ Target RejectNegative Joined
 Link with libgloss configuration suitable for this board
 
 mnewlib
-Target Report RejectNegative Var(or32_libc,or32_libc_newlib) Init(OR32_LIBC_DEFAULT)
+Target Report RejectNegative Var(or1k_libc,or1k_libc_newlib) Init(OR1K_LIBC_DEFAULT)
 Compile for the Linux/Gnu/newlib based toolchain
 
 ;; muclibc / mglibc are defined in linux.opt, so we can't easily re-define
@@ -91,5 +91,5 @@ Target Report RejectNegative Mask(PADSTRUCT)
 Make structs a multiple of 4 bytes (warning: ABI altered)
 
 mredzone=
-Target RejectNegative Joined UInteger Var(or32_redzone) Init(128)
+Target RejectNegative Joined UInteger Var(or1k_redzone) Init(128)
 Set the size of the stack below sp that is assumed to be safe from interrupts.

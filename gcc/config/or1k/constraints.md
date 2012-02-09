@@ -61,4 +61,4 @@
   "@internal
    Registers that can be used unproblematically for a sibling call"
   (and (match_code "REG")
-       (match_test "!(or32_save_reg_p_cached (REGNO (op)))")))
+       (match_test "!(or1k_save_reg_p_cached (REGNO (op)))")))

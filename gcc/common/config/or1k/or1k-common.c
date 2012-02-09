@@ -1,4 +1,4 @@
-/* Common hooks for OR32.
+/* Common hooks for OR1K.
    Copyright (C) 2011 Free Software Foundation, Inc.
 
    This file is part of GCC.
@@ -25,7 +25,7 @@
 #include "common/common-target-def.h"
 
 /* Implement TARGET_OPTION_OPTIMIZATION_TABLE.  */
-static const struct default_options or32_option_optimization_table[] =
+static const struct default_options or1k_option_optimization_table[] =
   {
     { OPT_LEVELS_NONE, 0, NULL, 0 }
   };
@@ -34,7 +34,7 @@ static const struct default_options or32_option_optimization_table[] =
 #define TARGET_EXCEPT_UNWIND_INFO sjlj_except_unwind_info
 
 #undef TARGET_OPTION_OPTIMIZATION_TABLE
-#define TARGET_OPTION_OPTIMIZATION_TABLE or32_option_optimization_table
+#define TARGET_OPTION_OPTIMIZATION_TABLE or1k_option_optimization_table
 
 #undef  TARGET_DEFAULT_TARGET_FLAGS
 #define TARGET_DEFAULT_TARGET_FLAGS (MASK_HARD_MUL | MASK_SCHED_LOGUE)
