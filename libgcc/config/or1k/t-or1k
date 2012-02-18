@@ -19,14 +19,5 @@
 # along with GCC; see the file COPYING3.  If not see
 # <http://www.gnu.org/licenses/>.
 
-# .init/.fini section routines
-
-$(T)crti.o: $(srcdir)/config/or1k/crti.S $(GCC_PASSES) $(CONFIG_H)
-	$(GCC_FOR_TARGET) $(GCC_CFLAGS) $(INCLUDES) $(CRTSTUFF_T_CFLAGS) \
-	 $(MULTILIB_CFLAGS) -finhibit-size-directive -fno-inline-functions \
-	 -g0 -c $< -o $@
-
-$(T)crtn.o: $(srcdir)/config/or1k/crtn.S $(GCC_PASSES) $(CONFIG_H)
-	$(GCC_FOR_TARGET) $(GCC_CFLAGS) $(INCLUDES) $(CRTSTUFF_T_CFLAGS) \
-	 $(MULTILIB_CFLAGS) -finhibit-size-directive -fno-inline-functions \
-	 -g0 -c $< -o $@
+LIB1ASMSRC = or1k/or1k.S
+LIB1ASMFUNCS = __mulsi3 __udivsi3 __divsi3 __umodsi3 __modsi3

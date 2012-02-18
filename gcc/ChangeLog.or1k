@@ -1,3 +1,16 @@
+2012-02-18  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.S: moved to libgcc/config/or1k/or1k.S
+	* config/or1k/crti.S, gcc/config/or1k/crtn.S: deleted
+	* config/or1k/or1k.c: remove dwarf2 code since this has been
+	moved into it's own compiler pass (more will probably have to be
+	done about this but it seems to work ok for now); fix some
+	warnings; include <ansidecl.h>; remove INITIALIZER (what was it
+	supposed to do?)
+	* config/or1k/or1k.h: make SELECT_CC_MODE return an something
+	of correct type on failure instead of just 0
+	* config/or1k/t-or1k: remove a bunch of obsolete stuff
+
 2011-07-07  Giuseppe Scrivano  <giuseppe@southpole.se>
 
 	* config/or32/or32.c (or32_print_operand_address): New function.

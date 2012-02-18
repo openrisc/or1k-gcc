@@ -1,0 +1,4 @@
+2012-02-18  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.S: moved from gcc/config/or1k/or1k.S
+	* config/or1k/t-or1k: compile or1k.S

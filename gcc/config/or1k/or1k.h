@@ -829,7 +829,7 @@ enum reg_class
   : (LT  == (op)) ? CCLTmode						\
   : (GT  == (op)) ? CCGTmode						\
   : (LE  == (op)) ? CCLEmode						\
-  : (abort (), 0))
+  : (abort (), MAX_MACHINE_MODE))
 
 /* Can the condition code MODE be safely reversed?  This is safe in
    all cases on this port, because at present it doesn't use the
