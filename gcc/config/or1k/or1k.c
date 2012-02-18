@@ -53,6 +53,7 @@
 #include "langhooks.h"
 #include "df.h"
 #include "dwarf2.h"
+#include "ansidecl.h"
 
 /* ========================================================================== */
 /* Local macros                                                               */
@@ -486,7 +487,7 @@ or1k_print_operand_address (FILE *stream, rtx addr)
 
           or1k_print_operand_address (stream, sym);
 
-          if (XEXP (unspec, 1) == UNSPEC_GOTOFF)
+          if (XINT (unspec, 1) == UNSPEC_GOTOFF)
             fprintf (stream, "@GOTOFF");
 
           fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
@@ -1490,21 +1491,25 @@ or1k_output_function_prologue (FILE          *file,
 		   STACK_POINTER_REGNUM, -stack_size);
 	}
 
+#if 0 /* TODO: dwarf2out pass */
       /* Update the DWARF2 CFA using the new stack pointer. After this the CFA
 	 will be the SP + frame size, i.e. the FP (or start of frame if we
 	 don't actually have a FP). All register refs should relate to this. */
       if (dwarf2out_do_frame ())
 	{
 	  char *l = dwarf2out_cfi_label (false);
-
+          
 	  dwarf2out_def_cfa (l, STACK_POINTER_REGNUM, stack_size);
 	}
+#endif
     }
 
   /* Update the frame pointer if necessary */
   if (fp_save_area)
     {
+#if 0 /* TODO: dwarf2out pass */
       char *l     = dwarf2out_cfi_label (false);
+#endif
       int  offset = OR1K_ALIGN (crtl->outgoing_args_size, 4) + lr_save_area;
 
       fprintf (file, "\tl.sw\t%d(r%d),r%d\n", offset,
@@ -1517,25 +1522,31 @@ or1k_output_function_prologue (FILE          *file,
 	fprintf (file, "\tl.addi\tr%d,r%d,%d\n", HARD_FRAME_POINTER_REGNUM,
 		 STACK_POINTER_REGNUM, stack_size);
 
+#if 0 /* TODO: dwarf2out pass */
       /* The CFA is already pointing at the start of our frame (i.e. the new
 	 FP). The old FP has been saved relative to the SP, so we need to use
 	 stack_size to work out where. */
       dwarf2out_reg_save (l, HARD_FRAME_POINTER_REGNUM, offset - stack_size);
+#endif
     }
 
   /* Save the return address if necessary */
   if (lr_save_area)
     {
+#if 0 /* TODO: dwarf2out pass */
       char *l     = dwarf2out_cfi_label (false);
+#endif
       int  offset = OR1K_ALIGN (crtl->outgoing_args_size, 4);
 
       fprintf (file, "\tl.sw\t%d(r%d),r%d\n", offset, STACK_POINTER_REGNUM,
 	       LINK_REGNUM);
 
+#if 0 /* TODO: dwarf2out pass */
       /* The CFA is already pointing at the start of our frame (i.e. the new
 	 FP). The LR has been saved relative to the SP, so we need to use
 	 stack_size to work out where. */
       dwarf2out_reg_save (l, HARD_FRAME_POINTER_REGNUM, offset - stack_size);
+#endif
     }
 
   save_area = (OR1K_ALIGN (crtl->outgoing_args_size, 4)
@@ -1546,16 +1557,20 @@ or1k_output_function_prologue (FILE          *file,
     {
       if (df_regs_ever_live_p(regno) && !call_used_regs[regno])
 	{
+#if 0 /* TODO: dwarf2out pass */
 	  char *l = dwarf2out_cfi_label (false);
+#endif
 
 	  fprintf (file, "\tl.sw\t%d(r%d),r%d\n", save_area,
 		   STACK_POINTER_REGNUM, regno);
 
+#if 0 /* TODO: dwarf2out pass */
 	  /* The CFA is already pointing at the start of our frame (i.e. the
 	     new FP). The register has been saved relative to the SP, so we
 	     need to use stack_size to work out where. */
 	  dwarf2out_reg_save (l, HARD_FRAME_POINTER_REGNUM,
 			      save_area - stack_size);
+#endif
 	  save_area += 4;
 	}
     }
@@ -2084,7 +2099,7 @@ or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
 {
   if (GET_CODE(x) == SYMBOL_REF && flag_pic)
     {
-      ///TODO
+      /* TODO */
     }
 
   return x;
@@ -2476,7 +2491,7 @@ or1k_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 /* On the OR1K, no functions pop their arguments.
    JPB 29-Aug-10: Is this really correct? */
 static int
-or1k_return_pops_args (tree fundecl, tree funtype, int size)
+or1k_return_pops_args (tree ARG_UNUSED(fundecl), tree ARG_UNUSED(funtype), int ARG_UNUSED(size))
 {
   return 0;
 }
@@ -2519,7 +2534,7 @@ or1k_function_arg (cumulative_args_t cum, enum machine_mode mode,
    not be available.)  */
 static void
 or1k_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
-                           const_tree type, bool named)
+                           const_tree type, bool ARG_UNUSED(named))
 {
   CUMULATIVE_ARGS *cum_pnt = get_cumulative_args (cum);
 
@@ -2629,7 +2644,9 @@ or1k_data_alignment (tree t, int align)
   return align;
 }
 
+#if 0 /* TODO: not sure what this does */
 INITIALIZER;
+#endif
 
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;
