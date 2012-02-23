@@ -41,7 +41,6 @@
 	      && REGNO (op) <= LAST_VIRTUAL_REGISTER)))
     {
 
-      fprintf (stderr, "0\n");
       return 0;
     }
 

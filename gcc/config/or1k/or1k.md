@@ -262,7 +262,7 @@
 	      emit_insn (gen_movsi (reg, operands[1]));
 	      operands[1] = gen_lowpart (HImode, reg);
 	    }
-	  if (GET_CODE (operands[1]) == MEM && optimize > 0)
+	  else if (GET_CODE (operands[1]) == MEM && optimize > 0)
 	    {
 	      rtx reg = gen_reg_rtx (SImode);
 
@@ -336,14 +336,13 @@
 (define_insn_and_split "movsi_insn_big"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(match_operand:SI 1 "immediate_operand" "i"))]
-  "GET_CODE (operands[1]) != CONST_INT"
-  "l.movhi \t%0,hi(%1)\;l.ori   \t%0,%0,lo(%1)"
-  ;; the switch of or1k bfd to Rela allows us to schedule insns separately.
   "(GET_CODE (operands[1]) != CONST_INT
     || ! (CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'I', \"I\")
 	  || CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'K', \"K\")
-	  || CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'M', \"M\")))
-   && reload_completed
+	  || CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'M', \"M\")))"
+  "l.movhi \t%0,hi(%1)\;l.ori   \t%0,%0,lo(%1)"
+  ;; the switch of or1k bfd to Rela allows us to schedule insns separately.
+  "&& reload_completed
    && GET_CODE (operands[1]) != HIGH && GET_CODE (operands[1]) != LO_SUM"
   [(pc)]
 {
