@@ -1,3 +1,10 @@
+2012-02-23  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.md: change if to else if in condition for
+	"movhi" (shouldn't make a difference); fix conditions for
+	"movsi_insn_big"
+	* config/or1k/predicates.md: remove unneeded fprintf
+
 2012-02-18  Peter Gavin  <pgavin@gmail.com>
 
 	* config/or1k/or1k.S: moved to libgcc/config/or1k/or1k.S
