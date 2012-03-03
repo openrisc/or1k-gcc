@@ -1,0 +1,4 @@
+2012-03-03  Peter Gavin  <pgavin@gmail.com>
+
+	* config.picflag: no pic flag for or1k
+
