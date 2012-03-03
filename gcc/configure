@@ -4923,6 +4923,9 @@ case "${target}" in
     mips-sgi-irix6*)
 	# PIC is the default.
 	;;
+    or1k-*-*)
+        # not (yet) supported
+        ;;
     rs6000-ibm-aix* | powerpc-ibm-aix*)
 	# All AIX code is PIC.
 	;;
@@ -17970,7 +17973,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 17973 "configure"
+#line 17976 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -18076,7 +18079,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 18079 "configure"
+#line 18082 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
