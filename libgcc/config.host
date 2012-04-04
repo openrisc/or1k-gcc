@@ -809,7 +809,7 @@ moxie-*-rtems*)
 	extra_parts=
 	;;
 or1k*-*-*)
-  tmake_file="$tmake_file or1k/t-or1k or1k/t-linux"
+  tmake_file="$tmake_file or1k/t-or1k or1k/t-linux t-softfp-sfdf t-softfp"
   extra_parts="crtbegin.o crtbeginS.o crtbeginT.o crtend.o crtendS.o crti.o crtn.o"
   ;;
 pdp11-*-*)
