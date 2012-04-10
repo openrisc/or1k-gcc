@@ -655,13 +655,8 @@ enum reg_class
    ? OR1K_ROUND_ADVANCE (int_size_in_bytes (type))			\
    : OR1K_ROUND_ADVANCE (GET_MODE_SIZE (mode)))
 
-/* Round "cum" up to the necessary point for argument "mode"/"type".  This is
-   either rounded to nearest reg or nearest double-reg boundary */
-#define OR1K_ROUND_ADVANCE_CUM(cum, mode, type)				\
-  ((((mode) == BLKmode ? TYPE_ALIGN (type) : GET_MODE_BITSIZE (mode))	\
-    > BITS_PER_WORD)                                                  \
-   ? (((cum) + 1) & ~1)                                               \
-   : (cum))
+/* The ABI says that no rounding to even or odd words takes place.  */
+#define OR1K_ROUND_ADVANCE_CUM(cum, mode, type) (cum)
   
 /* Return boolean indicating if arg of type "type" and mode "mode" will be
    passed in a reg.  This includes arguments that have to be passed by

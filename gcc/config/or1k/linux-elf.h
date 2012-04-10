@@ -23,6 +23,10 @@ Boston, MA 02111-1307, USA.  */
 /* elfos.h should have already been included.  Now just override
    any conflicting definitions and add any extras.  */
 
+/* Run-time Target Specification.  */
+#undef  TARGET_VERSION
+#define TARGET_VERSION  fputs (" (OR1K GNU/Linux with ELF)", stderr);
+
 /* Do not assume anything about header files.  */
 #define NO_IMPLICIT_EXTERN_C
 
@@ -62,3 +66,24 @@ Boston, MA 02111-1307, USA.  */
 #define CPLUSPLUS_CPP_SPEC "-D_GNU_SOURCE %(cpp)"
 
 #undef DRIVER_SELF_SPECS
+
+/* Define a set of Linux builtins. This is copied from linux.h. We can't
+   include the whole file for now, because that causes configure to require ld
+   to support --eh-frame-header, which it currently doesn't */
+#define LINUX_TARGET_OS_CPP_BUILTINS()				\
+    do {							\
+	builtin_define ("__gnu_linux__");			\
+	builtin_define_std ("linux");				\
+	builtin_define_std ("unix");				\
+	builtin_assert ("system=linux");			\
+	builtin_assert ("system=unix");				\
+	builtin_assert ("system=posix");			\
+    } while (0)
+
+#define TARGET_OS_CPP_BUILTINS()				\
+  do {								\
+    LINUX_TARGET_OS_CPP_BUILTINS();				\
+    /* The GNU C++ standard library requires this.  */		\
+    if (c_dialect_cxx ())					\
+      builtin_define ("_GNU_SOURCE");				\
+  } while (0)
