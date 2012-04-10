@@ -1027,14 +1027,14 @@ enum reg_class
     JPB 29-Aug-10: This was using l.sub (since we don't have l.subi), so it
                    was potty code. Replaced by adding immediate -1. */
 #define ASM_OUTPUT_REG_PUSH(stream, regno)				\
-  { fprintf (stream, "\tl.addi\tr1,-4\n");				\
+  { fprintf (stream, "\tl.addi\tr1,r1,-4\n");				\
     fprintf (stream, "\tl.sw\t0(r1),%s\n", reg_names[regno]); }
 
 /* This is how to output an insn to pop a register from the stack.
    It need not be very fast code.  */
 #define ASM_OUTPUT_REG_POP(stream,REGNO)				\
   { fprintf (stream, "\tl.lwz\t%s,0(r1)\n", reg_names[REGNO]);		\
-    fprintf (stream, "\tl.addi\tr1,4\n"); }
+    fprintf (stream, "\tl.addi\tr1,r1,4\n"); }
 
 /* This is how to output an element of a case-vector that is absolute.
    (The Vax does not use such vectors,
