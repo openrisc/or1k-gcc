@@ -2585,7 +2585,8 @@ or1k_struct_alignment (tree t)
     {
       unsigned HOST_WIDE_INT field_size;
 
-      if (TREE_CODE (field) != FIELD_DECL)
+      if (TREE_CODE (field) != FIELD_DECL ||
+	  TREE_TYPE (field) == error_mark_node)
 	continue;
       /* If this is a field in a non-qualified union, or the sole field in
 	 a struct, and the alignment was set by the user, don't change the
