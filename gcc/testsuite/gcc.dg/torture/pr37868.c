@@ -1,6 +1,7 @@
 /* { dg-do run } */
 /* { dg-options "-fno-strict-aliasing" } */
 /* { dg-skip-if "unaligned access" { sparc*-*-* sh*-*-* tic6x-*-* } "*" "" } */
+/* { dg-skip-if "alignment exception" { or1k*-*-* } "*" "" } */
 
 extern void abort (void);
 #if (__SIZEOF_INT__ <= 2)

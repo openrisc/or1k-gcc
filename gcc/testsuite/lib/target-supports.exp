@@ -377,7 +377,8 @@ proc check_gc_sections_available { } {
 	# Some targets don't support gc-sections despite whatever's
 	# advertised by ld's options.
 	if { [istarget alpha*-*-*]
-	     || [istarget ia64-*-*] } {
+	     || [istarget ia64-*-*] 
+	     || [istarget or1k-*-*] } {
 	    set gc_sections_available_saved 0
 	    return 0
 	}
@@ -512,6 +513,7 @@ proc check_profiling_available { test_what } {
 	     || [istarget mmix-*-*]
 	     || [istarget mn10300-*-elf*]
 	     || [istarget moxie-*-elf*]
+	     || [istarget or1k-*-elf*]
 	     || [istarget picochip-*-*]
 	     || [istarget powerpc-*-eabi*]
 	     || [istarget powerpc-*-elf]
