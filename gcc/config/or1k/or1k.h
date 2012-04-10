@@ -682,11 +682,8 @@ enum reg_class
 	<= GP_ARG_NUM_REG)))
 
 /* Output assembler code to FILE to increment profiler label # LABELNO
-   for profiling a function entry.
-
-   JPB 29-Aug-10: This patently doesn't work. It is not even OR1K code! */
-#define FUNCTION_PROFILER(FILE, LABELNO)  \
-   fprintf (FILE, "\tl.load32u\tr0,LP%d\n\tcall\tmcount\n", (LABELNO));
+   for profiling a function entry. */
+#define FUNCTION_PROFILER(FILE, LABELNO)
 
 /* EXIT_IGNORE_STACK should be nonzero if, when returning from a function, the
    stack pointer does not matter.  The value is tested only in functions that
