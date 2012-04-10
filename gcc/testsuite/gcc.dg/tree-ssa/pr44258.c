@@ -15,7 +15,7 @@ struct str
 struct val
 {
   char y;
-  struct blah b2;
+  struct blah b2 __attribute__((packed)); /* { dg-warning "attribute ignored" "" { target { ! or1k-*-* } } } */
 };
 
 union U

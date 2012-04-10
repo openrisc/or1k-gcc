@@ -104,8 +104,8 @@ test2 (const H h)
   S *s[3];
   memset (s, 0, sizeof (S) * 3); /* { dg-warning "will always overflow" "memset" } */
 
-  struct T { char a[8]; char b[4]; char c[10]; } t;
-  stpcpy (t.c,"Testing..."); /* { dg-warning "will always overflow" "stpcpy" } */
+  struct T { char a[8]; char b[4]; char c[10]; } t; /* or1k pads this to 12 bytes, and __builtin_object_size (t.c, 0) gives the size of the full object.  */
+  stpcpy (t.c,"Testing..."); /* { dg-warning "will always overflow" "stpcpy" { target { ! or1k-*-* } } } */
 
   char b1[7];
   char b2[4];
