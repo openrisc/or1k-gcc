@@ -19,6 +19,8 @@
 
 // 21.3.1 basic_string constructors.
 
+// { dg-options " -DSTR_ITER=10" { target { or1k-*-elf } } }
+
 #include <iterator>
 #include <sstream>
 #include <cstdlib>

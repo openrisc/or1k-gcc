@@ -17,6 +17,8 @@
 // with this library; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
+// { dg-options " -DVALARRAY_SIZE=500000" { target { or1k-*-elf } } }
+
 #include <valarray>
 #include <testsuite_hooks.h>
 

@@ -19,6 +19,8 @@
 
 // 27.6.2.5.4 basic_ostream character inserters
 
+// { dg-options " -DSTR_LEN=500000" { target { or1k-*-elf } } }
+
 #include <ostream>
 #include <sstream>
 #include <testsuite_hooks.h>

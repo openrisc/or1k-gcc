@@ -1,6 +1,8 @@
 // Test vector: performance difference 25% (0.444s vs 0.539s)
 // Advice: set tmp as 10000
 
+// { dg-options " -DVEC_ITER=200" { target { or1k-*-elf } } }
+
 #include <vector>
 
 using std::vector;

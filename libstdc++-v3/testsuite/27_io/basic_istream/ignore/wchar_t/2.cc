@@ -17,6 +17,8 @@
 
 // 27.6.1.3 unformatted input functions
 
+// { dg-xfail-run-if "not supported on OR1K newlib" { or1k-*-elf } }
+
 #include <istream>
 #include <string>
 #include <fstream>

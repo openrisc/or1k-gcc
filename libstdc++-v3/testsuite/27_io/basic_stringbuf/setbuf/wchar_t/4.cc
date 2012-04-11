@@ -19,6 +19,8 @@
 
 // 27.8.1.4 Overridden virtual functions
 
+// { dg-options " -DMAX_SIZE_EXP=16" { target { or1k-*-elf } } }
+
 #include <sstream>
 #include <testsuite_hooks.h>
 
