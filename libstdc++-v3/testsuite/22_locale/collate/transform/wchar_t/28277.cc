@@ -19,6 +19,8 @@
 
 // 22.2.4.1.1 collate members
 
+// { dg-options " -DSTR_LEN=100000" { target { or1k-*-elf } } }
+
 #include <locale>
 #include <testsuite_hooks.h>
 

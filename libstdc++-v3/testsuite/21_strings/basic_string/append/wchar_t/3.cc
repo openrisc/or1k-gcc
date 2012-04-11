@@ -19,6 +19,8 @@
 
 // 21.3.5 string modifiers
 
+// { dg-options " -DSTR_LOOP_SIZE=9" { target { or1k-*-elf } } }
+
 #include <string>
 #include <testsuite_hooks.h>
 

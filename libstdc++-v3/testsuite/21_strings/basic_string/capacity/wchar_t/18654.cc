@@ -19,6 +19,8 @@
 
 // 21.3.3 string capacity
 
+// { dg-options " -DSTR_MAX_SIZE=16" { target { or1k-*-elf } } }
+
 #include <string>
 #include <testsuite_hooks.h>
 

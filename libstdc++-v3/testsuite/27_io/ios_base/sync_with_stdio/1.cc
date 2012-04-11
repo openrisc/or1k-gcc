@@ -30,6 +30,8 @@
 // test exited with a non-zero exit status.
 // { dg-do run { xfail { ! unwrapped } } }
 
+// { dg-xfail-run-if "not supported on OR1K newlib" { or1k-*-elf } }
+
 #include <cstdio>
 #include <sstream>
 #include <iostream>

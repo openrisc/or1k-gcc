@@ -19,6 +19,8 @@
 
 // 27.7.1.3 basic_stringbuf overridden virtual functions.
 
+// { dg-options " -DSTR_ITER=100000" { target { or1k-*-elf } } }
+
 #include <sstream>
 #include <cstdlib>
 #include <testsuite_hooks.h>
