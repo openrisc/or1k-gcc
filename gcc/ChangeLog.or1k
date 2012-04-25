@@ -1,3 +1,7 @@
+2012-04-25  Peter Gavin  <pgavin@gmail.com>
+
+	* gcc/config/or1k/default.h: remove (why is this here?)
+
 2012-03-03  Peter Gavin  <pgavin@gmail.com>
 
 	* configure: regenerated
