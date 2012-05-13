@@ -2095,7 +2095,7 @@ or1k_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
 
 static rtx
 or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
-                         enum machine_mode mode)
+                         enum machine_mode mode ATTRIBUTE_UNUSED)
 {
   if (GET_CODE(x) == SYMBOL_REF && flag_pic)
     {

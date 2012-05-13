@@ -28,6 +28,7 @@ extern int         or1k_trampoline_code_size (void);
 #ifdef RTX_CODE
 extern void        or1k_expand_prologue (void);
 extern void        or1k_expand_epilogue (rtx sibcall);
+extern bool        or1k_expand_move (enum machine_mode mode, rtx operands[]);
 extern const char *or1k_output_move_double (rtx *operands);
 extern void        or1k_expand_conditional_branch (rtx               *operands,
 						   enum machine_mode  mode);
