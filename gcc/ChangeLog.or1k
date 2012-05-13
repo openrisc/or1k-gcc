@@ -1,5 +1,17 @@
 2012-05-13  Peter Gavin  <pgavin@gmail.com>
 
+	* config/or1k/or1k.h: change some specs
+	(CONC_DIR) remove
+	(TARGET_PREFIX) remove
+	(EXTRA_SPECS) remove
+	(STARTFILE_SPEC) use %s to search for files instead of using target_prefix
+	(LINK_SPEC) set entry to 0x100 when using newlib; remove -L%(target_prefix)/...
+	(LIB_SPEC) use %s to search for files; use -lboard-${board} to
+	link, instead of adding -L.../${board} and using -lboard
+	- this fixes a problem finding the libraries when using multilibs
+
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
 	* config/or1k/or1k-protos.h: add prototype for
 	or1k_expand_move (suppresses "no previous prototype" warning)
 	* config/or1k/or1k.c: (or1k_legitimize_address) add
