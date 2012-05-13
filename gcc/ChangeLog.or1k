@@ -1,3 +1,10 @@
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k-protos.h: add prototype for
+	or1k_expand_move (suppresses "no previous prototype" warning)
+	* config/or1k/or1k.c: (or1k_legitimize_address) add
+	ATTRIBUTE_UNUSED to mode (suppresses unused variable warning)
+
 2012-04-25  Peter Gavin  <pgavin@gmail.com>
 
 	* gcc/config/or1k/default.h: remove (why is this here?)
