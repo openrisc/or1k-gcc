@@ -4,7 +4,7 @@
 #   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
 #   2011 Free Software Foundation, Inc.
 
-timestamp='2012-02-09'
+timestamp='2012-04-25'
 
 # This file is (in principle) common to ALL GNU software.
 # The presence of a machine in this file suggests that SOME GNU software
@@ -291,7 +291,7 @@ case $basic_machine in
 	| nios | nios2 \
 	| ns16k | ns32k \
 	| open8 \
-	| or1k \
+	| or1k | or1knd \
 	| pdp10 | pdp11 | pj | pjl \
 	| powerpc | powerpc64 | powerpc64le | powerpcle \
 	| pyramid \
@@ -903,6 +903,9 @@ case $basic_machine in
 		;;
 	or1k | or1k-*)
 		basic_machine=or1k-unknown
+		;;
+	or1knd | or1knd-*)
+		basic_machine=or1knd-unknown
 		;;
 	os400)
 		basic_machine=powerpc-ibm
@@ -1572,6 +1575,9 @@ case $basic_machine in
 		os=-elf
 		;;
 	or1k-*)
+		os=-coff
+		;;
+	or1knd-*)
 		os=-coff
 		;;
 	*-tti)	# must be before sparc entry or we get the wrong os.
