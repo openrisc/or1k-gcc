@@ -74,6 +74,9 @@
 #define OR1K_JR(rb)							\
   ((0x11 << 26) | ((rb) << 11))
 
+#define OR1K_NOP                                \
+  (0x15 << 24)
+
 /* ========================================================================== */
 /* Static variables (i.e. global to this file only.                           */
 
@@ -99,6 +102,17 @@ static struct
   int late_frame;
   HOST_WIDE_INT mask;
 }  frame_info;
+
+
+void
+or1k_asm_file_start(void)
+{
+  default_file_start();
+
+  if (TARGET_DELAY_OFF) {
+    fprintf(asm_out_file, "\t.nodelay\n");
+  }
+}
 
 
 /* ========================================================================== */
@@ -771,6 +785,18 @@ or1k_force_binary (enum machine_mode  mode,
 /* ========================================================================== */
 /* Global support functions                                                   */
 
+int
+or1k_trampoline_code_words (void)
+{
+  int words = 5;
+
+  /* need one more word in TARGET_DELAY_COMPAT mode to hold l.nop in delay slot */
+  if (TARGET_DELAY_COMPAT)
+    words++;
+  
+  return words;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Return the size in bytes of the trampoline code.
 
@@ -787,8 +813,7 @@ or1k_trampoline_code_size (void)
 {
   const int  TRAMP_BYTE_ALIGN = TRAMPOLINE_ALIGNMENT / 8;
 
-  /* Five 32-bit code words are needed */
-  return (5 * 4 + TRAMP_BYTE_ALIGN - 1) / TRAMP_BYTE_ALIGN * TRAMP_BYTE_ALIGN;
+  return (or1k_trampoline_code_words() * 4 + TRAMP_BYTE_ALIGN - 1) / TRAMP_BYTE_ALIGN * TRAMP_BYTE_ALIGN;
 
 }	/* or1k_trampoline_code_size () */
 
@@ -1684,24 +1709,39 @@ or1k_output_function_epilogue (FILE * file, HOST_WIDE_INT size)
     {
       fprintf (file, "\tl.movhi\tr3,hi(%d)\n", stack_size);
       fprintf (file, "\tl.ori\tr3,r3,lo(%d)\n", stack_size);
-
-      fprintf (file, "\tl.jr\tr%d\n", LINK_REGNUM);
-
-      fprintf (file, "\tl.add\tr%d,r%d,r3\n", STACK_POINTER_REGNUM,
-	       STACK_POINTER_REGNUM);
+      
+      if (TARGET_DELAY_ON) {
+        fprintf (file, "\tl.jr\tr%d\n", LINK_REGNUM);
+        fprintf (file, "\tl.add\tr%d,r%d,r3\n", STACK_POINTER_REGNUM,
+                 STACK_POINTER_REGNUM);
+      } else {
+        fprintf (file, "\tl.add\tr%d,r%d,r3\n", STACK_POINTER_REGNUM,
+                 STACK_POINTER_REGNUM);
+        fprintf (file, "\tl.jr\tr%d\n", LINK_REGNUM);
+        if (TARGET_DELAY_COMPAT)
+          fprintf(file, "\tl.nop\n");
+      }
     }
   else if (stack_size > 0)
     {
-      fprintf (file, "\tl.jr\tr%d\n", LINK_REGNUM);
-
-      fprintf (file, "\tl.addi\tr%d,r%d,%d\n", STACK_POINTER_REGNUM,
-	       STACK_POINTER_REGNUM, stack_size);
+      if (TARGET_DELAY_ON) {
+        fprintf (file, "\tl.jr\tr%d\n", LINK_REGNUM);
+        fprintf (file, "\tl.addi\tr%d,r%d,%d\n", STACK_POINTER_REGNUM,
+                 STACK_POINTER_REGNUM, stack_size);
+      } else {
+        fprintf (file, "\tl.addi\tr%d,r%d,%d\n", STACK_POINTER_REGNUM,
+                 STACK_POINTER_REGNUM, stack_size);
+        fprintf (file, "\tl.jr\tr%d\n", LINK_REGNUM);
+        if (TARGET_DELAY_COMPAT)
+          fprintf(file, "\tl.nop\n");
+      }
     }
   else
     {
       fprintf (file, "\tl.jr\tr%d\n", LINK_REGNUM);
-
-      fprintf (file, "\tl.nop\n");		/* Delay slot */
+      
+      if (TARGET_DELAY_ON || TARGET_DELAY_COMPAT)
+        fprintf (file, "\tl.nop\n");		/* Delay slot */
     }
 }	/* or1k_output_function_epilogue () */
 
@@ -2186,7 +2226,7 @@ or1k_trampoline_init (rtx   m_tramp,
   rtx  opcode;				/* RTX for generated opcodes */
   rtx  mem;				/* RTX for trampoline memory */
 
-  rtx trampoline[5];			/* The trampoline code */
+  rtx *trampoline;	/* The trampoline code */
 
   unsigned int  i;			/* Index into trampoline */
   unsigned int  j;			/* General counter */
@@ -2197,6 +2237,7 @@ or1k_trampoline_init (rtx   m_tramp,
 
   /* Work out the offsets of the pointers from the start of the trampoline
      code.  */
+  trampoline             = (rtx*) alloca (or1k_trampoline_code_words() * sizeof(rtx));
   end_addr_offset        = or1k_trampoline_code_size ();
   static_chain_offset    = end_addr_offset;
   target_function_offset = static_chain_offset + GET_MODE_SIZE (ptr_mode);
@@ -2240,15 +2281,24 @@ or1k_trampoline_init (rtx   m_tramp,
     gen_int_mode (OR1K_LWZ (13, 11, target_function_offset - end_addr_offset),
 		  SImode);
 
-  /* Emit the l.jr of the function. No bits to OR in here, so we can do the
-     opcode directly. */
-  trampoline[i++] = gen_int_mode (OR1K_JR (13), SImode);
-
-  /* Emit the l.lwz of the static chain. No bits to OR in here, so we can
-     do the opcode directly. */
-  trampoline[i++] =
-    gen_int_mode (OR1K_LWZ (STATIC_CHAIN_REGNUM, 11,
-			    static_chain_offset - end_addr_offset), SImode);
+  if (TARGET_DELAY_ON) {
+    /* Emit the l.jr of the function. No bits to OR in here, so we can do the
+       opcode directly. */
+    trampoline[i++] = gen_int_mode (OR1K_JR (13), SImode);
+    
+    /* Emit the l.lwz of the static chain. No bits to OR in here, so we can
+       do the opcode directly. */
+    trampoline[i++] =
+      gen_int_mode (OR1K_LWZ (STATIC_CHAIN_REGNUM, 11,
+                              static_chain_offset - end_addr_offset), SImode);
+  } else {
+    trampoline[i++] =
+      gen_int_mode (OR1K_LWZ (STATIC_CHAIN_REGNUM, 11,
+                              static_chain_offset - end_addr_offset), SImode);
+    trampoline[i++] = gen_int_mode (OR1K_JR (13), SImode);
+    if (TARGET_DELAY_COMPAT)
+      trampoline[i++] = gen_int_mode (OR1K_NOP, SImode);
+  }
 
   /* Copy the trampoline code.  Leave any padding uninitialized.  */
   for (j = 0; j < i; j++)
@@ -2350,11 +2400,21 @@ or1k_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 
 
   delta = or1k_output_highadd (file, this_name, PROLOGUE_TMP, delta);
-  if (!vcall_offset)
-    or1k_output_tailcall (file, function);
-  if (delta || !vcall_offset)
-    asm_fprintf (file, "\tl.addi\t%s,%s,%d\n",
-		 this_name, this_name, (int) delta);
+  if (TARGET_DELAY_ON) {
+    if (!vcall_offset)
+      or1k_output_tailcall (file, function);
+    if (delta || !vcall_offset)
+      asm_fprintf (file, "\tl.addi\t%s,%s,%d\n",
+                   this_name, this_name, (int) delta);
+  } else {
+    if (delta || !vcall_offset)
+      asm_fprintf (file, "\tl.addi\t%s,%s,%d\n",
+                   this_name, this_name, (int) delta);
+    if (!vcall_offset)
+      or1k_output_tailcall (file, function);
+    if (TARGET_DELAY_COMPAT)
+      asm_fprintf (file, "\tl.nop\n");
+  }
 
   /* If needed, add *(*THIS + VCALL_OFFSET) to THIS.  */
   if (vcall_offset != 0)
@@ -2371,8 +2431,15 @@ or1k_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 					  STATIC_CHAIN_REGNUM, vcall_offset);
       asm_fprintf (file, "\tl.lwz\t%s,%d(%s)\n",
                    tmp_name, (int) vcall_offset, tmp_name);
-      or1k_output_tailcall (file, function);
-      asm_fprintf (file, "\tl.add\t%s,%s,%s\n", this_name, this_name, tmp_name);
+      if (TARGET_DELAY_ON) {
+        or1k_output_tailcall (file, function);
+        asm_fprintf (file, "\tl.add\t%s,%s,%s\n", this_name, this_name, tmp_name);
+      } else {
+        asm_fprintf (file, "\tl.add\t%s,%s,%s\n", this_name, this_name, tmp_name);
+        or1k_output_tailcall (file, function);
+        if (TARGET_DELAY_COMPAT)
+          asm_fprintf (file, "\tl.nop\n");
+      }
     }
 }
 

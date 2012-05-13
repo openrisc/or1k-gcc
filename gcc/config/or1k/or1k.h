@@ -25,19 +25,29 @@ Boston, MA 02111-1307, USA.  */
 #ifndef _OR1K_H_
 #define _OR1K_H_
 
+#include "config/or1k/or1k-opts.h"
+
 /* Target CPU builtins */
-#define TARGET_CPU_CPP_BUILTINS()		\
-  do						\
-    {						\
-      builtin_define_std ("OR1K");		\
-      builtin_define_std ("or1k");		\
-      if (or1k_libc == or1k_libc_uclibc)	\
-	builtin_define ("__UCLIBC__");		\
-      builtin_assert ("cpu=or1k");		\
-      builtin_assert ("machine=or1k");		\
-    }						\
+#define TARGET_CPU_CPP_BUILTINS()                              \
+  do                                                           \
+    {                                                          \
+      builtin_define ("__OR1K__");                             \
+      builtin_define ("__or1k__");                             \
+      if (or1k_libc == or1k_libc_uclibc)                       \
+	builtin_define ("__UCLIBC__");                         \
+      if (TARGET_DELAY_ON)                                     \
+        builtin_define ("__OR1K_DELAY__");                     \
+      else if (TARGET_DELAY_OFF)                               \
+        builtin_define ("__OR1K_NODELAY__");                   \
+      else if (TARGET_DELAY_COMPAT)                            \
+        builtin_define ("__OR1K_DELAY_COMPAT__");              \
+      builtin_assert ("cpu=or1k");                             \
+      builtin_assert ("machine=or1k");                         \
+    }                                                          \
   while (0)
 
+#define TARGET_ASM_FILE_START or1k_asm_file_start
+void or1k_asm_file_start(void);
 
 #undef CPP_SPEC
 #define CPP_SPEC \
@@ -1132,9 +1142,9 @@ enum reg_class
     }									\
   else if (code == '(')							\
     {									\
-      if (dbr_sequence_length ())					\
+      if (TARGET_DELAY_ON && dbr_sequence_length ())                    \
 	fprintf (stream, "\t# delay slot filled");			\
-      else								\
+      else if (!TARGET_DELAY_OFF)                                       \
 	fprintf (stream, "\n\tl.nop\t\t\t# nop delay slot");		\
     }									\
   else if (code == 'C')							\
@@ -1183,7 +1193,18 @@ enum reg_class
 	abort ();							\
     }									\
   else if (code == 'J')							\
-    or1k_print_jump_restore (x);					\
+    {                                                                   \
+      if (TARGET_DELAY_ON)                                              \
+        or1k_print_jump_restore (x);                                    \
+      else if (TARGET_DELAY_COMPAT)                                     \
+        fprintf (stream, "\n\tl.nop");                                  \
+    }                                                                   \
+  else if (code == 'K')							\
+    {                                                                   \
+      /* yuck */                                                        \
+      if (!TARGET_DELAY_ON)                                             \
+        or1k_print_jump_restore (x);					\
+    }                                                                   \
   else if (GET_CODE (x) == REG)						\
     fprintf (stream, "%s", reg_names[REGNO (x)]);			\
   else if (GET_CODE (x) == MEM)						\

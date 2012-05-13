@@ -407,6 +407,9 @@ mips*-*-*)
 	extra_headers="loongson.h"
 	extra_options="${extra_options} g.opt mips/mips-tables.opt"
 	;;
+or1knd-*-*)
+        cpu_type=or1k
+        ;;
 picochip-*-*)
         cpu_type=picochip
         ;;
@@ -1888,14 +1891,26 @@ mn10300-*-*)
 or1k-*-elf*)
        tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h ${cpu_type}/elf.h"
        extra_parts="crti.o crtbegin.o crtend.o crtn.o"
-        tmake_file=or1k/t-or1k
-        tm_defines="${tm_defines} OR1K_LIBC_DEFAULT=or1k_libc_newlib"
+       tmake_file=or1k/t-or1k
+       tm_defines="${tm_defines} OR1K_LIBC_DEFAULT=or1k_libc_newlib OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
        ;;
 or1k-*-linux-*)
        tm_file="${tm_file} dbxelf.h elfos.h or1k/elf.h or1k/linux-gas.h or1k/linux-elf.h uclibc-stdint.h"
        tmake_file="or1k/t-or1k or1k/t-linux"
-        tm_defines="`echo $tm_defines|sed -e s/UCLIBC_DEFAULT=.//g`"
-        tm_defines="${tm_defines} UCLIBC_DEFAULT=1 OR1K_LIBC_DEFAULT=or1k_libc_uclibc"
+       tm_defines="`echo $tm_defines|sed -e s/UCLIBC_DEFAULT=.//g`"
+       tm_defines="${tm_defines} UCLIBC_DEFAULT=1 OR1K_LIBC_DEFAULT=or1k_libc_uclibc OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
+       ;;
+or1knd-*-elf*)
+       tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h ${cpu_type}/elf.h"
+       extra_parts="crti.o crtbegin.o crtend.o crtn.o"
+       tmake_file=or1k/t-or1knd
+       tm_defines="${tm_defines} OR1K_LIBC_DEFAULT=or1k_libc_newlib OR1K_DELAY_DEFAULT=OR1K_DELAY_OFF"
+       ;;
+or1knd-*-linux-*)
+       tm_file="${tm_file} dbxelf.h elfos.h or1k/elf.h or1k/linux-gas.h or1k/linux-elf.h uclibc-stdint.h"
+       tmake_file="or1k/t-or1knd or1k/t-linux"
+       tm_defines="`echo $tm_defines|sed -e s/UCLIBC_DEFAULT=.//g`"
+       tm_defines="${tm_defines} UCLIBC_DEFAULT=1 OR1K_LIBC_DEFAULT=or1k_libc_uclibc OR1K_DELAY_DEFAULT=OR1K_DELAY_OFF"
        ;;
 pdp11-*-*)
 	tm_file="${tm_file} newlib-stdint.h"

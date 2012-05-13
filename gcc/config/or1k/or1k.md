@@ -56,8 +56,12 @@
 
 ;; Single delay slot after branch or jump instructions, wich may contain any
 ;; instruction but another branch or jump.
-(define_delay (eq_attr "type" "branch,jump")
-               [(and (eq_attr "type" "!branch,jump")
+;; If TARGET_DELAY_OFF is not true, then never use delay slots.
+;; If TARGET_DELAY_ON is not true, no instruction will be allowed to
+;; fill the slot, and so it will be filled by a nop instead.
+(define_delay (and (match_test "!TARGET_DELAY_OFF") (eq_attr "type" "branch,jump"))
+               [(and (match_test "TARGET_DELAY_ON")
+		     (eq_attr "type" "!branch,jump")
 		     (eq_attr "length" "1")) (nil) (nil)])
 
 ;; ALU is modelled as a single functional unit, which is reserved for varying
@@ -193,7 +197,7 @@
   "@
    l.j\t%S0%(\t# sibcall s
    l.jr\t%0%(\t# sibcall Rsc
-   l.jr\t%0\t\t# sibcall r%J0"
+   %K0l.jr\t%0\t\t# sibcall r%J0"
   [(set_attr "type" "jump,jump,jump_restore")])
 
 
