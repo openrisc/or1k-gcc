@@ -20,12 +20,18 @@
 # see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 # <http://www.gnu.org/licenses/>.
 
+#include "or1k-asm.h"
+        
 	.section .init
 	l.lwz	r9,0(r1)
-	l.jr	r9
-	l.addi	r1,r1,4
+        OR1K_DELAYED(
+	OR1K_INST(l.addi	r1,r1,4),
+	OR1K_INST(l.jr	r9)
+        )
 
 	.section .fini
 	l.lwz	r9,0(r1)
-	l.jr	r9
-	l.addi	r1,r1,4
+        OR1K_DELAYED(
+	OR1K_INST(l.addi	r1,r1,4),
+	OR1K_INST(l.jr	r9)
+        )

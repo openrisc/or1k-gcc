@@ -19,5 +19,12 @@
 # along with GCC; see the file COPYING3.  If not see
 # <http://www.gnu.org/licenses/>.
 
-LIB1ASMSRC = or1k/or1k.S
-LIB1ASMFUNCS = __mulsi3 __udivsi3 __divsi3 __umodsi3 __modsi3
+# for now, don't use asm versions of these functions
+LIB2ADD = \
+        $(srcdir)/udivmod.c \
+        $(srcdir)/divmod.c \
+        $(srcdir)/udivmodsi4.c \
+        $(srcdir)/config/or1k/lib2funcs.c
+
+#LIB1ASMSRC = or1k/or1k.S
+#LIB1ASMFUNCS = __mulsi3 __udivsi3 __divsi3 __umodsi3 __modsi3
