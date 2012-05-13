@@ -1,5 +1,39 @@
 2012-05-13  Peter Gavin  <pgavin@gmail.com>
 
+	* gcc/config.gcc: add or1knd target; add OR1K_DELAY_DEFAULT
+	definitions to tm_defines for or1k and or1knd
+	* gcc/config/or1k/or1k-opts.h: new file; defines enum and flags
+	for delay slot options
+	* gcc/config/or1k/or1k.h: make delay slot optional
+	(TARGET_CPU_CPP_BUILTINS) define __OR1K_DELAY__, __OR1K_NODELAY__,
+	or __OR1K_DELAY_COMPAT__ depending on delay slot option chosen
+	(TARGET_ASM_FILE_START) new define
+	(or1k_asm_file_start) new prototype
+	(PRINT_OPERAND) emit different code depending on delay slot option
+	- added %K operand which is like %J but only emits code when no
+	delay slot
+	* gcc/config/or1k/or1k.c: make delay slot optional
+	(OR1K_NOP) new define, needed when inserting NOP in trampoline for
+	-mcompat-delay mode
+	(or1k_asm_file_start) new function; add ".nodelay" directive to
+	assembly file when not using delay slot
+	(or1k_trampoline_words) new function; return number of words in
+	trampoline. The number of words depends on whether a delay slot is
+	used
+	(or1k_trampoline_code_size) use or1k_trampoline_words
+	(or1k_output_function_epilogue) emit different code depending on
+	delay slot option
+	(or1k_trampoline_init) ditto
+	(or1k_output_mi_thunk) ditto
+	* gcc/config/or1k/or1k.md: make delay slot optional
+	- change when delay on branches & jumps is used
+	- add %K0 operand in sibcall with Rsc constraint
+	* gcc/config/or1k/or1k.opt: add -mdelay, -mno-delay -mcompat-delay flags
+	* gcc/config/or1k/t-or1k: add multilibs for no-delay and compat-delay
+	* gcc/config/or1k/t-or1knd: new file
+
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
 	* config/or1k/or1k.h: change some specs
 	(CONC_DIR) remove
 	(TARGET_PREFIX) remove

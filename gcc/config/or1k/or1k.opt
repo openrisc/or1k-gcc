@@ -17,6 +17,24 @@
 ; along with GCC; see the file COPYING3.  If not see
 ; <http://www.gnu.org/licenses/>.
 
+HeaderInclude
+config/or1k/or1k-opts.h
+
+Variable
+enum or1k_delay or1k_delay_selected = OR1K_DELAY_DEFAULT
+
+mdelay
+Target RejectNegative Negative(mno-delay) Var(or1k_delay_selected, OR1K_DELAY_ON)
+Assume branches and jumps have a delay slot
+
+mno-delay
+Target RejectNegative Negative(mcompat-delay) Var(or1k_delay_selected, OR1K_DELAY_OFF)
+Assume branches and jumps do not have a delay slot
+
+mcompat-delay
+Target RejectNegative Negative(mdelay) Var(or1k_delay_selected, OR1K_DELAY_COMPAT)
+Assume branches and jumps have a delay slot, but fill them with nops
+
 mhard-float
 Target RejectNegative Mask(HARD_FLOAT)
 Use hardware floating point
