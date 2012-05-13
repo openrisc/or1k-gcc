@@ -1,3 +1,14 @@
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
+	* config.host: add or1knd target
+	* config/or1k/or1k-asm.h: new file
+	- contains macros for making delay slot optional
+	* config/or1k/t-or1k: use C versions of divmod and mulsi3 for now
+	until asm versions are updated to use optional delay slot
+	* config/or1k/lib2funcs.c: new file; defines __mulsi3
+	* config/or1k/crti.S: include or1k-asm.h
+	* config/or1k/crtn.S: include or1k-asm.h; make delay slot optional
+
 2012-03-03  Peter Gavin  <pgavin@gmail.com>
 
 	* configure: regenerated

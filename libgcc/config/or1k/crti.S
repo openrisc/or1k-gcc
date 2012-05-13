@@ -20,6 +20,8 @@
 # see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 # <http://www.gnu.org/licenses/>.
 
+#include "or1k-asm.h"
+
 	.section .init
 	.global	__init
 	l.nop			 # So __init doesn't start at 0

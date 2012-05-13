@@ -135,9 +135,12 @@ mips*-*-*)
 	cpu_type=mips
 	tmake_file=mips/t-mips
 	;;
-or1k-*-*-*)
-  cpu_type=or1k
-  ;;
+or1k-*-*)
+	cpu_type=or1k
+	;;
+or1knd-*-*)
+	cpu_type=or1k
+	;;
 powerpc*-*-*)
 	cpu_type=rs6000
 	;;
