@@ -38,13 +38,6 @@ Boston, MA 02111-1307, USA.  */
     }						\
   while (0)
 
-/* A string corresponding to the installation directory for target libraries
-   and includes. Make it available to SPEC definitions via EXTRA_SPECS */
-#define CONC_DIR(dir1, dir2) dir1 "/../../" dir2
-#define TARGET_PREFIX CONC_DIR (STANDARD_EXEC_PREFIX, DEFAULT_TARGET_MACHINE)
-
-#define EXTRA_SPECS                                   \
-  { "target_prefix", TARGET_PREFIX }
 
 #undef CPP_SPEC
 #define CPP_SPEC \
@@ -53,28 +46,24 @@ Boston, MA 02111-1307, USA.  */
 /* Make sure we pick up the crti.o, crtbegin.o, crtend.o and crtn.o files. */
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC \
-  "%{!shared:"\
-    "%{mnewlib:%(target_prefix)/lib/crt0.o} "\
-    "%{!mnewlib:crt0.o%s} crti.o%s crtbegin.o%s}"
+  "%{!shared:crt0.o%s crti.o%s crtbegin.o%s}"
 
 #undef ENDFILE_SPEC
 #define ENDFILE_SPEC "crtend.o%s crtn.o%s"
 
-/* Specify the newlib library path if necessary */
 #undef LINK_SPEC
-#define LINK_SPEC "%{mnewlib:-L%(target_prefix)/newlib}%{static:-static}%{shared:-shared}"
+#define LINK_SPEC "%{mnewlib:-entry 0x100}%{static:-static}%{shared:-shared}"
 
 /* Override previous definitions (linux.h). Newlib doesn't have a profiling
    version of the library, but it does have a debugging version (libg.a) */
 #undef LIB_SPEC
-#define LIB_SPEC "%{!mnewlib:"					         \
-		   "%{pthread:"						 \
-		     "--whole-archive -lpthread --no-whole-archive} 	 \
-		   %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}               \
-                  %{mnewlib:%{!g:-lc -lor1k -lboard -u free -lc}         \
-                            %{g:-lg -lor1k -lboard -u free -lg}	         \
-                            %{mboard=*:-L%(target_prefix)/lib/boards/%*} \
-			    %{!mboard=*:-L%(target_prefix)/lib/boards/or1ksim}}"
+#define LIB_SPEC "%{!mnewlib:%{pthread:--whole-archive -lpthread --no-whole-archive}	\
+		             %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"			\
+                 "%{mnewlib:%{!g:-lc} %{g:-lg} -lor1k					\
+                            %{!static:%{mboard=*:-lboard-%*}				\
+			              %{!mboard=*:-lboard-or1ksim}}			\
+                            %{!g:-lc} %{g:-lg}						\
+                            }"
 
 /* Target machine storage layout */
 
