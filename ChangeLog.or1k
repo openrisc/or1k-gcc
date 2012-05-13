@@ -1,3 +1,7 @@
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
+	* config.guess, config.sub: add or1knd target
+
 2012-03-03  Peter Gavin  <pgavin@gmail.com>
 
 	* config.picflag: no pic flag for or1k

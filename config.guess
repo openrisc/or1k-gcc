@@ -945,6 +945,9 @@ EOF
     or1k:Linux:*:*)
 	echo or1k-unknown-linux-gnu
 	exit ;;
+    or1knd:Linux:*:*)
+	echo or1knd-unknown-linux-gnu
+	exit ;;
     padre:Linux:*:*)
 	echo sparc-unknown-linux-gnu
 	exit ;;
