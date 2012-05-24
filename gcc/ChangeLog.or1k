@@ -1,5 +1,13 @@
 2012-05-24  Peter Gavin  <pgavin@gmail.com>
 
+	remove some unneeded code
+	* config/or1k/or1k.c: remove use of INITIALIZER (was commented
+	anyways)
+	(calculate_stack_size) remove, never used
+	(or1k_frame_pointer_required) ditto
+
+2012-05-24  Peter Gavin  <pgavin@gmail.com>
+
 	remove sibcall support for or1k
 	* config/or1k/constraints.md:
 	(define_constraint "Rsc") removed
