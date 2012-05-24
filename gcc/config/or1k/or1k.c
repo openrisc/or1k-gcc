@@ -921,32 +921,12 @@ or1k_expand_prologue (void)
    to intermix instructions with the restores of the caller saved registers.
    In some cases, it might be necessary to emit a barrier instruction as the
    first insn to prevent such scheduling.
-
-   @param[in] sibcall  The sibcall epilogue insn if this is a sibcall return,
-                       NULL_RTX otherwise.                                             */
 /* -------------------------------------------------------------------------- */
 void
-or1k_expand_epilogue (rtx sibcall)
+or1k_expand_epilogue (void)
 {
   int total_size = or1k_compute_frame_size (get_frame_size ());
-  int sibcall_regno = FIRST_PSEUDO_REGISTER;
 
-  if (sibcall)
-    {
-      sibcall = next_nonnote_insn (sibcall);
-      gcc_assert (CALL_P (sibcall) && SIBLING_CALL_P (sibcall));
-      sibcall = XVECEXP (PATTERN (sibcall), 0, 0);
-      if (GET_CODE (sibcall) == SET)
-	sibcall = SET_SRC (sibcall);
-      gcc_assert (GET_CODE (sibcall) == CALL);
-      sibcall = XEXP (sibcall, 0);
-      gcc_assert (MEM_P (sibcall));
-      sibcall = XEXP (sibcall, 0);
-      if (REG_P (sibcall))
-	sibcall_regno = REGNO (sibcall);
-      else
-	gcc_assert (CONSTANT_P (sibcall));
-    }
   if (frame_info.save_fp_p)
     {
       emit_insn (gen_frame_dealloc_fp ());
@@ -987,7 +967,7 @@ or1k_expand_epilogue (rtx sibcall)
 	  if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
 	    continue;
 
-	  if (regno != sibcall_regno)
+	  if (regno != FIRST_PSEUDO_REGISTER)
 	    emit_insn
 	      (gen_rtx_SET (Pmode, gen_rtx_REG (Pmode, regno),
 			    stack_disp_mem (frame_info.gpr_offset + offset)));
@@ -998,33 +978,10 @@ or1k_expand_epilogue (rtx sibcall)
   if (frame_info.gpr_frame)
     emit_insn (gen_add2_insn (stack_pointer_rtx,
 			      GEN_INT (frame_info.gpr_frame)));
-  if (!sibcall)
-    emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, 9)));
+  emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, 9)));
 
 }	/* or1k_expand_epilogue () */
 
-/* We are outputting a jump which needs JUMP_ADDRESS, which is the
-   register it uses as jump destination, restored,
-   e.g. a sibcall using a callee-saved register.
-   Emit the register restore as delay slot insn.  */
-void
-or1k_print_jump_restore (rtx jump_address)
-{
-  int regno, jump_regno;
-  HOST_WIDE_INT offset = frame_info.gpr_offset;
-
-  gcc_assert (REG_P (jump_address));
-  jump_regno = REGNO (jump_address);
-  for (regno = 0; regno != jump_regno; regno++)
-    {
-      gcc_assert (regno <= OR1K_LAST_ACTUAL_REG);
-      if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
-	continue;
-      offset = offset + UNITS_PER_WORD;
-    }
-  asm_fprintf (asm_out_file, "\n\tl.lwz\tr%d,"HOST_WIDE_INT_PRINT_DEC"(r1)\n",
-	       jump_regno, offset);
-}
 
 
 /* -------------------------------------------------------------------------- */
@@ -1292,25 +1249,6 @@ or1k_output_cmov (rtx * operands)
 }	/* or1k_output_cmov () */
 
 
-/* -------------------------------------------------------------------------- */
-/*!Expand a sibcall pattern.
-
-   For now this is very simple way for sibcall support (i.e tail call
-   optimization).
-
-   @param[in] result     Not sure. RTX for the result location?
-   @param[in] addr       Not sure. RXT for the address to call?
-   @param[in] args_size  Not sure. RTX for the size of the args (in bytes?)?  */
-/* -------------------------------------------------------------------------- */
-void
-or1k_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
-		     rtx  addr,
-		     rtx  args_size)
-{
-  emit_call_insn (gen_sibcall_internal (addr, args_size));
-
-}	/* or1k_expand_sibcall () */
-
 static bool
 or1k_output_addr_const_extra (FILE *fp, rtx x)
 {
@@ -1492,8 +1430,7 @@ or1k_function_value (const_tree  ret_type,
    successful sibling call optimization may vary greatly between different
    architectures.
 
-   For the OR1K, we currently allow sibcall optimization whenever
-   -foptimize-sibling-calls is enabled.
+   For the OR1K, we currently don't allow sibcalls.
 
    @param[in] decl  The function for which we may optimize
    @param[in] exp   The call expression which is candidate for optimization.
@@ -1505,8 +1442,7 @@ static bool
 or1k_function_ok_for_sibcall (tree  decl ATTRIBUTE_UNUSED,
 			      tree  exp ATTRIBUTE_UNUSED)
 {
-  /* Assume up to 31 registers of 4 bytes might be saved.  */
-  return or1k_redzone >= 31 * 4;
+  return 0;
 }	/* or1k_function_ok_for_sibcall () */
 
 

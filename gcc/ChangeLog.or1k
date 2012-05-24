@@ -1,5 +1,30 @@
 2012-05-24  Peter Gavin  <pgavin@gmail.com>
 
+	remove sibcall support for or1k
+	* config/or1k/constraints.md:
+	(define_constraint "Rsc") removed
+	* config/or1k/predicates.md:
+	(define_predicate "sibcall_insn_operand") removed
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_epilogue) removed sibcall parameter
+	* config/or1k/or1k.h:
+	(PRINT_OPERAND) removed 'J' and 'K' constraints
+	* config/or1k/or1k.c:
+	(or1k_expand_epilogue) removed sibcall parameter, don't check for
+	sibcalls
+	(or1k_print_jump_restore) removed
+	(or1k_expand_sibcall) removed
+	(or1k_function_ok_for_sibcall) return 0 so sibcalls are never used
+	* config/or1k/or1k.md:
+	(define_constants UNSPECV_SIBCALL_EPILOGUE) removed
+	(define_expand "epilogue") don't pass null to or1k_expand_epilogue
+	(define_insn_and_split "sibcall_epilogue") removed
+	(define_expand "sibcall") removed
+	(define_expand "sibcall_value") removed
+	(define_insn "sibcall_internal") removed
+
+2012-05-24  Peter Gavin  <pgavin@gmail.com>
+
 	remove -mlogue flag, always use scheduled prologue/epilogue
 	* config/common/or1k-common.c:
 	(TARGET_DEFAULT_TARGET_FLAGS) remove MASK_SCHED_LOGUE

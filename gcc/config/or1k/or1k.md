@@ -38,9 +38,6 @@
   (UNSPEC_PIC_LABEL 4)
   (UNSPEC_SYMBOL_OFFSET 5)
   (UNSPEC_SET_GOT       101)
-
-  ;; unspec_volatile values
-  (UNSPECV_SIBCALL_EPILOGUE 0)
 ])
 
 (include "predicates.md")
@@ -104,18 +101,7 @@
   [(use (const_int 2))]
   ""
 {
-  or1k_expand_epilogue (NULL_RTX);
-  DONE;
-})
-
-(define_insn_and_split "sibcall_epilogue"
-  [(unspec_volatile [(const_int 2)] UNSPECV_SIBCALL_EPILOGUE)]
-  ""
-  "#"
-  ""
-  [(pc)]
-{
-  or1k_expand_epilogue (curr_insn);
+  or1k_expand_epilogue ();
   DONE;
 })
 
@@ -161,44 +147,6 @@
   "l.jr    \t%0%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
-
-;;
-;; Sibcalls
-;;
-
-(define_expand "sibcall"
-  [(parallel [(call (match_operand 0 "" "")
-                    (match_operand 1 "" ""))
-              (use (match_operand 2 "" ""))     ;; next_arg_reg
-              (use (match_operand 3 "" ""))])]  ;; struct_value_size_rtx
-  ""
-  "
-{
-  or1k_expand_sibcall (0, XEXP (operands[0], 0), operands[1]); 
-  DONE;
-}")
-
-(define_expand "sibcall_value"
-  [(set (match_operand 0 "" "")
-                   (call (match_operand:SI 1 "" "")
-                         (match_operand 2 "" "")))]
-  ""
-  "
-{
-  or1k_expand_sibcall (operands[0], XEXP (operands[1], 0), operands[2]); 
-  DONE; 
-}")
-
-(define_insn "sibcall_internal"
-  [(call (mem:SI (match_operand:SI 0 "sibcall_insn_operand" "s,Rsc,r"))
-         (match_operand 1 "" ""))
-   (use (reg:SI 9))]
-  ""
-  "@
-   l.j\t%S0%(\t# sibcall s
-   l.jr\t%0%(\t# sibcall Rsc
-   %K0l.jr\t%0\t\t# sibcall r%J0"
-  [(set_attr "type" "jump,jump,jump_restore")])
 
 
 

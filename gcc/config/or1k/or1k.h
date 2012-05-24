@@ -1192,19 +1192,6 @@ enum reg_class
       else								\
 	abort ();							\
     }									\
-  else if (code == 'J')							\
-    {                                                                   \
-      if (TARGET_DELAY_ON)                                              \
-        or1k_print_jump_restore (x);                                    \
-      else if (TARGET_DELAY_COMPAT)                                     \
-        fprintf (stream, "\n\tl.nop");                                  \
-    }                                                                   \
-  else if (code == 'K')							\
-    {                                                                   \
-      /* yuck */                                                        \
-      if (!TARGET_DELAY_ON)                                             \
-        or1k_print_jump_restore (x);					\
-    }                                                                   \
   else if (GET_CODE (x) == REG)						\
     fprintf (stream, "%s", reg_names[REGNO (x)]);			\
   else if (GET_CODE (x) == MEM)						\

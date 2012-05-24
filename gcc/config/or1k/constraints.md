@@ -57,8 +57,3 @@
   ""
   (match_code "const_double"))
 
-(define_constraint "Rsc"
-  "@internal
-   Registers that can be used unproblematically for a sibling call"
-  (and (match_code "REG")
-       (match_test "!(or1k_save_reg_p_cached (REGNO (op)))")))
