@@ -71,10 +71,6 @@ mcmov
 Target Mask(MASK_CMOV)
 Use conditional move instructions
 
-mlogue
-Target Mask(SCHED_LOGUE)
-Schedule prologue/epilogue
-
 mror
 Target Mask(MASK_ROR)
 Emit ROR instructions
