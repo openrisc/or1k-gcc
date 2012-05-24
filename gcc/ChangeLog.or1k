@@ -1,3 +1,11 @@
+2012-05-24  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.md:
+	(*cmpsi_gtu, *cmpsi_ltu, *cmpsi_geu, *cmpsi_leu) use K constraint
+	instead of I constraint because these are unsigned comparisons and
+	immediates will not be sign extended; this fixes failure on
+	testsuite/gcc.c-torture/execute/pr40404.c
+
 2012-05-13  Peter Gavin  <pgavin@gmail.com>
 
 	* gcc/config.gcc: add or1knd target; add OR1K_DELAY_DEFAULT

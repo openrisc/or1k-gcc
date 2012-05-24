@@ -562,7 +562,7 @@
 (define_insn "*cmpsi_gtu"
   [(set (reg:CCGTU CC_REG)
 	(compare:CCGTU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
+		       (match_operand:SI 1 "nonmemory_operand" "K,r")))]
   ""
   "@
    l.sfgtui\t%0,%1
@@ -580,7 +580,7 @@
 (define_insn "*cmpsi_ltu"
   [(set (reg:CCLTU CC_REG)
 	(compare:CCLTU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
+		       (match_operand:SI 1 "nonmemory_operand" "K,r")))]
   ""
   "@
    l.sfltui\t%0,%1
@@ -599,7 +599,7 @@
 (define_insn "*cmpsi_geu"
   [(set (reg:CCGEU CC_REG)
 	(compare:CCGEU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
+		       (match_operand:SI 1 "nonmemory_operand" "K,r")))]
   ""
   "@
    l.sfgeui\t%0,%1
@@ -618,7 +618,7 @@
 (define_insn "*cmpsi_leu"
   [(set (reg:CCLEU CC_REG)
 	(compare:CCLEU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
+		       (match_operand:SI 1 "nonmemory_operand" "K,r")))]
   ""
   "@
    l.sfleui\t%0,%1
