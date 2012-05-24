@@ -403,60 +403,6 @@ or1k_emit_int_cmove (rtx  dest,
 }	/* or1k_emit_int_cmove () */
 
 
-/* -------------------------------------------------------------------------- */
-/*!Calculate stack size for current function.
-
-   We need space for:
-   - any callee-saved registers that are live in the function
-   - any local variables
-   - the return address (if saved)
-   - the frame pointer (if saved)
-   - any outgoing arguments.
-
-   We also return information on whether the return address and frame pointer
-   must be saved, the space required to save callee-saved registers and the
-   sapce required to save the return address, frame pointer and outgoing
-   arguments.
-
-   Throughout adjust for OR1K alignment requirements.
-
-   @param[in]  vars           Bytes required for local variables (if any).
-   @param[out] lr_save_area   Space required for return address (if any).
-   @param[out] fp_save_area   Space required for frame pointer (if any).
-   @param[out] gpr_save_area  Space required for callee-saved registers (if
-                              any).
-   @param[out] save_area      Space required for outgoing arguments (if any) +
-                              return address (if any) and frame pointer (if
-                              any).
-
-   @return  Total space required (if any).                                    */
-/* -------------------------------------------------------------------------- */
-static int
-calculate_stack_size (int  vars,
-		      int *lr_save_area,
-		      int *fp_save_area,
-		      int *gpr_save_area,
-		      int *save_area)
-{
-  int regno;
-
-  *gpr_save_area = 0;
-  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    {
-      if (df_regs_ever_live_p(regno) && !call_used_regs[regno])
-	*gpr_save_area += 4;
-    }
-
-  *lr_save_area = (!current_function_is_leaf
-		   || df_regs_ever_live_p(LINK_REGNUM)) ? 4 : 0;
-  *fp_save_area = frame_pointer_needed ? 4 : 0;
-  *save_area    = (OR1K_ALIGN (crtl->outgoing_args_size, 4)
-		   + *lr_save_area + *fp_save_area);
-
-  return *save_area + *gpr_save_area + OR1K_ALIGN (vars, 4);
-
-}	/* calculate_stack_size () */
-
 static void
 or1k_print_operand_address (FILE *stream, rtx addr)
 {
@@ -1481,49 +1427,6 @@ or1k_pass_by_reference (cumulative_args_t  cum ATTRIBUTE_UNUSED,
 }	/* or1k_pass_by_reference () */
 
 
-#if 0
-/* -------------------------------------------------------------------------- */
-/*!Is a frame pointer required?
-
-   This target hook should return TRUE if a function must have and use a frame
-   pointer.  This target hook is called in the reload pass. If its return
-   value is TRUE the function will have a frame pointer.
-
-   This target hook can in principle examine the current function and decide
-   according to the facts, but on most machines the constant false or the
-   constant true suffices.  Use FALSE when the machine allows code to be
-   generated with no frame pointer, and doing so saves some time or space. Use
-   TRUE when there is no possible advantage to avoiding a frame pointer.
-
-   In certain cases, the compiler does not know how to produce valid code
-   without a frame pointer. The compiler recognizes those cases and
-   automatically gives the function a frame pointer regardless of what
-   TARGET_FRAME_POINTER_REQUIRED returns.  You don’t need to worry about them.
-
-   In a function that does not require a frame pointer, the frame pointer
-   register can be allocated for ordinary usage, unless you mark it as a fixed
-   register. See FIXED_REGISTERS for more information.
-
-   Default return value is false.
-
-   For the OR1K we do not need the frame pointer, so the default would have
-   sufficed.
-
-   JPB 30-Aug-10: The version supplied returned TRUE, which is patently the
-                  wrong answer. This function really could be eliminated and
-                  the default used.
-
-   @return  Non-zero (TRUE) if a frame pointer is not required, zero (FALSE)
-            otherwise.                                                        */
-/* -------------------------------------------------------------------------- */
-static bool
-or1k_frame_pointer_required (void)
-{
-	return 1;
-
-}	/* or1k_frame_pointer_required () */
-#endif
-
 int
 or1k_initial_elimination_offset(int from, int to)
 {
@@ -2309,10 +2212,6 @@ or1k_data_alignment (tree t, int align)
     }
   return align;
 }
-
-#if 0 /* TODO: not sure what this does */
-INITIALIZER;
-#endif
 
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;
