@@ -1,3 +1,21 @@
+2012-05-24  Peter Gavin  <pgavin@gmail.com>
+
+	remove -mlogue flag, always use scheduled prologue/epilogue
+	* config/common/or1k-common.c:
+	(TARGET_DEFAULT_TARGET_FLAGS) remove MASK_SCHED_LOGUE
+	* config/or1k/or1k.c:
+	(or1k_output_function_prologue) removed
+	(or1k_output_function_epilogue) removed
+	(TARGET_ASM_FUNCTION_PROLOGUE) removed
+	(TARGET_ASM_FUNCTION_EPILOGUE) removed
+	* config/or1k/or1k.md:
+	(prologue) remove TARGET_SCHED_LOGUE from constraints
+	(epilogue) ditto
+	(sibcall_epilogue) ditto
+	(return_internal) ditto
+	* config/or1k/or1k.opt:
+	(mlogue) removed
+
 2012-05-13  Peter Gavin  <pgavin@gmail.com>
 
 	* gcc/config.gcc: add or1knd target; add OR1K_DELAY_DEFAULT

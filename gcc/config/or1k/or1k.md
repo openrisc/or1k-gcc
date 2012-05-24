@@ -88,7 +88,7 @@
 
 (define_expand "prologue"
   [(use (const_int 1))]
-  "TARGET_SCHED_LOGUE"
+  ""
 {
   or1k_expand_prologue ();
   DONE;
@@ -102,7 +102,7 @@
 ;; first insn to prevent such scheduling.
 (define_expand "epilogue"
   [(use (const_int 2))]
-  "TARGET_SCHED_LOGUE"
+  ""
 {
   or1k_expand_epilogue (NULL_RTX);
   DONE;
@@ -110,7 +110,7 @@
 
 (define_insn_and_split "sibcall_epilogue"
   [(unspec_volatile [(const_int 2)] UNSPECV_SIBCALL_EPILOGUE)]
-  "TARGET_SCHED_LOGUE"
+  ""
   "#"
   ""
   [(pc)]
@@ -157,7 +157,7 @@
 (define_insn "return_internal"
   [(return)
    (use (match_operand 0 "pmode_register_operand" ""))]
-  "TARGET_SCHED_LOGUE"
+  ""
   "l.jr    \t%0%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
