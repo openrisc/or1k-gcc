@@ -29,29 +29,6 @@
   return 0;
 })
 
-(define_predicate "sibcall_insn_operand"
-  (match_code "subreg,reg,symbol_ref")
-{
-  /* Disallow indirect through a virtual register.  This leads to
-     compiler aborts when trying to eliminate them.  */
-  if (GET_CODE (op) == REG
-      && (op == arg_pointer_rtx
-	  || op == frame_pointer_rtx
-	  || (REGNO (op) >= FIRST_PSEUDO_REGISTER
-	      && REGNO (op) <= LAST_VIRTUAL_REGISTER)))
-    {
-
-      return 0;
-    }
-
-  /* Explicitly allow SYMBOL_REF even if pic.  */
-  if (GET_CODE (op) == SYMBOL_REF)
-    return 1;
-
-  /* Otherwise we can only allow register operands.  */
-  return register_operand (op, Pmode);
-})
-
 (define_predicate "input_operand"
   (match_code "subreg,reg,const_int,mem,const")
 {
