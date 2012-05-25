@@ -1189,9 +1189,9 @@ or1k_output_cmov (rtx * operands)
   mode_got  = GET_MODE (operands[4]);
 
   if (mode_calc != mode_got)
-    return "\tl.cmov\t%0,%3,%2";	/* reversed */
+    return "l.cmov\t%0,%3,%2";	/* reversed */
   else
-    return "\tl.cmov\t%0,%2,%3";
+    return "l.cmov\t%0,%2,%3";
 
 }	/* or1k_output_cmov () */
 
