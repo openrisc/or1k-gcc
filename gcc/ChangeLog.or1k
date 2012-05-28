@@ -1,3 +1,23 @@
+2012-05-28  Peter Gavin  <pgavin@gmail.com>
+
+	fix cmov
+	* config/or1k/or1k-protos.h:
+	(or1k_select_cc_mode) new prototype
+	* config/or1k/or1k.h:
+	(SELECT_CC_MODE) redefine to call or1k_select_cc_mode
+	(or1k_compare_op0) remove
+	(or1k_compare_op1) remove
+	* config/or1k/or1k.c:
+	(or1k_select_cc_mode) new function: does what SELECT_CC_MODE did,
+	but as a function; only takes one argument (the first), since the
+	second two in SELECT_CC_MODE are never used
+	(or1k_compare_op0) remove
+	(or1k_compare_op1) remove
+	(or1k_emit_int_cmov) use operands passed in instead of
+	or1k_compare_op[01]
+	(or1k_output_bf) call or1k_select_cc_mode instead of using SELECT_CC_MODE
+	(or1k_output_cmov) ditto
+
 2012-05-24  Peter Gavin  <pgavin@gmail.com>
 
 	remove some unneeded code

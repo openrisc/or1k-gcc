@@ -809,18 +809,7 @@ enum reg_class
 
 /* Given a comparison code (EQ, NE, etc.) and the first operand of a COMPARE,
    return the mode to be used for the comparison. */
-#define SELECT_CC_MODE(op, x, y)					\
-   ((EQ  == (op)) ? CCEQmode						\
-  : (NE  == (op)) ? CCNEmode						\
-  : (GEU == (op)) ? CCGEUmode						\
-  : (GTU == (op)) ? CCGTUmode						\
-  : (LTU == (op)) ? CCLTUmode						\
-  : (LEU == (op)) ? CCLEUmode						\
-  : (GE  == (op)) ? CCGEmode						\
-  : (LT  == (op)) ? CCLTmode						\
-  : (GT  == (op)) ? CCGTmode						\
-  : (LE  == (op)) ? CCLEmode						\
-  : (abort (), MAX_MACHINE_MODE))
+#define SELECT_CC_MODE(op, x, y) or1k_select_cc_mode(op)
 
 /* Can the condition code MODE be safely reversed?  This is safe in
    all cases on this port, because at present it doesn't use the
@@ -1209,10 +1198,6 @@ enum reg_class
 
    For the OR1K, there is no need for anything other than word alignment. */
 #define TRAMPOLINE_ALIGNMENT  32
-
-/* Mark functions for garbage collection. */
-extern GTY(()) rtx or1k_compare_op0;
-extern GTY(()) rtx or1k_compare_op1;
 
 /* GLIBC is not implemented, but we handle the selection for consistency
    with the Linux framework.  */
