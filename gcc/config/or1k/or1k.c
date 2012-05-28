@@ -81,11 +81,6 @@
 /* Static variables (i.e. global to this file only.                           */
 
 
-/* Save information from a "cmpxx" pattern until the branch or scc is
-   emitted. These record the two operands of the "cmpxx" */
-rtx  or1k_compare_op0;
-rtx  or1k_compare_op1;
-
 /*!Stack layout we use for pushing and poping saved registers */
 static struct
 {
@@ -308,6 +303,23 @@ stack_disp_mem (HOST_WIDE_INT disp)
   return gen_frame_mem (Pmode, plus_constant (stack_pointer_rtx, disp));
 }
 
+enum machine_mode
+or1k_select_cc_mode (enum rtx_code op)
+{
+  switch (op) {
+  case EQ:  return CCEQmode;
+  case NE:  return CCNEmode;
+  case GEU: return CCGEUmode;
+  case GTU: return CCGTUmode;
+  case LTU: return CCLTUmode;
+  case LEU: return CCLEUmode;
+  case GE:  return CCGEmode;
+  case LT:  return CCLTmode;
+  case GT:  return CCGTmode;
+  case LE:  return CCLEmode;
+  default:  gcc_unreachable ();
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /*!Generate insn patterns to do an integer compare of operands.
@@ -326,7 +338,7 @@ or1k_expand_int_compare (enum rtx_code  code,
   enum machine_mode cmpmode;
   rtx tmp, flags;
 
-  cmpmode = SELECT_CC_MODE (code, op0, op1);
+  cmpmode = or1k_select_cc_mode (code);
   flags = gen_rtx_REG (cmpmode, OR1K_FLAGS_REG);
 
   /* This is very simple, but making the interface the same as in the
@@ -381,18 +393,19 @@ or1k_emit_int_cmove (rtx  dest,
 		     rtx  false_cond)
 {
   rtx condition_rtx, cr;
+  rtx op0 = XEXP (op, 0);
+  rtx op1 = XEXP (op, 1);
 
-  if ((GET_MODE (or1k_compare_op0) != SImode) &&
-      (GET_MODE (or1k_compare_op0) != HImode) &&
-      (GET_MODE (or1k_compare_op0) != QImode))
+  if ((GET_MODE (op0) != SImode) &&
+      (GET_MODE (op0) != HImode) &&
+      (GET_MODE (op0) != QImode))
     {
       return 0;
     }
 
   /* We still have to do the compare, because cmov doesn't do a compare, it
      just looks at the FLAG bit set by a previous compare instruction.  */
-  condition_rtx = or1k_expand_compare (GET_CODE (op),
-				       or1k_compare_op0, or1k_compare_op1);
+  condition_rtx = or1k_expand_compare (GET_CODE (op), op0, op1);
 
   cr = XEXP (condition_rtx, 0);
 
@@ -1160,7 +1173,7 @@ or1k_output_bf (rtx * operands)
   enum machine_mode mode_calc, mode_got;
 
   code      = GET_CODE (operands[1]);
-  mode_calc = SELECT_CC_MODE (code, or1k_compare_op0, or1k_compare_op1);
+  mode_calc = or1k_select_cc_mode (code);
   mode_got  = GET_MODE (operands[2]);
 
   if (mode_calc != mode_got)
@@ -1184,7 +1197,7 @@ or1k_output_cmov (rtx * operands)
   enum machine_mode mode_calc, mode_got;
 
   code      = GET_CODE (operands[1]);
-  mode_calc = SELECT_CC_MODE (code, or1k_compare_op0, or1k_compare_op1);
+  mode_calc = or1k_select_cc_mode (code);
   mode_got  = GET_MODE (operands[4]);
 
   if (mode_calc != mode_got)

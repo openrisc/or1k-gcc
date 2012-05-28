@@ -36,6 +36,7 @@ extern int         or1k_emit_cmove (rtx  dest,
 				    rtx  op,
 				    rtx  true_cond,
 				    rtx  false_cond);
+extern enum machine_mode or1k_select_cc_mode (enum rtx_code op);
 extern const char *or1k_output_bf (rtx * operands);
 extern const char *or1k_output_cmov (rtx * operands);
 extern void        or1k_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
