@@ -28,22 +28,30 @@ Boston, MA 02111-1307, USA.  */
 #include "config/or1k/or1k-opts.h"
 
 /* Target CPU builtins */
-#define TARGET_CPU_CPP_BUILTINS()                              \
-  do                                                           \
-    {                                                          \
-      builtin_define ("__OR1K__");                             \
-      builtin_define ("__or1k__");                             \
-      if (or1k_libc == or1k_libc_uclibc)                       \
-	builtin_define ("__UCLIBC__");                         \
-      if (TARGET_DELAY_ON)                                     \
-        builtin_define ("__OR1K_DELAY__");                     \
-      else if (TARGET_DELAY_OFF)                               \
-        builtin_define ("__OR1K_NODELAY__");                   \
-      else if (TARGET_DELAY_COMPAT)                            \
-        builtin_define ("__OR1K_DELAY_COMPAT__");              \
-      builtin_assert ("cpu=or1k");                             \
-      builtin_assert ("machine=or1k");                         \
-    }                                                          \
+#define TARGET_CPU_CPP_BUILTINS()                       \
+  do                                                    \
+    {                                                   \
+      if (TARGET_DELAY_OFF) {                           \
+        builtin_define ("__OR1KND__");                  \
+        builtin_define ("__or1knd__");                  \
+        builtin_assert ("cpu=or1knd");                  \
+        builtin_assert ("machine=or1knd");              \
+      } else {                                          \
+        builtin_define ("__OR1K__");                    \
+        builtin_define ("__or1k__");                    \
+        builtin_assert ("cpu=or1k");                    \
+        builtin_assert ("machine=or1k");                \
+      }                                                 \
+      if (TARGET_DELAY_ON) {                            \
+        builtin_define ("__OR1K_DELAY__");              \
+      } else if (TARGET_DELAY_OFF) {                    \
+        builtin_define ("__OR1K_NODELAY__");            \
+      } else if (TARGET_DELAY_COMPAT) {                 \
+        builtin_define ("__OR1K_DELAY_COMPAT__");       \
+      }                                                 \
+      if (or1k_libc == or1k_libc_uclibc)                \
+	builtin_define ("__UCLIBC__");                  \
+    }                                                   \
   while (0)
 
 #define TARGET_ASM_FILE_START or1k_asm_file_start
