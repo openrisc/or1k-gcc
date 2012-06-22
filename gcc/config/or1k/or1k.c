@@ -1908,60 +1908,6 @@ or1k_output_tailcall (FILE *file, tree function)
   fputc ('\n', file);
 }
 
-static void
-or1k_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
-		      HOST_WIDE_INT delta, HOST_WIDE_INT vcall_offset,
-		      tree function)
-{
-  int this_regno
-    = aggregate_value_p (TREE_TYPE (TREE_TYPE (function)), function) ? 4 : 3;
-  const char *this_name = reg_names[this_regno];
-
-
-  delta = or1k_output_highadd (file, this_name, PROLOGUE_TMP, delta);
-  if (TARGET_DELAY_ON) {
-    if (!vcall_offset)
-      or1k_output_tailcall (file, function);
-    if (delta || !vcall_offset)
-      asm_fprintf (file, "\tl.addi\t%s,%s,%d\n",
-                   this_name, this_name, (int) delta);
-  } else {
-    if (delta || !vcall_offset)
-      asm_fprintf (file, "\tl.addi\t%s,%s,%d\n",
-                   this_name, this_name, (int) delta);
-    if (!vcall_offset)
-      or1k_output_tailcall (file, function);
-    if (TARGET_DELAY_COMPAT)
-      asm_fprintf (file, "\tl.nop\n");
-  }
-
-  /* If needed, add *(*THIS + VCALL_OFFSET) to THIS.  */
-  if (vcall_offset != 0)
-    {
-      const char *tmp_name = reg_names[PROLOGUE_TMP];
-
-      /* l.lwz tmp,0(this)           --> tmp = *this
-	 l.lwz tmp,vcall_offset(tmp) --> tmp = *(*this + vcall_offset)
-	 add this,this,tmp           --> this += *(*this + vcall_offset) */
-
-      asm_fprintf (file, "\tl.lwz\t%s,0(%s)\n",
-                   tmp_name, this_name);
-      vcall_offset = or1k_output_highadd (file, tmp_name,
-					  STATIC_CHAIN_REGNUM, vcall_offset);
-      asm_fprintf (file, "\tl.lwz\t%s,%d(%s)\n",
-                   tmp_name, (int) vcall_offset, tmp_name);
-      if (TARGET_DELAY_ON) {
-        or1k_output_tailcall (file, function);
-        asm_fprintf (file, "\tl.add\t%s,%s,%s\n", this_name, this_name, tmp_name);
-      } else {
-        asm_fprintf (file, "\tl.add\t%s,%s,%s\n", this_name, this_name, tmp_name);
-        or1k_output_tailcall (file, function);
-        if (TARGET_DELAY_COMPAT)
-          asm_fprintf (file, "\tl.nop\n");
-      }
-    }
-}
-
 /* ========================================================================== */
 /* Target hook initialization.
 
@@ -2021,12 +1967,6 @@ or1k_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 
 #undef TARGET_DWARF_CALLING_CONVENTION
 #define TARGET_DWARF_CALLING_CONVENTION  or1k_dwarf_calling_convention
-
-#undef TARGET_ASM_OUTPUT_MI_THUNK
-#define TARGET_ASM_OUTPUT_MI_THUNK or1k_output_mi_thunk
-
-#undef TARGET_ASM_CAN_OUTPUT_MI_THUNK
-#define TARGET_ASM_CAN_OUTPUT_MI_THUNK hook_bool_const_tree_hwi_hwi_const_tree_true
 
 /* uClibc has some instances where (non-coforming to ISO C) a non-varargs
    prototype is in scope when calling that function which is implemented

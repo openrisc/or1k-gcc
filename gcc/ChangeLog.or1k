@@ -1,5 +1,10 @@
 2012-06-22  Peter Gavin  <pgavin@gmail.com>
 
+	* config/or1k/or1k.c:
+	(or1k_output_mi_thunk) remove (not used?)
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
 	* config/or1k/or1k.c: properly terminate some comments
 
 2012-06-22  Peter Gavin  <pgavin@gmail.com>
