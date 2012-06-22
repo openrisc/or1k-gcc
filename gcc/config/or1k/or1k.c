@@ -788,7 +788,7 @@ or1k_trampoline_code_size (void)
    instructions in output_function_prologue(), since it allows the scheduler
    to intermix instructions with the saves of the caller saved registers.  In
    some cases, it might be necessary to emit a barrier instruction as the last
-   insn to prevent such scheduling.
+   insn to prevent such scheduling.                                           */
 /* -------------------------------------------------------------------------- */
 void
 or1k_expand_prologue (void)
@@ -878,7 +878,7 @@ or1k_expand_prologue (void)
    instructions in output_function_epilogue(), since it allows the scheduler
    to intermix instructions with the restores of the caller saved registers.
    In some cases, it might be necessary to emit a barrier instruction as the
-   first insn to prevent such scheduling.
+   first insn to prevent such scheduling.                                     */
 /* -------------------------------------------------------------------------- */
 void
 or1k_expand_epilogue (void)
