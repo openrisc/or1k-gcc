@@ -743,7 +743,7 @@ or1k_force_binary (enum machine_mode  mode,
 /* ========================================================================== */
 /* Global support functions                                                   */
 
-int
+static int
 or1k_trampoline_code_words (void)
 {
   int words = 5;

@@ -1,5 +1,10 @@
 2012-06-22  Peter Gavin  <pgavin@gmail.com>
 
+	* config/or1k/or1k.c:
+	(or1k_trampoline_code_words) make static
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
 	some fixes needed for update against mainline
 	* config/or1k/or1k-common.c: new file
 	(or1k_handle_option) moved from or1k.c
