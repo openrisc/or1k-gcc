@@ -144,7 +144,7 @@
   [(return)
    (use (match_operand 0 "pmode_register_operand" ""))]
   ""
-  "l.jr    \t%0%("
+  "l.jr    \t%0\t# return_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -281,7 +281,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(high:SI (match_operand:SI 1 "immediate_operand" "i")))]
   ""
-  "l.movhi  \t%0,hi(%1)"
+  "l.movhi  \t%0,hi(%1) # movsi_high"
 [(set_attr "type" "move")
    (set_attr "length" "1")])
 
@@ -486,8 +486,10 @@
 		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfeqi\t%0,%1
-   l.sfeq \t%0,%1")
+   l.sfeqi\t%0,%1 # cmpsi_eq
+   l.sfeq \t%0,%1 # cmpsi_eq"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsi_ne"
   [(set (reg:CCNE CC_REG)
@@ -495,8 +497,10 @@
 		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfnei\t%0,%1
-   l.sfne \t%0,%1")
+   l.sfnei\t%0,%1 # cmpsi_ne
+   l.sfne \t%0,%1 # cmpsi_ne"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsi_gt"
   [(set (reg:CCGT CC_REG)
@@ -504,8 +508,10 @@
 		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfgtsi\t%0,%1
-   l.sfgts \t%0,%1")
+   l.sfgtsi\t%0,%1 # cmpsi_gt
+   l.sfgts \t%0,%1 # cmpsi_gt"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsi_gtu"
   [(set (reg:CCGTU CC_REG)
@@ -513,8 +519,10 @@
 		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfgtui\t%0,%1
-   l.sfgtu \t%0,%1")
+   l.sfgtui\t%0,%1 # cmpsi_gtu
+   l.sfgtu \t%0,%1 # cmpsi_gtu"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsi_lt"
   [(set (reg:CCLT CC_REG)
@@ -522,8 +530,10 @@
 		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfltsi\t%0,%1
-   l.sflts \t%0,%1")
+   l.sfltsi\t%0,%1 # cmpsi_lt
+   l.sflts \t%0,%1 # cmpsi_lt"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsi_ltu"
   [(set (reg:CCLTU CC_REG)
@@ -531,8 +541,10 @@
 		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfltui\t%0,%1
-   l.sfltu \t%0,%1")
+   l.sfltui\t%0,%1 # cmpsi_ltu
+   l.sfltu \t%0,%1 # cmpsi_ltu"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsi_ge"
   [(set (reg:CCGE CC_REG)
@@ -540,8 +552,10 @@
 		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfgesi\t%0,%1
-   l.sfges \t%0,%1")
+   l.sfgesi\t%0,%1 # cmpsi_ge
+   l.sfges \t%0,%1 # cmpsi_ge"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 
 (define_insn "*cmpsi_geu"
@@ -550,8 +564,10 @@
 		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfgeui\t%0,%1
-   l.sfgeu \t%0,%1")
+   l.sfgeui\t%0,%1 # cmpsi_geu
+   l.sfgeu \t%0,%1 # cmpsi_geu"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 
 (define_insn "*cmpsi_le"
@@ -560,8 +576,10 @@
 		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sflesi\t%0,%1
-   l.sfles \t%0,%1")
+   l.sflesi\t%0,%1 # cmpsi_le
+   l.sfles \t%0,%1 # cmpsi_le"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsi_leu"
   [(set (reg:CCLEU CC_REG)
@@ -569,8 +587,10 @@
 		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
   ""
   "@
-   l.sfleui\t%0,%1
-   l.sfleu \t%0,%1")
+   l.sfleui\t%0,%1 # cmpsi_leu
+   l.sfleu \t%0,%1 # cmpsi_leu"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 ;; Single precision floating point evaluation instructions
 (define_insn "*cmpsf_eq"
@@ -578,14 +598,18 @@
 	(compare:CCEQ (match_operand:SF 0 "register_operand" "r,r")
 		      (match_operand:SF 1 "register_operand" "r,r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sfeq.s\t%0,%1")
+  "lf.sfeq.s\t%0,%1 # cmpsf_eq"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsf_ne"
   [(set (reg:CCNE CC_REG)
 	(compare:CCNE (match_operand:SF 0 "register_operand" "r,r")
 		      (match_operand:SF 1 "register_operand" "r,r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sfne.s\t%0,%1")
+  "lf.sfne.s\t%0,%1 # cmpsf_ne"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 
 (define_insn "*cmpsf_gt"
@@ -593,14 +617,18 @@
 	(compare:CCGT (match_operand:SF 0 "register_operand" "r,r")
 		      (match_operand:SF 1 "register_operand" "r,r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sfgt.s\t%0,%1")
+  "lf.sfgt.s\t%0,%1 # cmpsf_gt"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsf_ge"
   [(set (reg:CCGE CC_REG)
 	(compare:CCGE (match_operand:SF 0 "register_operand" "r,r")
 		      (match_operand:SF 1 "register_operand" "r,r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sfge.s\t%0,%1")
+  "lf.sfge.s\t%0,%1 # cmpsf_ge"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 
 (define_insn "*cmpsf_lt"
@@ -608,14 +636,18 @@
 	(compare:CCLT (match_operand:SF 0 "register_operand" "r,r")
 		      (match_operand:SF 1 "register_operand" "r,r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sflt.s\t%0,%1")
+  "lf.sflt.s\t%0,%1 # cmpsf_lt"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*cmpsf_le"
   [(set (reg:CCLE CC_REG)
 	(compare:CCLE (match_operand:SF 0 "register_operand" "r,r")
 		      (match_operand:SF 1 "register_operand" "r,r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sfle.s\t%0,%1")
+  "lf.sfle.s\t%0,%1 # cmpsf_le"
+  [(set_attr "type" "compare")
+   (set_attr "length" "1")])
 
 (define_insn "*bf"
   [(set (pc)
@@ -822,8 +854,8 @@
                    (match_operand:SI 2 "nonmemory_operand" "r,L")))]
   ""
   "@
-   l.sll   \t%0,%1,%2
-   l.slli  \t%0,%1,%2"
+   l.sll   \t%0,%1,%2 # ashlsi3
+   l.slli  \t%0,%1,%2 # ashlsi3"
   [(set_attr "type" "shift,shift")
    (set_attr "length" "1,1")])
 
@@ -833,8 +865,8 @@
                    (match_operand:SI 2 "nonmemory_operand" "r,L")))]
   ""
   "@
-   l.sra   \t%0,%1,%2
-   l.srai  \t%0,%1,%2"
+   l.sra   \t%0,%1,%2 # ashrsi3
+   l.srai  \t%0,%1,%2 # ashrsi3"
   [(set_attr "type" "shift,shift")
    (set_attr "length" "1,1")])
 
@@ -844,8 +876,8 @@
                    (match_operand:SI 2 "nonmemory_operand" "r,L")))]
   ""
   "@
-   l.srl   \t%0,%1,%2
-   l.srli  \t%0,%1,%2"
+   l.srl   \t%0,%1,%2 # lshrsi3
+   l.srli  \t%0,%1,%2 # lshrsi3"
   [(set_attr "type" "shift,shift")
    (set_attr "length" "1,1")])
 
@@ -855,8 +887,8 @@
                    (match_operand:SI 2 "nonmemory_operand" "r,L")))]
   "TARGET_MASK_ROR"
   "@
-   l.ror   \t%0,%1,%2
-   l.rori  \t%0,%1,%2"
+   l.ror   \t%0,%1,%2 # rotrsi3
+   l.rori  \t%0,%1,%2 # rotrsi3"
   [(set_attr "type" "shift,shift")
    (set_attr "length" "1,1")])
 
@@ -870,8 +902,8 @@
 		(match_operand:SI 2 "nonmemory_operand" "r,K")))]
   ""
   "@
-   l.and   \t%0,%1,%2
-   l.andi  \t%0,%1,%2"
+   l.and   \t%0,%1,%2 # andsi3
+   l.andi  \t%0,%1,%2 # andsi3"
   [(set_attr "type" "logic,logic")
    (set_attr "length" "1,1")])
 
@@ -881,8 +913,8 @@
 		(match_operand:SI 2 "nonmemory_operand" "r,K")))]
   ""
   "@
-   l.or    \t%0,%1,%2
-   l.ori   \t%0,%1,%2"
+   l.or    \t%0,%1,%2 # iorsi3
+   l.ori   \t%0,%1,%2 # iorsi3"
   [(set_attr "type" "logic,logic")
    (set_attr "length" "1,1")])
 
@@ -892,8 +924,8 @@
 		(match_operand:SI 2 "nonmemory_operand" "r,I")))]
   ""
   "@
-   l.xor   \t%0,%1,%2
-   l.xori  \t%0,%1,%2"
+   l.xor   \t%0,%1,%2 # xorsi3
+   l.xori  \t%0,%1,%2 # xorsi3"
   [(set_attr "type" "logic,logic")
    (set_attr "length" "1,1")])
 
@@ -901,7 +933,7 @@
   [(set (match_operand:QI 0 "register_operand" "=r")
 	(not:QI (match_operand:QI 1 "register_operand" "r")))]
   ""
-  "l.xori  \t%0,%1,0x00ff"
+  "l.xori  \t%0,%1,0x00ff # one_cmplqi2"
   [(set_attr "type" "logic")
    (set_attr "length" "1")])
 
@@ -909,7 +941,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(not:SI (match_operand:SI 1 "register_operand" "r")))]
   ""
-  "l.xori  \t%0,%1,0xffff"
+  "l.xori  \t%0,%1,0xffff # one_cmplsi2"
   [(set_attr "type" "logic")
    (set_attr "length" "1")])
 
@@ -921,7 +953,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(neg:SI (match_operand:SI 1 "register_operand" "r")))]
   ""
-  "l.sub   \t%0,r0,%1"
+  "l.sub   \t%0,r0,%1 # negsi2"
   [(set_attr "type" "add")
    (set_attr "length" "1")])
 
@@ -942,8 +974,8 @@
 		  (match_operand:SI 2 "nonmemory_operand" "r,I")))]
   ""
   "@
-   l.sub   \t%0,%1,%2
-   l.addi  \t%0,%1,%n2"
+   l.sub   \t%0,%1,%2 # subsi3
+   l.addi  \t%0,%1,%n2 # subsi3"
   [(set_attr "type" "add,add")]
 )
 
@@ -956,7 +988,7 @@
         (mult:SI (match_operand:SI 1 "register_operand" "r")
                  (match_operand:SI 2 "register_operand" "r")))]
   "TARGET_HARD_MUL"
-  "l.mul   \t%0,%1,%2"
+  "l.mul   \t%0,%1,%2 # mulsi3"
   [(set_attr "type" "mul")
    (set_attr "length" "1")])
 
@@ -965,7 +997,7 @@
         (div:SI (match_operand:SI 1 "register_operand" "r")
                  (match_operand:SI 2 "register_operand" "r")))]
   "TARGET_HARD_DIV"
-  "l.div   \t%0,%1,%2"
+  "l.div   \t%0,%1,%2 # divsi3"
   [(set_attr "type" "mul")
    (set_attr "length" "1")])
 
@@ -974,7 +1006,7 @@
         (udiv:SI (match_operand:SI 1 "register_operand" "r")
                  (match_operand:SI 2 "register_operand" "r")))]
   "TARGET_HARD_DIV"
-  "l.divu  \t%0,%1,%2"
+  "l.divu  \t%0,%1,%2 # udivsi3"
   [(set_attr "type" "mul")
    (set_attr "length" "1")])
 
@@ -998,7 +1030,7 @@
   [(set (pc)
 	(label_ref (match_operand 0 "" "")))]
   ""
-  "l.j     \t%l0%("
+  "l.j     \t%l0 # jump_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1017,7 +1049,7 @@
 (define_insn "indirect_jump_internal"
   [(set (pc) (match_operand:SI 0 "register_operand" "r"))]
   ""
-  "l.jr    \t%0%("
+  "l.jr    \t%0 # indirect_jump_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1043,7 +1075,7 @@
                   (match_operand 1 "" "i"))
             (clobber (reg:SI 9))])]
   ""
-  "l.jal   \t%S0%("
+  "l.jal   \t%S0# call_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1067,7 +1099,7 @@
                         (match_operand 2 "" "i")))
             (clobber (reg:SI 9))])]
   ""
-  "l.jal   \t%S1%("
+  "l.jal   \t%S1 # call_value_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1091,7 +1123,7 @@
                          (match_operand 2 "" "i")))
               (clobber (reg:SI 9))])]
   ""
-  "l.jalr  \t%1%("
+  "l.jalr  \t%1 # call_value_indirect_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1113,7 +1145,7 @@
                   (match_operand 1 "" "i"))
               (clobber (reg:SI 9))])]
   ""
-  "l.jalr  \t%0%("
+  "l.jalr  \t%0 # call_indirect_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1138,7 +1170,7 @@
   [(set (pc) (match_operand:SI 0 "register_operand" "r"))
    (use (label_ref (match_operand 1 "" "")))]
   ""
-  "l.jr    \t%0%("
+  "l.jr    \t%0 # tablejump_internal%("
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1163,7 +1195,7 @@
         (plus:SF (match_operand:SF 1 "register_operand" "r")
                  (match_operand:SF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.add.s\t%0,%1,%2"
+  "lf.add.s\t%0,%1,%2 # addsf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
    
@@ -1172,7 +1204,7 @@
         (plus:DF (match_operand:DF 1 "register_operand" "r")
                  (match_operand:DF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.add.d\t%0,%1,%2"
+  "lf.add.d\t%0,%1,%2 # adddf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
 
@@ -1181,7 +1213,7 @@
         (minus:SF (match_operand:SF 1 "register_operand" "r")
                  (match_operand:SF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sub.s\t%0,%1,%2"
+  "lf.sub.s\t%0,%1,%2 # subsf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
 
@@ -1190,7 +1222,7 @@
         (minus:DF (match_operand:DF 1 "register_operand" "r")
 		  (match_operand:DF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.sub.d\t%0,%1,%2"
+  "lf.sub.d\t%0,%1,%2 # subdf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
 
@@ -1199,7 +1231,7 @@
         (mult:SF (match_operand:SF 1 "register_operand" "r")
                  (match_operand:SF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.mul.s\t%0,%1,%2"
+  "lf.mul.s\t%0,%1,%2 # mulsf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
 
@@ -1208,7 +1240,7 @@
         (mult:DF (match_operand:DF 1 "register_operand" "r")
                  (match_operand:DF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.mul.d\t%0,%1,%2"
+  "lf.mul.d\t%0,%1,%2 # muldf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
 
@@ -1217,7 +1249,7 @@
         (div:SF (match_operand:SF 1 "register_operand" "r")
 		(match_operand:SF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.div.s\t%0,%1,%2"
+  "lf.div.s\t%0,%1,%2 # divsf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
 
@@ -1226,7 +1258,7 @@
         (div:DF (match_operand:DF 1 "register_operand" "r")
 		(match_operand:DF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.div.d\t%0,%1,%2"
+  "lf.div.d\t%0,%1,%2 # divdf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
 
@@ -1237,7 +1269,7 @@
   [(set (match_operand:SF 0 "register_operand" "=r")
 	(float:SF (match_operand:SI 1 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.itof.s\t%0, %1"
+  "lf.itof.s\t%0, %1 # floatsisf2"
   [(set_attr "type" "fp")
    (set_attr "length" "1")])
 
@@ -1246,7 +1278,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(fix:SI (match_operand:SF 1 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.ftoi.s\t%0, %1"
+  "lf.ftoi.s\t%0, %1 # fixunssfsi2"
   [(set_attr "type" "fp")
    (set_attr "length" "1")])
 

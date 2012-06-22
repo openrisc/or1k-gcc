@@ -1,5 +1,11 @@
 2012-06-22  Peter Gavin  <pgavin@gmail.com>
 
+	* config/or1k/or1k.md: add comments to each instruction annotating
+	where it came from; add "length" and "type" attributes to l.sf*
+	instructions
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
 	* config/or1k/or1k.h:
 	(TARGET_CPU_CPP_BUILTINS) make sure things are properly defined
 	for or1knd
