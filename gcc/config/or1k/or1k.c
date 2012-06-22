@@ -45,7 +45,6 @@
 #include "recog.h"
 #include "ggc.h"
 #include "except.h"
-#include "integrate.h"
 #include "tm_p.h"
 #include "target.h"
 #include "target-def.h"
@@ -300,7 +299,7 @@ emit_frame_insn (rtx insn)
 static rtx
 stack_disp_mem (HOST_WIDE_INT disp)
 {
-  return gen_frame_mem (Pmode, plus_constant (stack_pointer_rtx, disp));
+  return gen_frame_mem (Pmode, plus_constant (Pmode, stack_pointer_rtx, disp));
 }
 
 enum machine_mode
@@ -1962,27 +1961,6 @@ or1k_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
       }
     }
 }
-
-static bool
-or1k_handle_option (size_t code, const char *arg ATTRIBUTE_UNUSED,
-		    int value ATTRIBUTE_UNUSED)
-{
-  switch (code)
-    {
-    case OPT_mnewlib:
-      or1k_libc = or1k_libc_newlib;
-      return true;
-    case OPT_muclibc:
-      or1k_libc = or1k_libc_uclibc;
-      return true;
-    case OPT_mglibc:
-      or1k_libc = or1k_libc_glibc;
-      return false;
-    default:
-      return true;
-    }
-}
-
 
 /* ========================================================================== */
 /* Target hook initialization.

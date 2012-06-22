@@ -1,3 +1,12 @@
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
+	some fixes needed for update against mainline
+	* config/or1k/or1k-common.c: new file
+	(or1k_handle_option) moved from or1k.c
+	* config/or1k/or1k.c
+	(stack_disp_mem) pass Pmode as first argument to plus_constant
+	(or1k_handle_option) removed
+
 2012-05-28  Peter Gavin  <pgavin@gmail.com>
 
 	fix cmov
