@@ -1885,18 +1885,6 @@ or1k_output_highadd (FILE *file,
   return delta;
 }
 
-/* Output a tailcall to FUNCTION.  The caller will fill in the delay slot.  */
-static void
-or1k_output_tailcall (FILE *file, tree function)
-{
-  /* We'll need to add more code if we want to fully support PIC.  */
-  gcc_assert (!flag_pic || (*targetm.binds_local_p) (function));
-
-  fputs ("\tl.j\t", file);
-  assemble_name (file, XSTR (XEXP (DECL_RTL (function), 0), 0));
-  fputc ('\n', file);
-}
-
 /* ========================================================================== */
 /* Target hook initialization.
 
