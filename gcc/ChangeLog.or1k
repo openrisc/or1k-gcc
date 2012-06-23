@@ -1,5 +1,13 @@
 2012-06-23  Peter Gavin  <pgavin@gmail.com>
 
+	turn off delay-slot pass when not using delayed branches
+	* config/or1k/or1k.c:
+	(or1k_option_override) new function, for now just clear
+	flag_delayed_branch when !TARGET_DELAY_ON
+	(TARGET_OPTION_OVERRIDE) define
+
+2012-06-23  Peter Gavin  <pgavin@gmail.com>
+
 	* config/or1k/or1k.h:
 	(or1k_asm_file_start) remove prototype
 	(TARGET_ASM_FILE_START) moved to or1k.c

@@ -1930,6 +1930,9 @@ or1k_output_tailcall (FILE *file, tree function)
 #undef  TARGET_ARG_PARTIAL_BYTES
 #define TARGET_ARG_PARTIAL_BYTES or1k_arg_partial_bytes
 
+#undef TARGET_OPTION_OVERRIDE
+#define TARGET_OPTION_OVERRIDE or1k_option_override
+
 #undef TARGET_ASM_FILE_START
 #define TARGET_ASM_FILE_START or1k_asm_file_start
 
@@ -2131,6 +2134,13 @@ or1k_data_alignment (tree t, int align)
 	      : FASTEST_ALIGNMENT);
     }
   return align;
+}
+
+static void
+or1k_option_override (void)
+{
+  if (!TARGET_DELAY_ON)
+    flag_delayed_branch = FALSE;
 }
 
 static void
