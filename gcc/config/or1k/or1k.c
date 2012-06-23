@@ -98,17 +98,6 @@ static struct
 }  frame_info;
 
 
-void
-or1k_asm_file_start(void)
-{
-  default_file_start();
-
-  if (TARGET_DELAY_OFF) {
-    fprintf(asm_out_file, "\t.nodelay\n");
-  }
-}
-
-
 /* ========================================================================== */
 /* Local (i.e. static) utility functions */
 
@@ -1941,6 +1930,9 @@ or1k_output_tailcall (FILE *file, tree function)
 #undef  TARGET_ARG_PARTIAL_BYTES
 #define TARGET_ARG_PARTIAL_BYTES or1k_arg_partial_bytes
 
+#undef TARGET_ASM_FILE_START
+#define TARGET_ASM_FILE_START or1k_asm_file_start
+
 /* This target hook returns TRUE if an argument declared in a prototype as an
    integral type smaller than int should actually be passed as an int. In
    addition to avoiding errors in certain cases of mismatch, it also makes for
@@ -2139,6 +2131,16 @@ or1k_data_alignment (tree t, int align)
 	      : FASTEST_ALIGNMENT);
     }
   return align;
+}
+
+static void
+or1k_asm_file_start(void)
+{
+  default_file_start();
+
+  if (TARGET_DELAY_OFF) {
+    fprintf(asm_out_file, "\t.nodelay\n");
+  }
 }
 
 /* Initialize the GCC target structure.  */

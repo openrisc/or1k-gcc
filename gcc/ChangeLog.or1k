@@ -1,5 +1,14 @@
 2012-06-23  Peter Gavin  <pgavin@gmail.com>
 
+	* config/or1k/or1k.h:
+	(or1k_asm_file_start) remove prototype
+	(TARGET_ASM_FILE_START) moved to or1k.c
+	* config/or1k/or1k.c:
+	(or1k_asm_file_start) make static
+	(TARGET_ASM_FILE_START) moved from or1k.h
+
+2012-06-23  Peter Gavin  <pgavin@gmail.com>
+
 	more fixes (and fixes to fixes) needed for update against upstream
 	* config/or1k/or1k-common.c: delete
 	* config/common/or1k/or1k-common.c:

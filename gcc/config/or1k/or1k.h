@@ -54,9 +54,6 @@ Boston, MA 02111-1307, USA.  */
     }                                                   \
   while (0)
 
-#define TARGET_ASM_FILE_START or1k_asm_file_start
-void or1k_asm_file_start(void);
-
 #undef CPP_SPEC
 #define CPP_SPEC \
   "%{!mnewlib:%{pthread:-D_XOPEN_SOURCE=700}}"
