@@ -1920,9 +1920,6 @@ or1k_output_tailcall (FILE *file, tree function)
 
    The final declaration is of the global "targetm" structure. */
 
-#undef TARGET_HANDLE_OPTION
-#define TARGET_HANDLE_OPTION or1k_handle_option
-
 /* Output assembly directives to switch to section name. The section should
    have attributes as specified by flags, which is a bit mask of the SECTION_*
    flags defined in ‘output.h’. If decl is non-NULL, it is the VAR_DECL or

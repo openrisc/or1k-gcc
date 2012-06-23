@@ -1,3 +1,15 @@
+2012-06-23  Peter Gavin  <pgavin@gmail.com>
+
+	more fixes (and fixes to fixes) needed for update against upstream
+	* config/or1k/or1k-common.c: delete
+	* config/common/or1k/or1k-common.c:
+	include opts.h & flags.h
+	(or1k_option_optimization_table) add entry for OPT_fomit_frame_pointer
+	(or1k_handle_option) move from config/or1k/or1k-common.c
+	(TARGET_HANDLE_OPTION) move from config/or1k/or1k.c
+	* config/or1k/or1k.c:
+	(TARGET_HANDLE_OPTION) move from config/or1k/or1k.c
+
 2012-06-22  Peter Gavin  <pgavin@gmail.com>
 
 	* config/or1k/or1k.md: add comments to each instruction annotating

@@ -23,15 +23,45 @@
 #include "tm.h"
 #include "common/common-target.h"
 #include "common/common-target-def.h"
+#include "opts.h"
+#include "flags.h"
 
 /* Implement TARGET_OPTION_OPTIMIZATION_TABLE.  */
 static const struct default_options or1k_option_optimization_table[] =
   {
+    { OPT_LEVELS_1_PLUS, OPT_fomit_frame_pointer, NULL, 1 },
     { OPT_LEVELS_NONE, 0, NULL, 0 }
   };
 
+static bool
+or1k_handle_option (struct gcc_options *opts,
+                    struct gcc_options *opts_set ATTRIBUTE_UNUSED,
+                    const struct cl_decoded_option *decoded,
+                    location_t loc ATTRIBUTE_UNUSED)
+{
+  size_t code = decoded->opt_index;
+  
+  switch (code)
+    {
+    case OPT_mnewlib:
+      or1k_libc = or1k_libc_newlib;
+      return true;
+    case OPT_muclibc:
+      or1k_libc = or1k_libc_uclibc;
+      return true;
+    case OPT_mglibc:
+      or1k_libc = or1k_libc_glibc;
+      return false;
+    default:
+      return true;
+    }
+}
+
 #undef TARGET_EXCEPT_UNWIND_INFO
 #define TARGET_EXCEPT_UNWIND_INFO sjlj_except_unwind_info
+
+#undef TARGET_HANDLE_OPTION
+#define TARGET_HANDLE_OPTION or1k_handle_option
 
 #undef TARGET_OPTION_OPTIMIZATION_TABLE
 #define TARGET_OPTION_OPTIMIZATION_TABLE or1k_option_optimization_table
