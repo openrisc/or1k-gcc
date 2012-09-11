@@ -464,8 +464,8 @@
 
 (define_expand "cbranchsf4"
   [(match_operator 0 "comparison_operator"
-    [(match_operand:SI 1 "register_operand")
-     (match_operand:SI 2 "register_operand")])
+    [(match_operand:SF 1 "register_operand")
+     (match_operand:SF 2 "register_operand")])
    (match_operand 3 "")]
    "TARGET_HARD_FLOAT"
    {

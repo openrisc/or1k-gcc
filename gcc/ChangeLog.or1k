@@ -219,6 +219,10 @@
 	of correct type on failure instead of just 0
 	* config/or1k/t-or1k: remove a bunch of obsolete stuff
 
+2011-12-01  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.md (cbranchsi4): Fix mode of operands 1 and 2.
+
 2011-07-07  Giuseppe Scrivano  <giuseppe@southpole.se>
 
 	* config/or32/or32.c (or32_print_operand_address): New function.
