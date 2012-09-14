@@ -214,6 +214,13 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
 	}
     }
 
+  if (!or1k_save_reg_p (PIC_OFFSET_TABLE_REGNUM)
+      && (crtl->uses_pic_offset_table || (flag_pic && frame_info.save_lr_p)))
+    {
+	  frame_info.gpr_size += UNITS_PER_WORD;
+	  frame_info.mask |= ((HOST_WIDE_INT) 1 << PIC_OFFSET_TABLE_REGNUM);
+    }
+
   save_size = (frame_info.gpr_size 
 	       + (frame_info.save_fp_p ? UNITS_PER_WORD : 0)
 	       + (frame_info.save_lr_p ? UNITS_PER_WORD : 0));
@@ -864,7 +871,7 @@ or1k_expand_prologue (void)
     }
   /* Emit got pointer acquiring if there are any got references or
      this function has calls */
-  if (crtl->uses_pic_offset_table || frame_info.save_lr_p)
+  if (crtl->uses_pic_offset_table || (flag_pic && frame_info.save_lr_p))
     {
       SET_REGNO (pic_offset_table_rtx, PIC_OFFSET_TABLE_REGNUM);
       emit_insn (gen_set_got (pic_offset_table_rtx));
