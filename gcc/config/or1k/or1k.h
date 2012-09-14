@@ -234,11 +234,11 @@ Boston, MA 02111-1307, USA.  */
    and are not available for the register allocator.
    On the or1k, these are r1 as stack pointer and 
    r2 as frame/arg pointer.  r9 is link register, r0
-   is zero, r10 is linux thread */
+   is zero, r10 is linux thread and r16 is got pointer */
 #define FIXED_REGISTERS { \
   1, 1, 0, 0, 0, 0, 0, 0, \
   0, 1, 1, 0, 0, 0, 0, 0, \
-  0, 0, 0, 0, 0, 0, 0, 0, \
+  1, 0, 0, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1 }
 /* 1 for registers not available across function calls.
    These must include the FIXED_REGISTERS and also any
@@ -249,7 +249,7 @@ Boston, MA 02111-1307, USA.  */
 #define CALL_USED_REGISTERS { \
   1, 1, 0, 1, 1, 1, 1, 1, \
   1, 1, 1, 1, 1, 1, 0, 1, \
-  0, 1, 0, 1, 0, 1, 0, 1, \
+  1, 1, 0, 1, 0, 1, 0, 1, \
   0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1}
 
 /* stack pointer: must be FIXED and CALL_USED */
@@ -555,7 +555,7 @@ enum reg_class
 #define GP_ARG_RETURN  11 
 #define GP_ARG_RETURNH 12 
 
-#define PIC_OFFSET_TABLE_REGNUM 10
+#define PIC_OFFSET_TABLE_REGNUM 16
 
 /* A C expression to create an RTX representing the place where a library
    function returns a value of mode mode.
