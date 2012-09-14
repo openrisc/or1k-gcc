@@ -803,6 +803,7 @@ or1k_expand_prologue (void)
 {
   int total_size = or1k_compute_frame_size (get_frame_size ());
   rtx insn;
+  int need_got = flag_pic && df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM);
 
   if (!total_size)
     /* No frame needed.  */
@@ -820,7 +821,7 @@ or1k_expand_prologue (void)
       emit_frame_insn
 	(gen_add3_insn (hard_frame_pointer_rtx, stack_pointer_rtx, const0_rtx));
     }
-  if (frame_info.save_lr_p)
+  if (frame_info.save_lr_p || need_got)
     {
 
       emit_frame_insn
@@ -868,8 +869,9 @@ or1k_expand_prologue (void)
       else
 	emit_frame_insn (insn);
     }
-
-  if (flag_pic && df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM))
+  /* Emit got pointer acquring if there are any got references or
+     this function has calls */
+  if (need_got || frame_info.save_lr_p)
     {
       SET_REGNO (pic_offset_table_rtx, PIC_OFFSET_TABLE_REGNUM);
       emit_insn (gen_set_got (pic_offset_table_rtx));
@@ -892,6 +894,7 @@ void
 or1k_expand_epilogue (void)
 {
   int total_size = or1k_compute_frame_size (get_frame_size ());
+  int has_got_pointer = flag_pic && df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM);
 
   if (frame_info.save_fp_p)
     {
@@ -916,7 +919,7 @@ or1k_expand_epilogue (void)
 	emit_insn (gen_frame_dealloc_sp (value_rtx));
     }
 
-  if (frame_info.save_lr_p)
+  if (frame_info.save_lr_p || has_got_pointer)
     {
       emit_insn
         (gen_rtx_SET (Pmode, gen_rtx_REG (Pmode, LINK_REGNUM),
