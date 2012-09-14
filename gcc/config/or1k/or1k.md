@@ -1099,9 +1099,7 @@
   {
     if (flag_pic)
       {
-        if (reload_in_progress)
-	  df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
-
+	crtl->uses_pic_offset_table = 1;
 	return "l.jal   \tplt(%S0)# call_internal%(";
       }
 
@@ -1133,9 +1131,7 @@
   {
     if (flag_pic)
       {
-        if (reload_in_progress)
-	  df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
-
+	crtl->uses_pic_offset_table = 1;
 	return "l.jal   \tplt(%S1) # call_value_internal%(";
       }
     return "l.jal   \t%S1 # call_value_internal%(";

@@ -570,9 +570,7 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
 	      && SYMBOL_REF_LOCAL_P (operands[1])
 	      && !SYMBOL_REF_WEAK (operands[1])))
 	{
-	  if (reload_in_progress)
-	    df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
-
+	  crtl->uses_pic_offset_table = 1;
 	  emit_insn (gen_movsi_gotoffhi (operands[0], operands[1]));
 	  emit_insn (gen_movsi_gotofflo (operands[0], operands[0],
 					 operands[1]));
@@ -589,9 +587,7 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
             {
               rtx ptr_reg, result;
 
-              if (reload_in_progress)
-                df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
-
+              crtl->uses_pic_offset_table = 1;
               addr = expand_pic_symbol_ref (mode, addr);
               ptr_reg = gen_reg_rtx (Pmode);
               emit_move_insn (ptr_reg, addr);
@@ -603,8 +599,7 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
       if (GET_CODE (operands[1]) == SYMBOL_REF)
         {
           rtx result;
-          if (reload_in_progress)
-            df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+          crtl->uses_pic_offset_table = 1;
           result = expand_pic_symbol_ref (mode, operands[1]);
           if (GET_CODE (operands[0]) != REG)
             {
@@ -623,8 +618,7 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
         {
           rtx result;
           rtx ptr_reg;
-          if (reload_in_progress)
-            df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+	  crtl->uses_pic_offset_table = 1;
           result = expand_pic_symbol_ref (mode, XEXP (operands[1], 0));
 
           ptr_reg = gen_reg_rtx (Pmode);
@@ -803,7 +797,6 @@ or1k_expand_prologue (void)
 {
   int total_size = or1k_compute_frame_size (get_frame_size ());
   rtx insn;
-  int need_got = flag_pic && df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM);
 
   if (!total_size)
     /* No frame needed.  */
@@ -821,7 +814,7 @@ or1k_expand_prologue (void)
       emit_frame_insn
 	(gen_add3_insn (hard_frame_pointer_rtx, stack_pointer_rtx, const0_rtx));
     }
-  if (frame_info.save_lr_p || need_got)
+  if (frame_info.save_lr_p || crtl->uses_pic_offset_table)
     {
 
       emit_frame_insn
@@ -869,9 +862,9 @@ or1k_expand_prologue (void)
       else
 	emit_frame_insn (insn);
     }
-  /* Emit got pointer acquring if there are any got references or
+  /* Emit got pointer acquiring if there are any got references or
      this function has calls */
-  if (need_got || frame_info.save_lr_p)
+  if (crtl->uses_pic_offset_table || frame_info.save_lr_p)
     {
       SET_REGNO (pic_offset_table_rtx, PIC_OFFSET_TABLE_REGNUM);
       emit_insn (gen_set_got (pic_offset_table_rtx));
@@ -894,7 +887,6 @@ void
 or1k_expand_epilogue (void)
 {
   int total_size = or1k_compute_frame_size (get_frame_size ());
-  int has_got_pointer = flag_pic && df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM);
 
   if (frame_info.save_fp_p)
     {
@@ -919,7 +911,7 @@ or1k_expand_epilogue (void)
 	emit_insn (gen_frame_dealloc_sp (value_rtx));
     }
 
-  if (frame_info.save_lr_p || has_got_pointer)
+  if (frame_info.save_lr_p || crtl->uses_pic_offset_table)
     {
       emit_insn
         (gen_rtx_SET (Pmode, gen_rtx_REG (Pmode, LINK_REGNUM),
