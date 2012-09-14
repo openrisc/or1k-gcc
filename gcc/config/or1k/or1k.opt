@@ -88,13 +88,15 @@ Compile for the Linux/Gnu/newlib based toolchain
 ;; We could remove linux.opt from extra_options, but that could backfire if
 ;; more options are added that we don't want to remove.  Hence we use
 ;; TARGET_HANDLE_OPTION.
-muclibc
-Target RejectNegative
-Use uClibc
+;; FIXME: Commented out since this doesn't build when enabled anymore,
+;;        but why do they need to be overridden?
+;muclibc
+;Target RejectNegative
+;Use uClibc
 
-mglibc
-Target RejectNegative
-Use glibc (not supported)
+;mglibc
+;Target RejectNegative
+;Use glibc (not supported)
 
 ;; provide struct padding as in previous releases.
 ;; Note that this will only affect STRUCTURE_SIZE_BOUNDARY, in particular
