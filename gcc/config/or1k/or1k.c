@@ -565,6 +565,23 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
 {
   if (flag_pic)
     {
+      if (GET_CODE (operands[1]) == LABEL_REF
+	  || (GET_CODE (operands[1]) == SYMBOL_REF
+	      && SYMBOL_REF_LOCAL_P (operands[1])
+	      && !SYMBOL_REF_WEAK (operands[1])))
+	{
+	  if (reload_in_progress)
+	    df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+
+	  emit_insn (gen_movsi_gotoffhi (operands[0], operands[1]));
+	  emit_insn (gen_movsi_gotofflo (operands[0], operands[0],
+					 operands[1]));
+	  emit_insn (gen_add3_insn(operands[0], operands[0],
+				   pic_offset_table_rtx));
+
+	  return true;
+	}
+
       if (GET_CODE (operands[0]) == MEM)
         {
           rtx addr = XEXP (operands[0], 0);
@@ -583,8 +600,7 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
             }
         }
 
-      if (GET_CODE (operands[1]) == SYMBOL_REF
-          || GET_CODE (operands[1]) == LABEL_REF)
+      if (GET_CODE (operands[1]) == SYMBOL_REF)
         {
           rtx result;
           if (reload_in_progress)

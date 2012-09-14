@@ -33,10 +33,11 @@
   ;; unspec values
   (UNSPEC_FRAME 0)
   (UNSPEC_GOT 1)
-  (UNSPEC_GOTOFF 2)
-  (UNSPEC_PCREL 3)
-  (UNSPEC_PIC_LABEL 4)
-  (UNSPEC_SYMBOL_OFFSET 5)
+  (UNSPEC_GOTOFFHI 2)
+  (UNSPEC_GOTOFFLO 3)
+  (UNSPEC_PCREL 4)
+  (UNSPEC_PIC_LABEL 5)
+  (UNSPEC_SYMBOL_OFFSET 6)
   (UNSPEC_SET_GOT       101)
 ])
 
@@ -283,6 +284,23 @@
   ""
   "l.movhi  \t%0,hi(%1) # movsi_high"
 [(set_attr "type" "move")
+   (set_attr "length" "1")])
+
+(define_insn "movsi_gotofflo"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+ 	(unspec:SI [(lo_sum:SI (match_operand:SI 1 "register_operand" "r")
+                    (match_operand 2 "" ""))] UNSPEC_GOTOFFLO))]
+  "flag_pic"
+  "l.ori   \t%0,%1,gotofflo(%2) # movsi_gotofflo"
+  [(set_attr "type" "logic")
+   (set_attr "length" "1")])
+
+(define_insn "movsi_gotoffhi"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+ 	(unspec:SI [(match_operand 1 "" "")] UNSPEC_GOTOFFHI))]
+  "flag_pic"
+  "l.movhi  \t%0,gotoffhi(%1) # movsi_gotoffhi"
+  [(set_attr "type" "move")
    (set_attr "length" "1")])
 
 (define_insn_and_split "movsi_insn_big"
