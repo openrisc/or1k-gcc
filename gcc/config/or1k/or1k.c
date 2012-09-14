@@ -446,10 +446,13 @@ or1k_print_operand_address (FILE *stream, rtx addr)
           rtx unspec = XEXP (offset, 0);
           rtx sym = XEXP (XEXP (unspec, 0), 0);
 
+          if (XINT (unspec, 1) == UNSPEC_GOT)
+            fprintf (stream, "got(");
+
           or1k_print_operand_address (stream, sym);
 
-          if (XINT (unspec, 1) == UNSPEC_GOTOFF)
-            fprintf (stream, "@GOTOFF");
+          if (XINT (unspec, 1) == UNSPEC_GOT)
+            fprintf (stream, ")");
 
           fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
         }
@@ -550,7 +553,7 @@ static rtx
 expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED, rtx op)
 {
   rtx result;
-  result = gen_rtx_UNSPEC (Pmode, gen_rtvec (1, op), UNSPEC_GOTOFF);
+  result = gen_rtx_UNSPEC (Pmode, gen_rtvec (1, op), UNSPEC_GOT);
   result = gen_rtx_CONST (Pmode, result);
   result = gen_rtx_PLUS (Pmode, pic_offset_table_rtx, result);
   result = gen_const_mem (Pmode, result);
@@ -1222,7 +1225,7 @@ or1k_output_addr_const_extra (FILE *fp, rtx x)
       /* TODO.  */
       return TRUE;
     }
-  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_GOTOFF)
+  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_GOT)
     {
       fputs ("", fp);
       return TRUE;
