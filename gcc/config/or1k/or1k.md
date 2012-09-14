@@ -1094,7 +1094,8 @@
 (define_insn "call_internal"
 [(parallel [(call (match_operand:SI 0 "sym_ref_mem_operand" "")
                   (match_operand 1 "" "i"))
-            (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   {
     if (flag_pic)
@@ -1126,7 +1127,8 @@
 [(parallel [(set (match_operand 0 "register_operand" "=r")
                   (call (match_operand:SI 1 "sym_ref_mem_operand" "")
                         (match_operand 2 "" "i")))
-            (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   {
     if (flag_pic)
@@ -1323,7 +1325,8 @@
 (define_insn "set_got"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(unspec:SI [(const_int 0)] UNSPEC_SET_GOT))
-   (clobber (reg:SI 9))]
+   (clobber (reg:SI 9))
+   (clobber (reg:SI 16))]
   ""
   "l.jal    \t8
  \tl.movhi  \tr16,gotpchi(_GLOBAL_OFFSET_TABLE_-4)
