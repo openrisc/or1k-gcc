@@ -1283,14 +1283,16 @@
    (set_attr "length" "1")])
 
 ;; The insn to set GOT.
+;; TODO: support for no-delay target
 (define_insn "set_got"
   [(set (match_operand:SI 0 "register_operand" "=r")
-    (unspec:SI [(const_int 0)] UNSPEC_SET_GOT))]
+	(unspec:SI [(const_int 0)] UNSPEC_SET_GOT))
+   (clobber (reg:SI 9))]
   ""
-  "l.jal 2
-\tl.movhi r10,hi(_GLOBAL_OFFSET_TABLE_@GOTPC+1)
-\tl.addi   r10,r10,lo(_GLOBAL_OFFSET_TABLE_@GOTPC)
-\tl.add   r10,r10,r9"
+  "l.jal    \t8
+ \tl.movhi  \tr16,gotpchi(_GLOBAL_OFFSET_TABLE_-4)
+ \tl.ori    \tr16,r16,gotpclo(_GLOBAL_OFFSET_TABLE_+0)
+ \tl.add    \tr16,r16,r9"
   [(set_attr "length" "16")])
 
 
