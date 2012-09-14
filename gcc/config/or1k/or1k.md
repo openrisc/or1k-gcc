@@ -1093,7 +1093,17 @@
                   (match_operand 1 "" "i"))
             (clobber (reg:SI 9))])]
   ""
-  "l.jal   \t%S0# call_internal%("
+  {
+    if (flag_pic)
+      {
+        if (reload_in_progress)
+	  df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+
+	return "l.jal   \tplt(%S0)# call_internal%(";
+      }
+
+    return "l.jal   \t%S0# call_internal%(";
+  }
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
@@ -1117,7 +1127,16 @@
                         (match_operand 2 "" "i")))
             (clobber (reg:SI 9))])]
   ""
-  "l.jal   \t%S1 # call_value_internal%("
+  {
+    if (flag_pic)
+      {
+        if (reload_in_progress)
+	  df_set_regs_ever_live (PIC_OFFSET_TABLE_REGNUM, true);
+
+	return "l.jal   \tplt(%S1) # call_value_internal%(";
+      }
+    return "l.jal   \t%S1 # call_value_internal%(";
+  }
   [(set_attr "type" "jump")
    (set_attr "length" "1")])
 
