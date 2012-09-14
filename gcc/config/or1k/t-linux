@@ -1,4 +1,4 @@
-MULTILIB_DIRNAMES = be
+MULTILIB_DIRNAMES =
 EXTRA_MULTILIB_PARTS = crti.o crtbegin.o crtend.o crtn.o
 
 # hack:
