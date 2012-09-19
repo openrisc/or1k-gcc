@@ -40,7 +40,7 @@ case "${$2}" in
 	# PIC is the default.
 	;;
     or1k-*-*)
-        # not (yet) supported
+	$1=-fPIC
         ;;
     rs6000-ibm-aix* | powerpc-ibm-aix*)
 	# All AIX code is PIC.
