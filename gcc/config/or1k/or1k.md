@@ -323,7 +323,7 @@
    && GET_CODE (operands[1]) != HIGH && GET_CODE (operands[1]) != LO_SUM"
   [(pc)]
 {
-  if (!(flag_pic && or1k_expand_move (SImode, operands)))
+  if (!(flag_pic && or1k_expand_pic_symbol_ref (SImode, operands)))
     {
       emit_insn (gen_movsi_high (operands[0], operands[1]));
       emit_insn (gen_movsi_lo_sum (operands[0], operands[0], operands[1]));
