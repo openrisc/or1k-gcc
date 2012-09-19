@@ -452,27 +452,8 @@ or1k_print_operand_address (FILE *stream, rtx addr)
           offset = XEXP (addr, 0);
           addr   = XEXP (addr, 1);
         }
-
-      if (GET_CODE (offset) != CONST || GET_CODE (XEXP (offset, 0)) != UNSPEC)
-        {
-          output_address (offset);
-          fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
-        }
-      else
-        {
-          rtx unspec = XEXP (offset, 0);
-          rtx sym = XEXP (XEXP (unspec, 0), 0);
-
-          if (XINT (unspec, 1) == UNSPEC_GOT)
-            fprintf (stream, "got(");
-
-          or1k_print_operand_address (stream, sym);
-
-          if (XINT (unspec, 1) == UNSPEC_GOT)
-            fprintf (stream, ")");
-
-          fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
-        }
+      output_address (offset);
+      fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
       break;
 
     case SYMBOL_REF:
@@ -1213,42 +1194,6 @@ or1k_output_cmov (rtx * operands)
 
 }	/* or1k_output_cmov () */
 
-
-static bool
-or1k_output_addr_const_extra (FILE *fp, rtx x)
-{
-  if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_PIC_LABEL)
-    {
-      char label[256];
-      int labelno = INTVAL (XVECEXP (x, 0, 0));
-
-      ASM_GENERATE_INTERNAL_LABEL (label, "LPIC", labelno);
-      assemble_name_raw (fp, label);
-
-      return TRUE;
-    }
-  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_SYMBOL_OFFSET)
-    {
-      output_addr_const (fp, XVECEXP (x, 0, 0));
-      fputs ("-(", fp);
-      output_addr_const (fp, XVECEXP (x, 0, 1));
-      fputc (')', fp);
-      return TRUE;
-    }
-  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_PCREL)
-    {
-      /* TODO.  */
-      return TRUE;
-    }
-  else if (GET_CODE (x) == UNSPEC && XINT (x, 1) == UNSPEC_GOT)
-    {
-      fputs ("", fp);
-      return TRUE;
-    }
-
-  return FALSE;
-}
-
 /* -------------------------------------------------------------------------- */
 /*!Load a 32-bit constant.
 
@@ -1640,11 +1585,6 @@ or1k_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
             {
               return 1;
             }
-
-          if (GET_CODE (offset) == CONST && GET_CODE (XEXP(offset, 0)) == UNSPEC)
-            {
-              return 1;
-            }
         }
     }
 
@@ -1657,18 +1597,6 @@ or1k_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
   }
 
   return 0;
-}
-
-static rtx
-or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
-                         enum machine_mode mode ATTRIBUTE_UNUSED)
-{
-  if (GET_CODE(x) == SYMBOL_REF && flag_pic)
-    {
-      /* TODO */
-    }
-
-  return x;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2041,12 +1969,6 @@ or1k_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
 
 #undef TARGET_FUNCTION_ARG_ADVANCE
 #define TARGET_FUNCTION_ARG_ADVANCE or1k_function_arg_advance
-
-#undef TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA
-#define TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA or1k_output_addr_const_extra
-
-#undef TARGET_LEGITIMIZE_ADDRESS
-#define TARGET_LEGITIMIZE_ADDRESS or1k_legitimize_address
 
 #undef TARGET_PRINT_OPERAND_ADDRESS
 #define TARGET_PRINT_OPERAND_ADDRESS or1k_print_operand_address
