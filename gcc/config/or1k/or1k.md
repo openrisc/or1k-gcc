@@ -1083,7 +1083,8 @@
 (define_expand "call"
   [(parallel [(call (match_operand:SI 0 "sym_ref_mem_operand" "")
 		    (match_operand 1 "" "i"))
-	      (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   "
 {
@@ -1115,7 +1116,8 @@
   [(parallel [(set (match_operand 0 "register_operand" "=r")
 		   (call (match_operand:SI 1 "sym_ref_mem_operand" "")
 			 (match_operand 2 "" "i")))
-	      (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   "
 {
@@ -1147,7 +1149,8 @@
   [(parallel [(set (match_operand 0 "register_operand" "=r")
                    (call (mem:SI (match_operand:SI 1 "register_operand" "r"))
                          (match_operand 2 "" "i")))
-              (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   "
 {
@@ -1159,7 +1162,8 @@
   [(parallel [(set (match_operand 0 "register_operand" "=r")
                    (call (mem:SI (match_operand:SI 1 "register_operand" "r"))
                          (match_operand 2 "" "i")))
-              (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   "l.jalr  \t%1 # call_value_indirect_internal%("
   [(set_attr "type" "jump")
@@ -1170,7 +1174,8 @@
 (define_expand "call_indirect"
   [(parallel [(call (mem:SI (match_operand:SI 0 "register_operand" "r"))
 		    (match_operand 1 "" "i"))
-              (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   "
 {
@@ -1181,7 +1186,8 @@
 (define_insn "call_indirect_internal"
 [(parallel [(call (mem:SI (match_operand:SI 0 "register_operand" "r"))
                   (match_operand 1 "" "i"))
-              (clobber (reg:SI 9))])]
+            (clobber (reg:SI 9))
+            (use (reg:SI 16))])]
   ""
   "l.jalr  \t%0 # call_indirect_internal%("
   [(set_attr "type" "jump")
