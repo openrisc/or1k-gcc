@@ -127,7 +127,8 @@ or1k_save_reg_p (int regno)
 
   /* We need to save the incoming return address if it is ever clobbered
      within the function.  */
-  if (regno == LINK_REGNUM && df_regs_ever_live_p(regno))
+  if (regno == LINK_REGNUM
+      && (df_regs_ever_live_p(regno) || crtl->uses_pic_offset_table))
     return true;
 
   return false;
@@ -159,7 +160,6 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
   HOST_WIDE_INT stack_offset;
   HOST_WIDE_INT save_size;
   bool interrupt_p = false;
-
   int regno;
 
   args_size = crtl->outgoing_args_size;
@@ -186,6 +186,14 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
     }
   else
     frame_info.save_lr_p = false;
+
+  /* HACK: In PIC mode we need to save the PIC reg and the link reg in
+     in case the function is doing references through the got or plt,
+     but this information is not necessarily available when the initial
+     elimination offset is calculated, so we always reserve the space even
+     if it is not used... */
+  if (!frame_info.save_lr_p && flag_pic)
+    stack_offset = stack_offset - UNITS_PER_WORD;
 
   /* Save frame pointer right after possible link register.  */
   if (frame_pointer_needed)
@@ -217,13 +225,15 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
   if (!or1k_save_reg_p (PIC_OFFSET_TABLE_REGNUM)
       && (crtl->uses_pic_offset_table || (flag_pic && frame_info.save_lr_p)))
     {
-	  frame_info.gpr_size += UNITS_PER_WORD;
-	  frame_info.mask |= ((HOST_WIDE_INT) 1 << PIC_OFFSET_TABLE_REGNUM);
+      frame_info.gpr_size += UNITS_PER_WORD;
+      frame_info.mask |= ((HOST_WIDE_INT) 1 << PIC_OFFSET_TABLE_REGNUM);
     }
+  else if (flag_pic && !or1k_save_reg_p (PIC_OFFSET_TABLE_REGNUM))
+    frame_info.gpr_size += UNITS_PER_WORD;
 
   save_size = (frame_info.gpr_size 
 	       + (frame_info.save_fp_p ? UNITS_PER_WORD : 0)
-	       + (frame_info.save_lr_p ? UNITS_PER_WORD : 0));
+	       + (frame_info.save_lr_p || flag_pic ? UNITS_PER_WORD : 0));
   frame_info.total_size = save_size + vars_size + args_size;
   gcc_assert (PROLOGUE_TMP != STATIC_CHAIN_REGNUM);
   if (frame_info.total_size > 32767 && interrupt_p)
@@ -821,9 +831,8 @@ or1k_expand_prologue (void)
       emit_frame_insn
 	(gen_add3_insn (hard_frame_pointer_rtx, stack_pointer_rtx, const0_rtx));
     }
-  if (frame_info.save_lr_p || crtl->uses_pic_offset_table)
+  if (frame_info.save_lr_p)
     {
-
       emit_frame_insn
 	(gen_rtx_SET (Pmode, stack_disp_mem (frame_info.lr_save_offset),
 		      gen_rtx_REG (Pmode, LINK_REGNUM)));
@@ -837,6 +846,10 @@ or1k_expand_prologue (void)
 	{
 	  if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
 	    continue;
+
+	  if (frame_info.save_lr_p)
+	    gcc_assert ((frame_info.gpr_offset + offset)
+			!= frame_info.lr_save_offset);
 
 	  emit_frame_insn
 	    (gen_rtx_SET (Pmode,
@@ -918,7 +931,7 @@ or1k_expand_epilogue (void)
 	emit_insn (gen_frame_dealloc_sp (value_rtx));
     }
 
-  if (frame_info.save_lr_p || crtl->uses_pic_offset_table)
+  if (frame_info.save_lr_p)
     {
       emit_insn
         (gen_rtx_SET (Pmode, gen_rtx_REG (Pmode, LINK_REGNUM),
