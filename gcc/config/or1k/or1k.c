@@ -566,89 +566,73 @@ or1k_regnum_ok_for_base_p (HOST_WIDE_INT  num,
     }
 }	/* or1k_regnum_ok_for_base_p () */
 
-static rtx
-expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED, rtx op)
-{
-  rtx result;
-  result = gen_rtx_UNSPEC (Pmode, gen_rtvec (1, op), UNSPEC_GOT);
-  result = gen_rtx_CONST (Pmode, result);
-  result = gen_rtx_PLUS (Pmode, pic_offset_table_rtx, result);
-  result = gen_const_mem (Pmode, result);
-  return result;
-}
-
 bool
-or1k_expand_move (enum machine_mode mode, rtx operands[])
+or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
+			    rtx operands[])
 {
-  if (flag_pic)
+  if (GET_CODE (operands[1]) == LABEL_REF
+      || (GET_CODE (operands[1]) == SYMBOL_REF
+	  && SYMBOL_REF_LOCAL_P (operands[1])
+	  && !SYMBOL_REF_WEAK (operands[1])))
     {
-      if (GET_CODE (operands[1]) == LABEL_REF
-	  || (GET_CODE (operands[1]) == SYMBOL_REF
-	      && SYMBOL_REF_LOCAL_P (operands[1])
-	      && !SYMBOL_REF_WEAK (operands[1])))
+      crtl->uses_pic_offset_table = 1;
+      emit_insn (gen_movsi_gotoffhi (operands[0], operands[1]));
+      emit_insn (gen_movsi_gotofflo (operands[0], operands[0],
+				     operands[1]));
+      emit_insn (gen_add3_insn(operands[0], operands[0],
+			       pic_offset_table_rtx));
+      return true;
+    }
+  else if (GET_CODE (operands[1]) == SYMBOL_REF)
+    {
+      crtl->uses_pic_offset_table = 1;
+      emit_insn (gen_movsi_got (operands[0], operands[1]));
+      return true;
+    }
+  else if (GET_CODE (operands[1]) == CONST
+	   && GET_CODE (XEXP (operands[1], 0)) == PLUS
+	   && GET_CODE (XEXP (XEXP (operands[1], 0), 0)) == SYMBOL_REF
+	   && GET_CODE (XEXP (XEXP (operands[1], 0), 1)) == CONST_INT)
+    {
+      rtx symbolref = XEXP (XEXP (operands[1], 0), 0);
+      crtl->uses_pic_offset_table = 1;
+
+      if (SYMBOL_REF_LOCAL_P (symbolref)
+	  && !SYMBOL_REF_WEAK (symbolref))
 	{
-	  crtl->uses_pic_offset_table = 1;
 	  emit_insn (gen_movsi_gotoffhi (operands[0], operands[1]));
 	  emit_insn (gen_movsi_gotofflo (operands[0], operands[0],
 					 operands[1]));
 	  emit_insn (gen_add3_insn(operands[0], operands[0],
 				   pic_offset_table_rtx));
-
-	  return true;
 	}
+      else
+	{
+	  rtx const_int = XEXP (XEXP (operands[1], 0), 1);
+	  emit_insn (gen_movsi_got (operands[0], symbolref));
+	  emit_insn (gen_add3_insn(operands[0], operands[0], const_int));
+	}
+      return true;
+    }
+  return false;
+}
 
-      if (GET_CODE (operands[0]) == MEM)
+bool
+or1k_expand_move (enum machine_mode mode, rtx operands[])
+{
+  if (can_create_pseudo_p ())
+    {
+      if (GET_CODE (operands[0]) == MEM
+	  || (GET_CODE (operands[0]) == SUBREG
+	      && GET_CODE (SUBREG_REG (operands[0])) == MEM))
         {
-          rtx addr = XEXP (operands[0], 0);
-          if (GET_CODE (addr) == SYMBOL_REF)
-            {
-              rtx ptr_reg, result;
-
-              crtl->uses_pic_offset_table = 1;
-              addr = expand_pic_symbol_ref (mode, addr);
-              ptr_reg = gen_reg_rtx (Pmode);
-              emit_move_insn (ptr_reg, addr);
-              result = gen_rtx_MEM (mode, ptr_reg);
-              operands[0] = result;
-            }
-        }
-
-      if (GET_CODE (operands[1]) == SYMBOL_REF)
-        {
-          rtx result;
-          crtl->uses_pic_offset_table = 1;
-          result = expand_pic_symbol_ref (mode, operands[1]);
-          if (GET_CODE (operands[0]) != REG)
-            {
-              rtx ptr_reg = gen_reg_rtx (Pmode);
-              emit_move_insn (ptr_reg, result);
-              emit_move_insn (operands[0], ptr_reg);
-            }
-          else
-            {
-              emit_move_insn (operands[0], result);
-            }
-          return true;
-        }
-      else if (GET_CODE (operands[1]) == MEM &&
-               GET_CODE (XEXP (operands[1], 0)) == SYMBOL_REF)
-        {
-          rtx result;
-          rtx ptr_reg;
-	  crtl->uses_pic_offset_table = 1;
-          result = expand_pic_symbol_ref (mode, XEXP (operands[1], 0));
-
-          ptr_reg = gen_reg_rtx (Pmode);
-
-          emit_move_insn (ptr_reg, result);
-          result = gen_rtx_MEM (mode, ptr_reg);
-          emit_move_insn (operands[0], result);
-          return true;
+          /* Source operand for store must be in a register.  */
+          operands[1] = force_reg (SImode, operands[1]);
         }
     }
 
-  if (flag_pic && (reload_in_progress | reload_completed))
-    return false;
+  if (flag_pic && or1k_expand_pic_symbol_ref(mode, operands))
+    return true;
 
   /* Working with CONST_INTs is easier, so convert
      a double if needed.  */
