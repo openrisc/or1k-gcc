@@ -303,6 +303,15 @@
   [(set_attr "type" "move")
    (set_attr "length" "1")])
 
+(define_insn "movsi_got"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+        (unspec:SI [(match_operand 1 "" "")] UNSPEC_GOT))
+   (use (reg:SI 16))]
+  "flag_pic"
+  "l.lwz    \t%0, got(%1)(r16)"
+  [(set_attr "type" "load")]
+)
+
 (define_insn_and_split "movsi_insn_big"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(match_operand:SI 1 "immediate_operand" "i"))]
