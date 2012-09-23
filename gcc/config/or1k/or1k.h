@@ -555,7 +555,18 @@ enum reg_class
 #define GP_ARG_RETURN  11 
 #define GP_ARG_RETURNH 12 
 
+/* Position Independent Code.  */
+
 #define PIC_OFFSET_TABLE_REGNUM 16
+
+/* A C expression that is nonzero if X is a legitimate immediate
+   operand on the target machine when generating position independent code.
+   You can assume that X satisfies CONSTANT_P, so you need not
+   check this.  You can also assume `flag_pic' is true, so you need not
+   check it either.  You need not define this macro if all constants
+   (including SYMBOL_REF) can be immediate operands when generating
+   position independent code.  */
+#define LEGITIMATE_PIC_OPERAND_P(X) or1k_legitimate_pic_operand_p (X)
 
 /* A C expression to create an RTX representing the place where a library
    function returns a value of mode mode.

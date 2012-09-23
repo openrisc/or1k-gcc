@@ -547,6 +547,21 @@ or1k_regnum_ok_for_base_p (HOST_WIDE_INT  num,
     }
 }	/* or1k_regnum_ok_for_base_p () */
 
+int
+or1k_legitimate_pic_operand_p (rtx x)
+{
+  if (GET_CODE (x) == CONST
+      && GET_CODE (XEXP (x, 0)) == PLUS
+      && ((GET_CODE (XEXP (XEXP (x, 0), 0)) == SYMBOL_REF
+	   && (!SYMBOL_REF_LOCAL_P (XEXP (XEXP (x, 0), 0))
+	       || SYMBOL_REF_WEAK (XEXP (XEXP (x, 0), 0))))
+	  || GET_CODE (XEXP (XEXP (x, 0), 0)) == LABEL_REF)
+      && CONST_INT_P (XEXP (XEXP (x, 0), 1)))
+    return or1k_legitimate_displacement_p (SImode, XEXP (XEXP (x, 0), 1));
+
+  return 1;
+}
+
 bool
 or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
 			    rtx operands[])
