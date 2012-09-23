@@ -1896,7 +1896,7 @@ or1k-*-elf*)
        ;;
 or1k-*-linux-*)
        tm_file="${tm_file} dbxelf.h elfos.h or1k/elf.h or1k/linux-gas.h or1k/linux-elf.h uclibc-stdint.h"
-       tmake_file="or1k/t-or1k or1k/t-linux"
+       tmake_file="or1k/t-or1k or1k/t-linux ${tmake_file}"
        tm_defines="`echo $tm_defines|sed -e s/UCLIBC_DEFAULT=.//g`"
        tm_defines="${tm_defines} UCLIBC_DEFAULT=1 OR1K_LIBC_DEFAULT=or1k_libc_uclibc OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
        ;;
@@ -1908,7 +1908,7 @@ or1knd-*-elf*)
        ;;
 or1knd-*-linux-*)
        tm_file="${tm_file} dbxelf.h elfos.h or1k/elf.h or1k/linux-gas.h or1k/linux-elf.h uclibc-stdint.h"
-       tmake_file="or1k/t-or1knd or1k/t-linux"
+       tmake_file="or1k/t-or1knd or1k/t-linux ${tmake_file}"
        tm_defines="`echo $tm_defines|sed -e s/UCLIBC_DEFAULT=.//g`"
        tm_defines="${tm_defines} UCLIBC_DEFAULT=1 OR1K_LIBC_DEFAULT=or1k_libc_uclibc OR1K_DELAY_DEFAULT=OR1K_DELAY_OFF"
        ;;
