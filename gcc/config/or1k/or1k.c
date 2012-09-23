@@ -812,6 +812,9 @@ or1k_expand_prologue (void)
     /* No frame needed.  */
     return;
 
+  gcc_assert (!frame_info.save_lr_p || !frame_info.save_fp_p
+	      || frame_info.lr_save_offset != frame_info.fp_save_offset);
+
   if (frame_info.gpr_frame)
     emit_frame_insn (gen_add2_insn (stack_pointer_rtx,
 				    GEN_INT (-frame_info.gpr_frame)));
@@ -840,9 +843,13 @@ or1k_expand_prologue (void)
 	  if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
 	    continue;
 
-	  if (frame_info.save_lr_p)
-	    gcc_assert ((frame_info.gpr_offset + offset)
-			!= frame_info.lr_save_offset);
+	  /* Check that the offsets aren't stepping on lr/fp slots */
+	  gcc_assert (!frame_info.save_lr_p
+		      || ((frame_info.gpr_offset + offset)
+			  != frame_info.lr_save_offset));
+	  gcc_assert (!frame_info.save_fp_p
+		      || ((frame_info.gpr_offset + offset)
+			  != frame_info.fp_save_offset));
 
 	  emit_frame_insn
 	    (gen_rtx_SET (Pmode,
