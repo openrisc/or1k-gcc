@@ -23,11 +23,6 @@ Boston, MA 02111-1307, USA.  */
 /* elfos.h should have already been included.  Now just override
    any conflicting definitions and add any extras.  */
 
-/* Run-time Target Specification.  */
-#if 0
-#undef  TARGET_VERSION
-#define TARGET_VERSION  fputs (" (OR1K GNU/Linux with ELF)", stderr);
-#endif
 /* Do not assume anything about header files.  */
 #define NO_IMPLICIT_EXTERN_C
 
@@ -88,3 +83,4 @@ Boston, MA 02111-1307, USA.  */
     if (c_dialect_cxx ())					\
       builtin_define ("_GNU_SOURCE");				\
   } while (0)
+
