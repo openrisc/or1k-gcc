@@ -605,6 +605,19 @@ or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
       else
 	{
 	  rtx const_int = XEXP (XEXP (operands[1], 0), 1);
+
+	  /* Expand the constant into a register if it doesn't
+	     fit directly as an 16-bit immediate in the add below.
+	     Note that the reg allocation is allowed here since
+	     we are guarded by LEGITIMATE_PIC_OPERAND_P. */
+	  if (!or1k_legitimate_displacement_p (mode, const_int))
+	    {
+	      rtx scratch = gen_reg_rtx (mode);
+
+	      or1k_emit_set_const32 (scratch, const_int);
+	      const_int = scratch;
+	    }
+
 	  emit_insn (gen_movsi_got (operands[0], symbolref));
 	  emit_insn (gen_add3_insn(operands[0], operands[0], const_int));
 	}
