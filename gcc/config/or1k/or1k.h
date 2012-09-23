@@ -72,7 +72,7 @@ Boston, MA 02111-1307, USA.  */
 /* Override previous definitions (linux.h). Newlib doesn't have a profiling
    version of the library, but it does have a debugging version (libg.a) */
 #undef LIB_SPEC
-#define LIB_SPEC "%{!mnewlib:%{pthread:--whole-archive -lpthread --no-whole-archive}	\
+#define LIB_SPEC "%{!mnewlib:%{pthread:-lpthread}	\
 		             %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"			\
                  "%{mnewlib:%{!g:-lc} %{g:-lg} -lor1k					\
                             %{!static:%{mboard=*:-lboard-%*}				\
