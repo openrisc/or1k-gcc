@@ -61,10 +61,11 @@ Boston, MA 02111-1307, USA.  */
 /* Make sure we pick up the crti.o, crtbegin.o, crtend.o and crtn.o files. */
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC \
-  "%{!shared:crt0.o%s crti.o%s crtbegin.o%s}"
+  "%{!shared:%{pie:Scrt0.o%s;:crt0.o%s}} crti.o%s \
+   %{static:crtbeginT.o%s;shared|pie:crtbeginS.o%s;:crtbegin.o%s}"
 
 #undef ENDFILE_SPEC
-#define ENDFILE_SPEC "crtend.o%s crtn.o%s"
+#define ENDFILE_SPEC "%{shared|pie:crtendS.o%s;:crtend.o%s} crtn.o%s"
 
 #undef LINK_SPEC
 #define LINK_SPEC "%{mnewlib:-entry 0x100}%{static:-static}%{shared:-shared}"
