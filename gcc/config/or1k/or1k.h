@@ -918,10 +918,9 @@ enum reg_class
    previous stack frame at the start of a function, before the prologue */
 #define INCOMING_FRAME_SP_OFFSET  0
 
-/* This doesn't work for the OR1K assembler at present. If it did, we'd have
-   more compact debug tables. */
-/* #undef  DWARF2_ASM_LINE_DEBUG_INFO */
-/* #define DWARF2_ASM_LINE_DEBUG_INFO 1 */
+/* Use compact debug tables. Generates .file/.loc directives. */
+#undef  DWARF2_ASM_LINE_DEBUG_INFO
+#define DWARF2_ASM_LINE_DEBUG_INFO 1
 
 /* We don't need an alternative return address for now. */
 /* DWARF_ALT_FRAME_RETURN_COLUMN */
