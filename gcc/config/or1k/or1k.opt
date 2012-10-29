@@ -80,23 +80,8 @@ Target RejectNegative Joined
 Link with libgloss configuration suitable for this board
 
 mnewlib
-Target Report RejectNegative Var(or1k_libc,or1k_libc_newlib) Init(OR1K_LIBC_DEFAULT)
+Target Report RejectNegative
 Compile for the Linux/Gnu/newlib based toolchain
-
-;; muclibc / mglibc are defined in linux.opt, so we can't easily re-define
-;; how they are recorded.
-;; We could remove linux.opt from extra_options, but that could backfire if
-;; more options are added that we don't want to remove.  Hence we use
-;; TARGET_HANDLE_OPTION.
-;; FIXME: Commented out since this doesn't build when enabled anymore,
-;;        but why do they need to be overridden?
-;muclibc
-;Target RejectNegative
-;Use uClibc
-
-;mglibc
-;Target RejectNegative
-;Use glibc (not supported)
 
 ;; provide struct padding as in previous releases.
 ;; Note that this will only affect STRUCTURE_SIZE_BOUNDARY, in particular

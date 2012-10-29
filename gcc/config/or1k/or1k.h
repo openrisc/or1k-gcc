@@ -49,8 +49,6 @@ Boston, MA 02111-1307, USA.  */
       } else if (TARGET_DELAY_COMPAT) {                 \
         builtin_define ("__OR1K_DELAY_COMPAT__");       \
       }                                                 \
-      if (or1k_libc == or1k_libc_uclibc)                \
-	builtin_define ("__UCLIBC__");                  \
     }                                                   \
   while (0)
 
@@ -1214,9 +1212,5 @@ enum reg_class
 
    For the OR1K, there is no need for anything other than word alignment. */
 #define TRAMPOLINE_ALIGNMENT  32
-
-/* GLIBC is not implemented, but we handle the selection for consistency
-   with the Linux framework.  */
-enum or1k_libc_kind {  or1k_libc_newlib, or1k_libc_uclibc, or1k_libc_glibc };
 
 #endif /* _OR1K_H_ */

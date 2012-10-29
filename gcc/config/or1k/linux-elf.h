@@ -62,6 +62,7 @@ Boston, MA 02111-1307, USA.  */
 #define CPLUSPLUS_CPP_SPEC "-D_GNU_SOURCE %(cpp)"
 
 #undef DRIVER_SELF_SPECS
+#define DRIVER_SELF_SPECS "%{!mglibc:-muclibc}"
 
 /* Define a set of Linux builtins. This is copied from linux.h. We can't
    include the whole file for now, because that causes configure to require ld
@@ -79,6 +80,8 @@ Boston, MA 02111-1307, USA.  */
 #define TARGET_OS_CPP_BUILTINS()				\
   do {								\
     LINUX_TARGET_OS_CPP_BUILTINS();				\
+    if (OPTION_UCLIBC)						\
+      builtin_define ("__UCLIBC__");				\
     /* The GNU C++ standard library requires this.  */		\
     if (c_dialect_cxx ())					\
       builtin_define ("_GNU_SOURCE");				\
