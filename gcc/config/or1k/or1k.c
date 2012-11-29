@@ -172,7 +172,7 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
   /* If the function has local variables, we're committed to
      allocating it anyway.  Otherwise reclaim it here.  */
   /* FIXME: Verify this.  Got if from the MIPS port.  */
-  if (vars_size == 0 && current_function_is_leaf)
+  if (vars_size == 0 && crtl->is_leaf)
     args_size = 0;
 
   stack_offset = 0;

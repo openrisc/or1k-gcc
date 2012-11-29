@@ -44,6 +44,8 @@ extern void        or1k_expand_sibcall (rtx  result ATTRIBUTE_UNUSED,
 					rtx  args_size);
 extern void        or1k_emit_set_const32 (rtx  op0,
 					  rtx  op1);
+extern bool        or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
+                                               rtx operands[]);
 #endif
 
 #endif
@@ -54,6 +56,7 @@ extern int or1k_initial_elimination_offset (int, int);
 extern bool or1k_save_reg_p_cached (int regno);
 extern void or1k_print_jump_restore (rtx jump_address);
 
+extern int or1k_legitimate_pic_operand_p (rtx x);
 
 /* For RETURN_ADDR_RTX */
 extern rtx get_hard_reg_initial_val (enum machine_mode, unsigned int);
