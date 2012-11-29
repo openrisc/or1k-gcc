@@ -1,5 +1,10 @@
 2012-11-29  Peter Gavin  <pgavin@gmail.com>
 
+	* config/or1k/or1k.c:
+	(or1k_output_highadd) removed, unneeded
+
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
 	* config/or1k/or1k-protos.h:
 	(or1k_expand_sibcall) removed, unneeded
 

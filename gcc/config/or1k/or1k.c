@@ -1836,36 +1836,6 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 
 }	/* or1k_dwarf_calling_convention () */
 
-/* If DELTA doesn't fit into a 16 bit signed number, emit instructions to
-   add the highpart to DST; return the signed-16-bit lowpart of DELTA.
-   TMP_REGNO is a register that may be used to load a constant.  */
-static HOST_WIDE_INT
-or1k_output_highadd (FILE *file,
-		     const char *dst, int tmp_regno, HOST_WIDE_INT delta)
-{
-  if (delta < -32768 || delta > 32767)
-    {
-      if (delta >= -65536 && delta < 65534)
-	{
-	  asm_fprintf (file, "\tl.addi\t%s,%s,%d\n",
-		       dst, dst, (int) (delta + 1) >> 1);
-	  delta >>= 1;
-	}
-      else
-	{
-	  const char *tmp = reg_names[tmp_regno];
-	  HOST_WIDE_INT high = (delta + 0x8000) >> 16;
-
-	  gcc_assert (call_used_regs[tmp_regno]);
-	  asm_fprintf (file, "\tl.movhi\t%s,%d\n" "\tl.add\t%s,%s,%s\n",
-		 tmp, (int) high,
-		 dst, dst, tmp);
-	  delta -= high << 16;
-	}
-    }
-  return delta;
-}
-
 /* ========================================================================== */
 /* Target hook initialization.
 
