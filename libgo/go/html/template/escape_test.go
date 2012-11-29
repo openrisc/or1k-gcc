@@ -226,7 +226,7 @@ func TestEscape(t *testing.T) {
 		{
 			"badMarshaler",
 			`<button onclick='alert(1/{{.B}}in numbers)'>`,
-			`<button onclick='alert(1/ /* json: error calling MarshalJSON for type *html/template.badMarshaler: invalid character &#39;f&#39; looking for beginning of object key string */null in numbers)'>`,
+			`<button onclick='alert(1/ /* json: error calling MarshalJSON for type *template.badMarshaler: invalid character &#39;f&#39; looking for beginning of object key string */null in numbers)'>`,
 		},
 		{
 			"jsMarshaler",
@@ -1537,6 +1537,11 @@ func TestEnsurePipelineContains(t *testing.T) {
 		{
 			"{{.X | html | print}}",
 			".X | urlquery | html | print",
+			[]string{"urlquery", "html"},
+		},
+		{
+			"{{($).X | html | print}}",
+			"($).X | urlquery | html | print",
 			[]string{"urlquery", "html"},
 		},
 	}

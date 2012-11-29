@@ -945,6 +945,13 @@ package body Lib.Xref is
          then
             Ent := E;
 
+         --  Ditto for the formals of such a subprogram
+
+         elsif Is_Overloadable (Scope (E))
+           and then Is_Child_Unit (Scope (E))
+         then
+            Ent := E;
+
          --  Record components of discriminated subtypes or derived types must
          --  be treated as references to the original component.
 
@@ -2441,11 +2448,13 @@ package body Lib.Xref is
                        (Int (Get_Logical_Line_Number (XE.Key.Loc)));
                      Write_Info_Char (XE.Key.Typ);
 
-                     if Is_Overloadable (XE.Key.Ent)
-                       and then Is_Imported (XE.Key.Ent)
-                       and then XE.Key.Typ = 'b'
-                     then
-                        Output_Import_Export_Info (XE.Key.Ent);
+                     if Is_Overloadable (XE.Key.Ent) then
+                        if (Is_Imported (XE.Key.Ent) and then XE.Key.Typ = 'b')
+                             or else
+                           (Is_Exported (XE.Key.Ent) and then XE.Key.Typ = 'i')
+                        then
+                           Output_Import_Export_Info (XE.Key.Ent);
+                        end if;
                      end if;
 
                      Write_Info_Nat (Int (Get_Column_Number (XE.Key.Loc)));

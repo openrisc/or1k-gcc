@@ -23,6 +23,7 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
+with Atree;    use Atree;
 with Err_Vars; use Err_Vars;
 with Opt;      use Opt;
 with Osint;    use Osint;
@@ -1588,7 +1589,7 @@ package body Prj.Proc is
                   Add_Attributes
                     (Project,
                      Project.Name,
-                     Name_Id (Project.Directory.Name),
+                     Name_Id (Project.Directory.Display_Name),
                      Shared,
                      Shared.Packages.Table (New_Pkg).Decl,
                      First_Attribute_Of
@@ -2850,7 +2851,7 @@ package body Prj.Proc is
             Add_Attributes
               (Project,
                Name,
-               Name_Id (Project.Directory.Name),
+               Name_Id (Project.Directory.Display_Name),
                In_Tree.Shared,
                Project.Decl,
                Prj.Attr.Attribute_First,
@@ -2908,7 +2909,7 @@ package body Prj.Proc is
 
             Process_Imported_Projects (Imported, Limited_With => True);
 
-            if Err_Vars.Total_Errors_Detected = 0 then
+            if Total_Errors_Detected = 0 then
                Process_Aggregated_Projects;
             end if;
 
@@ -2938,7 +2939,7 @@ package body Prj.Proc is
                   end loop;
                end if;
 
-               if Err_Vars.Total_Errors_Detected = 0 then
+               if Total_Errors_Detected = 0 then
 
                   --  For an aggregate library we add the aggregated projects
                   --  as imported ones. This is necessary to give visibility

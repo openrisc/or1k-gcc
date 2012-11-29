@@ -327,6 +327,9 @@
 /* Define to 1 if you have the `sinl' function. */
 #undef HAVE_SINL
 
+/* Defined if sleep exists. */
+#undef HAVE_SLEEP
+
 /* Define to 1 if you have the `sqrtf' function. */
 #undef HAVE_SQRTF
 
@@ -435,6 +438,9 @@
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
+
+/* Defined if usleep exists. */
+#undef HAVE_USLEEP
 
 /* Defined if vfwscanf exists. */
 #undef HAVE_VFWSCANF
@@ -844,6 +850,12 @@
 
 /* Define if code specialized for wchar_t should be used. */
 #undef _GLIBCXX_USE_WCHAR_T
+
+/* Define to 1 if a verbose library is built, or 0 otherwise. */
+#undef _GLIBCXX_VERBOSE
+
+/* Defined if as can handle rdrand. */
+#undef _GLIBCXX_X86_RDRAND
 
 /* Define to 1 if mutex_timedlock is available. */
 #undef _GTHREAD_USE_MUTEX_TIMEDLOCK

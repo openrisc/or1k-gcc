@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 )
 
 const (
@@ -220,14 +221,6 @@ func (p *printer) writeString(pos token.Position, s string, isLit bool) {
 		// atLineBegin updates p.pos if there's indentation, but p.pos
 		// is the position of s.
 		p.pos = pos
-		// reset state if the file changed
-		// (used when printing merged ASTs of different files
-		// e.g., the result of ast.MergePackageFiles)
-		if p.last.IsValid() && p.last.Filename != pos.Filename {
-			p.indent = 0
-			p.mode = 0
-			p.wsbuf = p.wsbuf[0:0]
-		}
 	}
 
 	if isLit {
@@ -405,6 +398,7 @@ func (p *printer) writeCommentPrefix(pos, next token.Position, prev, comment *as
 // Split comment text into lines
 // (using strings.Split(text, "\n") is significantly slower for
 // this specific purpose, as measured with: go test -bench=Print)
+//
 func split(text string) []string {
 	// count lines (comment text never ends in a newline)
 	n := 1
@@ -432,6 +426,7 @@ func split(text string) []string {
 
 // Returns true if s contains only white space
 // (only tabs and blanks can appear in the printer's context).
+//
 func isBlank(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] > ' ' {
@@ -441,6 +436,7 @@ func isBlank(s string) bool {
 	return true
 }
 
+// commonPrefix returns the common prefix of a and b.
 func commonPrefix(a, b string) string {
 	i := 0
 	for i < len(a) && i < len(b) && a[i] == b[i] && (a[i] <= ' ' || a[i] == '*') {
@@ -449,11 +445,22 @@ func commonPrefix(a, b string) string {
 	return a[0:i]
 }
 
+// trimRight returns s with trailing whitespace removed.
+func trimRight(s string) string {
+	return strings.TrimRightFunc(s, unicode.IsSpace)
+}
+
+// stripCommonPrefix removes a common prefix from /*-style comment lines (unless no
+// comment line is indented, all but the first line have some form of space prefix).
+// The prefix is computed using heuristics such that is is likely that the comment
+// contents are nicely laid out after re-printing each line using the printer's
+// current indentation.
+//
 func stripCommonPrefix(lines []string) {
-	if len(lines) < 2 {
+	if len(lines) <= 1 {
 		return // at most one line - nothing to do
 	}
-	// len(lines) >= 2
+	// len(lines) > 1
 
 	// The heuristic in this function tries to handle a few
 	// common patterns of /*-style comments: Comments where
@@ -479,7 +486,7 @@ func stripCommonPrefix(lines []string) {
 		for i, line := range lines[1 : len(lines)-1] {
 			switch {
 			case isBlank(line):
-				lines[1+i] = "" // range starts at line 1
+				lines[1+i] = "" // range starts with lines[1]
 			case first:
 				prefix = commonPrefix(line, line)
 				first = false
@@ -570,9 +577,9 @@ func stripCommonPrefix(lines []string) {
 	}
 
 	// Remove the common prefix from all but the first and empty lines.
-	for i, line := range lines[1:] {
-		if len(line) != 0 {
-			lines[1+i] = line[len(prefix):] // range starts at line 1
+	for i, line := range lines {
+		if i > 0 && line != "" {
+			lines[i] = line[len(prefix):]
 		}
 	}
 }
@@ -605,13 +612,26 @@ func (p *printer) writeComment(comment *ast.Comment) {
 
 	// shortcut common case of //-style comments
 	if text[1] == '/' {
-		p.writeString(pos, text, true)
+		p.writeString(pos, trimRight(text), true)
 		return
 	}
 
 	// for /*-style comments, print line by line and let the
 	// write function take care of the proper indentation
 	lines := split(text)
+
+	// The comment started in the first column but is going
+	// to be indented. For an idempotent result, add indentation
+	// to all lines such that they look like they were indented
+	// before - this will make sure the common prefix computation
+	// is the same independent of how many times formatting is
+	// applied (was issue 1835).
+	if pos.IsValid() && pos.Column == 1 && p.indent > 0 {
+		for i, line := range lines[1:] {
+			lines[1+i] = "   " + line
+		}
+	}
+
 	stripCommonPrefix(lines)
 
 	// write comment lines, separated by formfeed,
@@ -622,7 +642,7 @@ func (p *printer) writeComment(comment *ast.Comment) {
 			pos = p.pos
 		}
 		if len(line) > 0 {
-			p.writeString(pos, line, true)
+			p.writeString(pos, trimRight(line), true)
 		}
 	}
 }
@@ -1140,7 +1160,7 @@ func (p *trimmer) Write(data []byte) (n int, err error) {
 // ----------------------------------------------------------------------------
 // Public interface
 
-// A Mode value is a set of flags (or 0). They coontrol printing. 
+// A Mode value is a set of flags (or 0). They control printing.
 type Mode uint
 
 const (

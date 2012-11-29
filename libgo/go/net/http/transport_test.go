@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	. "net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -34,6 +36,68 @@ var hostPortHandler = HandlerFunc(func(w ResponseWriter, r *Request) {
 	}
 	w.Write([]byte(r.RemoteAddr))
 })
+
+// testCloseConn is a net.Conn tracked by a testConnSet.
+type testCloseConn struct {
+	net.Conn
+	set *testConnSet
+}
+
+func (c *testCloseConn) Close() error {
+	c.set.remove(c)
+	return c.Conn.Close()
+}
+
+// testConnSet tracks a set of TCP connections and whether they've
+// been closed.
+type testConnSet struct {
+	t      *testing.T
+	closed map[net.Conn]bool
+	list   []net.Conn // in order created
+	mutex  sync.Mutex
+}
+
+func (tcs *testConnSet) insert(c net.Conn) {
+	tcs.mutex.Lock()
+	defer tcs.mutex.Unlock()
+	tcs.closed[c] = false
+	tcs.list = append(tcs.list, c)
+}
+
+func (tcs *testConnSet) remove(c net.Conn) {
+	tcs.mutex.Lock()
+	defer tcs.mutex.Unlock()
+	tcs.closed[c] = true
+}
+
+// some tests use this to manage raw tcp connections for later inspection
+func makeTestDial(t *testing.T) (*testConnSet, func(n, addr string) (net.Conn, error)) {
+	connSet := &testConnSet{
+		t:      t,
+		closed: make(map[net.Conn]bool),
+	}
+	dial := func(n, addr string) (net.Conn, error) {
+		c, err := net.Dial(n, addr)
+		if err != nil {
+			return nil, err
+		}
+		tc := &testCloseConn{c, connSet}
+		connSet.insert(tc)
+		return tc, nil
+	}
+	return connSet, dial
+}
+
+func (tcs *testConnSet) check(t *testing.T) {
+	tcs.mutex.Lock()
+	defer tcs.mutex.Unlock()
+
+	for i, c := range tcs.list {
+		if !tcs.closed[c] {
+			t.Errorf("TCP connection #%d, %p (of %d total) was not closed", i+1, c, len(tcs.list))
+		}
+	}
+}
 
 // Two subsequent requests and verify their response is the same.
 // The response from the server is our own IP:port
@@ -72,8 +136,12 @@ func TestTransportConnectionCloseOnResponse(t *testing.T) {
 	ts := httptest.NewServer(hostPortHandler)
 	defer ts.Close()
 
+	connSet, testDial := makeTestDial(t)
+
 	for _, connectionClose := range []bool{false, true} {
-		tr := &Transport{}
+		tr := &Transport{
+			Dial: testDial,
+		}
 		c := &Client{Transport: tr}
 
 		fetch := func(n int) string {
@@ -92,8 +160,8 @@ func TestTransportConnectionCloseOnResponse(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error in connectionClose=%v, req #%d, Do: %v", connectionClose, n, err)
 			}
-			body, err := ioutil.ReadAll(res.Body)
 			defer res.Body.Close()
+			body, err := ioutil.ReadAll(res.Body)
 			if err != nil {
 				t.Fatalf("error in connectionClose=%v, req #%d, ReadAll: %v", connectionClose, n, err)
 			}
@@ -107,15 +175,23 @@ func TestTransportConnectionCloseOnResponse(t *testing.T) {
 			t.Errorf("error in connectionClose=%v. unexpected bodiesDiffer=%v; body1=%q; body2=%q",
 				connectionClose, bodiesDiffer, body1, body2)
 		}
+
+		tr.CloseIdleConnections()
 	}
+
+	connSet.check(t)
 }
 
 func TestTransportConnectionCloseOnRequest(t *testing.T) {
 	ts := httptest.NewServer(hostPortHandler)
 	defer ts.Close()
 
+	connSet, testDial := makeTestDial(t)
+
 	for _, connectionClose := range []bool{false, true} {
-		tr := &Transport{}
+		tr := &Transport{
+			Dial: testDial,
+		}
 		c := &Client{Transport: tr}
 
 		fetch := func(n int) string {
@@ -149,7 +225,11 @@ func TestTransportConnectionCloseOnRequest(t *testing.T) {
 			t.Errorf("error in connectionClose=%v. unexpected bodiesDiffer=%v; body1=%q; body2=%q",
 				connectionClose, bodiesDiffer, body1, body2)
 		}
+
+		tr.CloseIdleConnections()
 	}
+
+	connSet.check(t)
 }
 
 func TestTransportIdleCacheKeys(t *testing.T) {
@@ -722,6 +802,103 @@ func TestTransportIdleConnCrash(t *testing.T) {
 	}()
 	unblockCh <- true
 	<-didreq
+}
+
+// Test that the transport doesn't close the TCP connection early,
+// before the response body has been read.  This was a regression
+// which sadly lacked a triggering test.  The large response body made
+// the old race easier to trigger.
+func TestIssue3644(t *testing.T) {
+	const numFoos = 5000
+	ts := httptest.NewServer(HandlerFunc(func(w ResponseWriter, r *Request) {
+		w.Header().Set("Connection", "close")
+		for i := 0; i < numFoos; i++ {
+			w.Write([]byte("foo "))
+		}
+	}))
+	defer ts.Close()
+	tr := &Transport{}
+	c := &Client{Transport: tr}
+	res, err := c.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	bs, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bs) != numFoos*len("foo ") {
+		t.Errorf("unexpected response length")
+	}
+}
+
+// Test that a client receives a server's reply, even if the server doesn't read
+// the entire request body.
+func TestIssue3595(t *testing.T) {
+	const deniedMsg = "sorry, denied."
+	ts := httptest.NewServer(HandlerFunc(func(w ResponseWriter, r *Request) {
+		Error(w, deniedMsg, StatusUnauthorized)
+	}))
+	defer ts.Close()
+	tr := &Transport{}
+	c := &Client{Transport: tr}
+	res, err := c.Post(ts.URL, "application/octet-stream", neverEnding('a'))
+	if err != nil {
+		t.Errorf("Post: %v", err)
+		return
+	}
+	got, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("Body ReadAll: %v", err)
+	}
+	if !strings.Contains(string(got), deniedMsg) {
+		t.Errorf("Known bug: response %q does not contain %q", got, deniedMsg)
+	}
+}
+
+func TestTransportConcurrency(t *testing.T) {
+	const maxProcs = 16
+	const numReqs = 500
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(maxProcs))
+	ts := httptest.NewServer(HandlerFunc(func(w ResponseWriter, r *Request) {
+		fmt.Fprintf(w, "%v", r.FormValue("echo"))
+	}))
+	defer ts.Close()
+	tr := &Transport{}
+	c := &Client{Transport: tr}
+	reqs := make(chan string)
+	defer close(reqs)
+
+	var wg sync.WaitGroup
+	wg.Add(numReqs)
+	for i := 0; i < maxProcs*2; i++ {
+		go func() {
+			for req := range reqs {
+				res, err := c.Get(ts.URL + "/?echo=" + req)
+				if err != nil {
+					t.Errorf("error on req %s: %v", req, err)
+					wg.Done()
+					continue
+				}
+				all, err := ioutil.ReadAll(res.Body)
+				if err != nil {
+					t.Errorf("read error on req %s: %v", req, err)
+					wg.Done()
+					continue
+				}
+				if string(all) != req {
+					t.Errorf("body of req %s = %q; want %q", req, all, req)
+				}
+				wg.Done()
+				res.Body.Close()
+			}
+		}()
+	}
+	for i := 0; i < numReqs; i++ {
+		reqs <- fmt.Sprintf("request-%d", i)
+	}
+	wg.Wait()
 }
 
 type fooProto struct{}

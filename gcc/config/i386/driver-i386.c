@@ -1,5 +1,6 @@
 /* Subroutines for the gcc driver.
-   Copyright (C) 2006, 2007, 2008, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2006, 2007, 2008, 2010, 2011, 2012
+   Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -347,17 +348,6 @@ detect_caches_intel (bool xeon_mp, unsigned max_level,
   return describe_cache (level1, level2);
 }
 
-enum vendor_signatures
-{
-  SIG_INTEL =	0x756e6547 /* Genu */,
-  SIG_AMD =	0x68747541 /* Auth */
-};
-
-enum processor_signatures
-{
-  SIG_GEODE =	0x646f6547 /* Geod */
-};
-
 /* This will be called by the spec parser in gcc.c when it sees
    a %:local_cpu_detect(args) construct.  Currently it will be called
    with either "arch" or "tune" as argument depending on if -march=native
@@ -399,6 +389,8 @@ const char *host_detect_local_cpu (int argc, const char **argv)
   unsigned int has_bmi = 0, has_bmi2 = 0, has_tbm = 0, has_lzcnt = 0;
   unsigned int has_hle = 0, has_rtm = 0;
   unsigned int has_rdrnd = 0, has_f16c = 0, has_fsgsbase = 0;
+  unsigned int has_rdseed = 0, has_prfchw = 0, has_adx = 0;
+  unsigned int has_osxsave = 0, has_fxsr = 0, has_xsave = 0, has_xsaveopt = 0;
 
   bool arch;
 
@@ -420,7 +412,7 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 
   model = (eax >> 4) & 0x0f;
   family = (eax >> 8) & 0x0f;
-  if (vendor == SIG_INTEL)
+  if (vendor == signature_INTEL_ebx)
     {
       unsigned int extended_model, extended_family;
 
@@ -440,6 +432,7 @@ const char *host_detect_local_cpu (int argc, const char **argv)
   has_sse4_1 = ecx & bit_SSE4_1;
   has_sse4_2 = ecx & bit_SSE4_2;
   has_avx = ecx & bit_AVX;
+  has_osxsave = ecx & bit_OSXSAVE;
   has_cmpxchg16b = ecx & bit_CMPXCHG16B;
   has_movbe = ecx & bit_MOVBE;
   has_popcnt = ecx & bit_POPCNT;
@@ -448,10 +441,12 @@ const char *host_detect_local_cpu (int argc, const char **argv)
   has_fma = ecx & bit_FMA;
   has_f16c = ecx & bit_F16C;
   has_rdrnd = ecx & bit_RDRND;
+  has_xsave = ecx & bit_XSAVE;
 
   has_cmpxchg8b = edx & bit_CMPXCHG8B;
   has_cmov = edx & bit_CMOV;
   has_mmx = edx & bit_MMX;
+  has_fxsr = edx & bit_FXSAVE;
   has_sse = edx & bit_SSE;
   has_sse2 = edx & bit_SSE2;
 
@@ -465,6 +460,38 @@ const char *host_detect_local_cpu (int argc, const char **argv)
       has_avx2 = ebx & bit_AVX2;
       has_bmi2 = ebx & bit_BMI2;
       has_fsgsbase = ebx & bit_FSGSBASE;
+      has_rdseed = ebx & bit_RDSEED;
+      has_adx = ebx & bit_ADX;
+    }
+
+  if (max_level >= 13)
+    {
+      __cpuid_count (13, 1, eax, ebx, ecx, edx);
+
+      has_xsaveopt = eax & bit_XSAVEOPT;
+    }
+
+  /* Get XCR_XFEATURE_ENABLED_MASK register with xgetbv.  */
+#define XCR_XFEATURE_ENABLED_MASK	0x0
+#define XSTATE_FP			0x1
+#define XSTATE_SSE			0x2
+#define XSTATE_YMM			0x4
+  if (has_osxsave)
+    asm (".byte 0x0f; .byte 0x01; .byte 0xd0"
+	 : "=a" (eax), "=d" (edx)
+	 : "c" (XCR_XFEATURE_ENABLED_MASK));
+
+  /* Check if SSE and YMM states are supported.  */
+  if (!has_osxsave
+      || (eax & (XSTATE_SSE | XSTATE_YMM)) != (XSTATE_SSE | XSTATE_YMM))
+    {
+      has_avx = 0;
+      has_avx2 = 0;
+      has_fma = 0;
+      has_fma4 = 0;
+      has_xop = 0;
+      has_xsave = 0;
+      has_xsaveopt = 0;
     }
 
   /* Check cpuid level of extended features.  */
@@ -479,11 +506,10 @@ const char *host_detect_local_cpu (int argc, const char **argv)
       has_abm = ecx & bit_ABM;
       has_lwp = ecx & bit_LWP;
       has_fma4 = ecx & bit_FMA4;
-      if (vendor == SIG_AMD && has_fma4 && has_fma)
-	has_fma4 = 0;
       has_xop = ecx & bit_XOP;
       has_tbm = ecx & bit_TBM;
       has_lzcnt = ecx & bit_LZCNT;
+      has_prfchw = ecx & bit_PRFCHW;
 
       has_longmode = edx & bit_LM;
       has_3dnowp = edx & bit_3DNOWP;
@@ -492,9 +518,9 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 
   if (!arch)
     {
-      if (vendor == SIG_AMD)
+      if (vendor == signature_AMD_ebx)
 	cache = detect_caches_amd (ext_level);
-      else if (vendor == SIG_INTEL)
+      else if (vendor == signature_INTEL_ebx)
 	{
 	  bool xeon_mp = (family == 15 && model == 6);
 	  cache = detect_caches_intel (xeon_mp, max_level,
@@ -502,7 +528,7 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 	}
     }
 
-  if (vendor == SIG_AMD)
+  if (vendor == signature_AMD_ebx)
     {
       unsigned int name;
 
@@ -512,8 +538,12 @@ const char *host_detect_local_cpu (int argc, const char **argv)
       else
 	name = 0;
 
-      if (name == SIG_GEODE)
+      if (name == signature_NSC_ebx)
 	processor = PROCESSOR_GEODE;
+      else if (has_movbe)
+	processor = PROCESSOR_BTVER2;
+      else if (has_xsaveopt)
+        processor = PROCESSOR_BDVER3;
       else if (has_bmi)
         processor = PROCESSOR_BDVER2;
       else if (has_xop)
@@ -684,8 +714,14 @@ const char *host_detect_local_cpu (int argc, const char **argv)
     case PROCESSOR_BDVER2:
       cpu = "bdver2";
       break;
+    case PROCESSOR_BDVER3:
+      cpu = "bdver3";
+      break;
     case PROCESSOR_BTVER1:
       cpu = "btver1";
+      break;
+    case PROCESSOR_BTVER2:
+      cpu = "btver2";
       break;
 
     default:
@@ -740,11 +776,18 @@ const char *host_detect_local_cpu (int argc, const char **argv)
       const char *rdrnd = has_rdrnd ? " -mrdrnd" : " -mno-rdrnd";
       const char *f16c = has_f16c ? " -mf16c" : " -mno-f16c";
       const char *fsgsbase = has_fsgsbase ? " -mfsgsbase" : " -mno-fsgsbase";
+      const char *rdseed = has_rdseed ? " -mrdseed" : " -mno-rdseed";
+      const char *prfchw = has_prfchw ? " -mprfchw" : " -mno-prfchw";
+      const char *adx = has_adx ? " -madx" : " -mno-adx";
+      const char *fxsr = has_fxsr ? " -mfxsr" : " -mno-fxsr";
+      const char *xsave = has_xsave ? " -mxsave" : " -mno-xsave";
+      const char *xsaveopt = has_xsaveopt ? " -mxsaveopt" : " -mno-xsaveopt";
 
       options = concat (options, cx16, sahf, movbe, ase, pclmul,
 			popcnt, abm, lwp, fma, fma4, xop, bmi, bmi2,
 			tbm, avx, avx2, sse4_2, sse4_1, lzcnt, rtm,
-			hle, rdrnd, f16c, fsgsbase, NULL);
+			hle, rdrnd, f16c, fsgsbase, rdseed, prfchw, adx,
+			fxsr, xsave, xsaveopt, NULL);
     }
 
 done:

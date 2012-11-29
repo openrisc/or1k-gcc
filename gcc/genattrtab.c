@@ -113,7 +113,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "errors.h"
 #include "read-md.h"
 #include "gensupport.h"
-#include "vecprim.h"
 #include "fnmatch.h"
 
 #define DEBUG 0
@@ -674,9 +673,7 @@ attr_copy_rtx (rtx orig)
   switch (code)
     {
     case REG:
-    case CONST_INT:
-    case CONST_DOUBLE:
-    case CONST_VECTOR:
+    CASE_CONST_ANY:
     case SYMBOL_REF:
     case MATCH_TEST:
     case CODE_LABEL:
@@ -1638,14 +1635,15 @@ write_length_unit_log (FILE *outf)
   unsigned int length_unit_log, length_or;
   int unknown = 0;
 
-  if (length_attr == 0)
-    return;
-  length_or = or_attr_value (length_attr->default_val->value, &unknown);
-  for (av = length_attr->first_value; av; av = av->next)
-    for (ie = av->first_insn; ie; ie = ie->next)
-      length_or |= or_attr_value (av->value, &unknown);
+  if (length_attr)
+    {
+      length_or = or_attr_value (length_attr->default_val->value, &unknown);
+      for (av = length_attr->first_value; av; av = av->next)
+	for (ie = av->first_insn; ie; ie = ie->next)
+	  length_or |= or_attr_value (av->value, &unknown);
+    }
 
-  if (unknown)
+  if (length_attr == NULL || unknown)
     length_unit_log = 0;
   else
     {
@@ -3090,9 +3088,7 @@ clear_struct_flag (rtx x)
   switch (code)
     {
     case REG:
-    case CONST_INT:
-    case CONST_DOUBLE:
-    case CONST_VECTOR:
+    CASE_CONST_ANY:
     case MATCH_TEST:
     case SYMBOL_REF:
     case CODE_LABEL:

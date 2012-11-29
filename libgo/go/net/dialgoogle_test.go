@@ -41,17 +41,6 @@ func doDial(t *testing.T, network, addr string) {
 	fd.Close()
 }
 
-func TestLookupCNAME(t *testing.T) {
-	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
-	}
-	cname, err := LookupCNAME("www.google.com")
-	if !strings.HasSuffix(cname, ".l.google.com.") || err != nil {
-		t.Errorf(`LookupCNAME("www.google.com.") = %q, %v, want "*.l.google.com.", nil`, cname, err)
-	}
-}
-
 var googleaddrsipv4 = []string{
 	"%d.%d.%d.%d:80",
 	"www.google.com:80",
@@ -127,7 +116,12 @@ func TestDialGoogleIPv6(t *testing.T) {
 		return
 	}
 	// Only run tcp6 if the kernel will take it.
-	if !*testIPv6 || !supportsIPv6 {
+	if !supportsIPv6 {
+		t.Logf("skipping test; ipv6 is not supported")
+		return
+	}
+	if !*testIPv6 {
+		t.Logf("test disabled; use -ipv6 to enable")
 		return
 	}
 

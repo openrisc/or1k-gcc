@@ -80,8 +80,8 @@ bool gfc_real16_is_float128 = false;
 
 static GTY(()) tree gfc_desc_dim_type;
 static GTY(()) tree gfc_max_array_element_size;
-static GTY(()) tree gfc_array_descriptor_base[2 * GFC_MAX_DIMENSIONS];
-static GTY(()) tree gfc_array_descriptor_base_caf[2 * GFC_MAX_DIMENSIONS];
+static GTY(()) tree gfc_array_descriptor_base[2 * (GFC_MAX_DIMENSIONS+1)];
+static GTY(()) tree gfc_array_descriptor_base_caf[2 * (GFC_MAX_DIMENSIONS+1)];
 
 /* Arrays for all integral and real kinds.  We'll fill this in at runtime
    after the target has a chance to process command-line options.  */
@@ -1272,12 +1272,13 @@ gfc_is_nodesc_array (gfc_symbol * sym)
     return 0;
 
   /* We want a descriptor for associate-name arrays that do not have an
-     explicitely known shape already.  */
+     explicitly known shape already.  */
   if (sym->assoc && sym->as->type != AS_EXPLICIT)
     return 0;
 
   if (sym->attr.dummy)
-    return sym->as->type != AS_ASSUMED_SHAPE;
+    return sym->as->type != AS_ASSUMED_SHAPE
+	   && sym->as->type != AS_ASSUMED_RANK;
 
   if (sym->attr.result || sym->attr.function)
     return 0;
@@ -1298,6 +1299,13 @@ gfc_build_array_type (tree type, gfc_array_spec * as,
   tree lbound[GFC_MAX_DIMENSIONS];
   tree ubound[GFC_MAX_DIMENSIONS];
   int n;
+
+  if (as->type == AS_ASSUMED_RANK)
+    for (n = 0; n < GFC_MAX_DIMENSIONS; n++)
+      {
+	lbound[n] = NULL_TREE;
+	ubound[n] = NULL_TREE;
+      }
 
   for (n = 0; n < as->rank; n++)
     {
@@ -1323,7 +1331,12 @@ gfc_build_array_type (tree type, gfc_array_spec * as,
   if (as->type == AS_ASSUMED_SHAPE)
     akind = contiguous ? GFC_ARRAY_ASSUMED_SHAPE_CONT
 		       : GFC_ARRAY_ASSUMED_SHAPE;
-  return gfc_get_array_type_bounds (type, as->rank, as->corank, lbound,
+  else if (as->type == AS_ASSUMED_RANK)
+    akind = contiguous ? GFC_ARRAY_ASSUMED_RANK_CONT
+		       : GFC_ARRAY_ASSUMED_RANK;
+  return gfc_get_array_type_bounds (type, as->rank == -1
+					  ? GFC_MAX_DIMENSIONS : as->rank,
+				    as->corank, lbound,
 				    ubound, 0, akind, restricted);
 }
 
@@ -1682,9 +1695,15 @@ gfc_get_array_descriptor_base (int dimen, int codimen, bool restricted,
 {
   tree fat_type, decl, arraytype, *chain = NULL;
   char name[16 + 2*GFC_RANK_DIGITS + 1 + 1];
-  int idx = 2 * (codimen + dimen - 1) + restricted;
+  int idx;
 
-  gcc_assert (codimen + dimen >= 1 && codimen + dimen <= GFC_MAX_DIMENSIONS);
+  /* Assumed-rank array.  */
+  if (dimen == -1)
+    dimen = GFC_MAX_DIMENSIONS;
+
+  idx = 2 * (codimen + dimen) + restricted;
+
+  gcc_assert (codimen + dimen >= 0 && codimen + dimen <= GFC_MAX_DIMENSIONS);
 
   if (gfc_option.coarray == GFC_FCOARRAY_LIB && codimen)
     {
@@ -1721,16 +1740,18 @@ gfc_get_array_descriptor_base (int dimen, int codimen, bool restricted,
   TREE_NO_WARNING (decl) = 1;
 
   /* Build the array type for the stride and bound components.  */
-  arraytype =
-    build_array_type (gfc_get_desc_dim_type (),
-		      build_range_type (gfc_array_index_type,
-					gfc_index_zero_node,
-					gfc_rank_cst[codimen + dimen - 1]));
+  if (dimen + codimen > 0)
+    {
+      arraytype =
+	build_array_type (gfc_get_desc_dim_type (),
+			  build_range_type (gfc_array_index_type,
+					    gfc_index_zero_node,
+					    gfc_rank_cst[codimen + dimen - 1]));
 
-  decl = gfc_add_field_to_struct_1 (fat_type,
-				    get_identifier ("dim"),
-				    arraytype, &chain);
-  TREE_NO_WARNING (decl) = 1;
+      decl = gfc_add_field_to_struct_1 (fat_type, get_identifier ("dim"),
+					arraytype, &chain);
+      TREE_NO_WARNING (decl) = 1;
+    }
 
   if (gfc_option.coarray == GFC_FCOARRAY_LIB && codimen
       && akind == GFC_ARRAY_ALLOCATABLE)
@@ -2424,7 +2445,7 @@ gfc_get_derived_type (gfc_symbol * derived)
 	  || c->ts.u.derived->backend_decl == NULL)
 	c->ts.u.derived->backend_decl = gfc_get_derived_type (c->ts.u.derived);
 
-      if (c->ts.u.derived && c->ts.u.derived->attr.is_iso_c)
+      if (c->ts.u.derived->attr.is_iso_c)
         {
           /* Need to copy the modified ts from the derived type.  The
              typespec was modified because C_PTR/C_FUNPTR are translated
@@ -2669,7 +2690,7 @@ tree
 gfc_get_function_type (gfc_symbol * sym)
 {
   tree type;
-  VEC(tree,gc) *typelist;
+  vec<tree, va_gc> *typelist;
   gfc_formal_arglist *f;
   gfc_symbol *arg;
   int alternate_return;
@@ -2692,7 +2713,7 @@ gfc_get_function_type (gfc_symbol * sym)
 
   if (sym->attr.entry_master)
     /* Additional parameter for selecting an entry point.  */
-    VEC_safe_push (tree, gc, typelist, gfc_array_index_type);
+    vec_safe_push (typelist, gfc_array_index_type);
 
   if (sym->result)
     arg = sym->result;
@@ -2711,17 +2732,16 @@ gfc_get_function_type (gfc_symbol * sym)
 	  || arg->ts.type == BT_CHARACTER)
 	type = build_reference_type (type);
 
-      VEC_safe_push (tree, gc, typelist, type);
+      vec_safe_push (typelist, type);
       if (arg->ts.type == BT_CHARACTER)
 	{
 	  if (!arg->ts.deferred)
 	    /* Transfer by value.  */
-	    VEC_safe_push (tree, gc, typelist, gfc_charlen_type_node);
+	    vec_safe_push (typelist, gfc_charlen_type_node);
 	  else
 	    /* Deferred character lengths are transferred by reference
 	       so that the value can be returned.  */
-	    VEC_safe_push (tree, gc, typelist,
-			   build_pointer_type (gfc_charlen_type_node));
+	    vec_safe_push (typelist, build_pointer_type(gfc_charlen_type_node));
 	}
     }
 
@@ -2759,7 +2779,7 @@ gfc_get_function_type (gfc_symbol * sym)
 	     used without an explicit interface, and cannot be passed as
 	     actual parameters for a dummy procedure.  */
 
-	  VEC_safe_push (tree, gc, typelist, type);
+	  vec_safe_push (typelist, type);
 	}
       else
         {
@@ -2782,11 +2802,11 @@ gfc_get_function_type (gfc_symbol * sym)
 	       so that the value can be returned.  */
 	    type = build_pointer_type (gfc_charlen_type_node);
 
-	  VEC_safe_push (tree, gc, typelist, type);
+	  vec_safe_push (typelist, type);
 	}
     }
 
-  if (!VEC_empty (tree, typelist)
+  if (!vec_safe_is_empty (typelist)
       || sym->attr.is_main_program
       || sym->attr.if_source != IFSRC_UNKNOWN)
     is_varargs = false;

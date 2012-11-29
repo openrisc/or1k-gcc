@@ -50,6 +50,11 @@
 #   cpu_defines_dir        location of cpu_defines.h
 #                          defaults to generic.
 #
+#   cpu_opt_bits_random    path name of random.h containing CPU-specific
+#                          optimizations
+#
+#   cpu_opt_ext_random     path name of random.h containing CPU-specific
+#                          optimizations for extensions
 #
 #   error_constants_dir    location of error_constants.h
 #                          defaults to os/generic.
@@ -183,6 +188,22 @@ if test -f ${glibcxx_srcdir}/config/${cpu_include_dir}/cxxabi_tweaks.h ; then
 fi
 
 
+# Set directory with CPU-specific optimization
+cpu_opt_dir=${cpu_include_dir}/opt
+test -d ${glibcxx_srcdir}/config/${cpu_include_dir}/opt ||
+cpu_opt_dir=cpu/generic/opt
+# For each header with CPU-specific optimizations check whether it
+# exists in ${cpu_opt_dir}.  If not, point the variable at the
+# appropriate file in the generic directory.
+cpu_opt_ext_random=${cpu_opt_dir}/ext/opt_random.h
+test -f ${glibcxx_srcdir}/config/${cpu_opt_ext_random} ||
+cpu_opt_ext_random=cpu/generic/opt/ext/opt_random.h
+
+cpu_opt_bits_random=${cpu_opt_dir}/bits/opt_random.h
+test -f ${glibcxx_srcdir}/config/${cpu_opt_ext_random} ||
+cpu_opt_ext_random=cpu/generic/opt/bits/opt_random.h
+
+
 # Set any OS-dependent bits.
 # Set the os_include_dir.
 # Set the error_costants_dir.
@@ -270,6 +291,9 @@ case "${host_os}" in
   netbsd*)
     os_include_dir="os/bsd/netbsd"
     ;;
+  openbsd*)
+    os_include_dir="os/bsd/openbsd"
+    ;;
   qnx6.[12]*)
     os_include_dir="os/qnx/qnx6.1"
     c_model=c
@@ -324,7 +348,7 @@ case "${host}" in
         fi
     esac
     case "${host}" in
-      arm*-*-linux-*eabi)
+      arm*-*-linux-*)
 	port_specific_symbol_files="\$(srcdir)/../config/os/gnu-linux/arm-eabi-extra.ver"
 	;;
     esac

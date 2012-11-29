@@ -91,7 +91,7 @@ static void copy_reg_pointer (rtx, rtx);
 static void fix_range (const char *);
 static int hppa_register_move_cost (enum machine_mode mode, reg_class_t,
 				    reg_class_t);
-static int hppa_address_cost (rtx, bool);
+static int hppa_address_cost (rtx, enum machine_mode mode, addr_space_t, bool);
 static bool hppa_rtx_costs (rtx, int, int, int, int *, bool);
 static inline rtx force_mode (enum machine_mode, rtx);
 static void pa_reorg (void);
@@ -469,21 +469,22 @@ pa_option_override (void)
 {
   unsigned int i;
   cl_deferred_option *opt;
-  VEC(cl_deferred_option,heap) *vec
-    = (VEC(cl_deferred_option,heap) *) pa_deferred_options;
+  vec<cl_deferred_option> *v
+    = (vec<cl_deferred_option> *) pa_deferred_options;
 
-  FOR_EACH_VEC_ELT (cl_deferred_option, vec, i, opt)
-    {
-      switch (opt->opt_index)
-	{
-	case OPT_mfixed_range_:
-	  fix_range (opt->arg);
-	  break;
+  if (v)
+    FOR_EACH_VEC_ELT (*v, i, opt)
+      {
+	switch (opt->opt_index)
+	  {
+	  case OPT_mfixed_range_:
+	    fix_range (opt->arg);
+	    break;
 
-	default:
-	  gcc_unreachable ();
-	}
-    }
+	  default:
+	    gcc_unreachable ();
+	  }
+      }
 
   /* Unconditional branches in the delay slot are not compatible with dwarf2
      call frame information.  There is no benefit in using this optimization
@@ -1397,7 +1398,8 @@ hppa_register_move_cost (enum machine_mode mode ATTRIBUTE_UNUSED,
    as GO_IF_LEGITIMATE_ADDRESS.  */
 
 static int
-hppa_address_cost (rtx X,
+hppa_address_cost (rtx X, enum machine_mode mode ATTRIBUTE_UNUSED,
+		   addr_space_t as ATTRIBUTE_UNUSED,
 		   bool speed ATTRIBUTE_UNUSED)
 {
   switch (GET_CODE (X))
@@ -1421,6 +1423,8 @@ static bool
 hppa_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
 		int *total, bool speed ATTRIBUTE_UNUSED)
 {
+  int factor;
+
   switch (code)
     {
     case CONST_INT:
@@ -1452,11 +1456,20 @@ hppa_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
 
     case MULT:
       if (GET_MODE_CLASS (GET_MODE (x)) == MODE_FLOAT)
-        *total = COSTS_N_INSNS (3);
-      else if (TARGET_PA_11 && !TARGET_DISABLE_FPREGS && !TARGET_SOFT_FLOAT)
-	*total = COSTS_N_INSNS (8);
+	{
+	  *total = COSTS_N_INSNS (3);
+	  return true;
+	}
+
+      /* A mode size N times larger than SImode needs O(N*N) more insns.  */
+      factor = GET_MODE_SIZE (GET_MODE (x)) / 4;
+      if (factor == 0)
+	factor = 1;
+
+      if (TARGET_PA_11 && !TARGET_DISABLE_FPREGS && !TARGET_SOFT_FLOAT)
+	*total = factor * factor * COSTS_N_INSNS (8);
       else
-	*total = COSTS_N_INSNS (20);
+	*total = factor * factor * COSTS_N_INSNS (20);
       return true;
 
     case DIV:
@@ -1470,15 +1483,28 @@ hppa_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
     case UDIV:
     case MOD:
     case UMOD:
-      *total = COSTS_N_INSNS (60);
+      /* A mode size N times larger than SImode needs O(N*N) more insns.  */
+      factor = GET_MODE_SIZE (GET_MODE (x)) / 4;
+      if (factor == 0)
+	factor = 1;
+
+      *total = factor * factor * COSTS_N_INSNS (60);
       return true;
 
     case PLUS: /* this includes shNadd insns */
     case MINUS:
       if (GET_MODE_CLASS (GET_MODE (x)) == MODE_FLOAT)
-	*total = COSTS_N_INSNS (3);
-      else
-        *total = COSTS_N_INSNS (1);
+	{
+	  *total = COSTS_N_INSNS (3);
+	  return true;
+	}
+
+      /* A size N times larger than UNITS_PER_WORD needs N times as
+	 many insns, taking N times as long.  */
+      factor = GET_MODE_SIZE (GET_MODE (x)) / UNITS_PER_WORD;
+      if (factor == 0)
+	factor = 1;
+      *total = factor * COSTS_N_INSNS (1);
       return true;
 
     case ASHIFT:
@@ -1591,7 +1617,7 @@ pa_emit_move_sequence (rtx *operands, enum machine_mode mode, rtx scratch_reg)
       rtx temp = gen_rtx_SUBREG (GET_MODE (operand0),
 				 reg_equiv_mem (REGNO (SUBREG_REG (operand0))),
 				 SUBREG_BYTE (operand0));
-      operand0 = alter_subreg (&temp);
+      operand0 = alter_subreg (&temp, true);
     }
 
   if (scratch_reg
@@ -1608,7 +1634,7 @@ pa_emit_move_sequence (rtx *operands, enum machine_mode mode, rtx scratch_reg)
       rtx temp = gen_rtx_SUBREG (GET_MODE (operand1),
 				 reg_equiv_mem (REGNO (SUBREG_REG (operand1))),
 				 SUBREG_BYTE (operand1));
-      operand1 = alter_subreg (&temp);
+      operand1 = alter_subreg (&temp, true);
     }
 
   if (scratch_reg && reload_in_progress && GET_CODE (operand0) == MEM
@@ -3673,7 +3699,7 @@ pa_compute_frame_size (HOST_WIDE_INT size, int *fregs_live)
   /* Allocate space for the fixed frame marker.  This space must be
      allocated for any function that makes calls or allocates
      stack space.  */
-  if (!current_function_is_leaf || size)
+  if (!crtl->is_leaf || size)
     size += TARGET_64BIT ? 48 : 32;
 
   /* Finally, round to the preferred stack boundary.  */
@@ -3711,7 +3737,7 @@ pa_output_function_prologue (FILE *file, HOST_WIDE_INT size ATTRIBUTE_UNUSED)
      to output the assembler directives which denote the start
      of a function.  */
   fprintf (file, "\t.CALLINFO FRAME=" HOST_WIDE_INT_PRINT_DEC, actual_fsize);
-  if (current_function_is_leaf)
+  if (crtl->is_leaf)
     fputs (",NO_CALLS", file);
   else
     fputs (",CALLS", file);
@@ -4376,7 +4402,7 @@ hppa_pic_save_rtx (void)
 
 
 /* Vector of funcdef numbers.  */
-static VEC(int,heap) *funcdef_nos;
+static vec<int> funcdef_nos;
 
 /* Output deferred profile counters.  */
 static void
@@ -4385,20 +4411,20 @@ output_deferred_profile_counters (void)
   unsigned int i;
   int align, n;
 
-  if (VEC_empty (int, funcdef_nos))
+  if (funcdef_nos.is_empty ())
    return;
 
   switch_to_section (data_section);
   align = MIN (BIGGEST_ALIGNMENT, LONG_TYPE_SIZE);
   ASM_OUTPUT_ALIGN (asm_out_file, floor_log2 (align / BITS_PER_UNIT));
 
-  for (i = 0; VEC_iterate (int, funcdef_nos, i, n); i++)
+  for (i = 0; funcdef_nos.iterate (i, &n); i++)
     {
       targetm.asm_out.internal_label (asm_out_file, "LP", n);
       assemble_integer (const0_rtx, LONG_TYPE_SIZE / BITS_PER_UNIT, align, 1);
     }
 
-  VEC_free (int, heap, funcdef_nos);
+  funcdef_nos.release ();
 }
 
 void
@@ -4440,7 +4466,7 @@ hppa_profile_hook (int label_no)
     rtx count_label_rtx, addr, r24;
     char count_label_name[16];
 
-    VEC_safe_push (int, heap, funcdef_nos, label_no);
+    funcdef_nos.safe_push (label_no);
     ASM_GENERATE_INTERNAL_LABEL (count_label_name, "LP", label_no);
     count_label_rtx = gen_rtx_SYMBOL_REF (Pmode, ggc_strdup (count_label_name));
 
@@ -4855,12 +4881,9 @@ pa_issue_rate (void)
 
 
 
-/* Return any length adjustment needed by INSN which already has its length
-   computed as LENGTH.   Return zero if no adjustment is necessary.
-
-   For the PA: function calls, millicode calls, and backwards short
-   conditional branches with unfilled delay slots need an adjustment by +1
-   (to account for the NOP which will be inserted into the instruction stream).
+/* Return any length plus adjustment needed by INSN which already has
+   its length computed as LENGTH.   Return LENGTH if no adjustment is
+   necessary.
 
    Also compute the length of an inline block move here as it is too
    complicated to express as a length attribute in pa.md.  */
@@ -4869,19 +4892,40 @@ pa_adjust_insn_length (rtx insn, int length)
 {
   rtx pat = PATTERN (insn);
 
+  /* If length is negative or undefined, provide initial length.  */
+  if ((unsigned int) length >= INT_MAX)
+    {
+      if (GET_CODE (pat) == SEQUENCE)
+	insn = XVECEXP (pat, 0, 0);
+
+      switch (get_attr_type (insn))
+	{
+	case TYPE_MILLI:
+	  length = pa_attr_length_millicode_call (insn);
+	  break;
+	case TYPE_CALL:
+	  length = pa_attr_length_call (insn, 0);
+	  break;
+	case TYPE_SIBCALL:
+	  length = pa_attr_length_call (insn, 1);
+	  break;
+	case TYPE_DYNCALL:
+	  length = pa_attr_length_indirect_call (insn);
+	  break;
+	case TYPE_SH_FUNC_ADRS:
+	  length = pa_attr_length_millicode_call (insn) + 20;
+	  break;
+	default:
+	  gcc_unreachable ();
+	}
+    }
+
   /* Jumps inside switch tables which have unfilled delay slots need
      adjustment.  */
   if (GET_CODE (insn) == JUMP_INSN
       && GET_CODE (pat) == PARALLEL
       && get_attr_type (insn) == TYPE_BTABLE_BRANCH)
-    return 4;
-  /* Millicode insn with an unfilled delay slot.  */
-  else if (GET_CODE (insn) == INSN
-	   && GET_CODE (pat) != SEQUENCE
-	   && GET_CODE (pat) != USE
-	   && GET_CODE (pat) != CLOBBER
-	   && get_attr_type (insn) == TYPE_MILLI)
-    return 4;
+    length += 4;
   /* Block move pattern.  */
   else if (GET_CODE (insn) == INSN
 	   && GET_CODE (pat) == PARALLEL
@@ -4890,7 +4934,7 @@ pa_adjust_insn_length (rtx insn, int length)
 	   && GET_CODE (XEXP (XVECEXP (pat, 0, 0), 1)) == MEM
 	   && GET_MODE (XEXP (XVECEXP (pat, 0, 0), 0)) == BLKmode
 	   && GET_MODE (XEXP (XVECEXP (pat, 0, 0), 1)) == BLKmode)
-    return compute_movmem_length (insn) - 4;
+    length += compute_movmem_length (insn) - 4;
   /* Block clear pattern.  */
   else if (GET_CODE (insn) == INSN
 	   && GET_CODE (pat) == PARALLEL
@@ -4898,7 +4942,7 @@ pa_adjust_insn_length (rtx insn, int length)
 	   && GET_CODE (XEXP (XVECEXP (pat, 0, 0), 0)) == MEM
 	   && XEXP (XVECEXP (pat, 0, 0), 1) == const0_rtx
 	   && GET_MODE (XEXP (XVECEXP (pat, 0, 0), 0)) == BLKmode)
-    return compute_clrmem_length (insn) - 4;
+    length += compute_clrmem_length (insn) - 4;
   /* Conditional branch with an unfilled delay slot.  */
   else if (GET_CODE (insn) == JUMP_INSN && ! simplejump_p (insn))
     {
@@ -4907,11 +4951,11 @@ pa_adjust_insn_length (rtx insn, int length)
 	  && length == 4
 	  && JUMP_LABEL (insn) != NULL_RTX
 	  && ! forward_branch_p (insn))
-	return 4;
+	length += 4;
       else if (GET_CODE (pat) == PARALLEL
 	       && get_attr_type (insn) == TYPE_PARALLEL_BRANCH
 	       && length == 4)
-	return 4;
+	length += 4;
       /* Adjust dbra insn with short backwards conditional branch with
 	 unfilled delay slot -- only for case where counter is in a
 	 general register register.  */
@@ -4921,11 +4965,9 @@ pa_adjust_insn_length (rtx insn, int length)
  	       && ! FP_REG_P (XEXP (XVECEXP (pat, 0, 1), 0))
 	       && length == 4
 	       && ! forward_branch_p (insn))
-	return 4;
-      else
-	return 0;
+	length += 4;
     }
-  return 0;
+  return length;
 }
 
 /* Implement the TARGET_PRINT_OPERAND_PUNCT_VALID_P hook.  */
@@ -7486,15 +7528,13 @@ pa_output_millicode_call (rtx insn, rtx call_dest)
 
   /* Handle the common case where we are sure that the branch will
      reach the beginning of the $CODE$ subspace.  The within reach
-     form of the $$sh_func_adrs call has a length of 28.  Because
-     it has an attribute type of multi, it never has a nonzero
-     sequence length.  The length of the $$sh_func_adrs is the same
-     as certain out of reach PIC calls to other routines.  */
+     form of the $$sh_func_adrs call has a length of 28.  Because it
+     has an attribute type of sh_func_adrs, it never has a nonzero
+     sequence length (i.e., the delay slot is never filled).  */
   if (!TARGET_LONG_CALLS
-      && ((seq_length == 0
-	   && (attr_length == 12
-	       || (attr_length == 28 && get_attr_type (insn) == TYPE_MULTI)))
-	  || (seq_length != 0 && attr_length == 8)))
+      && (attr_length == 8
+	  || (attr_length == 28
+	      && get_attr_type (insn) == TYPE_SH_FUNC_ADRS)))
     {
       output_asm_insn ("{bl|b,l} %0,%2", xoperands);
     }
@@ -9909,11 +9949,9 @@ typedef struct GTY(()) extern_symbol
 } extern_symbol;
 
 /* Define gc'd vector type for extern_symbol.  */
-DEF_VEC_O(extern_symbol);
-DEF_VEC_ALLOC_O(extern_symbol,gc);
 
 /* Vector of extern_symbol pointers.  */
-static GTY(()) VEC(extern_symbol,gc) *extern_symbols;
+static GTY(()) vec<extern_symbol, va_gc> *extern_symbols;
 
 #ifdef ASM_OUTPUT_EXTERNAL_REAL
 /* Mark DECL (name NAME) as an external reference (assembler output
@@ -9923,11 +9961,9 @@ static GTY(()) VEC(extern_symbol,gc) *extern_symbols;
 void
 pa_hpux_asm_output_external (FILE *file, tree decl, const char *name)
 {
-  extern_symbol * p = VEC_safe_push (extern_symbol, gc, extern_symbols, NULL);
-
   gcc_assert (file == asm_out_file);
-  p->decl = decl;
-  p->name = name;
+  extern_symbol p = {decl, name};
+  vec_safe_push (extern_symbols, p);
 }
 
 /* Output text required at the end of an assembler file.
@@ -9945,7 +9981,7 @@ pa_hpux_file_end (void)
 
   output_deferred_plabels ();
 
-  for (i = 0; VEC_iterate (extern_symbol, extern_symbols, i, p); i++)
+  for (i = 0; vec_safe_iterate (extern_symbols, i, &p); i++)
     {
       tree decl = p->decl;
 
@@ -9954,7 +9990,7 @@ pa_hpux_file_end (void)
 	ASM_OUTPUT_EXTERNAL_REAL (asm_out_file, decl, p->name);
     }
 
-  VEC_free (extern_symbol, gc, extern_symbols);
+  vec_free (extern_symbols);
 }
 #endif
 

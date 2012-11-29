@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1995-2010, Free Software Foundation, Inc.         --
+--          Copyright (C) 1995-2012, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -175,7 +175,7 @@ package Interfaces.C_Streams is
       mode   : int;
       size   : size_t) return int;
 
-   procedure tmpnam (string : chars) renames System.CRTL.tmpnam;
+   procedure tmpnam (str : chars) renames System.CRTL.tmpnam;
    --  The parameter must be a pointer to a string buffer of at least L_tmpnam
    --  bytes (the call with a null parameter is not supported). The returned
    --  value, which is just a copy of the input argument, is discarded.
@@ -228,9 +228,10 @@ package Interfaces.C_Streams is
    --  pass an actual parameter for buffer that is big enough for any full
    --  path name. Use max_path_len given below as the size of buffer.
 
-   max_path_len : Integer;
-   --  Maximum length of an allowable full path name on the system,
-   --  including a terminating NUL character.
+   max_path_len : constant Integer;
+   --  Maximum length of an allowable full path name on the system,including a
+   --  terminating NUL character. Declared as a constant to allow references
+   --  from other preelaborated GNAT library packages.
 
 private
    --  The following functions are specialized in the body depending on the

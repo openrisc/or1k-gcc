@@ -1791,10 +1791,8 @@ static unsigned int lto_section_num = 0;
 typedef struct GTY (()) darwin_lto_section_e {
   const char *sectname;
 } darwin_lto_section_e ;
-DEF_VEC_O(darwin_lto_section_e);
-DEF_VEC_ALLOC_O(darwin_lto_section_e, gc);
 
-static GTY (()) VEC (darwin_lto_section_e, gc) * lto_section_names;
+static GTY (()) vec<darwin_lto_section_e, va_gc> *lto_section_names;
 
 /* Segment for LTO data.  */
 #define LTO_SEGMENT_NAME "__GNU_LTO"
@@ -1877,8 +1875,8 @@ darwin_asm_named_section (const char *name,
          TODO: check that we do not revisit sections, that would break
          the assumption of how this is done.  */
       if (lto_section_names == NULL)
-        lto_section_names = VEC_alloc (darwin_lto_section_e, gc, 16);
-      VEC_safe_push (darwin_lto_section_e, gc, lto_section_names, &e);
+        vec_alloc (lto_section_names, 16);
+      vec_safe_push (lto_section_names, e);
    }
   else if (strncmp (name, "__DWARF,", 8) == 0)
     darwin_asm_dwarf_section (name, flags, decl);
@@ -2623,7 +2621,7 @@ darwin_assemble_visibility (tree decl, int vis)
 {
   if (vis == VISIBILITY_DEFAULT)
     ;
-  else if (vis == VISIBILITY_HIDDEN)
+  else if (vis == VISIBILITY_HIDDEN || vis == VISIBILITY_INTERNAL)
     {
       fputs ("\t.private_extern ", asm_out_file);
       assemble_name (asm_out_file,
@@ -2631,11 +2629,11 @@ darwin_assemble_visibility (tree decl, int vis)
       fputs ("\n", asm_out_file);
     }
   else
-    warning (OPT_Wattributes, "internal and protected visibility attributes "
+    warning (OPT_Wattributes, "protected visibility attribute "
 	     "not supported in this configuration; ignored");
 }
 
-/* VEC Used by darwin_asm_dwarf_section.
+/* vec used by darwin_asm_dwarf_section.
    Maybe a hash tab would be better here - but the intention is that this is
    a very short list (fewer than 16 items) and each entry should (ideally, 
    eventually) only be presented once.
@@ -2648,11 +2646,9 @@ typedef struct GTY(()) dwarf_sect_used_entry {
 }
 dwarf_sect_used_entry;
 
-DEF_VEC_O(dwarf_sect_used_entry);
-DEF_VEC_ALLOC_O(dwarf_sect_used_entry, gc);
 
 /* A list of used __DWARF sections.  */
-static GTY (()) VEC (dwarf_sect_used_entry, gc) * dwarf_sect_names_table;
+static GTY (()) vec<dwarf_sect_used_entry, va_gc> *dwarf_sect_names_table;
 
 /* This is called when we are asked to assemble a named section and the 
    name begins with __DWARF,.  We keep a list of the section names (without
@@ -2675,10 +2671,10 @@ darwin_asm_dwarf_section (const char *name, unsigned int flags,
   namelen = strchr (sname, ',') - sname;
   gcc_assert (namelen);
   if (dwarf_sect_names_table == NULL)
-    dwarf_sect_names_table = VEC_alloc (dwarf_sect_used_entry, gc, 16);
+    vec_alloc (dwarf_sect_names_table, 16);
   else
     for (i = 0; 
-	 VEC_iterate (dwarf_sect_used_entry, dwarf_sect_names_table, i, ref);
+	 dwarf_sect_names_table->iterate (i, &ref);
 	 i++)
       {
 	if (!ref)
@@ -2698,7 +2694,7 @@ darwin_asm_dwarf_section (const char *name, unsigned int flags,
       fprintf (asm_out_file, "Lsection%.*s:\n", namelen, sname);
       e.count = 1;
       e.name = xstrdup (sname);
-      VEC_safe_push (dwarf_sect_used_entry, gc, dwarf_sect_names_table, &e);
+      vec_safe_push (dwarf_sect_names_table, e);
     }
 }
 
@@ -2813,7 +2809,7 @@ darwin_file_end (void)
     }
 
   /* Output the names and indices.  */
-  if (lto_section_names && VEC_length (darwin_lto_section_e, lto_section_names))
+  if (lto_section_names && lto_section_names->length ())
     {
       int count;
       darwin_lto_section_e *ref;
@@ -2824,7 +2820,7 @@ darwin_file_end (void)
       /* Emit the names.  */
       fprintf (asm_out_file, "\t.section %s,%s,regular,debug\n",
 	       LTO_SEGMENT_NAME, LTO_NAMES_SECTION);
-      FOR_EACH_VEC_ELT (darwin_lto_section_e, lto_section_names, count, ref)
+      FOR_EACH_VEC_ELT (*lto_section_names, count, ref)
 	{
 	  fprintf (asm_out_file, "L_GNU_LTO_NAME%d:\n", count);
          /* We have to jump through hoops to get the values of the intra-section
@@ -2847,7 +2843,7 @@ darwin_file_end (void)
       fputs ("\t.align\t2\n", asm_out_file);
       fputs ("# Section offset, Section length, Name offset, Name length\n",
 	     asm_out_file);
-      FOR_EACH_VEC_ELT (darwin_lto_section_e, lto_section_names, count, ref)
+      FOR_EACH_VEC_ELT (*lto_section_names, count, ref)
 	{
 	  fprintf (asm_out_file, "%s L$gnu$lto$offs%d\t;# %s\n",
 		   op, count, ref->sectname);
@@ -3007,6 +3003,18 @@ darwin_override_options (void)
       flag_reorder_blocks = 1;
     }
 
+    /* FIXME: flag_objc_sjlj_exceptions is no longer needed since there is only
+       one valid choice of exception scheme for each runtime.  */
+    if (!global_options_set.x_flag_objc_sjlj_exceptions)
+      global_options.x_flag_objc_sjlj_exceptions = 
+				flag_next_runtime && !TARGET_64BIT;
+
+    /* FIXME: and this could be eliminated then too.  */
+    if (!global_options_set.x_flag_exceptions
+	&& flag_objc_exceptions
+	&& TARGET_64BIT)
+      flag_exceptions = 1;
+
   if (flag_mkernel || flag_apple_kext)
     {
       /* -mkernel implies -fapple-kext for C++ */
@@ -3026,12 +3034,12 @@ darwin_override_options (void)
       darwin_emit_branch_islands = true;
     }
 
-  if (flag_var_tracking
+  if (flag_var_tracking_uninit == 0
       && generating_for_darwin_version >= 9
       && (flag_gtoggle ? (debug_info_level == DINFO_LEVEL_NONE)
       : (debug_info_level >= DINFO_LEVEL_NORMAL))
       && write_symbols == DWARF2_DEBUG)
-    flag_var_tracking_uninit = 1;
+    flag_var_tracking_uninit = flag_var_tracking;
 
   if (MACHO_DYNAMIC_NO_PIC_P)
     {
@@ -3326,7 +3334,7 @@ darwin_build_constant_cfstring (tree str)
   if (!desc)
     {
       tree var, constructor, field;
-      VEC(constructor_elt,gc) *v = NULL;
+      vec<constructor_elt, va_gc> *v = NULL;
       int length = TREE_STRING_LENGTH (str) - 1;
 
       if (darwin_warn_nonportable_cfstrings)

@@ -51,12 +51,12 @@
 #include "tm-constrs.h"
 #include "gt-bfin.h"
 #include "basic-block.h"
-#include "cfglayout.h"
 #include "timevar.h"
 #include "df.h"
 #include "sel-sched.h"
 #include "hw-doloop.h"
 #include "opts.h"
+#include "dumpfile.h"
 
 /* A C structure for machine-specific, per-function data.
    This is added to the cfun structure.  */
@@ -249,7 +249,7 @@ must_save_p (bool is_inthandler, unsigned regno)
 	      || (!TARGET_FDPIC
 		  && regno == PIC_OFFSET_TABLE_REGNUM
 		  && (crtl->uses_pic_offset_table
-		      || (TARGET_ID_SHARED_LIBRARY && !current_function_is_leaf))));
+		      || (TARGET_ID_SHARED_LIBRARY && !crtl->is_leaf))));
     }
   else
     return ((is_inthandler || !call_used_regs[regno])
@@ -347,7 +347,7 @@ expand_prologue_reg_save (rtx spreg, int saveall, bool is_inthandler)
 
       RTX_FRAME_RELATED_P (insn) = 1;
       for (dregno = REG_LT0; dregno <= REG_LB1; dregno++)
-	if (! current_function_is_leaf
+	if (! crtl->is_leaf
 	    || cfun->machine->has_hardware_loops
 	    || cfun->machine->has_loopreg_clobber
 	    || (ENABLE_WA_05000257
@@ -527,7 +527,7 @@ expand_epilogue_reg_restore (rtx spreg, bool saveall, bool is_inthandler)
   if (saveall || is_inthandler)
     {
       for (regno = REG_LB1; regno >= REG_LT0; regno--)
-	if (! current_function_is_leaf
+	if (! crtl->is_leaf
 	    || cfun->machine->has_hardware_loops
 	    || cfun->machine->has_loopreg_clobber
 	    || (ENABLE_WA_05000257 && (regno == REG_LC0 || regno == REG_LC1)))
@@ -601,7 +601,7 @@ bfin_frame_pointer_required (void)
 
   /* We turn on -fomit-frame-pointer if -momit-leaf-frame-pointer is used,
      so we have to override it for non-leaf functions.  */
-  if (TARGET_OMIT_LEAF_FRAME_POINTER && ! current_function_is_leaf)
+  if (TARGET_OMIT_LEAF_FRAME_POINTER && ! crtl->is_leaf)
     return true;
 
   return false;
@@ -616,7 +616,7 @@ n_regs_saved_by_prologue (void)
   bool is_inthandler = fkind != SUBROUTINE;
   tree attrs = TYPE_ATTRIBUTES (TREE_TYPE (current_function_decl));
   bool all = (lookup_attribute ("saveall", attrs) != NULL_TREE
-	      || (is_inthandler && !current_function_is_leaf));
+	      || (is_inthandler && !crtl->is_leaf));
   int ndregs = all ? 8 : n_dregs_to_save (is_inthandler, false);
   int npregs = all ? 6 : n_pregs_to_save (is_inthandler, false);
   int n = ndregs + npregs;
@@ -636,7 +636,7 @@ n_regs_saved_by_prologue (void)
     {
       /* Increment once for ASTAT.  */
       n++;
-      if (! current_function_is_leaf
+      if (! crtl->is_leaf
 	  || cfun->machine->has_hardware_loops
 	  || cfun->machine->has_loopreg_clobber)
 	{
@@ -761,7 +761,7 @@ add_to_reg (rtx reg, HOST_WIDE_INT value, int frame, int epilogue_p)
 		    && i == PIC_OFFSET_TABLE_REGNUM
 		    && (crtl->uses_pic_offset_table
 			|| (TARGET_ID_SHARED_LIBRARY
-			    && ! current_function_is_leaf))))
+			    && ! crtl->is_leaf))))
 	      break;
 	  if (i <= REG_P5)
 	    tmpreg = gen_rtx_REG (SImode, i);
@@ -957,7 +957,7 @@ expand_interrupt_handler_prologue (rtx spreg, e_funkind fkind, bool all)
 
   /* If we're calling other functions, they won't save their call-clobbered
      registers, so we must save everything here.  */
-  if (!current_function_is_leaf)
+  if (!crtl->is_leaf)
     all = true;
   expand_prologue_reg_save (spreg, all, true);
 
@@ -1020,7 +1020,7 @@ expand_interrupt_handler_epilogue (rtx spreg, e_funkind fkind, bool all)
 
   /* If we're calling other functions, they won't save their call-clobbered
      registers, so we must save (and restore) everything here.  */
-  if (!current_function_is_leaf)
+  if (!crtl->is_leaf)
     all = true;
 
   expand_epilogue_reg_restore (spreg, all, true);
@@ -1135,7 +1135,7 @@ bfin_expand_prologue (void)
   if (TARGET_ID_SHARED_LIBRARY
       && !TARGET_SEP_DATA
       && (crtl->uses_pic_offset_table
-	  || !current_function_is_leaf))
+	  || !crtl->is_leaf))
     bfin_load_pic_reg (pic_offset_table_rtx);
 }
 
@@ -1288,7 +1288,10 @@ bfin_dsp_memref_p (rtx x)
    All addressing modes are equally cheap on the Blackfin.  */
 
 static int
-bfin_address_cost (rtx addr ATTRIBUTE_UNUSED, bool speed ATTRIBUTE_UNUSED)
+bfin_address_cost (rtx addr ATTRIBUTE_UNUSED,
+		   enum machine_mode mode ATTRIBUTE_UNUSED,
+		   addr_space_t as ATTRIBUTE_UNUSED,
+		   bool speed ATTRIBUTE_UNUSED)
 {
   return 1;
 }
@@ -3477,8 +3480,8 @@ hwloop_optimize (hwloop_info loop)
       insn = BB_END (loop->incoming_src);
       /* If we have to insert the LSETUP before a jump, count that jump in the
 	 length.  */
-      if (VEC_length (edge, loop->incoming) > 1
-	  || !(VEC_last (edge, loop->incoming)->flags & EDGE_FALLTHRU))
+      if (vec_safe_length (loop->incoming) > 1
+	  || !(loop->incoming->last ()->flags & EDGE_FALLTHRU))
 	{
 	  gcc_assert (JUMP_P (insn));
 	  insn = PREV_INSN (insn);
@@ -3746,8 +3749,8 @@ hwloop_optimize (hwloop_info loop)
   if (loop->incoming_src)
     {
       rtx prev = BB_END (loop->incoming_src);
-      if (VEC_length (edge, loop->incoming) > 1
-	  || !(VEC_last (edge, loop->incoming)->flags & EDGE_FALLTHRU))
+      if (vec_safe_length (loop->incoming) > 1
+	  || !(loop->incoming->last ()->flags & EDGE_FALLTHRU))
 	{
 	  gcc_assert (JUMP_P (prev));
 	  prev = PREV_INSN (prev);
@@ -3915,12 +3918,12 @@ gen_one_bundle (rtx slot[3])
     }
 
   /* Avoid line number information being printed inside one bundle.  */
-  if (INSN_LOCATOR (slot[1])
-      && INSN_LOCATOR (slot[1]) != INSN_LOCATOR (slot[0]))
-    INSN_LOCATOR (slot[1]) = INSN_LOCATOR (slot[0]);
-  if (INSN_LOCATOR (slot[2])
-      && INSN_LOCATOR (slot[2]) != INSN_LOCATOR (slot[0]))
-    INSN_LOCATOR (slot[2]) = INSN_LOCATOR (slot[0]);
+  if (INSN_LOCATION (slot[1])
+      && INSN_LOCATION (slot[1]) != INSN_LOCATION (slot[0]))
+    INSN_LOCATION (slot[1]) = INSN_LOCATION (slot[0]);
+  if (INSN_LOCATION (slot[2])
+      && INSN_LOCATION (slot[2]) != INSN_LOCATION (slot[0]))
+    INSN_LOCATION (slot[2]) = INSN_LOCATION (slot[0]);
 
   /* Terminate them with "|| " instead of ";" in the output.  */
   PUT_MODE (slot[0], SImode);

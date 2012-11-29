@@ -1,6 +1,6 @@
 /* Subroutines for insn-output.c for Motorola 68000 family.
    Copyright (C) 1987, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
+   2001, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -618,6 +618,12 @@ m68k_option_override (void)
     }
 #endif
 
+  if (stack_limit_rtx != NULL_RTX && !TARGET_68020)
+    {
+      warning (0, "-fstack-limit- options are not supported on this cpu");
+      stack_limit_rtx = NULL_RTX;
+    }
+
   SUBTARGET_OVERRIDE_OPTIONS;
 
   /* Setup scheduling options.  */
@@ -882,7 +888,7 @@ m68k_save_reg (unsigned int regno, bool interrupt_handler)
       if (df_regs_ever_live_p (regno))
 	return true;
 
-      if (!current_function_is_leaf && call_used_regs[regno])
+      if (!crtl->is_leaf && call_used_regs[regno])
 	return true;
     }
 
@@ -1142,12 +1148,11 @@ m68k_expand_epilogue (bool sibcall_p)
   big = false;
   restore_from_sp = false;
 
-  /* FIXME : current_function_is_leaf below is too strong.
+  /* FIXME : crtl->is_leaf below is too strong.
      What we really need to know there is if there could be pending
      stack adjustment needed at that point.  */
   restore_from_sp = (!frame_pointer_needed
-		     || (!cfun->calls_alloca
-			 && current_function_is_leaf));
+		     || (!cfun->calls_alloca && crtl->is_leaf));
 
   /* fsize_with_regs is the size we need to adjust the sp when
      popping the frame.  */
@@ -3653,7 +3658,7 @@ emit_move_sequence (rtx *operands, enum machine_mode mode, rtx scratch_reg)
       rtx temp = gen_rtx_SUBREG (GET_MODE (operand0),
 				 reg_equiv_mem (REGNO (SUBREG_REG (operand0))),
 				 SUBREG_BYTE (operand0));
-      operand0 = alter_subreg (&temp);
+      operand0 = alter_subreg (&temp, true);
     }
 
   if (scratch_reg
@@ -3670,7 +3675,7 @@ emit_move_sequence (rtx *operands, enum machine_mode mode, rtx scratch_reg)
       rtx temp = gen_rtx_SUBREG (GET_MODE (operand1),
 				 reg_equiv_mem (REGNO (SUBREG_REG (operand1))),
 				 SUBREG_BYTE (operand1));
-      operand1 = alter_subreg (&temp);
+      operand1 = alter_subreg (&temp, true);
     }
 
   if (scratch_reg && reload_in_progress && GET_CODE (operand0) == MEM
@@ -6264,7 +6269,8 @@ m68k_sched_dfa_post_advance_cycle (void)
   while (--i >= 0)
     {
       if (state_transition (curr_state, sched_ib.insn) >= 0)
-	gcc_unreachable ();
+	/* Pick up scheduler state.  */
+	++sched_ib.filled;
     }
 }
 
@@ -6499,6 +6505,16 @@ static void
 m68k_init_sync_libfuncs (void)
 {
   init_sync_libfuncs (UNITS_PER_WORD);
+}
+
+/* Implements EPILOGUE_USES.  All registers are live on exit from an
+   interrupt routine.  */
+bool
+m68k_epilogue_uses (int regno ATTRIBUTE_UNUSED)
+{
+  return (reload_completed
+	  && (m68k_get_function_kind (current_function_decl)
+	      == m68k_fk_interrupt_handler));
 }
 
 #include "gt-m68k.h"

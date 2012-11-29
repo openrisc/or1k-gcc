@@ -1,8 +1,6 @@
-/* runtime.h -- runtime support for Go.
-
-   Copyright 2009 The Go Authors. All rights reserved.
-   Use of this source code is governed by a BSD-style
-   license that can be found in the LICENSE file.  */
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 #include "config.h"
 
@@ -23,10 +21,8 @@
 #include <sys/mman.h>
 #endif
 
-#include "array.h"
+#include "interface.h"
 #include "go-alloc.h"
-#include "go-panic.h"
-#include "go-string.h"
 
 /* This file supports C files copied from the 6g runtime library.
    This is a version of the 6g runtime.h rewritten for gccgo's version
@@ -42,7 +38,11 @@ typedef signed int   int64   __attribute__ ((mode (DI)));
 typedef unsigned int uint64  __attribute__ ((mode (DI)));
 typedef float        float32 __attribute__ ((mode (SF)));
 typedef double       float64 __attribute__ ((mode (DF)));
+typedef signed int   intptr __attribute__ ((mode (pointer)));
 typedef unsigned int uintptr __attribute__ ((mode (pointer)));
+
+typedef intptr		intgo; // Go's int
+typedef uintptr		uintgo; // Go's uint
 
 /* Defined types.  */
 
@@ -59,22 +59,28 @@ typedef struct	FixAlloc	FixAlloc;
 typedef	struct	Hchan		Hchan;
 typedef	struct	Timers		Timers;
 typedef	struct	Timer		Timer;
+typedef struct	GCStats		GCStats;
+typedef struct	LFNode		LFNode;
+typedef struct	ParFor		ParFor;
+typedef struct	ParForThread	ParForThread;
+typedef struct	CgoMal		CgoMal;
 
 typedef	struct	__go_open_array		Slice;
-typedef	struct	__go_string		String;
+typedef	struct	String			String;
 typedef struct	__go_interface		Iface;
 typedef	struct	__go_empty_interface	Eface;
 typedef	struct	__go_type_descriptor	Type;
 typedef	struct	__go_defer_stack	Defer;
 typedef	struct	__go_panic_stack	Panic;
 
+typedef struct	__go_ptr_type		PtrType;
 typedef struct	__go_func_type		FuncType;
 typedef struct	__go_map_type		MapType;
 
 typedef struct  Traceback	Traceback;
 
 /*
- * per-cpu declaration.
+ * Per-CPU declaration.
  */
 extern M*	runtime_m(void);
 extern G*	runtime_g(void);
@@ -105,6 +111,10 @@ enum
 	true	= 1,
 	false	= 0,
 };
+enum
+{
+	PtrSize = sizeof(void*),
+};
 
 /*
  * structures
@@ -118,6 +128,21 @@ union	Note
 {
 	uint32	key;	// futex-based impl
 	M*	waitm;	// waiting M (sema-based impl)
+};
+struct String
+{
+	const byte*	str;
+	intgo		len;
+};
+struct	GCStats
+{
+	// the struct must consist of only uint64's,
+	// because it is casted to uint64[].
+	uint64	nhandoff;
+	uint64	nhandoffcnt;
+	uint64	nprocyield;
+	uint64	nosyield;
+	uint64	nsleep;
 };
 struct	G
 {
@@ -136,12 +161,13 @@ struct	G
 	void*	param;		// passed parameter on wakeup
 	bool	fromgogo;	// reached from gogo
 	int16	status;
-	int32	goid;
+	int64	goid;
 	uint32	selgen;		// valid sudog pointer
 	const char*	waitreason;	// if status==Gwaiting
 	G*	schedlink;
 	bool	readyonstop;
 	bool	ispanic;
+	int8	raceignore; // ignore race detection events
 	M*	m;		// for debuggers, but offset not hard-coded
 	M*	lockedm;
 	M*	idlem;
@@ -154,7 +180,7 @@ struct	G
 	uintptr	gopc;	// pc of go statement that created this goroutine
 
 	int32	ncgo;
-	struct cgoalloc *cgoalloc;
+	CgoMal*	cgomal;
 
 	Traceback* traceback;
 
@@ -177,7 +203,7 @@ struct	M
 	int32	profilehz;
 	int32	helpgc;
 	uint32	fastrand;
-	uint64	ncgocall;
+	uint64	ncgocall;	// number of cgo calls in total
 	Note	havenextg;
 	G*	nextg;
 	M*	alllink;	// on allm
@@ -190,6 +216,14 @@ struct	M
 	uintptr	waitsema;	// semaphore for parking on locks
 	uint32	waitsemacount;
 	uint32	waitsemalock;
+	GCStats	gcstats;
+	bool	racecall;
+	void*	racepc;
+
+	uintptr	settype_buf[1024];
+	uintptr	settype_bufsize;
+
+	uintptr	end[];
 };
 
 struct	SigTab
@@ -218,7 +252,6 @@ struct	Func
 	uintptr	entry;	// entry pc
 };
 
-/* Macros.  */
 
 #ifdef GOOS_windows
 enum {
@@ -257,6 +290,42 @@ struct	Timer
 	Eface	arg;
 };
 
+// Lock-free stack node.
+struct LFNode
+{
+	LFNode	*next;
+	uintptr	pushcnt;
+};
+
+// Parallel for descriptor.
+struct ParFor
+{
+	void (*body)(ParFor*, uint32);	// executed for each element
+	uint32 done;			// number of idle threads
+	uint32 nthr;			// total number of threads
+	uint32 nthrmax;			// maximum number of threads
+	uint32 thrseq;			// thread id sequencer
+	uint32 cnt;			// iteration space [0, cnt)
+	void *ctx;			// arbitrary user context
+	bool wait;			// if true, wait while all threads finish processing,
+					// otherwise parfor may return while other threads are still working
+	ParForThread *thr;		// array of thread descriptors
+	// stats
+	uint64 nsteal;
+	uint64 nstealcnt;
+	uint64 nprocyield;
+	uint64 nosyield;
+	uint64 nsleep;
+};
+
+// Track memory allocated by code not written in Go during a cgo call,
+// so that the garbage collector can see them.
+struct CgoMal
+{
+	CgoMal	*next;
+	byte	*alloc;
+};
+
 /*
  * defined macros
  *    you need super-gopher-guru privilege
@@ -265,10 +334,12 @@ struct	Timer
 #define	nelem(x)	(sizeof(x)/sizeof((x)[0]))
 #define	nil		((void*)0)
 #define USED(v)		((void) v)
+#define	ROUND(x, n)	(((x)+(n)-1)&~((n)-1)) /* all-caps to mark as macro: it evaluates n twice */
 
 /*
  * external data
  */
+extern	uintptr runtime_zerobase;
 G*	runtime_allg;
 G*	runtime_lastg;
 M*	runtime_allm;
@@ -281,7 +352,7 @@ int32	runtime_ncpu;
 /*
  * common functions and data
  */
-int32	runtime_findnull(const byte*);
+intgo	runtime_findnull(const byte*);
 void	runtime_dump(byte*, int32);
 
 /*
@@ -312,7 +383,8 @@ G*	runtime_malg(int32, byte**, size_t*);
 void	runtime_minit(void);
 void	runtime_mallocinit(void);
 void	runtime_gosched(void);
-void	runtime_tsleep(int64);
+void	runtime_park(void(*)(Lock*), Lock*, const char*);
+void	runtime_tsleep(int64, const char*);
 M*	runtime_newm(void);
 void	runtime_goexit(void);
 void	runtime_entersyscall(void) __asm__("syscall.Entersyscall");
@@ -322,9 +394,12 @@ bool	__go_sigsend(int32 sig);
 int32	runtime_callers(int32, uintptr*, int32);
 int64	runtime_nanotime(void);
 int64	runtime_cputicks(void);
+int64	runtime_tickspersecond(void);
+void	runtime_blockevent(int64, int32);
+extern int64 runtime_blockprofilerate;
 
 void	runtime_stoptheworld(void);
-void	runtime_starttheworld(bool);
+void	runtime_starttheworld(void);
 extern uint32 runtime_worldsema;
 G*	__go_go(void (*pfn)(void*), void*);
 
@@ -370,6 +445,28 @@ void	runtime_semawakeup(M*);
 // or
 void	runtime_futexsleep(uint32*, uint32, int64);
 void	runtime_futexwakeup(uint32*, uint32);
+
+/*
+ * Lock-free stack.
+ * Initialize uint64 head to 0, compare with 0 to test for emptiness.
+ * The stack does not keep pointers to nodes,
+ * so they can be garbage collected if there are no other pointers to nodes.
+ */
+void	runtime_lfstackpush(uint64 *head, LFNode *node)
+  asm("runtime.lfstackpush");
+LFNode*	runtime_lfstackpop(uint64 *head);
+
+/*
+ * Parallel for over [0, n).
+ * body() is executed for each iteration.
+ * nthr - total number of worker threads.
+ * ctx - arbitrary user context.
+ * if wait=true, threads return from parfor() when all work is done;
+ * otherwise, threads can return while other threads are still finishing processing.
+ */
+ParFor*	runtime_parforalloc(uint32 nthrmax);
+void	runtime_parforsetup(ParFor *desc, uint32 nthr, uint32 n, void *ctx, bool wait, void (*body)(ParFor*, uint32));
+void	runtime_parfordo(ParFor *desc) asm("runtime.parfordo");
 
 /*
  * low level C-called
@@ -432,12 +529,17 @@ MCache*	runtime_allocmcache(void);
 void	free(void *v);
 #define runtime_cas(pval, old, new) __sync_bool_compare_and_swap (pval, old, new)
 #define runtime_casp(pval, old, new) __sync_bool_compare_and_swap (pval, old, new)
+#define runtime_cas64(pval, pold, new) __atomic_compare_exchange_n (pval, pold, new, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 #define runtime_xadd(p, v) __sync_add_and_fetch (p, v)
+#define runtime_xadd64(p, v) __sync_add_and_fetch (p, v)
 #define runtime_xchg(p, v) __atomic_exchange_n (p, v, __ATOMIC_SEQ_CST)
 #define runtime_atomicload(p) __atomic_load_n (p, __ATOMIC_SEQ_CST)
 #define runtime_atomicstore(p, v) __atomic_store_n (p, v, __ATOMIC_SEQ_CST)
 #define runtime_atomicloadp(p) __atomic_load_n (p, __ATOMIC_SEQ_CST)
 #define runtime_atomicstorep(p, v) __atomic_store_n (p, v, __ATOMIC_SEQ_CST)
+#define runtime_atomicload64(p) __atomic_load_n (p, __ATOMIC_SEQ_CST)
+#define runtime_atomicstore64(p, v) __atomic_store_n (p, v, __ATOMIC_SEQ_CST)
+#define PREFETCH(p) __builtin_prefetch(p)
 
 struct __go_func_type;
 bool	runtime_addfinalizer(void*, void(*fn)(void*), const struct __go_func_type *);
@@ -451,7 +553,7 @@ const byte*	runtime_getenv(const char*);
 int32	runtime_atoi(const byte*);
 uint32	runtime_fastrand1(void);
 
-void	runtime_sigprof(uint8 *pc, uint8 *sp, uint8 *lr, G *gp);
+void	runtime_sigprof();
 void	runtime_resetcpuprofiler(int32);
 void	runtime_setcpuprofilerate(void(*)(uintptr*, int32), int32);
 void	runtime_usleep(uint32);
@@ -469,8 +571,7 @@ void	runtime_newErrorString(String, Eface*)
 /*
  * wrapped for go users
  */
-bool	runtime_isInf(float64 f, int32 sign);
-#define runtime_isNaN(f) __builtin_isnan(f)
+#define ISNAN(f) __builtin_isnan(f)
 void	runtime_semacquire(uint32 volatile *);
 void	runtime_semrelease(uint32 volatile *);
 int32	runtime_gomaxprocsfunc(int32 n);
@@ -479,7 +580,7 @@ void	runtime_osyield(void);
 void	runtime_LockOSThread(void) __asm__("runtime.LockOSThread");
 void	runtime_UnlockOSThread(void) __asm__("runtime.UnlockOSThread");
 
-bool	runtime_showframe(const unsigned char*);
+bool	runtime_showframe(String);
 
 uintptr	runtime_memlimit(void);
 
@@ -493,8 +594,13 @@ uintptr	runtime_memlimit(void);
 // This is a no-op on other systems.
 void	runtime_setprof(bool);
 
-void	runtime_time_scan(void (*)(byte*, int64));
-void	runtime_trampoline_scan(void (*)(byte *, int64));
+enum
+{
+	UseSpanType = 1,
+};
+
+void	runtime_time_scan(void (*)(byte*, uintptr));
+void	runtime_trampoline_scan(void (*)(byte *, uintptr));
 
 void	runtime_setsig(int32, bool, bool);
 #define runtime_setitimer setitimer
@@ -517,4 +623,9 @@ void	__go_register_gc_roots(struct root_list*);
 // the stacks are allocated by the splitstack library.
 extern uintptr runtime_stacks_sys;
 
-extern _Bool __go_file_line (uintptr, String*, String*, int *);
+struct backtrace_state;
+extern struct backtrace_state *__go_get_backtrace_state(void);
+extern _Bool __go_file_line(uintptr, String*, String*, intgo *);
+extern byte* runtime_progname();
+
+int32 getproccount(void);

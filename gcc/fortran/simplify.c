@@ -21,6 +21,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "config.h"
 #include "system.h"
+#include "coretypes.h"
 #include "flags.h"
 #include "gfortran.h"
 #include "arith.h"
@@ -418,7 +419,7 @@ typedef gfc_expr* (*transformational_op)(gfc_expr*, gfc_expr*);
 /* Wrapper function, implements 'op1 += 1'. Only called if MASK
    of COUNT intrinsic is .TRUE..
 
-   Interface and implimentation mimics arith functions as
+   Interface and implementation mimics arith functions as
    gfc_add, gfc_multiply, etc.  */
 
 static gfc_expr* gfc_count (gfc_expr *op1, gfc_expr *op2)
@@ -1369,7 +1370,11 @@ gfc_simplify_bessel_n2 (gfc_expr *order1, gfc_expr *order2, gfc_expr *x,
       mpfr_sub (e->value.real, e->value.real, last1, GFC_RND_MODE);
 
       if (range_check (e, jn ? "BESSEL_JN" : "BESSEL_YN") == &gfc_bad_expr)
-	goto error;
+	{
+	  /* Range_check frees "e" in that case.  */
+	  e = NULL;
+	  goto error;
+	}
 
       if (jn)
 	gfc_constructor_insert_expr (&result->value.constructor, e, &x->where,
@@ -2934,7 +2939,6 @@ gfc_simplify_iparity (gfc_expr *array, gfc_expr *dim, gfc_expr *mask)
 }
 
 
-
 gfc_expr *
 gfc_simplify_is_iostat_end (gfc_expr *x)
 {
@@ -3255,6 +3259,9 @@ simplify_bound_dim (gfc_expr *array, gfc_expr *kind, int d, int upper,
   gcc_assert (array->expr_type == EXPR_VARIABLE);
   gcc_assert (as);
 
+  if (gfc_resolve_array_spec (as, 0) == FAILURE)
+    return NULL;
+
   /* The last dimension of an assumed-size array is special.  */
   if ((!coarray && d == as->rank && as->type == AS_ASSUMED_SIZE && !upper)
       || (coarray && d == as->rank + as->corank
@@ -3380,7 +3387,8 @@ simplify_bound (gfc_expr *array, gfc_expr *dim, gfc_expr *kind, int upper)
 
  done:
 
-  if (as && (as->type == AS_DEFERRED || as->type == AS_ASSUMED_SHAPE))
+  if (as && (as->type == AS_DEFERRED || as->type == AS_ASSUMED_SHAPE
+	     || as->type == AS_ASSUMED_RANK))
     return NULL;
 
   if (dim == NULL)
@@ -3442,12 +3450,15 @@ simplify_bound (gfc_expr *array, gfc_expr *dim, gfc_expr *kind, int upper)
 
       d = mpz_get_si (dim->value.integer);
 
-      if (d < 1 || d > array->rank
+      if ((d < 1 || d > array->rank)
 	  || (d == array->rank && as && as->type == AS_ASSUMED_SIZE && upper))
 	{
 	  gfc_error ("DIM argument at %L is out of bounds", &dim->where);
 	  return &gfc_bad_expr;
 	}
+
+      if (as && as->type == AS_ASSUMED_RANK)
+	return NULL;
 
       return simplify_bound_dim (array, kind, d, upper, as, ref, false);
     }
@@ -4095,10 +4106,7 @@ simplify_min_max (gfc_expr *expr, int sign)
       min_max_choose (arg->expr, extremum->expr, sign);
 
       /* Delete the extra constant argument.  */
-      if (last == NULL)
-	expr->value.function.actual = arg->next;
-      else
-	last->next = arg->next;
+      last->next = arg->next;
 
       arg->next = NULL;
       gfc_free_actual_arglist (arg);
@@ -4779,6 +4787,10 @@ gfc_simplify_range (gfc_expr *e)
 gfc_expr *
 gfc_simplify_rank (gfc_expr *e)
 {
+  /* Assumed rank.  */
+  if (e->rank == -1)
+    return NULL;
+
   return gfc_get_int_expr (gfc_default_integer_kind, &e->where, e->rank);
 }
 
@@ -4918,11 +4930,6 @@ gfc_simplify_repeat (gfc_expr *e, gfc_expr *n)
     }
   else
     ncop = 0;
-
-  len = e->value.character.length;
-  nlen = ncop * len;
-
-  result = gfc_get_constant_expr (BT_CHARACTER, e->ts.kind, &e->where);
 
   if (ncop == 0)
     return gfc_get_character_expr (e->ts.kind, &e->where, NULL, 0);
@@ -5237,7 +5244,8 @@ gfc_simplify_scan (gfc_expr *e, gfc_expr *c, gfc_expr *b, gfc_expr *kind)
   if (k == -1)
     return &gfc_bad_expr;
 
-  if (e->expr_type != EXPR_CONSTANT || c->expr_type != EXPR_CONSTANT)
+  if (e->expr_type != EXPR_CONSTANT || c->expr_type != EXPR_CONSTANT
+      || ( b != NULL && b->expr_type !=  EXPR_CONSTANT))
     return NULL;
 
   if (b != NULL && b->value.logical != 0)
@@ -5461,6 +5469,9 @@ gfc_simplify_shape (gfc_expr *source, gfc_expr *kind)
   int n;
   gfc_try t;
   int k = get_kind (BT_INTEGER, kind, "SHAPE", gfc_default_integer_kind);
+
+  if (source->rank == -1)
+    return NULL;
 
   result = gfc_get_array_expr (BT_INTEGER, k, &source->where);
 
@@ -6322,7 +6333,8 @@ gfc_simplify_verify (gfc_expr *s, gfc_expr *set, gfc_expr *b, gfc_expr *kind)
   if (k == -1)
     return &gfc_bad_expr;
 
-  if (s->expr_type != EXPR_CONSTANT || set->expr_type != EXPR_CONSTANT)
+  if (s->expr_type != EXPR_CONSTANT || set->expr_type != EXPR_CONSTANT
+      || ( b != NULL && b->expr_type !=  EXPR_CONSTANT))
     return NULL;
 
   if (b != NULL && b->value.logical != 0)

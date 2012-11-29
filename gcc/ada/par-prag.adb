@@ -1098,10 +1098,12 @@ begin
            Pragma_All_Calls_Remote               |
            Pragma_Annotate                       |
            Pragma_Assert                         |
+           Pragma_Assert_And_Cut                 |
            Pragma_Asynchronous                   |
            Pragma_Atomic                         |
            Pragma_Atomic_Components              |
            Pragma_Attach_Handler                 |
+           Pragma_Attribute_Definition           |
            Pragma_Check                          |
            Pragma_Check_Name                     |
            Pragma_Check_Policy                   |
@@ -1183,8 +1185,10 @@ begin
            Pragma_Linker_Destructor              |
            Pragma_Linker_Options                 |
            Pragma_Linker_Section                 |
+           Pragma_Lock_Free                      |
            Pragma_Locking_Policy                 |
            Pragma_Long_Float                     |
+           Pragma_Loop_Assertion                 |
            Pragma_Machine_Attribute              |
            Pragma_Main                           |
            Pragma_Main_Storage                   |
@@ -1198,7 +1202,9 @@ begin
            Pragma_Ordered                        |
            Pragma_Optimize                       |
            Pragma_Optimize_Alignment             |
+           Pragma_Overflow_Checks                |
            Pragma_Pack                           |
+           Pragma_Partition_Elaboration_Policy   |
            Pragma_Passive                        |
            Pragma_Preelaborable_Initialization   |
            Pragma_Polling                        |

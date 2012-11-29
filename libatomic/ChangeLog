@@ -1,3 +1,31 @@
+2012-11-21  Matthias Klose  <doko@ubuntu.com>
+
+	* configure.tgt (i[3456]86): Handle -mx32 like -m64.
+
+2012-11-04  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* acinclude.m4 (LIBAT_CHECK_IFUNC): Clarify message.
+	* configure: Regenerate.
+
+	* configure: Regenerate.
+
+2012-10-23  Sofiane Naci <sofiane.naci@arm.com>
+
+	Mark libatomic unsupported in AArch64.
+
+	* configure.tgt: Mark libatomic unsupported.
+
+2012-09-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR other/43620
+	* configure.ac (AM_INIT_AUTOMAKE): Add no-dist.
+	* configure: Regenerate.
+	* Makefile.in: Regenerate.
+
+2012-09-14  David Edelsohn  <dje.gcc@gmail.com>
+
+	* configure: Regenerated.
+
 2012-05-22  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
 
 	PR other/53231

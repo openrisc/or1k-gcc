@@ -39,7 +39,8 @@ ACLOCAL_AMFLAGS = -I ./config -I ../config
 
 AM_CFLAGS = -fexceptions -fplan9-extensions $(SPLIT_STACK) $(WARN_CFLAGS) \
 	$(STRINGOPS_FLAG) $(OSCFLAGS) \
-	-I $(srcdir)/../libgcc -I $(MULTIBUILDTOP)../../gcc/include
+	-I $(srcdir)/../libgcc -I $(srcdir)/../libbacktrace \
+	-I $(MULTIBUILDTOP)../../gcc/include
 
 if USING_SPLIT_STACK
 AM_LDFLAGS = -XCClinker $(SPLIT_STACK)
@@ -229,6 +230,21 @@ toolexeclibgoexp_DATA = \
 	exp/types.gox \
 	exp/utf8string.gox
 
+toolexeclibgoexphtmldir = $(toolexeclibgoexpdir)/html
+
+toolexeclibgoexphtml_DATA = \
+	exp/html/atom.gox
+
+toolexeclibgoexplocaledir = $(toolexeclibgoexpdir)/locale
+
+toolexeclibgoexplocale_DATA = \
+	exp/locale/collate.gox
+
+toolexeclibgoexplocalecollatedir = $(toolexeclibgoexplocaledir)/collate
+
+toolexeclibgoexplocalecollate_DATA = \
+	exp/locale/collate/build.gox
+
 toolexeclibgogodir = $(toolexeclibgodir)/go
 
 toolexeclibgogo_DATA = \
@@ -390,6 +406,32 @@ else
 runtime_lock_files = runtime/lock_sema.c runtime/thread-sema.c
 endif
 
+if LIBGO_IS_LINUX
+runtime_getncpu_file = runtime/getncpu-linux.c
+else
+if LIBGO_IS_DARWIN
+runtime_getncpu_file = runtime/getncpu-bsd.c
+else
+if LIBGO_IS_IRIX
+runtime_getncpu_file = runtime/getncpu-irix.c
+else
+if LIBGO_IS_SOLARIS
+runtime_getncpu_file = runtime/getncpu-solaris.c
+else
+if LIBGO_IS_FREEBSD
+runtime_getncpu_file = runtime/getncpu-bsd.c
+else
+if LIBGO_IS_NETBSD
+runtime_getncpu_file = runtime/getncpu-bsd.c
+else
+runtime_getncpu_file = runtime/getncpu-none.c
+endif
+endif
+endif
+endif
+endif
+endif
+
 runtime_files = \
 	runtime/go-append.c \
 	runtime/go-assert.c \
@@ -420,6 +462,7 @@ runtime_files = \
 	runtime/go-map-len.c \
 	runtime/go-map-range.c \
 	runtime/go-matherr.c \
+	runtime/go-memcmp.c \
 	runtime/go-nanotime.c \
 	runtime/go-now.c \
 	runtime/go-new-map.c \
@@ -456,6 +499,7 @@ runtime_files = \
 	runtime/go-unwind.c \
 	runtime/chan.c \
 	runtime/cpuprof.c \
+	runtime/lfstack.c \
 	$(runtime_lock_files) \
 	runtime/mcache.c \
 	runtime/mcentral.c \
@@ -465,6 +509,8 @@ runtime_files = \
 	runtime/mgc0.c \
 	runtime/mheap.c \
 	runtime/msize.c \
+	runtime/panic.c \
+	runtime/parfor.c \
 	runtime/print.c \
 	runtime/proc.c \
 	runtime/runtime.c \
@@ -481,7 +527,8 @@ runtime_files = \
 	sema.c \
 	sigqueue.c \
 	string.c \
-	time.c
+	time.c \
+	$(runtime_getncpu_file)
 
 goc2c.$(OBJEXT): runtime/goc2c.c
 	$(CC_FOR_BUILD) -c $(CFLAGS_FOR_BUILD) $<
@@ -490,35 +537,35 @@ goc2c: goc2c.$(OBJEXT)
 	$(CC_FOR_BUILD) $(CFLAGS_FOR_BUILD) $(LDFLAGS_FOR_BUILD) -o $@ $<
 
 malloc.c: $(srcdir)/runtime/malloc.goc goc2c
-	./goc2c --gcc $< > $@.tmp
+	./goc2c $< > $@.tmp
 	mv -f $@.tmp $@
 
 mprof.c: $(srcdir)/runtime/mprof.goc goc2c
-	./goc2c --gcc $< > $@.tmp
+	./goc2c $< > $@.tmp
 	mv -f $@.tmp $@
 
 reflect.c: $(srcdir)/runtime/reflect.goc goc2c
-	./goc2c --gcc $< > $@.tmp
+	./goc2c $< > $@.tmp
 	mv -f $@.tmp $@
 
 runtime1.c: $(srcdir)/runtime/runtime1.goc goc2c
-	./goc2c --gcc $< > $@.tmp
+	./goc2c $< > $@.tmp
 	mv -f $@.tmp $@
 
 sema.c: $(srcdir)/runtime/sema.goc goc2c
-	./goc2c --gcc $< > $@.tmp
+	./goc2c $< > $@.tmp
 	mv -f $@.tmp $@
 
 sigqueue.c: $(srcdir)/runtime/sigqueue.goc goc2c
-	./goc2c --gcc --go-pkgpath os_signal $< > $@.tmp
+	./goc2c --go-pkgpath os_signal $< > $@.tmp
 	mv -f $@.tmp $@
 
 time.c: $(srcdir)/runtime/time.goc goc2c
-	./goc2c --gcc $< > $@.tmp
+	./goc2c $< > $@.tmp
 	mv -f $@.tmp $@
 
 %.c: $(srcdir)/runtime/%.goc goc2c
-	./goc2c --gcc $< > $@.tmp
+	./goc2c $< > $@.tmp
 	mv -f $@.tmp $@
 
 go_bufio_files = \
@@ -628,16 +675,16 @@ go_net_newpollserver_file = go/net/newpollserver_rtems.go
 else # !LIBGO_IS_RTEMS
 if LIBGO_IS_LINUX
 go_net_fd_os_file = go/net/fd_linux.go
-go_net_newpollserver_file = go/net/newpollserver.go
+go_net_newpollserver_file = go/net/newpollserver_unix.go
 else # !LIBGO_IS_LINUX && !LIBGO_IS_RTEMS
 if LIBGO_IS_NETBSD
 go_net_fd_os_file = go/net/fd_netbsd.go
-go_net_newpollserver_file = go/net/newpollserver.go
+go_net_newpollserver_file = go/net/newpollserver_unix.go
 else # !LIBGO_IS_NETBSD && !LIBGO_IS_LINUX && !LIBGO_IS_RTEMS
 # By default use select with pipes.  Most systems should have
 # something better.
 go_net_fd_os_file = go/net/fd_select.go
-go_net_newpollserver_file = go/net/newpollserver.go
+go_net_newpollserver_file = go/net/newpollserver_unix.go
 endif # !LIBGO_IS_NETBSD
 endif # !LIBGO_IS_LINUX
 endif # !LIBGO_IS_RTEMS
@@ -646,30 +693,37 @@ if LIBGO_IS_LINUX
 go_net_cgo_file = go/net/cgo_linux.go
 go_net_sock_file = go/net/sock_linux.go
 go_net_sockopt_file = go/net/sockopt_linux.go
-go_net_sockoptip_file = go/net/sockoptip_linux.go
+go_net_sockoptip_file = go/net/sockoptip_linux.go go/net/sockoptip_posix.go
 else
 if LIBGO_IS_IRIX
 go_net_cgo_file = go/net/cgo_linux.go
 go_net_sock_file = go/net/sock_linux.go
 go_net_sockopt_file = go/net/sockopt_linux.go
-go_net_sockoptip_file = go/net/sockoptip_linux.go
+go_net_sockoptip_file = go/net/sockoptip_linux.go go/net/sockoptip_posix.go
 else
 if LIBGO_IS_SOLARIS
 go_net_cgo_file = go/net/cgo_linux.go
 go_net_sock_file = go/net/sock_solaris.go
 go_net_sockopt_file = go/net/sockopt_bsd.go
-go_net_sockoptip_file = go/net/sockoptip_bsd.go go/net/sockoptip_solaris.go
+go_net_sockoptip_file = go/net/sockoptip_bsd.go go/net/sockoptip_posix.go
 else
 if LIBGO_IS_FREEBSD
 go_net_cgo_file = go/net/cgo_bsd.go
 go_net_sock_file = go/net/sock_bsd.go
 go_net_sockopt_file = go/net/sockopt_bsd.go
-go_net_sockoptip_file = go/net/sockoptip_bsd.go go/net/sockoptip_freebsd.go
+go_net_sockoptip_file = go/net/sockoptip_bsd.go go/net/sockoptip_posix.go
+else
+if LIBGO_IS_NETBSD
+go_net_cgo_file = go/net/cgo_netbsd.go
+go_net_sock_file = go/net/sock_bsd.go
+go_net_sockopt_file = go/net/sockopt_bsd.go
+go_net_sockoptip_file = go/net/sockoptip_bsd.go go/net/sockoptip_posix.go
 else
 go_net_cgo_file = go/net/cgo_bsd.go
 go_net_sock_file = go/net/sock_bsd.go
 go_net_sockopt_file = go/net/sockopt_bsd.go
-go_net_sockoptip_file = go/net/sockoptip_bsd.go go/net/sockoptip_netbsd.go
+go_net_sockoptip_file = go/net/sockoptip_bsd.go go/net/sockoptip_posix.go
+endif
 endif
 endif
 endif
@@ -678,7 +732,11 @@ endif
 if LIBGO_IS_LINUX
 go_net_sendfile_file = go/net/sendfile_linux.go
 else
+if LIBGO_IS_FREEBSD
+go_net_sendfile_file = go/net/sendfile_freebsd.go
+else
 go_net_sendfile_file = go/net/sendfile_stub.go
+endif
 endif
 
 if LIBGO_IS_LINUX
@@ -697,13 +755,12 @@ go_net_files = \
 	go/net/dial.go \
 	go/net/dnsclient.go \
 	go/net/dnsclient_unix.go \
-	go/net/dnsconfig.go \
+	go/net/dnsconfig_unix.go \
 	go/net/dnsmsg.go \
-	go/net/doc.go \
 	$(go_net_newpollserver_file) \
-	go/net/fd.go \
+	go/net/fd_unix.go \
 	$(go_net_fd_os_file) \
-	go/net/file.go \
+	go/net/file_unix.go \
 	go/net/hosts.go \
 	go/net/interface.go \
 	$(go_net_interface_file) \
@@ -712,18 +769,19 @@ go_net_files = \
 	go/net/iprawsock_posix.go \
 	go/net/ipsock.go \
 	go/net/ipsock_posix.go \
+	go/net/lookup.go \
 	go/net/lookup_unix.go \
 	go/net/mac.go \
 	go/net/net.go \
 	go/net/parse.go \
 	go/net/pipe.go \
 	go/net/port.go \
+	go/net/port_unix.go \
 	$(go_net_sendfile_file) \
-	go/net/sock.go \
+	go/net/sock_posix.go \
 	$(go_net_sock_file) \
-	go/net/sockopt.go \
+	go/net/sockopt_posix.go \
 	$(go_net_sockopt_file) \
-	go/net/sockoptip.go \
 	$(go_net_sockoptip_file) \
 	go/net/tcpsock.go \
 	go/net/tcpsock_posix.go \
@@ -771,7 +829,27 @@ endif
 if LIBGO_IS_SOLARIS
 go_os_stat_file = go/os/stat_solaris.go
 else
+if LIBGO_IS_LINUX
+go_os_stat_file = go/os/stat_atim.go
+else
+if LIBGO_IS_OPENBSD
+go_os_stat_file = go/os/stat_atim.go
+else
+if LIBGO_IS_DARWIN
+go_os_stat_file = go/os/stat_atimspec.go
+else
+if LIBGO_IS_FREEBSD
+go_os_stat_file = go/os/stat_atimspec.go
+else
+if LIBGO_IS_NETBSD
+go_os_stat_file = go/os/stat_atimspec.go
+else
 go_os_stat_file = go/os/stat.go
+endif
+endif
+endif
+endif
+endif
 endif
 
 go_os_files = \
@@ -802,6 +880,7 @@ go_path_files = \
 
 go_reflect_files = \
 	go/reflect/deepequal.go \
+	go/reflect/makefunc.go \
 	go/reflect/type.go \
 	go/reflect/value.go
 
@@ -853,12 +932,14 @@ go_strconv_files = \
 go_strings_files = \
 	go/strings/reader.go \
 	go/strings/replace.go \
+	go/strings/search.go \
 	go/strings/strings.go
 
 go_sync_files = \
 	go/sync/cond.go \
 	go/sync/mutex.go \
 	go/sync/once.go \
+	go/sync/race0.go \
 	go/sync/runtime.go \
 	go/sync/rwmutex.go \
 	go/sync/waitgroup.go
@@ -901,11 +982,31 @@ go_unicode_files = \
 	go/unicode/letter.go \
 	go/unicode/tables.go
 
+if LIBGO_IS_LINUX
+archive_tar_atim_file = go/archive/tar/stat_atim.go
+endif
+if LIBGO_IS_OPENBSD
+archive_tar_atim_file = go/archive/tar/stat_atim.go
+endif
+if LIBGO_IS_SOLARIS
+archive_tar_atim_file = go/archive/tar/stat_atim.go
+endif
+if LIBGO_IS_DARWIN
+archive_tar_atim_file = go/archive/tar/stat_atimespec.go
+endif
+if LIBGO_IS_FREEBSD
+archive_tar_atim_file = go/archive/tar/stat_atimespec.go
+endif
+if LIBGO_IS_NETBSD
+archive_tar_atim_file = go/archive/tar/stat_atimespec.go
+endif
 
 go_archive_tar_files = \
 	go/archive/tar/common.go \
 	go/archive/tar/reader.go \
-	go/archive/tar/writer.go
+	go/archive/tar/stat_unix.go \
+	go/archive/tar/writer.go \
+	$(archive_tar_atim_file)
 
 go_archive_zip_files = \
 	go/archive/zip/reader.go \
@@ -919,6 +1020,7 @@ go_compress_bzip2_files = \
 	go/compress/bzip2/move_to_front.go
 
 go_compress_flate_files = \
+	go/compress/flate/copy.go \
 	go/compress/flate/deflate.go \
 	go/compress/flate/huffman_bit_writer.go \
 	go/compress/flate/huffman_code.go \
@@ -950,6 +1052,7 @@ go_container_ring_files = \
 go_crypto_aes_files = \
 	go/crypto/aes/block.go \
 	go/crypto/aes/cipher.go \
+	go/crypto/aes/cipher_generic.go \
 	go/crypto/aes/const.go
 go_crypto_cipher_files = \
 	go/crypto/cipher/cbc.go \
@@ -1004,13 +1107,16 @@ go_crypto_tls_files = \
 	go/crypto/tls/handshake_server.go \
 	go/crypto/tls/key_agreement.go \
 	go/crypto/tls/prf.go \
+	go/crypto/tls/ticket.go \
 	go/crypto/tls/tls.go
 go_crypto_x509_files = \
 	go/crypto/x509/cert_pool.go \
+	go/crypto/x509/pem_decrypt.go \
 	go/crypto/x509/pkcs1.go \
 	go/crypto/x509/pkcs8.go \
 	go/crypto/x509/root.go \
 	go/crypto/x509/root_unix.go \
+	go/crypto/x509/sec1.go \
 	go/crypto/x509/verify.go \
 	go/crypto/x509/x509.go
 
@@ -1035,8 +1141,7 @@ go_debug_dwarf_files = \
 	go/debug/dwarf/unit.go
 go_debug_elf_files = \
 	go/debug/elf/elf.go \
-	go/debug/elf/file.go \
-	go/debug/elf/runtime.go
+	go/debug/elf/file.go
 go_debug_gosym_files = \
 	go/debug/gosym/pclntab.go \
 	go/debug/gosym/symtab.go
@@ -1102,8 +1207,26 @@ go_exp_html_files = \
 	go/exp/html/parse.go \
 	go/exp/html/render.go \
 	go/exp/html/token.go
+go_exp_html_atom_files = \
+	go/exp/html/atom/atom.go \
+	go/exp/html/atom/table.go
 go_exp_inotify_files = \
 	go/exp/inotify/inotify_linux.go
+go_exp_locale_collate_files = \
+	go/exp/locale/collate/colelem.go \
+	go/exp/locale/collate/collate.go \
+	go/exp/locale/collate/contract.go \
+	go/exp/locale/collate/export.go \
+	go/exp/locale/collate/table.go \
+	go/exp/locale/collate/tables.go \
+	go/exp/locale/collate/trie.go
+go_exp_locale_collate_build_files = \
+	go/exp/locale/collate/build/builder.go \
+	go/exp/locale/collate/build/colelem.go \
+	go/exp/locale/collate/build/contract.go \
+	go/exp/locale/collate/build/order.go \
+	go/exp/locale/collate/build/table.go \
+	go/exp/locale/collate/build/trie.go
 go_exp_norm_files = \
 	go/exp/norm/composition.go \
 	go/exp/norm/forminfo.go \
@@ -1122,10 +1245,17 @@ go_exp_terminal_files = \
 	go/exp/terminal/terminal.go \
 	go/exp/terminal/util.go
 go_exp_types_files = \
+	go/exp/types/builtins.go \
 	go/exp/types/check.go \
 	go/exp/types/const.go \
+	go/exp/types/conversions.go \
+	go/exp/types/errors.go \
 	go/exp/types/exportdata.go \
+	go/exp/types/expr.go \
 	go/exp/types/gcimporter.go \
+	go/exp/types/operand.go \
+	go/exp/types/predicates.go \
+	go/exp/types/stmt.go \
 	go/exp/types/types.go \
 	go/exp/types/universe.go
 go_exp_utf8string_files = \
@@ -1133,6 +1263,7 @@ go_exp_utf8string_files = \
 
 go_go_ast_files = \
 	go/go/ast/ast.go \
+	go/go/ast/commentmap.go \
 	go/go/ast/filter.go \
 	go/go/ast/import.go \
 	go/go/ast/print.go \
@@ -1142,6 +1273,7 @@ go_go_ast_files = \
 go_go_build_files = \
 	go/go/build/build.go \
 	go/go/build/doc.go \
+	go/go/build/read.go \
 	syslist.go
 go_go_doc_files = \
 	go/go/doc/comment.go \
@@ -1204,9 +1336,11 @@ go_image_jpeg_files = \
 	go/image/jpeg/huffman.go \
 	go/image/jpeg/idct.go \
 	go/image/jpeg/reader.go \
+	go/image/jpeg/scan.go \
 	go/image/jpeg/writer.go
 
 go_image_png_files = \
+	go/image/png/paeth.go \
 	go/image/png/reader.go \
 	go/image/png/writer.go
 
@@ -1215,6 +1349,7 @@ go_index_suffixarray_files = \
 	go/index/suffixarray/suffixarray.go
 
 go_io_ioutil_files = \
+	go/io/ioutil/blackhole.go \
 	go/io/ioutil/ioutil.go \
 	go/io/ioutil/tempfile.go
 
@@ -1330,6 +1465,7 @@ go_path_filepath_files = \
 
 go_regexp_syntax_files = \
 	go/regexp/syntax/compile.go \
+	go/regexp/syntax/doc.go \
 	go/regexp/syntax/parse.go \
 	go/regexp/syntax/perl_groups.go \
 	go/regexp/syntax/prog.go \
@@ -1516,6 +1652,7 @@ go_base_syscall_files = \
 	go/syscall/syscall_errno.go \
 	go/syscall/libcall_support.go \
 	go/syscall/libcall_posix.go \
+	go/syscall/race0.go \
 	go/syscall/socket.go \
 	go/syscall/sockcmsg_unix.go \
 	go/syscall/str.go \
@@ -1686,6 +1823,9 @@ libgo_go_objs = \
 	encoding/xml.lo \
 	exp/ebnf.lo \
 	exp/html.lo \
+	exp/html/atom.lo \
+	exp/locale/collate.lo \
+	exp/locale/collate/build.lo \
 	exp/norm.lo \
 	exp/proxy.lo \
 	exp/terminal.lo \
@@ -1752,10 +1892,12 @@ libgo_go_objs = \
 
 libgo_la_SOURCES = $(runtime_files)
 
-libgo_la_LDFLAGS = $(PTHREAD_CFLAGS) $(AM_LDFLAGS)
+libgo_la_LDFLAGS = \
+	-version-info $(libtool_VERSION) $(PTHREAD_CFLAGS) $(AM_LDFLAGS)
 
 libgo_la_LIBADD = \
-	$(libgo_go_objs) $(LIBFFI) $(PTHREAD_LIBS) $(MATH_LIBS) $(NET_LIBS)
+	$(libgo_go_objs) ../libbacktrace/libbacktrace.la \
+	$(LIBFFI) $(PTHREAD_LIBS) $(MATH_LIBS) $(NET_LIBS)
 
 libgobegin_a_SOURCES = \
 	runtime/go-main.c
@@ -1794,7 +1936,7 @@ GOTESTFLAGS =
 
 # Check a package.
 CHECK = \
-	GC="$(GOC) $(GOCFLAGS) -L `${PWD_COMMAND}` -L `${PWD_COMMAND}`/.libs"; \
+	GC="$(GOC) $(GOCFLAGS) $($(subst /,_,$@)_GOCFLAGS) -L `${PWD_COMMAND}` -L `${PWD_COMMAND}`/.libs"; \
 	export GC; \
 	GOLIBS="$(MATH_LIBS) $(NET_LIBS)"; \
 	export GOLIBS; \
@@ -1806,6 +1948,7 @@ CHECK = \
 	LD_LIBRARY_PATH="`${PWD_COMMAND}`/.libs:$${libgccdir}:${LD_LIBRARY_PATH}"; \
 	LD_LIBRARY_PATH=`echo $${LD_LIBRARY_PATH} | sed 's,::*,:,g;s,^:*,,;s,:*$$,,'`; \
 	export LD_LIBRARY_PATH; \
+	$(MKDIR_P) $(@D); \
 	rm -f $@-testsum $@-testlog; \
 	if test "$(use_dejagnu)" = "yes"; then \
 	  $(SHELL) $(srcdir)/testsuite/gotest --dejagnu=yes --basedir=$(srcdir) --srcdir=$(srcdir)/go/$(@D) --pkgpath="$(@D)" --pkgfiles="$(go_$(subst /,_,$(@D))_files)" --testname="$(@D)" --goarch="$(GOARCH)" $(GOTESTFLAGS); \
@@ -2106,7 +2249,6 @@ archive/tar.lo.dep: $(go_archive_tar_files)
 archive/tar.lo: $(go_archive_tar_files)
 	$(BUILDPACKAGE)
 archive/tar/check: $(CHECK_DEPS)
-	@$(MKDIR_P) archive/tar
 	@$(CHECK)
 .PHONY: archive/tar/check
 
@@ -2116,7 +2258,6 @@ archive/zip.lo.dep: $(go_archive_zip_files)
 archive/zip.lo: $(go_archive_zip_files)
 	$(BUILDPACKAGE)
 archive/zip/check: $(CHECK_DEPS)
-	@$(MKDIR_P) archive/zip
 	@$(CHECK)
 .PHONY: archive/zip/check
 
@@ -2126,7 +2267,6 @@ compress/bzip2.lo.dep: $(go_compress_bzip2_files)
 compress/bzip2.lo: $(go_compress_bzip2_files)
 	$(BUILDPACKAGE)
 compress/bzip2/check: $(CHECK_DEPS)
-	@$(MKDIR_P) compress/bzip2
 	@$(CHECK)
 .PHONY: compress/bzip2/check
 
@@ -2136,7 +2276,6 @@ compress/flate.lo.dep: $(go_compress_flate_files)
 compress/flate.lo: $(go_compress_flate_files)
 	$(BUILDPACKAGE)
 compress/flate/check: $(CHECK_DEPS)
-	@$(MKDIR_P) compress/flate
 	@$(CHECK)
 .PHONY: compress/flate/check
 
@@ -2146,7 +2285,6 @@ compress/gzip.lo.dep: $(go_compress_gzip_files)
 compress/gzip.lo: $(go_compress_gzip_files)
 	$(BUILDPACKAGE)
 compress/gzip/check: $(CHECK_DEPS)
-	@$(MKDIR_P) compress/gzip
 	@$(CHECK)
 .PHONY: compress/gzip/check
 
@@ -2156,7 +2294,6 @@ compress/lzw.lo.dep: $(go_compress_lzw_files)
 compress/lzw.lo: $(go_compress_lzw_files)
 	$(BUILDPACKAGE)
 compress/lzw/check: $(CHECK_DEPS)
-	@$(MKDIR_P) compress/lzw
 	@$(CHECK)
 .PHONY: compress/lzw/check
 
@@ -2166,7 +2303,6 @@ compress/zlib.lo.dep: $(go_compress_zlib_files)
 compress/zlib.lo: $(go_compress_zlib_files)
 	$(BUILDPACKAGE)
 compress/zlib/check: $(CHECK_DEPS)
-	@$(MKDIR_P) compress/zlib
 	@$(CHECK)
 .PHONY: compress/zlib/check
 
@@ -2176,7 +2312,6 @@ container/heap.lo.dep: $(go_container_heap_files)
 container/heap.lo: $(go_container_heap_files)
 	$(BUILDPACKAGE)
 container/heap/check: $(CHECK_DEPS)
-	@$(MKDIR_P) container/heap
 	@$(CHECK)
 .PHONY: container/heap/check
 
@@ -2186,7 +2321,6 @@ container/list.lo.dep: $(go_container_list_files)
 container/list.lo: $(go_container_list_files)
 	$(BUILDPACKAGE)
 container/list/check: $(CHECK_DEPS)
-	@$(MKDIR_P) container/list
 	@$(CHECK)
 .PHONY: container/list/check
 
@@ -2196,7 +2330,6 @@ container/ring.lo.dep: $(go_container_ring_files)
 container/ring.lo: $(go_container_ring_files)
 	$(BUILDPACKAGE)
 container/ring/check: $(CHECK_DEPS)
-	@$(MKDIR_P) container/ring
 	@$(CHECK)
 .PHONY: container/ring/check
 
@@ -2206,7 +2339,6 @@ crypto/aes.lo.dep: $(go_crypto_aes_files)
 crypto/aes.lo: $(go_crypto_aes_files)
 	$(BUILDPACKAGE)
 crypto/aes/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/aes
 	@$(CHECK)
 .PHONY: crypto/aes/check
 
@@ -2216,7 +2348,6 @@ crypto/cipher.lo.dep: $(go_crypto_cipher_files)
 crypto/cipher.lo: $(go_crypto_cipher_files)
 	$(BUILDPACKAGE)
 crypto/cipher/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/cipher
 	@$(CHECK)
 .PHONY: crypto/cipher/check
 
@@ -2226,7 +2357,6 @@ crypto/des.lo.dep: $(go_crypto_des_files)
 crypto/des.lo: $(go_crypto_des_files)
 	$(BUILDPACKAGE)
 crypto/des/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/des
 	@$(CHECK)
 .PHONY: crypto/des/check
 
@@ -2236,7 +2366,6 @@ crypto/dsa.lo.dep: $(go_crypto_dsa_files)
 crypto/dsa.lo: $(go_crypto_dsa_files)
 	$(BUILDPACKAGE)
 crypto/dsa/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/dsa
 	@$(CHECK)
 .PHONY: crypto/dsa/check
 
@@ -2246,7 +2375,6 @@ crypto/ecdsa.lo.dep: $(go_crypto_ecdsa_files)
 crypto/ecdsa.lo: $(go_crypto_ecdsa_files)
 	$(BUILDPACKAGE)
 crypto/ecdsa/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/ecdsa
 	@$(CHECK)
 .PHONY: crypto/ecdsa/check
 
@@ -2256,7 +2384,6 @@ crypto/elliptic.lo.dep: $(go_crypto_elliptic_files)
 crypto/elliptic.lo: $(go_crypto_elliptic_files)
 	$(BUILDPACKAGE)
 crypto/elliptic/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/elliptic
 	@$(CHECK)
 .PHONY: crypto/elliptic/check
 
@@ -2266,7 +2393,6 @@ crypto/hmac.lo.dep: $(go_crypto_hmac_files)
 crypto/hmac.lo: $(go_crypto_hmac_files)
 	$(BUILDPACKAGE)
 crypto/hmac/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/hmac
 	@$(CHECK)
 .PHONY: crypto/hmac/check
 
@@ -2276,7 +2402,6 @@ crypto/md5.lo.dep: $(go_crypto_md5_files)
 crypto/md5.lo: $(go_crypto_md5_files)
 	$(BUILDPACKAGE)
 crypto/md5/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/md5
 	@$(CHECK)
 .PHONY: crypto/md5/check
 
@@ -2286,7 +2411,6 @@ crypto/rand.lo.dep: $(go_crypto_rand_files)
 crypto/rand.lo: $(go_crypto_rand_files)
 	$(BUILDPACKAGE)
 crypto/rand/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/rand
 	@$(CHECK)
 .PHONY: crypto/rand/check
 
@@ -2296,7 +2420,6 @@ crypto/rc4.lo.dep: $(go_crypto_rc4_files)
 crypto/rc4.lo: $(go_crypto_rc4_files)
 	$(BUILDPACKAGE)
 crypto/rc4/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/rc4
 	@$(CHECK)
 .PHONY: crypto/rc4/check
 
@@ -2306,7 +2429,6 @@ crypto/rsa.lo.dep: $(go_crypto_rsa_files)
 crypto/rsa.lo: $(go_crypto_rsa_files)
 	$(BUILDPACKAGE)
 crypto/rsa/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/rsa
 	@$(CHECK)
 .PHONY: crypto/rsa/check
 
@@ -2316,7 +2438,6 @@ crypto/sha1.lo.dep: $(go_crypto_sha1_files)
 crypto/sha1.lo: $(go_crypto_sha1_files)
 	$(BUILDPACKAGE)
 crypto/sha1/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/sha1
 	@$(CHECK)
 .PHONY: crypto/sha1/check
 
@@ -2326,7 +2447,6 @@ crypto/sha256.lo.dep: $(go_crypto_sha256_files)
 crypto/sha256.lo: $(go_crypto_sha256_files)
 	$(BUILDPACKAGE)
 crypto/sha256/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/sha256
 	@$(CHECK)
 .PHONY: crypto/sha256/check
 
@@ -2336,7 +2456,6 @@ crypto/sha512.lo.dep: $(go_crypto_sha512_files)
 crypto/sha512.lo: $(go_crypto_sha512_files)
 	$(BUILDPACKAGE)
 crypto/sha512/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/sha512
 	@$(CHECK)
 .PHONY: crypto/sha512/check
 
@@ -2346,7 +2465,6 @@ crypto/subtle.lo.dep: $(go_crypto_subtle_files)
 crypto/subtle.lo: $(go_crypto_subtle_files)
 	$(BUILDPACKAGE)
 crypto/subtle/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/subtle
 	@$(CHECK)
 .PHONY: crypto/subtle/check
 
@@ -2356,7 +2474,6 @@ crypto/tls.lo.dep: $(go_crypto_tls_files)
 crypto/tls.lo: $(go_crypto_tls_files)
 	$(BUILDPACKAGE)
 crypto/tls/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/tls
 	@$(CHECK)
 .PHONY: crypto/tls/check
 
@@ -2366,7 +2483,6 @@ crypto/x509.lo.dep: $(go_crypto_x509_files)
 crypto/x509.lo: $(go_crypto_x509_files)
 	$(BUILDPACKAGE)
 crypto/x509/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/x509
 	@$(CHECK)
 .PHONY: crypto/x509/check
 
@@ -2376,7 +2492,6 @@ crypto/x509/pkix.lo.dep: $(go_crypto_x509_pkix_files)
 crypto/x509/pkix.lo: $(go_crypto_x509_pkix_files)
 	$(BUILDPACKAGE)
 crypto/x509/pkix/check: $(CHECK_DEPS)
-	@$(MKDIR_P) crypto/x509/pkix
 	@$(CHECK)
 .PHONY: crypto/x509/pkix/check
 
@@ -2386,7 +2501,6 @@ database/sql.lo.dep: $(go_database_sql_files)
 database/sql.lo: $(go_database_sql_files)
 	$(BUILDPACKAGE)
 database/sql/check: $(CHECK_DEPS)
-	@$(MKDIR_P) database/sql
 	@$(CHECK)
 .PHONY: database/sql/check
 
@@ -2396,7 +2510,6 @@ database/sql/driver.lo.dep: $(go_database_sql_driver_files)
 database/sql/driver.lo: $(go_database_sql_driver_files)
 	$(BUILDPACKAGE)
 database/sql/driver/check: $(CHECK_DEPS)
-	@$(MKDIR_P) database/sql/driver
 	@$(CHECK)
 .PHONY: database/sql/driver/check
 
@@ -2406,7 +2519,6 @@ debug/dwarf.lo.dep: $(go_debug_dwarf_files)
 debug/dwarf.lo: $(go_debug_dwarf_files)
 	$(BUILDPACKAGE)
 debug/dwarf/check: $(CHECK_DEPS)
-	@$(MKDIR_P) debug/dwarf
 	@$(CHECK)
 .PHONY: debug/dwarf/check
 
@@ -2416,7 +2528,6 @@ debug/elf.lo.dep: $(go_debug_elf_files)
 debug/elf.lo: $(go_debug_elf_files)
 	$(BUILDPACKAGE)
 debug/elf/check: $(CHECK_DEPS)
-	@$(MKDIR_P) debug/elf
 	@$(CHECK)
 .PHONY: debug/elf/check
 
@@ -2426,7 +2537,6 @@ debug/gosym.lo.dep: $(go_debug_gosym_files)
 debug/gosym.lo: $(go_debug_gosym_files)
 	$(BUILDPACKAGE)
 debug/gosym/check: $(CHECK_DEPS)
-	@$(MKDIR_P) debug/gosym
 	@$(CHECK)
 .PHONY: debug/gosym/check
 
@@ -2436,7 +2546,6 @@ debug/macho.lo.dep: $(go_debug_macho_files)
 debug/macho.lo: $(go_debug_macho_files)
 	$(BUILDPACKAGE)
 debug/macho/check: $(CHECK_DEPS)
-	@$(MKDIR_P) debug/macho
 	@$(CHECK)
 .PHONY: debug/macho/check
 
@@ -2446,7 +2555,6 @@ debug/pe.lo.dep: $(go_debug_pe_files)
 debug/pe.lo: $(go_debug_pe_files)
 	$(BUILDPACKAGE)
 debug/pe/check: $(CHECK_DEPS)
-	@$(MKDIR_P) debug/pe
 	@$(CHECK)
 .PHONY: debug/pe/check
 
@@ -2456,7 +2564,6 @@ encoding/asn1.lo.dep: $(go_encoding_asn1_files)
 encoding/asn1.lo: $(go_encoding_asn1_files)
 	$(BUILDPACKAGE)
 encoding/asn1/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/asn1
 	@$(CHECK)
 .PHONY: encoding/asn1/check
 
@@ -2466,7 +2573,6 @@ encoding/ascii85.lo.dep: $(go_encoding_ascii85_files)
 encoding/ascii85.lo: $(go_encoding_ascii85_files)
 	$(BUILDPACKAGE)
 encoding/ascii85/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/ascii85
 	@$(CHECK)
 .PHONY: encoding/ascii85/check
 
@@ -2476,7 +2582,6 @@ encoding/base32.lo.dep: $(go_encoding_base32_files)
 encoding/base32.lo: $(go_encoding_base32_files)
 	$(BUILDPACKAGE)
 encoding/base32/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/base32
 	@$(CHECK)
 .PHONY: encoding/base32/check
 
@@ -2486,7 +2591,6 @@ encoding/base64.lo.dep: $(go_encoding_base64_files)
 encoding/base64.lo: $(go_encoding_base64_files)
 	$(BUILDPACKAGE)
 encoding/base64/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/base64
 	@$(CHECK)
 .PHONY: encoding/base64/check
 
@@ -2496,7 +2600,6 @@ encoding/binary.lo.dep: $(go_encoding_binary_files)
 encoding/binary.lo: $(go_encoding_binary_files)
 	$(BUILDPACKAGE)
 encoding/binary/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/binary
 	@$(CHECK)
 .PHONY: encoding/binary/check
 
@@ -2506,7 +2609,6 @@ encoding/csv.lo.dep: $(go_encoding_csv_files)
 encoding/csv.lo: $(go_encoding_csv_files)
 	$(BUILDPACKAGE)
 encoding/csv/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/csv
 	@$(CHECK)
 .PHONY: encoding/csv/check
 
@@ -2516,7 +2618,6 @@ encoding/gob.lo.dep: $(go_encoding_gob_files)
 encoding/gob.lo: $(go_encoding_gob_files)
 	$(BUILDPACKAGE)
 encoding/gob/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/gob
 	@$(CHECK)
 .PHONY: encoding/gob/check
 
@@ -2526,7 +2627,6 @@ encoding/hex.lo.dep: $(go_encoding_hex_files)
 encoding/hex.lo: $(go_encoding_hex_files)
 	$(BUILDPACKAGE)
 encoding/hex/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/hex
 	@$(CHECK)
 .PHONY: encoding/hex/check
 
@@ -2536,7 +2636,6 @@ encoding/json.lo.dep: $(go_encoding_json_files)
 encoding/json.lo: $(go_encoding_json_files)
 	$(BUILDPACKAGE)
 encoding/json/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/json
 	@$(CHECK)
 .PHONY: encoding/json/check
 
@@ -2546,7 +2645,6 @@ encoding/pem.lo.dep: $(go_encoding_pem_files)
 encoding/pem.lo: $(go_encoding_pem_files)
 	$(BUILDPACKAGE)
 encoding/pem/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/pem
 	@$(CHECK)
 .PHONY: encoding/pem/check
 
@@ -2556,7 +2654,6 @@ encoding/xml.lo.dep: $(go_encoding_xml_files)
 encoding/xml.lo: $(go_encoding_xml_files)
 	$(BUILDPACKAGE)
 encoding/xml/check: $(CHECK_DEPS)
-	@$(MKDIR_P) encoding/xml
 	@$(CHECK)
 .PHONY: encoding/xml/check
 
@@ -2566,7 +2663,6 @@ exp/ebnf.lo.dep: $(go_exp_ebnf_files)
 exp/ebnf.lo: $(go_exp_ebnf_files)
 	$(BUILDPACKAGE)
 exp/ebnf/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/ebnf
 	@$(CHECK)
 .PHONY: exp/ebnf/check
 
@@ -2576,9 +2672,35 @@ exp/html.lo.dep: $(go_exp_html_files)
 exp/html.lo: $(go_exp_html_files)
 	$(BUILDPACKAGE)
 exp/html/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/html
 	@$(CHECK)
 .PHONY: exp/html/check
+
+@go_include@ exp/html/atom.lo.dep
+exp/html/atom.lo.dep: $(go_exp_html_atom_files)
+	$(BUILDDEPS)
+exp/html/atom.lo: $(go_exp_html_atom_files)
+	$(BUILDPACKAGE)
+exp/html/atom/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: exp/html/atom/check
+
+@go_include@ exp/locale/collate.lo.dep
+exp/locale/collate.lo.dep: $(go_exp_locale_collate_files)
+	$(BUILDDEPS)
+exp/locale/collate.lo: $(go_exp_locale_collate_files)
+	$(BUILDPACKAGE)
+exp/locale/collate/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: exp/locale/collate/check
+
+@go_include@ exp/locale/collate/build.lo.dep
+exp/locale/collate/build.lo.dep: $(go_exp_locale_collate_build_files)
+	$(BUILDDEPS)
+exp/locale/collate/build.lo: $(go_exp_locale_collate_build_files)
+	$(BUILDPACKAGE)
+exp/locale/collate/build/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: exp/locale/collate/build/check
 
 @go_include@ exp/norm.lo.dep
 exp/norm.lo.dep: $(go_exp_norm_files)
@@ -2586,7 +2708,6 @@ exp/norm.lo.dep: $(go_exp_norm_files)
 exp/norm.lo: $(go_exp_norm_files)
 	$(BUILDPACKAGE)
 exp/norm/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/norm
 	@$(CHECK)
 .PHONY: exp/norm/check
 
@@ -2596,7 +2717,6 @@ exp/proxy.lo.dep: $(go_exp_proxy_files)
 exp/proxy.lo: $(go_exp_proxy_files)
 	$(BUILDPACKAGE)
 exp/proxy/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/proxy
 	@$(CHECK)
 .PHONY: exp/proxy/check
 
@@ -2606,7 +2726,6 @@ exp/terminal.lo.dep: $(go_exp_terminal_files)
 exp/terminal.lo: $(go_exp_terminal_files)
 	$(BUILDPACKAGE)
 exp/terminal/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/terminal
 	@$(CHECK)
 .PHONY: exp/terminal/check
 
@@ -2616,7 +2735,6 @@ exp/types.lo.dep: $(go_exp_types_files)
 exp/types.lo: $(go_exp_types_files)
 	$(BUILDPACKAGE)
 exp/types/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/types
 	@$(CHECK)
 .PHONY: exp/types/check
 
@@ -2626,7 +2744,6 @@ exp/utf8string.lo.dep: $(go_exp_utf8string_files)
 exp/utf8string.lo: $(go_exp_utf8string_files)
 	$(BUILDPACKAGE)
 exp/utf8string/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/utf8string
 	@$(CHECK)
 .PHONY: exp/utf8string/check
 
@@ -2636,7 +2753,6 @@ exp/inotify.lo.dep: $(go_exp_inotify_files)
 exp/inotify.lo: $(go_exp_inotify_files)
 	$(BUILDPACKAGE)
 exp/inotify/check: $(CHECK_DEPS)
-	@$(MKDIR_P) exp/inotify
 	@$(CHECK)
 .PHONY: exp/inotify/check
 
@@ -2646,7 +2762,6 @@ html/template.lo.dep: $(go_html_template_files)
 html/template.lo: $(go_html_template_files)
 	$(BUILDPACKAGE)
 html/template/check: $(CHECK_DEPS)
-	@$(MKDIR_P) html/template
 	@$(CHECK)
 .PHONY: html/template/check
 
@@ -2656,7 +2771,6 @@ go/ast.lo.dep: $(go_go_ast_files)
 go/ast.lo: $(go_go_ast_files)
 	$(BUILDPACKAGE)
 go/ast/check: $(CHECK_DEPS)
-	@$(MKDIR_P) go/ast
 	@$(CHECK)
 .PHONY: go/ast/check
 
@@ -2666,7 +2780,6 @@ go/build.lo.dep: $(go_go_build_files)
 go/build.lo: $(go_go_build_files)
 	$(BUILDPACKAGE)
 go/build/check: $(CHECK_DEPS)
-	@$(MKDIR_P) go/build
 	@$(CHECK)
 .PHONY: go/build/check
 
@@ -2685,7 +2798,6 @@ go/doc.lo.dep: $(go_go_doc_files)
 go/doc.lo: $(go_go_doc_files)
 	$(BUILDPACKAGE)
 go/doc/check: $(CHECK_DEPS)
-	@$(MKDIR_P) go/doc
 	@$(CHECK)
 .PHONY: go/doc/check
 
@@ -2695,7 +2807,6 @@ go/parser.lo.dep: $(go_go_parser_files)
 go/parser.lo: $(go_go_parser_files)
 	$(BUILDPACKAGE)
 go/parser/check: $(CHECK_DEPS)
-	@$(MKDIR_P) go/parser
 	@$(CHECK)
 .PHONY: go/parser/check
 
@@ -2705,7 +2816,6 @@ go/printer.lo.dep: $(go_go_printer_files)
 go/printer.lo: $(go_go_printer_files)
 	$(BUILDPACKAGE)
 go/printer/check: $(CHECK_DEPS)
-	@$(MKDIR_P) go/printer
 	@$(CHECK)
 .PHONY: go/printer/check
 
@@ -2715,7 +2825,6 @@ go/scanner.lo.dep: $(go_go_scanner_files)
 go/scanner.lo: $(go_go_scanner_files)
 	$(BUILDPACKAGE)
 go/scanner/check: $(CHECK_DEPS)
-	@$(MKDIR_P) go/scanner
 	@$(CHECK)
 .PHONY: go/scanner/check
 
@@ -2725,7 +2834,6 @@ go/token.lo.dep: $(go_go_token_files)
 go/token.lo: $(go_go_token_files)
 	$(BUILDPACKAGE)
 go/token/check: $(CHECK_DEPS)
-	@$(MKDIR_P) go/token
 	@$(CHECK)
 .PHONY: go/token/check
 
@@ -2735,7 +2843,6 @@ hash/adler32.lo.dep: $(go_hash_adler32_files)
 hash/adler32.lo: $(go_hash_adler32_files)
 	$(BUILDPACKAGE)
 hash/adler32/check: $(CHECK_DEPS)
-	@$(MKDIR_P) hash/adler32
 	@$(CHECK)
 .PHONY: hash/adler32/check
 
@@ -2745,7 +2852,6 @@ hash/crc32.lo.dep: $(go_hash_crc32_files)
 hash/crc32.lo: $(go_hash_crc32_files)
 	$(BUILDPACKAGE)
 hash/crc32/check: $(CHECK_DEPS)
-	@$(MKDIR_P) hash/crc32
 	@$(CHECK)
 .PHONY: hash/crc32/check
 
@@ -2755,7 +2861,6 @@ hash/crc64.lo.dep: $(go_hash_crc64_files)
 hash/crc64.lo: $(go_hash_crc64_files)
 	$(BUILDPACKAGE)
 hash/crc64/check: $(CHECK_DEPS)
-	@$(MKDIR_P) hash/crc64
 	@$(CHECK)
 .PHONY: hash/crc64/check
 
@@ -2765,7 +2870,6 @@ hash/fnv.lo.dep: $(go_hash_fnv_files)
 hash/fnv.lo: $(go_hash_fnv_files)
 	$(BUILDPACKAGE)
 hash/fnv/check: $(CHECK_DEPS)
-	@$(MKDIR_P) hash/fnv
 	@$(CHECK)
 .PHONY: hash/fnv/check
 
@@ -2775,7 +2879,6 @@ image/color.lo.dep: $(go_image_color_files)
 image/color.lo: $(go_image_color_files)
 	$(BUILDPACKAGE)
 image/color/check: $(CHECK_DEPS)
-	@$(MKDIR_P) image/color
 	@$(CHECK)
 .PHONY: image/color/check
 
@@ -2785,7 +2888,6 @@ image/draw.lo.dep: $(go_image_draw_files)
 image/draw.lo: $(go_image_draw_files)
 	$(BUILDPACKAGE)
 image/draw/check: $(CHECK_DEPS)
-	@$(MKDIR_P) image/draw
 	@$(CHECK)
 .PHONY: image/draw/check
 
@@ -2795,7 +2897,6 @@ image/gif.lo.dep: $(go_image_gif_files)
 image/gif.lo: $(go_image_gif_files)
 	$(BUILDPACKAGE)
 image/gif/check: $(CHECK_DEPS)
-	@$(MKDIR_P) image/gif
 	@$(CHECK)
 .PHONY: image/gif/check
 
@@ -2805,7 +2906,6 @@ image/jpeg.lo.dep: $(go_image_jpeg_files)
 image/jpeg.lo: $(go_image_jpeg_files)
 	$(BUILDPACKAGE)
 image/jpeg/check: $(CHECK_DEPS)
-	@$(MKDIR_P) image/jpeg
 	@$(CHECK)
 .PHONY: image/jpeg/check
 
@@ -2815,7 +2915,6 @@ image/png.lo.dep: $(go_image_png_files)
 image/png.lo: $(go_image_png_files)
 	$(BUILDPACKAGE)
 image/png/check: $(CHECK_DEPS)
-	@$(MKDIR_P) image/png
 	@$(CHECK)
 .PHONY: image/png/check
 
@@ -2825,7 +2924,6 @@ index/suffixarray.lo.dep: $(go_index_suffixarray_files)
 index/suffixarray.lo: $(go_index_suffixarray_files)
 	$(BUILDPACKAGE)
 index/suffixarray/check: $(CHECK_DEPS)
-	@$(MKDIR_P) index/suffixarray
 	@$(CHECK)
 .PHONY: index/suffixarray/check
 
@@ -2835,7 +2933,6 @@ io/ioutil.lo.dep: $(go_io_ioutil_files)
 io/ioutil.lo: $(go_io_ioutil_files)
 	$(BUILDPACKAGE)
 io/ioutil/check: $(CHECK_DEPS)
-	@$(MKDIR_P) io/ioutil
 	@$(CHECK)
 .PHONY: io/ioutil/check
 
@@ -2848,7 +2945,6 @@ log/syslog/syslog_c.lo: $(go_syslog_c_files) log/syslog.lo
 	@$(MKDIR_P) log/syslog
 	$(LTCOMPILE) -c -o $@ $(srcdir)/go/log/syslog/syslog_c.c
 log/syslog/check: $(CHECK_DEPS)
-	@$(MKDIR_P) log/syslog
 	@$(CHECK)
 .PHONY: log/syslog/check
 
@@ -2858,7 +2954,6 @@ math/big.lo.dep: $(go_math_big_files)
 math/big.lo: $(go_math_big_files)
 	$(BUILDPACKAGE)
 math/big/check: $(CHECK_DEPS)
-	@$(MKDIR_P) math/big
 	@$(CHECK)
 .PHONY: math/big/check
 
@@ -2868,7 +2963,6 @@ math/cmplx.lo.dep: $(go_math_cmplx_files)
 math/cmplx.lo: $(go_math_cmplx_files)
 	$(BUILDPACKAGE)
 math/cmplx/check: $(CHECK_DEPS)
-	@$(MKDIR_P) math/cmplx
 	@$(CHECK)
 .PHONY: math/cmplx/check
 
@@ -2878,7 +2972,6 @@ math/rand.lo.dep: $(go_math_rand_files)
 math/rand.lo: $(go_math_rand_files)
 	$(BUILDPACKAGE)
 math/rand/check: $(CHECK_DEPS)
-	@$(MKDIR_P) math/rand
 	@$(CHECK)
 .PHONY: math/rand/check
 
@@ -2888,7 +2981,6 @@ mime/multipart.lo.dep: $(go_mime_multipart_files)
 mime/multipart.lo: $(go_mime_multipart_files)
 	$(BUILDPACKAGE)
 mime/multipart/check: $(CHECK_DEPS)
-	@$(MKDIR_P) mime/multipart
 	@$(CHECK)
 .PHONY: mime/multipart/check
 
@@ -2898,7 +2990,6 @@ net/http.lo.dep: $(go_net_http_files)
 net/http.lo: $(go_net_http_files)
 	$(BUILDPACKAGE)
 net/http/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/http
 	@$(CHECK)
 .PHONY: net/http/check
 
@@ -2908,7 +2999,6 @@ net/mail.lo.dep: $(go_net_mail_files)
 net/mail.lo: $(go_net_mail_files)
 	$(BUILDPACKAGE)
 net/mail/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/mail
 	@$(CHECK)
 .PHONY: net/mail/check
 
@@ -2918,7 +3008,6 @@ net/rpc.lo.dep: $(go_net_rpc_files)
 net/rpc.lo: $(go_net_rpc_files)
 	$(BUILDPACKAGE)
 net/rpc/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/rpc
 	@$(CHECK)
 .PHONY: net/rpc/check
 
@@ -2928,7 +3017,6 @@ net/smtp.lo.dep: $(go_net_smtp_files)
 net/smtp.lo: $(go_net_smtp_files)
 	$(BUILDPACKAGE)
 net/smtp/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/smtp
 	@$(CHECK)
 .PHONY: net/smtp/check
 
@@ -2938,7 +3026,6 @@ net/url.lo.dep: $(go_net_url_files)
 net/url.lo: $(go_net_url_files)
 	$(BUILDPACKAGE)
 net/url/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/url
 	@$(CHECK)
 .PHONY: net/url/check
 
@@ -2948,7 +3035,6 @@ net/textproto.lo.dep: $(go_net_textproto_files)
 net/textproto.lo: $(go_net_textproto_files)
 	$(BUILDPACKAGE)
 net/textproto/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/textproto
 	@$(CHECK)
 .PHONY: net/textproto/check
 
@@ -2958,7 +3044,6 @@ net/http/cgi.lo.dep: $(go_net_http_cgi_files)
 net/http/cgi.lo: $(go_net_http_cgi_files)
 	$(BUILDPACKAGE)
 net/http/cgi/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/http/cgi
 	@$(CHECK)
 .PHONY: net/http/cgi/check
 
@@ -2968,7 +3053,6 @@ net/http/fcgi.lo.dep: $(go_net_http_fcgi_files)
 net/http/fcgi.lo: $(go_net_http_fcgi_files)
 	$(BUILDPACKAGE)
 net/http/fcgi/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/http/fcgi
 	@$(CHECK)
 .PHONY: net/http/fcgi/check
 
@@ -2978,7 +3062,6 @@ net/http/httptest.lo.dep: $(go_net_http_httptest_files)
 net/http/httptest.lo: $(go_net_http_httptest_files)
 	$(BUILDPACKAGE)
 net/http/httptest/check: $(check_deps)
-	@$(MKDIR_P) net/http/httptest
 	@$(CHECK)
 .PHONY: net/http/httptest/check
 
@@ -2988,7 +3071,6 @@ net/http/httputil.lo.dep: $(go_net_http_httputil_files)
 net/http/httputil.lo: $(go_net_http_httputil_files)
 	$(BUILDPACKAGE)
 net/http/httputil/check: $(check_deps)
-	@$(MKDIR_P) net/http/httputil
 	@$(CHECK)
 .PHONY: net/http/httputil/check
 
@@ -2998,7 +3080,6 @@ net/http/pprof.lo.dep: $(go_net_http_pprof_files)
 net/http/pprof.lo: $(go_net_http_pprof_files)
 	$(BUILDPACKAGE)
 net/http/pprof/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/http/pprof
 	@$(CHECK)
 .PHONY: net/http/pprof/check
 
@@ -3008,7 +3089,6 @@ net/rpc/jsonrpc.lo.dep: $(go_net_rpc_jsonrpc_files)
 net/rpc/jsonrpc.lo: $(go_net_rpc_jsonrpc_files)
 	$(BUILDPACKAGE)
 net/rpc/jsonrpc/check: $(CHECK_DEPS)
-	@$(MKDIR_P) net/rpc/jsonrpc
 	@$(CHECK)
 .PHONY: net/rpc/jsonrpc/check
 
@@ -3018,7 +3098,6 @@ old/netchan.lo.dep: $(go_old_netchan_files)
 old/netchan.lo: $(go_old_netchan_files)
 	$(BUILDPACKAGE)
 old/netchan/check: $(CHECK_DEPS)
-	@$(MKDIR_P) old/netchan
 	@$(CHECK)
 .PHONY: old/netchan/check
 
@@ -3028,7 +3107,6 @@ old/regexp.lo.dep: $(go_old_regexp_files)
 old/regexp.lo: $(go_old_regexp_files)
 	$(BUILDPACKAGE)
 old/regexp/check: $(CHECK_DEPS)
-	@$(MKDIR_P) old/regexp
 	@$(CHECK)
 .PHONY: old/regexp/check
 
@@ -3038,7 +3116,6 @@ old/template.lo.dep: $(go_old_template_files)
 old/template.lo: $(go_old_template_files)
 	$(BUILDPACKAGE)
 old/template/check: $(CHECK_DEPS)
-	@$(MKDIR_P) old/template
 	@$(CHECK)
 .PHONY: old/template/check
 
@@ -3048,7 +3125,6 @@ os/exec.lo.dep: $(go_os_exec_files)
 os/exec.lo: $(go_os_exec_files)
 	$(BUILDPACKAGE)
 os/exec/check: $(CHECK_DEPS)
-	@$(MKDIR_P) os/exec
 	@$(CHECK)
 .PHONY: os/exec/check
 
@@ -3058,7 +3134,6 @@ os/signal.lo.dep: $(go_os_signal_files)
 os/signal.lo: $(go_os_signal_files)
 	$(BUILDPACKAGE)
 os/signal/check: $(CHECK_DEPS)
-	@$(MKDIR_P) os/signal
 	@$(CHECK)
 .PHONY: os/signal/check
 
@@ -3068,7 +3143,6 @@ os/user.lo.dep: $(go_os_user_files)
 os/user.lo: $(go_os_user_files)
 	$(BUILDPACKAGE)
 os/user/check: $(CHECK_DEPS)
-	@$(MKDIR_P) os/user
 	@$(CHECK)
 .PHONY: os/user/check
 
@@ -3078,7 +3152,6 @@ path/filepath.lo.dep: $(go_path_filepath_files)
 path/filepath.lo: $(go_path_filepath_files)
 	$(BUILDPACKAGE)
 path/filepath/check: $(CHECK_DEPS)
-	@$(MKDIR_P) path/filepath
 	@$(CHECK)
 .PHONY: path/filepath/check
 
@@ -3088,7 +3161,6 @@ regexp/syntax.lo.dep: $(go_regexp_syntax_files)
 regexp/syntax.lo: $(go_regexp_syntax_files)
 	$(BUILDPACKAGE)
 regexp/syntax/check: $(CHECK_DEPS)
-	@$(MKDIR_P) regexp/syntax
 	@$(CHECK)
 .PHONY: regexp/syntax/check
 
@@ -3098,7 +3170,6 @@ runtime/debug.lo.dep: $(go_runtime_debug_files)
 runtime/debug.lo: $(go_runtime_debug_files)
 	$(BUILDPACKAGE)
 runtime/debug/check: $(CHECK_DEPS)
-	@$(MKDIR_P) runtime/debug
 	@$(CHECK)
 .PHONY: runtime/debug/check
 
@@ -3108,9 +3179,11 @@ runtime/pprof.lo.dep: $(go_runtime_pprof_files)
 runtime/pprof.lo: $(go_runtime_pprof_files)
 	$(BUILDPACKAGE)
 runtime/pprof/check: $(CHECK_DEPS)
-	@$(MKDIR_P) runtime/pprof
 	@$(CHECK)
 .PHONY: runtime/pprof/check
+# At least for now, we need -static-libgo for this test, because
+# otherwise we can't get the line numbers.
+runtime_pprof_check_GOCFLAGS = -static-libgo
 
 @go_include@ sync/atomic.lo.dep
 sync/atomic.lo.dep: $(go_sync_atomic_files)
@@ -3120,7 +3193,6 @@ sync/atomic.lo: $(go_sync_atomic_files)
 sync/atomic_c.lo: $(go_sync_atomic_c_files) sync/atomic.lo
 	$(LTCOMPILE) -c -o $@ $(srcdir)/go/sync/atomic/atomic.c
 sync/atomic/check: $(CHECK_DEPS)
-	@$(MKDIR_P) sync/atomic
 	@$(CHECK)
 .PHONY: sync/atomic/check
 
@@ -3130,7 +3202,6 @@ text/scanner.lo.dep: $(go_text_scanner_files)
 text/scanner.lo: $(go_text_scanner_files)
 	$(BUILDPACKAGE)
 text/scanner/check: $(CHECK_DEPS)
-	@$(MKDIR_P) text/scanner
 	@$(CHECK)
 .PHONY: text/scanner/check
 
@@ -3140,7 +3211,6 @@ text/tabwriter.lo.dep: $(go_text_tabwriter_files)
 text/tabwriter.lo: $(go_text_tabwriter_files)
 	$(BUILDPACKAGE)
 text/tabwriter/check: $(CHECK_DEPS)
-	@$(MKDIR_P) text/tabwriter
 	@$(CHECK)
 .PHONY: text/tabwriter/check
 
@@ -3159,7 +3229,6 @@ text/template/parse.lo.dep: $(go_text_template_parse_files)
 text/template/parse.lo: $(go_text_template_parse_files)
 	$(BUILDPACKAGE)
 text/template/parse/check: $(CHECK_DEPS)
-	@$(MKDIR_P) text/template/parse
 	@$(CHECK)
 .PHONY: text/template/parse/check
 
@@ -3169,7 +3238,6 @@ testing/iotest.lo.dep: $(go_testing_iotest_files)
 testing/iotest.lo: $(go_testing_iotest_files)
 	$(BUILDPACKAGE)
 testing/iotest/check: $(CHECK_DEPS)
-	@$(MKDIR_P) testing/iotest
 	@$(CHECK)
 .PHONY: testing/iotest/check
 
@@ -3179,7 +3247,6 @@ testing/quick.lo.dep: $(go_testing_quick_files)
 testing/quick.lo: $(go_testing_quick_files)
 	$(BUILDPACKAGE)
 testing/quick/check: $(CHECK_DEPS)
-	@$(MKDIR_P) testing/quick
 	@$(CHECK)
 .PHONY: testing/quick/check
 
@@ -3189,7 +3256,6 @@ unicode/utf16.lo.dep: $(go_unicode_utf16_files)
 unicode/utf16.lo: $(go_unicode_utf16_files)
 	$(BUILDPACKAGE)
 unicode/utf16/check: $(CHECK_DEPS)
-	@$(MKDIR_P) unicode/utf16
 	@$(CHECK)
 .PHONY: unicode/utf16/check
 
@@ -3199,7 +3265,6 @@ unicode/utf8.lo.dep: $(go_unicode_utf8_files)
 unicode/utf8.lo: $(go_unicode_utf8_files)
 	$(BUILDPACKAGE)
 unicode/utf8/check: $(CHECK_DEPS)
-	@$(MKDIR_P) unicode/utf8
 	@$(CHECK)
 .PHONY: unicode/utf8/check
 
@@ -3217,6 +3282,9 @@ syscall/signame.lo: go/syscall/signame.c
 syscall/wait.lo: go/syscall/wait.c
 	@$(MKDIR_P) syscall
 	$(LTCOMPILE) -c -o $@ $<
+syscall/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: syscall/check
 
 # How to build a .gox file from a .lo file.
 BUILDGOX = \
@@ -3385,7 +3453,13 @@ exp/ebnf.gox: exp/ebnf.lo
 	$(BUILDGOX)
 exp/html.gox: exp/html.lo
 	$(BUILDGOX)
+exp/html/atom.gox: exp/html/atom.lo
+	$(BUILDGOX)
 exp/inotify.gox: exp/inotify.lo
+	$(BUILDGOX)
+exp/locale/collate.gox: exp/locale/collate.lo
+	$(BUILDGOX)
+exp/locale/collate/build.gox: exp/locale/collate/build.lo
 	$(BUILDGOX)
 exp/norm.gox: exp/norm.lo
 	$(BUILDGOX)
@@ -3559,6 +3633,7 @@ TEST_PACKAGES = \
 	strconv/check \
 	strings/check \
 	sync/check \
+	syscall/check \
 	time/check \
 	unicode/check \
 	archive/tar/check \
@@ -3607,10 +3682,14 @@ TEST_PACKAGES = \
 	encoding/xml/check \
 	exp/ebnf/check \
 	exp/html/check \
+	exp/html/atom/check \
 	$(exp_inotify_check) \
+	exp/locale/collate/check \
+	exp/locale/collate/build/check \
 	exp/norm/check \
 	exp/proxy/check \
 	exp/terminal/check \
+	exp/types/check \
 	exp/utf8string/check \
 	html/template/check \
 	go/ast/check \
@@ -3655,6 +3734,7 @@ TEST_PACKAGES = \
 	os/user/check \
 	path/filepath/check \
 	regexp/syntax/check \
+	runtime/pprof/check \
 	sync/atomic/check \
 	text/scanner/check \
 	text/tabwriter/check \

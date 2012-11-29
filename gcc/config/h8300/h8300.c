@@ -1,6 +1,6 @@
 /* Subroutines for insn-output.c for Renesas H8/300.
    Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
+   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
    Free Software Foundation, Inc.
    Contributed by Steve Chamberlain (sac@cygnus.com),
    Jim Wilson (wilson@cygnus.com), and Doug Evans (dje@cygnus.com).
@@ -480,7 +480,7 @@ byte_reg (rtx x, int b)
 	  handlers.  */							\
        || (h8300_current_function_interrupt_function_p ()		\
 	   && call_used_regs[regno]					\
-	   && !current_function_is_leaf)))
+	   && !crtl->is_leaf)))
 
 /* We use this to wrap all emitted insns in the prologue.  */
 static rtx
@@ -1244,7 +1244,7 @@ h8300_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
 	    *total = 0;
 	    return true;
 	  }
-	if (-4 <= n || n <= 4)
+	if (-4 <= n && n <= 4)
 	  {
 	    switch ((int) n)
 	      {
@@ -1446,6 +1446,12 @@ h8300_print_operand (FILE *file, rtx x, int code)
 
   switch (code)
     {
+    case 'C':
+      if (h8300_constant_length (x) == 2)
+       fprintf (file, ":16");
+      else
+       fprintf (file, ":32");
+      return;
     case 'E':
       switch (GET_CODE (x))
 	{
@@ -2160,7 +2166,8 @@ h8300_get_index (rtx x, enum machine_mode mode, int *size)
    (the amount of decrement or increment being the length of the operand).  */
 
 static bool
-h8300_mode_dependent_address_p (const_rtx addr)
+h8300_mode_dependent_address_p (const_rtx addr,
+				addr_space_t as ATTRIBUTE_UNUSED)
 {
   if (GET_CODE (addr) == PLUS
       && h8300_get_index (XEXP (addr, 0), VOIDmode, 0) != XEXP (addr, 0))

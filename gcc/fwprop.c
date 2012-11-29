@@ -1,5 +1,5 @@
 /* RTL-based forward propagation pass for GNU compiler.
-   Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011
+   Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
    Free Software Foundation, Inc.
    Contributed by Paolo Bonzini and Steven Bosscher.
 
@@ -26,7 +26,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic-core.h"
 
 #include "sparseset.h"
-#include "timevar.h"
 #include "rtl.h"
 #include "tm_p.h"
 #include "insn-config.h"
@@ -117,11 +116,9 @@ along with GCC; see the file COPYING3.  If not see
 
 static int num_changes;
 
-DEF_VEC_P(df_ref);
-DEF_VEC_ALLOC_P(df_ref,heap);
-static VEC(df_ref,heap) *use_def_ref;
-static VEC(df_ref,heap) *reg_defs;
-static VEC(df_ref,heap) *reg_defs_stack;
+static vec<df_ref> use_def_ref;
+static vec<df_ref> reg_defs;
+static vec<df_ref> reg_defs_stack;
 
 /* The MD bitmaps are trimmed to include only live registers to cut
    memory usage on testcases like insn-recog.c.  Track live registers
@@ -136,7 +133,7 @@ static bitmap local_lr;
 static inline df_ref
 get_def_for_use (df_ref use)
 {
-  return VEC_index (df_ref, use_def_ref, DF_REF_ID (use));
+  return use_def_ref[DF_REF_ID (use)];
 }
 
 
@@ -155,7 +152,7 @@ process_defs (df_ref *def_rec, int top_flag)
   df_ref def;
   while ((def = *def_rec++) != NULL)
     {
-      df_ref curr_def = VEC_index (df_ref, reg_defs, DF_REF_REGNO (def));
+      df_ref curr_def = reg_defs[DF_REF_REGNO (def)];
       unsigned int dregno;
 
       if ((DF_REF_FLAGS (def) & DF_REF_AT_TOP) != top_flag)
@@ -163,7 +160,7 @@ process_defs (df_ref *def_rec, int top_flag)
 
       dregno = DF_REF_REGNO (def);
       if (curr_def)
-	VEC_safe_push (df_ref, heap, reg_defs_stack, curr_def);
+	reg_defs_stack.safe_push (curr_def);
       else
 	{
 	  /* Do not store anything if "transitioning" from NULL to NULL.  But
@@ -172,18 +169,18 @@ process_defs (df_ref *def_rec, int top_flag)
 	  if (DF_REF_FLAGS (def) & DF_MD_GEN_FLAGS)
 	    ;
 	  else
-	    VEC_safe_push (df_ref, heap, reg_defs_stack, def);
+	    reg_defs_stack.safe_push (def);
 	}
 
       if (DF_REF_FLAGS (def) & DF_MD_GEN_FLAGS)
 	{
 	  bitmap_set_bit (local_md, dregno);
-	  VEC_replace (df_ref, reg_defs, dregno, NULL);
+	  reg_defs[dregno] = NULL;
 	}
       else
 	{
 	  bitmap_clear_bit (local_md, dregno);
-	  VEC_replace (df_ref, reg_defs, dregno, def);
+	  reg_defs[dregno] = def;
 	}
     }
 }
@@ -202,11 +199,10 @@ process_uses (df_ref *use_rec, int top_flag)
     if ((DF_REF_FLAGS (use) & DF_REF_AT_TOP) == top_flag)
       {
         unsigned int uregno = DF_REF_REGNO (use);
-        if (VEC_index (df_ref, reg_defs, uregno)
+        if (reg_defs[uregno]
 	    && !bitmap_bit_p (local_md, uregno)
 	    && bitmap_bit_p (local_lr, uregno))
-	  VEC_replace (df_ref, use_def_ref, DF_REF_ID (use),
-		       VEC_index (df_ref, reg_defs, uregno));
+	  use_def_ref[DF_REF_ID (use)] = reg_defs[uregno];
       }
 }
 
@@ -224,7 +220,7 @@ single_def_use_enter_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
   bitmap_copy (local_lr, &lr_bb_info->in);
 
   /* Push a marker for the leave_block callback.  */
-  VEC_safe_push (df_ref, heap, reg_defs_stack, NULL);
+  reg_defs_stack.safe_push (NULL);
 
   process_uses (df_get_artificial_uses (bb_index), DF_REF_AT_TOP);
   process_defs (df_get_artificial_defs (bb_index), DF_REF_AT_TOP);
@@ -255,15 +251,15 @@ single_def_use_leave_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
 			    basic_block bb ATTRIBUTE_UNUSED)
 {
   df_ref saved_def;
-  while ((saved_def = VEC_pop (df_ref, reg_defs_stack)) != NULL)
+  while ((saved_def = reg_defs_stack.pop ()) != NULL)
     {
       unsigned int dregno = DF_REF_REGNO (saved_def);
 
       /* See also process_defs.  */
-      if (saved_def == VEC_index (df_ref, reg_defs, dregno))
-	VEC_replace (df_ref, reg_defs, dregno, NULL);
+      if (saved_def == reg_defs[dregno])
+	reg_defs[dregno] = NULL;
       else
-	VEC_replace (df_ref, reg_defs, dregno, saved_def);
+	reg_defs[dregno] = saved_def;
     }
 }
 
@@ -284,13 +280,13 @@ build_single_def_use_links (void)
   df_analyze ();
   df_maybe_reorganize_use_refs (DF_REF_ORDER_BY_INSN_WITH_NOTES);
 
-  use_def_ref = VEC_alloc (df_ref, heap, DF_USES_TABLE_SIZE ());
-  VEC_safe_grow_cleared (df_ref, heap, use_def_ref, DF_USES_TABLE_SIZE ());
+  use_def_ref.create (DF_USES_TABLE_SIZE ());
+  use_def_ref.safe_grow_cleared (DF_USES_TABLE_SIZE ());
 
-  reg_defs = VEC_alloc (df_ref, heap, max_reg_num ());
-  VEC_safe_grow_cleared (df_ref, heap, reg_defs, max_reg_num ());
+  reg_defs.create (max_reg_num ());
+  reg_defs.safe_grow_cleared (max_reg_num ());
 
-  reg_defs_stack = VEC_alloc (df_ref, heap, n_basic_blocks * 10);
+  reg_defs_stack.create (n_basic_blocks * 10);
   local_md = BITMAP_ALLOC (NULL);
   local_lr = BITMAP_ALLOC (NULL);
 
@@ -307,8 +303,8 @@ build_single_def_use_links (void)
 
   BITMAP_FREE (local_lr);
   BITMAP_FREE (local_md);
-  VEC_free (df_ref, heap, reg_defs);
-  VEC_free (df_ref, heap, reg_defs_stack);
+  reg_defs.release ();
+  reg_defs_stack.release ();
 }
 
 
@@ -800,13 +796,17 @@ all_uses_available_at (rtx def_insn, rtx target_insn)
   df_ref *use_rec;
   struct df_insn_info *insn_info = DF_INSN_INFO_GET (def_insn);
   rtx def_set = single_set (def_insn);
+  rtx next;
 
   gcc_assert (def_set);
 
   /* If target_insn comes right after def_insn, which is very common
-     for addresses, we can use a quicker test.  */
-  if (NEXT_INSN (def_insn) == target_insn
-      && REG_P (SET_DEST (def_set)))
+     for addresses, we can use a quicker test.  Ignore debug insns
+     other than target insns for this.  */
+  next = NEXT_INSN (def_insn);
+  while (next && next != target_insn && DEBUG_INSN_P (next))
+    next = NEXT_INSN (next);
+  if (next == target_insn && REG_P (SET_DEST (def_set)))
     {
       rtx def_reg = SET_DEST (def_set);
 
@@ -909,14 +909,13 @@ update_uses (df_ref *use_rec)
       int regno = DF_REF_REGNO (use);
 
       /* Set up the use-def chain.  */
-      if (DF_REF_ID (use) >= (int) VEC_length (df_ref, use_def_ref))
-        VEC_safe_grow_cleared (df_ref, heap, use_def_ref,
-                               DF_REF_ID (use) + 1);
+      if (DF_REF_ID (use) >= (int) use_def_ref.length ())
+        use_def_ref.safe_grow_cleared (DF_REF_ID (use) + 1);
 
 #ifdef ENABLE_CHECKING
       gcc_assert (sparseset_bit_p (active_defs_check, regno));
 #endif
-      VEC_replace (df_ref, use_def_ref, DF_REF_ID (use), active_defs[regno]);
+      use_def_ref[DF_REF_ID (use)] = active_defs[regno];
     }
 }
 
@@ -1422,7 +1421,7 @@ fwprop_done (void)
 {
   loop_optimizer_finalize ();
 
-  VEC_free (df_ref, heap, use_def_ref);
+  use_def_ref.release ();
   free (active_defs);
 #ifdef ENABLE_CHECKING
   sparseset_free (active_defs_check);
@@ -1483,6 +1482,7 @@ struct rtl_opt_pass pass_rtl_fwprop =
  {
   RTL_PASS,
   "fwprop1",                            /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_fwprop,				/* gate */
   fwprop,				/* execute */
   NULL,                                 /* sub */
@@ -1532,6 +1532,7 @@ struct rtl_opt_pass pass_rtl_fwprop_addr =
  {
   RTL_PASS,
   "fwprop2",                            /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_fwprop,				/* gate */
   fwprop_addr,				/* execute */
   NULL,                                 /* sub */

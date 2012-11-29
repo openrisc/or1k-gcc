@@ -303,8 +303,6 @@ static char picochip_get_vliw_alu_id (void);
    usually requires a scratch register. */
 #undef TARGET_SECONDARY_RELOAD
 #define TARGET_SECONDARY_RELOAD picochip_secondary_reload
-#undef DONT_USE_BUILTIN_SETJMP
-#define DONT_USE_BUILTIN_SETJMP 1
 
 /* How Large Values are Returned  */
 
@@ -1136,7 +1134,7 @@ picochip_can_eliminate_link_sp_save (void)
     accesses become wrong. This wouldnt happen only if we were not using the
     stack at all. The following conditions ensures that.*/
 
-  return (current_function_is_leaf &&
+  return (crtl->is_leaf &&
           !df_regs_ever_live_p(LINK_REGNUM) &&
           !df_regs_ever_live_p(STACK_POINTER_REGNUM) &&
           (picochip_special_save_area_byte_offset() == 0) &&
@@ -1816,7 +1814,7 @@ picochip_output_frame_debug (FILE * file)
 {
   int i = 0;
 
-  if (current_function_is_leaf)
+  if (crtl->is_leaf)
     fprintf (file, "\t\t// Leaf function\n");
   else
     fprintf (file, "\t\t// Non-leaf function\n");
@@ -3300,16 +3298,16 @@ picochip_reorg (void)
               if (GET_MODE (insn) == TImode)
               {
                 vliw_start = insn;
-                vliw_insn_location = INSN_LOCATOR (insn);
+                vliw_insn_location = INSN_LOCATION (insn);
               }
               if (JUMP_P (insn) || CALL_P(insn))
               {
-                vliw_insn_location = INSN_LOCATOR (insn);
+                vliw_insn_location = INSN_LOCATION (insn);
                 for (insn1 = vliw_start; insn1 != insn ; insn1 = next_real_insn (insn1))
-                  INSN_LOCATOR (insn1) = vliw_insn_location;
+                  INSN_LOCATION (insn1) = vliw_insn_location;
               }
               /* Tag subsequent instructions with the same location. */
-              INSN_LOCATOR (insn) = vliw_insn_location;
+              INSN_LOCATION (insn) = vliw_insn_location;
 	    }
 	}
 

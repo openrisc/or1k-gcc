@@ -6,7 +6,10 @@
 
 package net
 
-import "syscall"
+import (
+	"syscall"
+	"time"
+)
 
 // Should we try to use the IPv4 socket interface if we're
 // only dealing with IPv4 sockets?  As long as the host system
@@ -97,9 +100,12 @@ func favoriteAddrFamily(net string, laddr, raddr sockaddr, mode string) (family 
 		return syscall.AF_INET6, true
 	}
 
-	if mode == "listen" && laddr.isWildcard() {
+	if mode == "listen" && (laddr == nil || laddr.isWildcard()) {
 		if supportsIPv4map {
 			return syscall.AF_INET6, false
+		}
+		if laddr == nil {
+			return syscall.AF_INET, false
 		}
 		return laddr.family(), false
 	}
@@ -122,7 +128,7 @@ type sockaddr interface {
 	sockaddr(family int) (syscall.Sockaddr, error)
 }
 
-func internetSocket(net string, laddr, raddr sockaddr, sotype, proto int, mode string, toAddr func(syscall.Sockaddr) Addr) (fd *netFD, err error) {
+func internetSocket(net string, laddr, raddr sockaddr, deadline time.Time, sotype, proto int, mode string, toAddr func(syscall.Sockaddr) Addr) (fd *netFD, err error) {
 	var la, ra syscall.Sockaddr
 	family, ipv6only := favoriteAddrFamily(net, laddr, raddr, mode)
 	if laddr != nil {
@@ -135,7 +141,7 @@ func internetSocket(net string, laddr, raddr sockaddr, sotype, proto int, mode s
 			goto Error
 		}
 	}
-	fd, err = socket(net, family, sotype, proto, ipv6only, la, ra, toAddr)
+	fd, err = socket(net, family, sotype, proto, ipv6only, la, ra, deadline, toAddr)
 	if err != nil {
 		goto Error
 	}

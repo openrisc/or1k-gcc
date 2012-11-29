@@ -1,5 +1,6 @@
-// { dg-options "-std=gnu++11" }
 // { dg-do compile }
+// { dg-options "-std=gnu++11" }
+// { dg-require-normal-mode "" }
 
 // Copyright (C) 2012 Free Software Foundation, Inc.
 //
@@ -22,4 +23,4 @@
 
 typedef std::tuple_element<1, std::array<int, 1>>::type type;
 
-// { dg-error "static assertion failed" "" { target *-*-* } 267 }
+// { dg-error "static assertion failed" "" { target *-*-* } 316 }

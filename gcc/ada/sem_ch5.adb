@@ -898,6 +898,7 @@ package body Sem_Ch5 is
       --  up, and we just return immediately (defence against previous errors).
 
       if No (HSS) then
+         Check_Error_Detected;
          return;
       end if;
 
@@ -942,11 +943,8 @@ package body Sem_Ch5 is
             --  identifier and continue, otherwise raise an exception.
 
             if No (Ent) then
-               if Total_Errors_Detected /= 0 then
-                  Set_Identifier (N, Empty);
-               else
-                  raise Program_Error;
-               end if;
+               Check_Error_Detected;
+               Set_Identifier (N, Empty);
 
             else
                Set_Ekind (Ent, E_Block);
@@ -1398,6 +1396,7 @@ package body Sem_Ch5 is
       --  Ignore previous error
 
       if Label_Ent = Any_Id then
+         Check_Error_Detected;
          return;
 
       --  We just have a label as the target of a goto
@@ -1665,16 +1664,21 @@ package body Sem_Ch5 is
       --  If the domain of iteration is an expression, create a declaration for
       --  it, so that finalization actions are introduced outside of the loop.
       --  The declaration must be a renaming because the body of the loop may
-      --  assign to elements. When the context is a quantified expression, the
-      --  renaming declaration is delayed until the expansion phase.
+      --  assign to elements.
 
       if not Is_Entity_Name (Iter_Name)
+
+        --  When the context is a quantified expression, the renaming
+        --  declaration is delayed until the expansion phase if we are
+        --  doing expansion.
+
         and then (Nkind (Parent (N)) /= N_Quantified_Expression
+                   or else Operating_Mode = Check_Semantics)
 
-                   --  The following two tests need comments ???
+        --  Do not perform this expansion in Alfa mode, since the formal
+        --  verification directly deals with the source form of the iterator.
 
-                   or else Operating_Mode = Check_Semantics
-                   or else Alfa_Mode)
+        and then not Alfa_Mode
       then
          declare
             Id   : constant Entity_Id := Make_Temporary (Loc, 'R', Iter_Name);
@@ -1711,7 +1715,7 @@ package body Sem_Ch5 is
       --  Container is an entity or an array with uncontrolled components, or
       --  else it is a container iterator given by a function call, typically
       --  called Iterate in the case of predefined containers, even though
-      --  Iterate is not a reserved name. What matter is that the return type
+      --  Iterate is not a reserved name. What matters is that the return type
       --  of the function is an iterator type.
 
       elsif Is_Entity_Name (Iter_Name) then
@@ -1803,6 +1807,13 @@ package body Sem_Ch5 is
                   return;
                else
                   Set_Etype (Def_Id, Entity (Element));
+
+                  --  If the container has a variable indexing aspect, the
+                  --  element is a variable and is modifiable in the loop.
+
+                  if Present (Find_Aspect (Typ, Aspect_Variable_Indexing)) then
+                     Set_Ekind (Def_Id, E_Variable);
+                  end if;
                end if;
             end;
 
@@ -2226,17 +2237,7 @@ package body Sem_Ch5 is
          --  Ada 2012: If the domain of iteration is a function call, it is the
          --  new iterator form.
 
-         --  We have also implemented the shorter form : for X in S for Alfa
-         --  use. In this case, 'Old and 'Result must be treated as entity
-         --  names over which iterators are legal.
-
          if Nkind (DS_Copy) = N_Function_Call
-           or else
-             (Alfa_Mode
-               and then (Nkind (DS_Copy) = N_Attribute_Reference
-               and then
-                 (Attribute_Name (DS_Copy) = Name_Result
-                   or else Attribute_Name (DS_Copy) = Name_Old)))
            or else
              (Is_Entity_Name (DS_Copy)
                and then not Is_Type (Entity (DS_Copy)))
@@ -2624,6 +2625,56 @@ package body Sem_Ch5 is
       Push_Scope (Ent);
       Analyze_Iteration_Scheme (Iter);
 
+      --  Check for following case which merits a warning if the type E of is
+      --  a multi-dimensional array (and no explicit subscript ranges present).
+
+      --      for J in E'Range
+      --         for K in E'Range
+
+      if Present (Iter)
+        and then Present (Loop_Parameter_Specification (Iter))
+      then
+         declare
+            LPS : constant Node_Id := Loop_Parameter_Specification (Iter);
+            DSD : constant Node_Id :=
+                    Original_Node (Discrete_Subtype_Definition (LPS));
+         begin
+            if Nkind (DSD) = N_Attribute_Reference
+              and then Attribute_Name (DSD) = Name_Range
+              and then No (Expressions (DSD))
+            then
+               declare
+                  Typ : constant Entity_Id := Etype (Prefix (DSD));
+               begin
+                  if Is_Array_Type (Typ)
+                    and then Number_Dimensions (Typ) > 1
+                    and then Nkind (Parent (N)) = N_Loop_Statement
+                    and then Present (Iteration_Scheme (Parent (N)))
+                  then
+                     declare
+                        OIter : constant Node_Id :=
+                          Iteration_Scheme (Parent (N));
+                        OLPS  : constant Node_Id :=
+                          Loop_Parameter_Specification (OIter);
+                        ODSD  : constant Node_Id :=
+                          Original_Node (Discrete_Subtype_Definition (OLPS));
+                     begin
+                        if Nkind (ODSD) = N_Attribute_Reference
+                          and then Attribute_Name (ODSD) = Name_Range
+                          and then No (Expressions (ODSD))
+                          and then Etype (Prefix (ODSD)) = Typ
+                        then
+                           Error_Msg_Sloc := Sloc (ODSD);
+                           Error_Msg_N
+                             ("inner range same as outer range#?", DSD);
+                        end if;
+                     end;
+                  end if;
+               end;
+            end if;
+         end;
+      end if;
+
       --  Analyze the statements of the body except in the case of an Ada 2012
       --  iterator with the expander active. In this case the expander will do
       --  a rewrite of the loop into a while loop. We will then analyze the
@@ -2633,14 +2684,14 @@ package body Sem_Ch5 is
       --  types the actual subtype of the components will only be determined
       --  when the cursor declaration is analyzed.
 
-      --  If the expander is not active, then we want to analyze the loop body
-      --  now even in the Ada 2012 iterator case, since the rewriting will not
-      --  be done. Insert the loop variable in the current scope, if not done
-      --  when analysing the iteration scheme.
+      --  If the expander is not active, or in Alfa mode, then we want to
+      --  analyze the loop body now even in the Ada 2012 iterator case, since
+      --  the rewriting will not be done. Insert the loop variable in the
+      --  current scope, if not done when analysing the iteration scheme.
 
       if No (Iter)
         or else No (Iterator_Specification (Iter))
-        or else not Expander_Active
+        or else not Full_Expander_Active
       then
          if Present (Iter)
            and then Present (Iterator_Specification (Iter))

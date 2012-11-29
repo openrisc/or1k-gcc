@@ -49,7 +49,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "basic-block.h"
 #include "intl.h"
 #include "ggc.h"
-#include "graph.h"
 #include "regs.h"
 #include "timevar.h"
 #include "diagnostic.h"
@@ -72,13 +71,11 @@ along with GCC; see the file COPYING3.  If not see
 #include "value-prof.h"
 #include "alloc-pool.h"
 #include "tree-mudflap.h"
+#include "asan.h"
+#include "tsan.h"
 #include "gimple.h"
 #include "tree-ssa-alias.h"
 #include "plugin.h"
-
-#if defined (DWARF2_UNWIND_INFO) || defined (DWARF2_DEBUGGING_INFO)
-#include "dwarf2out.h"
-#endif
 
 #if defined(DBX_DEBUGGING_INFO) || defined(XCOFF_DEBUGGING_INFO)
 #include "dbxout.h"
@@ -173,8 +170,6 @@ const char *user_label_prefix;
 FILE *asm_out_file;
 FILE *aux_info_file;
 FILE *stack_usage_file = NULL;
-FILE *dump_file = NULL;
-const char *dump_file_name;
 
 /* The current working directory of a translation.  It's generally the
    directory from which compilation was initiated, but a preprocessed
@@ -507,16 +502,16 @@ check_global_declaration_1 (tree decl)
 	     "%q+D defined but not used", decl);
 }
 
-/* Issue appropriate warnings for the global declarations in VEC (of
+/* Issue appropriate warnings for the global declarations in V (of
    which there are LEN).  */
 
 void
-check_global_declarations (tree *vec, int len)
+check_global_declarations (tree *v, int len)
 {
   int i;
 
   for (i = 0; i < len; i++)
-    check_global_declaration_1 (vec[i]);
+    check_global_declaration_1 (v[i]);
 }
 
 /* Emit debugging information for all global declarations in VEC.  */
@@ -558,18 +553,15 @@ compile_file (void)
   if (flag_syntax_only || flag_wpa)
     return;
 
-  timevar_start (TV_PHASE_GENERATE);
-
   ggc_protect_identifiers = false;
 
   /* This must also call finalize_compilation_unit.  */
   lang_hooks.decls.final_write_globals ();
 
   if (seen_error ())
-    {
-      timevar_stop (TV_PHASE_GENERATE);
-      return;
-    }
+    return;
+
+  timevar_start (TV_PHASE_LATE_ASM);
 
   /* Compilation unit is finalized.  When producing non-fat LTO object, we are
      basically finished.  */
@@ -578,6 +570,13 @@ compile_file (void)
       /* Likewise for mudflap static object registrations.  */
       if (flag_mudflap)
 	mudflap_finish_file ();
+
+      /* File-scope initialization for AddressSanitizer.  */
+      if (flag_asan)
+        asan_finish_file ();
+
+      if (flag_tsan)
+	tsan_finish_file ();
 
       output_shared_constant_pool ();
       output_object_blocks ();
@@ -650,17 +649,17 @@ compile_file (void)
   /* Attach a special .ident directive to the end of the file to identify
      the version of GCC which compiled this code.  The format of the .ident
      string is patterned after the ones produced by native SVR4 compilers.  */
-#ifdef IDENT_ASM_OP
   if (!flag_no_ident)
     {
       const char *pkg_version = "(GNU) ";
+      char *ident_str;
 
       if (strcmp ("(GCC) ", pkgversion_string))
 	pkg_version = pkgversion_string;
-      fprintf (asm_out_file, "%s\"GCC: %s%s\"\n",
-	       IDENT_ASM_OP, pkg_version, version_string);
+
+      ident_str = ACONCAT (("GCC: ", pkg_version, version_string, NULL));
+      targetm.asm_out.output_ident (ident_str);
     }
-#endif
 
   /* Invoke registered plugin callbacks.  */
   invoke_plugin_callbacks (PLUGIN_FINISH_UNIT, NULL);
@@ -670,7 +669,7 @@ compile_file (void)
      assembly file after this point.  */
   targetm.asm_out.file_end ();
 
-  timevar_stop (TV_PHASE_GENERATE);
+  timevar_stop (TV_PHASE_LATE_ASM);
 }
 
 /* Print version information to FILE.
@@ -915,7 +914,7 @@ init_asm_output (const char *name)
       if (!strcmp (asm_file_name, "-"))
 	asm_out_file = stdout;
       else
-	asm_out_file = fopen (asm_file_name, "w+b");
+	asm_out_file = fopen (asm_file_name, "w");
       if (asm_out_file == 0)
 	fatal_error ("can%'t open %s for writing: %m", asm_file_name);
     }
@@ -1425,11 +1424,14 @@ process_options (void)
   /* If the user specifically requested variable tracking with tagging
      uninitialized variables, we need to turn on variable tracking.
      (We already determined above that variable tracking is feasible.)  */
-  if (flag_var_tracking_uninit)
+  if (flag_var_tracking_uninit == 1)
     flag_var_tracking = 1;
 
   if (flag_var_tracking == AUTODETECT_VALUE)
     flag_var_tracking = optimize >= 1;
+
+  if (flag_var_tracking_uninit == AUTODETECT_VALUE)
+    flag_var_tracking_uninit = flag_var_tracking;
 
   if (flag_var_tracking_assignments == AUTODETECT_VALUE)
     flag_var_tracking_assignments = flag_var_tracking
@@ -1543,6 +1545,15 @@ process_options (void)
       warning (0, "unwind tables currently require a frame pointer "
 	       "for correctness");
       flag_omit_frame_pointer = 0;
+    }
+
+  /* Address Sanitizer needs porting to each target architecture.  */
+  if (flag_asan
+      && (targetm.asan_shadow_offset == NULL
+	  || !FRAME_GROWS_DOWNWARD))
+    {
+      warning (0, "-fsanitize=address not supported for this target");
+      flag_asan = 0;
     }
 
   /* Enable -Werror=coverage-mismatch when -Werror and -Wno-error
@@ -1822,6 +1833,9 @@ finalize (bool no_backend)
   if (mem_report)
     dump_memory_report (true);
 
+  if (profile_report)
+    dump_profile_report ();
+
   /* Language-specific end of compilation actions.  */
   lang_hooks.finish ();
 }
@@ -1953,6 +1967,7 @@ toplev_main (int argc, char **argv)
   invoke_plugin_callbacks (PLUGIN_FINISH, NULL);
 
   finalize_plugins ();
+  location_adhoc_data_fini (line_table);
   if (seen_error ())
     return (FATAL_EXIT_CODE);
 

@@ -32,12 +32,14 @@
 #include "params.h"
 #include "target.h"
 #include "langhooks.h"
-#include "tree-pretty-print.h"
 #include "gimple-pretty-print.h"
 #include "cfgloop.h"
 
 
 #define PROB_VERY_UNLIKELY	(REG_BR_PROB_BASE / 2000 - 1)
+#define PROB_VERY_LIKELY	(PROB_ALWAYS - PROB_VERY_UNLIKELY)
+#define PROB_UNLIKELY		(REG_BR_PROB_BASE / 5 - 1)
+#define PROB_LIKELY		(PROB_ALWAYS - PROB_VERY_LIKELY)
 #define PROB_ALWAYS		(REG_BR_PROB_BASE)
 
 #define A_RUNINSTRUMENTEDCODE	0x0001
@@ -133,6 +135,10 @@
 	__builtin___tm_commit ();
 	over:
 */
+
+static void *expand_regions (struct tm_region *,
+			     void *(*callback)(struct tm_region *, void *),
+			     void *, bool);
 
 
 /* Return the attributes we want to examine for X, or NULL if it's not
@@ -549,6 +555,15 @@ struct diagnose_tm
   gimple stmt;
 };
 
+/* Return true if T is a volatile variable of some kind.  */
+
+static bool
+volatile_var_p (tree t)
+{
+  return (SSA_VAR_P (t)
+	  && TREE_THIS_VOLATILE (TREE_TYPE (t)));
+}
+
 /* Tree callback function for diagnose_tm pass.  */
 
 static tree
@@ -557,13 +572,9 @@ diagnose_tm_1_op (tree *tp, int *walk_subtrees ATTRIBUTE_UNUSED,
 {
   struct walk_stmt_info *wi = (struct walk_stmt_info *) data;
   struct diagnose_tm *d = (struct diagnose_tm *) wi->info;
-  enum tree_code code = TREE_CODE (*tp);
 
-  if ((code == VAR_DECL
-       || code == RESULT_DECL
-       || code == PARM_DECL)
-      && d->block_flags & (DIAG_TM_SAFE | DIAG_TM_RELAXED)
-      && TREE_THIS_VOLATILE (TREE_TYPE (*tp))
+  if (volatile_var_p (*tp)
+      && d->block_flags & DIAG_TM_SAFE
       && !d->saw_volatile)
     {
       d->saw_volatile = 1;
@@ -794,6 +805,7 @@ struct gimple_opt_pass pass_diagnose_tm_blocks =
   {
     GIMPLE_PASS,
     "*diagnose_tm_blocks",		/* name */
+    OPTGROUP_NONE,                      /* optinfo_flags */
     gate_tm,				/* gate */
     diagnose_tm_blocks,			/* execute */
     NULL,				/* sub */
@@ -872,7 +884,7 @@ static htab_t tm_log;
 
 /* Addresses to log with a save/restore sequence.  These should be in
    dominator order.  */
-static VEC(tree,heap) *tm_log_save_addresses;
+static vec<tree> tm_log_save_addresses;
 
 /* Map for an SSA_NAME originally pointing to a non aliased new piece
    of memory (malloc, alloc, etc).  */
@@ -935,7 +947,7 @@ static void
 tm_log_free (void *p)
 {
   struct tm_log_entry *lp = (struct tm_log_entry *) p;
-  VEC_free (gimple, heap, lp->stmts);
+  lp->stmts.release ();
   free (lp);
 }
 
@@ -945,7 +957,7 @@ tm_log_init (void)
 {
   tm_log = htab_create (10, tm_log_hash, tm_log_eq, tm_log_free);
   tm_new_mem_hash = htab_create (5, struct_ptr_hash, struct_ptr_eq, free);
-  tm_log_save_addresses = VEC_alloc (tree, heap, 5);
+  tm_log_save_addresses.create (5);
 }
 
 /* Free logging data structures.  */
@@ -954,7 +966,7 @@ tm_log_delete (void)
 {
   htab_delete (tm_log);
   htab_delete (tm_new_mem_hash);
-  VEC_free (tree, heap, tm_log_save_addresses);
+  tm_log_save_addresses.release ();
 }
 
 /* Return true if MEM is a transaction invariant memory for the TM
@@ -1019,19 +1031,18 @@ tm_log_add (basic_block entry_block, tree addr, gimple stmt)
 	  && !TREE_ADDRESSABLE (type))
 	{
 	  lp->save_var = create_tmp_reg (TREE_TYPE (lp->addr), "tm_save");
-	  add_referenced_var (lp->save_var);
-	  lp->stmts = NULL;
+	  lp->stmts.create (0);
 	  lp->entry_block = entry_block;
 	  /* Save addresses separately in dominator order so we don't
 	     get confused by overlapping addresses in the save/restore
 	     sequence.  */
-	  VEC_safe_push (tree, heap, tm_log_save_addresses, lp->addr);
+	  tm_log_save_addresses.safe_push (lp->addr);
 	}
       else
 	{
 	  /* Use the logging functions.  */
-	  lp->stmts = VEC_alloc (gimple, heap, 5);
-	  VEC_quick_push (gimple, lp->stmts, stmt);
+	  lp->stmts.create (5);
+	  lp->stmts.quick_push (stmt);
 	  lp->save_var = NULL;
 	}
     }
@@ -1047,7 +1058,7 @@ tm_log_add (basic_block entry_block, tree addr, gimple stmt)
       if (lp->save_var)
 	return;
 
-      for (i = 0; VEC_iterate (gimple, lp->stmts, i, oldstmt); ++i)
+      for (i = 0; lp->stmts.iterate (i, &oldstmt); ++i)
 	{
 	  if (stmt == oldstmt)
 	    return;
@@ -1061,7 +1072,7 @@ tm_log_add (basic_block entry_block, tree addr, gimple stmt)
 				       gimple_bb (oldstmt), gimple_bb (stmt)));
 	}
       /* Store is on a different code path.  */
-      VEC_safe_push (gimple, heap, lp->stmts, stmt);
+      lp->stmts.safe_push (stmt);
     }
 }
 
@@ -1167,7 +1178,7 @@ tm_log_emit (void)
 	{
 	  if (dump_file)
 	    fprintf (dump_file, "DUMPING with logging functions\n");
-	  for (i = 0; VEC_iterate (gimple, lp->stmts, i, stmt); ++i)
+	  for (i = 0; lp->stmts.iterate (i, &stmt); ++i)
 	    tm_log_emit_stmt (lp->addr, stmt);
 	}
     }
@@ -1184,9 +1195,9 @@ tm_log_emit_saves (basic_block entry_block, basic_block bb)
   gimple stmt;
   struct tm_log_entry l, *lp;
 
-  for (i = 0; i < VEC_length (tree, tm_log_save_addresses); ++i)
+  for (i = 0; i < tm_log_save_addresses.length (); ++i)
     {
-      l.addr = VEC_index (tree, tm_log_save_addresses, i);
+      l.addr = tm_log_save_addresses[i];
       lp = (struct tm_log_entry *) *htab_find_slot (tm_log, &l, NO_INSERT);
       gcc_assert (lp->save_var != NULL);
 
@@ -1220,9 +1231,9 @@ tm_log_emit_restores (basic_block entry_block, basic_block bb)
   gimple_stmt_iterator gsi;
   gimple stmt;
 
-  for (i = VEC_length (tree, tm_log_save_addresses) - 1; i >= 0; i--)
+  for (i = tm_log_save_addresses.length () - 1; i >= 0; i--)
     {
-      l.addr = VEC_index (tree, tm_log_save_addresses, i);
+      l.addr = tm_log_save_addresses[i];
       lp = (struct tm_log_entry *) *htab_find_slot (tm_log, &l, NO_INSERT);
       gcc_assert (lp->save_var != NULL);
 
@@ -1239,72 +1250,6 @@ tm_log_emit_restores (basic_block entry_block, basic_block bb)
     }
 }
 
-/* Emit the checks for performing either a save or a restore sequence.
-
-   TRXN_PROP is either A_SAVELIVEVARIABLES or A_RESTORELIVEVARIABLES.
-
-   The code sequence is inserted in a new basic block created in
-   END_BB which is inserted between BEFORE_BB and the destination of
-   FALLTHRU_EDGE.
-
-   STATUS is the return value from _ITM_beginTransaction.
-   ENTRY_BLOCK is the entry block for the transaction.
-   EMITF is a callback to emit the actual save/restore code.
-
-   The basic block containing the conditional checking for TRXN_PROP
-   is returned.  */
-static basic_block
-tm_log_emit_save_or_restores (basic_block entry_block,
-			      unsigned trxn_prop,
-			      tree status,
-			      void (*emitf)(basic_block, basic_block),
-			      basic_block before_bb,
-			      edge fallthru_edge,
-			      basic_block *end_bb)
-{
-  basic_block cond_bb, code_bb;
-  gimple cond_stmt, stmt;
-  gimple_stmt_iterator gsi;
-  tree t1, t2;
-  int old_flags = fallthru_edge->flags;
-
-  cond_bb = create_empty_bb (before_bb);
-  code_bb = create_empty_bb (cond_bb);
-  *end_bb = create_empty_bb (code_bb);
-  if (current_loops && before_bb->loop_father)
-    {
-      add_bb_to_loop (cond_bb, before_bb->loop_father);
-      add_bb_to_loop (code_bb, before_bb->loop_father);
-      add_bb_to_loop (*end_bb, before_bb->loop_father);
-    }
-  redirect_edge_pred (fallthru_edge, *end_bb);
-  fallthru_edge->flags = EDGE_FALLTHRU;
-  make_edge (before_bb, cond_bb, old_flags);
-
-  set_immediate_dominator (CDI_DOMINATORS, cond_bb, before_bb);
-  set_immediate_dominator (CDI_DOMINATORS, code_bb, cond_bb);
-
-  gsi = gsi_last_bb (cond_bb);
-
-  /* t1 = status & A_{property}.  */
-  t1 = make_rename_temp (TREE_TYPE (status), NULL);
-  t2 = build_int_cst (TREE_TYPE (status), trxn_prop);
-  stmt = gimple_build_assign_with_ops (BIT_AND_EXPR, t1, status, t2);
-  gsi_insert_after (&gsi, stmt, GSI_CONTINUE_LINKING);
-
-  /* if (t1).  */
-  t2 = build_int_cst (TREE_TYPE (status), 0);
-  cond_stmt = gimple_build_cond (NE_EXPR, t1, t2, NULL, NULL);
-  gsi_insert_after (&gsi, cond_stmt, GSI_CONTINUE_LINKING);
-
-  emitf (entry_block, code_bb);
-
-  make_edge (cond_bb, code_bb, EDGE_TRUE_VALUE);
-  make_edge (cond_bb, *end_bb, EDGE_FALSE_VALUE);
-  make_edge (code_bb, *end_bb, EDGE_FALLTHRU);
-
-  return cond_bb;
-}
 
 static tree lower_sequence_tm (gimple_stmt_iterator *, bool *,
 			       struct walk_stmt_info *);
@@ -1381,6 +1326,19 @@ thread_private_new_memory (basic_block entry_block, tree x)
 	  /* x = (cast*) foo ==> foo */
 	  else if (code == VIEW_CONVERT_EXPR || code == NOP_EXPR)
 	    x = gimple_assign_rhs1 (stmt);
+	  /* x = c ? op1 : op2 == > op1 or op2 just like a PHI */
+	  else if (code == COND_EXPR)
+	    {
+	      tree op1 = gimple_assign_rhs2 (stmt);
+	      tree op2 = gimple_assign_rhs3 (stmt);
+	      enum thread_memory_type mem;
+	      retval = thread_private_new_memory (entry_block, op1);
+	      if (retval == mem_non_local)
+		goto new_memory_ret;
+	      mem = thread_private_new_memory (entry_block, op2);
+	      retval = MIN (retval, mem);
+	      goto new_memory_ret;
+	    }
 	  else
 	    {
 	      retval = mem_non_local;
@@ -1722,6 +1680,7 @@ struct gimple_opt_pass pass_lower_tm =
  {
   GIMPLE_PASS,
   "tmlower",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_tm,				/* gate */
   execute_lower_tm,			/* execute */
   NULL,					/* sub */
@@ -1749,11 +1708,25 @@ struct tm_region
   /* Link to the next outer transaction.  */
   struct tm_region *outer;
 
-  /* The GIMPLE_TRANSACTION statement beginning this transaction.  */
+  /* The GIMPLE_TRANSACTION statement beginning this transaction.
+     After TM_MARK, this gets replaced by a call to
+     BUILT_IN_TM_START.  */
   gimple transaction_stmt;
 
-  /* The entry block to this region.  */
+  /* After TM_MARK expands the GIMPLE_TRANSACTION into a call to
+     BUILT_IN_TM_START, this field is true if the transaction is an
+     outer transaction.  */
+  bool original_transaction_was_outer;
+
+  /* Return value from BUILT_IN_TM_START.  */
+  tree tm_state;
+
+  /* The entry block to this region.  This will always be the first
+     block of the body of the transaction.  */
   basic_block entry_block;
+
+  /* The first block after an expanded call to _ITM_beginTransaction.  */
+  basic_block restart_block;
 
   /* The set of all blocks that end the region; NULL if only EXIT_BLOCK.
      These blocks are still a part of the region (i.e., the border is
@@ -1767,8 +1740,6 @@ struct tm_region
 };
 
 typedef struct tm_region *tm_region_p;
-DEF_VEC_P (tm_region_p);
-DEF_VEC_ALLOC_P (tm_region_p, heap);
 
 /* True if there are pending edge statements to be committed for the
    current function being scanned in the tmmark pass.  */
@@ -1803,6 +1774,8 @@ tm_region_init_0 (struct tm_region *outer, basic_block bb, gimple stmt)
   region->outer = outer;
 
   region->transaction_stmt = stmt;
+  region->original_transaction_was_outer = false;
+  region->tm_state = NULL;
 
   /* There are either one or two edges out of the block containing
      the GIMPLE_TRANSACTION, one to the actual region and one to the
@@ -1868,10 +1841,10 @@ tm_region_init (struct tm_region *region)
   edge_iterator ei;
   edge e;
   basic_block bb;
-  VEC(basic_block, heap) *queue = NULL;
+  vec<basic_block> queue = vNULL;
   bitmap visited_blocks = BITMAP_ALLOC (NULL);
   struct tm_region *old_region;
-  VEC(tm_region_p, heap) *bb_regions = NULL;
+  vec<tm_region_p> bb_regions = vNULL;
 
   all_tm_regions = region;
   bb = single_succ (ENTRY_BLOCK_PTR);
@@ -1879,15 +1852,15 @@ tm_region_init (struct tm_region *region)
   /* We could store this information in bb->aux, but we may get called
      through get_all_tm_blocks() from another pass that may be already
      using bb->aux.  */
-  VEC_safe_grow_cleared (tm_region_p, heap, bb_regions, last_basic_block);
+  bb_regions.safe_grow_cleared (last_basic_block);
 
-  VEC_safe_push (basic_block, heap, queue, bb);
-  VEC_replace (tm_region_p, bb_regions, bb->index, region);
+  queue.safe_push (bb);
+  bb_regions[bb->index] = region;
   do
     {
-      bb = VEC_pop (basic_block, queue);
-      region = VEC_index (tm_region_p, bb_regions, bb->index);
-      VEC_replace (tm_region_p, bb_regions, bb->index, NULL);
+      bb = queue.pop ();
+      region = bb_regions[bb->index];
+      bb_regions[bb->index] = NULL;
 
       /* Record exit and irrevocable blocks.  */
       region = tm_region_init_1 (region, bb);
@@ -1903,21 +1876,21 @@ tm_region_init (struct tm_region *region)
 	if (!bitmap_bit_p (visited_blocks, e->dest->index))
 	  {
 	    bitmap_set_bit (visited_blocks, e->dest->index);
-	    VEC_safe_push (basic_block, heap, queue, e->dest);
+	    queue.safe_push (e->dest);
 
 	    /* If the current block started a new region, make sure that only
 	       the entry block of the new region is associated with this region.
 	       Other successors are still part of the old region.  */
 	    if (old_region != region && e->dest != region->entry_block)
-	      VEC_replace (tm_region_p, bb_regions, e->dest->index, old_region);
+	      bb_regions[e->dest->index] = old_region;
 	    else
-	      VEC_replace (tm_region_p, bb_regions, e->dest->index, region);
+	      bb_regions[e->dest->index] = region;
 	  }
     }
-  while (!VEC_empty (basic_block, queue));
-  VEC_free (basic_block, heap, queue);
+  while (!queue.is_empty ());
+  queue.release ();
   BITMAP_FREE (visited_blocks);
-  VEC_free (tm_region_p, heap, bb_regions);
+  bb_regions.release ();
 }
 
 /* The "gate" function for all transactional memory expansion and optimization
@@ -1969,6 +1942,7 @@ struct gimple_opt_pass pass_tm_init =
  {
   GIMPLE_PASS,
   "*tminit",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_tm_init,				/* gate */
   NULL,					/* execute */
   NULL,					/* sub */
@@ -2059,7 +2033,7 @@ build_tm_load (location_t loc, tree lhs, tree rhs, gimple_stmt_iterator *gsi)
       gimple g;
       tree temp;
 
-      temp = make_rename_temp (t, NULL);
+      temp = create_tmp_reg (t, NULL);
       gimple_call_set_lhs (gcall, temp);
       gsi_insert_before (gsi, gcall, GSI_SAME_STMT);
 
@@ -2121,7 +2095,7 @@ build_tm_store (location_t loc, tree lhs, tree rhs, gimple_stmt_iterator *gsi)
   if (TREE_CODE (rhs) == CONSTRUCTOR)
     {
       /* Handle the easy initialization to zero.  */
-      if (CONSTRUCTOR_ELTS (rhs) == 0)
+      if (!CONSTRUCTOR_ELTS (rhs))
 	rhs = build_int_cst (simple_type, 0);
       else
 	{
@@ -2137,7 +2111,7 @@ build_tm_store (location_t loc, tree lhs, tree rhs, gimple_stmt_iterator *gsi)
       gimple g;
       tree temp;
 
-      temp = make_rename_temp (simple_type, NULL);
+      temp = create_tmp_reg (simple_type, NULL);
       t = fold_build1 (VIEW_CONVERT_EXPR, simple_type, rhs);
       g = gimple_build_assign (temp, t);
       gimple_set_location (g, loc);
@@ -2176,6 +2150,7 @@ expand_assign_tm (struct tm_region *region, gimple_stmt_iterator *gsi)
       return;
     }
 
+  // Remove original load/store statement.
   gsi_remove (gsi, true);
 
   if (load_p && !store_p)
@@ -2229,7 +2204,9 @@ expand_assign_tm (struct tm_region *region, gimple_stmt_iterator *gsi)
   if (!store_p)
     requires_barrier (region->entry_block, lhs, gcall);
 
-  /* add_stmt_to_tm_region  (region, gcall); */
+  // The calls to build_tm_{store,load} above inserted the instrumented
+  // call into the stream.
+  // gsi_insert_before (gsi, gcall, GSI_SAME_STMT);
 }
 
 
@@ -2285,8 +2262,31 @@ expand_call_tm (struct tm_region *region,
     }
 
   node = cgraph_get_node (fn_decl);
-  /* All calls should have cgraph here. */
-  gcc_assert (node);
+  /* All calls should have cgraph here.  */
+  if (!node)
+    {
+      /* We can have a nodeless call here if some pass after IPA-tm
+	 added uninstrumented calls.  For example, loop distribution
+	 can transform certain loop constructs into __builtin_mem*
+	 calls.  In this case, see if we have a suitable TM
+	 replacement and fill in the gaps.  */
+      gcc_assert (DECL_BUILT_IN_CLASS (fn_decl) == BUILT_IN_NORMAL);
+      enum built_in_function code = DECL_FUNCTION_CODE (fn_decl);
+      gcc_assert (code == BUILT_IN_MEMCPY
+		  || code == BUILT_IN_MEMMOVE
+		  || code == BUILT_IN_MEMSET);
+
+      tree repl = find_tm_replacement_function (fn_decl);
+      if (repl)
+	{
+	  gimple_call_set_fndecl (stmt, repl);
+	  update_stmt (stmt);
+	  node = cgraph_create_node (repl);
+	  node->local.tm_may_enter_irr = false;
+	  return expand_call_tm (region, gsi);
+	}
+      gcc_unreachable ();
+    }
   if (node->local.tm_may_enter_irr)
     transaction_subcode_ior (region, GTMA_MAY_ENTER_IRREVOCABLE);
 
@@ -2304,7 +2304,7 @@ expand_call_tm (struct tm_region *region,
   if (lhs && requires_barrier (region->entry_block, lhs, stmt)
       && !gimple_call_return_slot_opt_p (stmt))
     {
-      tree tmp = make_rename_temp (TREE_TYPE (lhs), NULL);
+      tree tmp = create_tmp_reg (TREE_TYPE (lhs), NULL);
       location_t loc = gimple_location (stmt);
       edge fallthru_edge = NULL;
 
@@ -2396,26 +2396,26 @@ expand_block_tm (struct tm_region *region, basic_block bb)
    STOP_AT_IRREVOCABLE_P is true if caller is uninterested in blocks
    following a TM_IRREVOCABLE call.  */
 
-static VEC (basic_block, heap) *
+static vec<basic_block> 
 get_tm_region_blocks (basic_block entry_block,
 		      bitmap exit_blocks,
 		      bitmap irr_blocks,
 		      bitmap all_region_blocks,
 		      bool stop_at_irrevocable_p)
 {
-  VEC(basic_block, heap) *bbs = NULL;
+  vec<basic_block> bbs = vNULL;
   unsigned i;
   edge e;
   edge_iterator ei;
   bitmap visited_blocks = BITMAP_ALLOC (NULL);
 
   i = 0;
-  VEC_safe_push (basic_block, heap, bbs, entry_block);
+  bbs.safe_push (entry_block);
   bitmap_set_bit (visited_blocks, entry_block->index);
 
   do
     {
-      basic_block bb = VEC_index (basic_block, bbs, i++);
+      basic_block bb = bbs[i++];
 
       if (exit_blocks &&
 	  bitmap_bit_p (exit_blocks, bb->index))
@@ -2430,16 +2430,75 @@ get_tm_region_blocks (basic_block entry_block,
 	if (!bitmap_bit_p (visited_blocks, e->dest->index))
 	  {
 	    bitmap_set_bit (visited_blocks, e->dest->index);
-	    VEC_safe_push (basic_block, heap, bbs, e->dest);
+	    bbs.safe_push (e->dest);
 	  }
     }
-  while (i < VEC_length (basic_block, bbs));
+  while (i < bbs.length ());
 
   if (all_region_blocks)
     bitmap_ior_into (all_region_blocks, visited_blocks);
 
   BITMAP_FREE (visited_blocks);
   return bbs;
+}
+
+// Callback for expand_regions, collect innermost region data for each bb.
+static void *
+collect_bb2reg (struct tm_region *region, void *data)
+{
+  vec<tm_region_p> *bb2reg = (vec<tm_region_p> *) data;
+  vec<basic_block> queue;
+  unsigned int i;
+  basic_block bb;
+
+  queue = get_tm_region_blocks (region->entry_block,
+				region->exit_blocks,
+				region->irr_blocks,
+				NULL,
+				/*stop_at_irr_p=*/true);
+
+  // We expect expand_region to perform a post-order traversal of the region
+  // tree.  Therefore the last region seen for any bb is the innermost.
+  FOR_EACH_VEC_ELT (queue, i, bb)
+    (*bb2reg)[bb->index] = region;
+
+  queue.release ();
+  return NULL;
+}
+
+// Returns a vector, indexed by BB->INDEX, of the innermost tm_region to
+// which a basic block belongs.  Note that we only consider the instrumented
+// code paths for the region; the uninstrumented code paths are ignored.
+//
+// ??? This data is very similar to the bb_regions array that is collected
+// during tm_region_init.  Or, rather, this data is similar to what could
+// be used within tm_region_init.  The actual computation in tm_region_init
+// begins and ends with bb_regions entirely full of NULL pointers, due to
+// the way in which pointers are swapped in and out of the array.
+//
+// ??? Our callers expect that blocks are not shared between transactions.
+// When the optimizers get too smart, and blocks are shared, then during
+// the tm_mark phase we'll add log entries to only one of the two transactions,
+// and in the tm_edge phase we'll add edges to the CFG that create invalid
+// cycles.  The symptom being SSA defs that do not dominate their uses.
+// Note that the optimizers were locally correct with their transformation,
+// as we have no info within the program that suggests that the blocks cannot
+// be shared.
+//
+// ??? There is currently a hack inside tree-ssa-pre.c to work around the
+// only known instance of this block sharing.
+
+static vec<tm_region_p>
+get_bb_regions_instrumented (bool traverse_clones)
+{
+  unsigned n = last_basic_block;
+  vec<tm_region_p> ret;
+
+  ret.create (n);
+  ret.safe_grow_cleared (n);
+  expand_regions (all_tm_regions, collect_bb2reg, &ret, traverse_clones);
+
+  return ret;
 }
 
 /* Set the IN_TRANSACTION for all gimple statements that appear in a
@@ -2449,7 +2508,7 @@ void
 compute_transaction_bits (void)
 {
   struct tm_region *region;
-  VEC (basic_block, heap) *queue;
+  vec<basic_block> queue;
   unsigned int i;
   basic_block bb;
 
@@ -2467,13 +2526,292 @@ compute_transaction_bits (void)
 				    region->irr_blocks,
 				    NULL,
 				    /*stop_at_irr_p=*/true);
-      for (i = 0; VEC_iterate (basic_block, queue, i, bb); ++i)
+      for (i = 0; queue.iterate (i, &bb); ++i)
 	bb->flags |= BB_IN_TRANSACTION;
-      VEC_free (basic_block, heap, queue);
+      queue.release ();
     }
 
   if (all_tm_regions)
     bitmap_obstack_release (&tm_obstack);
+}
+
+/* Replace the GIMPLE_TRANSACTION in this region with the corresponding
+   call to BUILT_IN_TM_START.  */
+
+static void *
+expand_transaction (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
+{
+  tree tm_start = builtin_decl_explicit (BUILT_IN_TM_START);
+  basic_block transaction_bb = gimple_bb (region->transaction_stmt);
+  tree tm_state = region->tm_state;
+  tree tm_state_type = TREE_TYPE (tm_state);
+  edge abort_edge = NULL;
+  edge inst_edge = NULL;
+  edge uninst_edge = NULL;
+  edge fallthru_edge = NULL;
+
+  // Identify the various successors of the transaction start.
+  {
+    edge_iterator i;
+    edge e;
+    FOR_EACH_EDGE (e, i, transaction_bb->succs)
+      {
+        if (e->flags & EDGE_TM_ABORT)
+	  abort_edge = e;
+        else if (e->flags & EDGE_TM_UNINSTRUMENTED)
+	  uninst_edge = e;
+	else
+	  inst_edge = e;
+        if (e->flags & EDGE_FALLTHRU)
+	  fallthru_edge = e;
+      }
+  }
+
+  /* ??? There are plenty of bits here we're not computing.  */
+  {
+    int subcode = gimple_transaction_subcode (region->transaction_stmt);
+    int flags = 0;
+    if (subcode & GTMA_DOES_GO_IRREVOCABLE)
+      flags |= PR_DOESGOIRREVOCABLE;
+    if ((subcode & GTMA_MAY_ENTER_IRREVOCABLE) == 0)
+      flags |= PR_HASNOIRREVOCABLE;
+    /* If the transaction does not have an abort in lexical scope and is not
+       marked as an outer transaction, then it will never abort.  */
+    if ((subcode & GTMA_HAVE_ABORT) == 0 && (subcode & GTMA_IS_OUTER) == 0)
+      flags |= PR_HASNOABORT;
+    if ((subcode & GTMA_HAVE_STORE) == 0)
+      flags |= PR_READONLY;
+    if (inst_edge)
+      flags |= PR_INSTRUMENTEDCODE;
+    if (uninst_edge)
+      flags |= PR_UNINSTRUMENTEDCODE;
+    if (subcode & GTMA_IS_OUTER)
+      region->original_transaction_was_outer = true;
+    tree t = build_int_cst (tm_state_type, flags);
+    gimple call = gimple_build_call (tm_start, 1, t);
+    gimple_call_set_lhs (call, tm_state);
+    gimple_set_location (call, gimple_location (region->transaction_stmt));
+
+    // Replace the GIMPLE_TRANSACTION with the call to BUILT_IN_TM_START.
+    gimple_stmt_iterator gsi = gsi_last_bb (transaction_bb);
+    gcc_assert (gsi_stmt (gsi) == region->transaction_stmt);
+    gsi_insert_before (&gsi, call, GSI_SAME_STMT);
+    gsi_remove (&gsi, true);
+    region->transaction_stmt = call;
+  }
+
+  // Generate log saves.
+  if (!tm_log_save_addresses.is_empty ())
+    tm_log_emit_saves (region->entry_block, transaction_bb);
+
+  // In the beginning, we've no tests to perform on transaction restart.
+  // Note that after this point, transaction_bb becomes the "most recent
+  // block containing tests for the transaction".
+  region->restart_block = region->entry_block;
+
+  // Generate log restores.
+  if (!tm_log_save_addresses.is_empty ())
+    {
+      basic_block test_bb = create_empty_bb (transaction_bb);
+      basic_block code_bb = create_empty_bb (test_bb);
+      basic_block join_bb = create_empty_bb (code_bb);
+      if (current_loops && transaction_bb->loop_father)
+	{
+	  add_bb_to_loop (test_bb, transaction_bb->loop_father);
+	  add_bb_to_loop (code_bb, transaction_bb->loop_father);
+	  add_bb_to_loop (join_bb, transaction_bb->loop_father);
+	}
+      if (region->restart_block == region->entry_block)
+	region->restart_block = test_bb;
+
+      tree t1 = create_tmp_reg (tm_state_type, NULL);
+      tree t2 = build_int_cst (tm_state_type, A_RESTORELIVEVARIABLES);
+      gimple stmt = gimple_build_assign_with_ops (BIT_AND_EXPR, t1,
+						  tm_state, t2);
+      gimple_stmt_iterator gsi = gsi_last_bb (test_bb);
+      gsi_insert_after (&gsi, stmt, GSI_CONTINUE_LINKING);
+
+      t2 = build_int_cst (tm_state_type, 0);
+      stmt = gimple_build_cond (NE_EXPR, t1, t2, NULL, NULL);
+      gsi_insert_after (&gsi, stmt, GSI_CONTINUE_LINKING);
+
+      tm_log_emit_restores (region->entry_block, code_bb);
+
+      edge ei = make_edge (transaction_bb, test_bb, EDGE_FALLTHRU);
+      edge et = make_edge (test_bb, code_bb, EDGE_TRUE_VALUE);
+      edge ef = make_edge (test_bb, join_bb, EDGE_FALSE_VALUE);
+      redirect_edge_pred (fallthru_edge, join_bb);
+
+      join_bb->frequency = test_bb->frequency = transaction_bb->frequency;
+      join_bb->count = test_bb->count = transaction_bb->count;
+
+      ei->probability = PROB_ALWAYS;
+      et->probability = PROB_LIKELY;
+      ef->probability = PROB_UNLIKELY;
+      et->count = apply_probability(test_bb->count, et->probability);
+      ef->count = apply_probability(test_bb->count, ef->probability);
+
+      code_bb->count = et->count;
+      code_bb->frequency = EDGE_FREQUENCY (et);
+
+      transaction_bb = join_bb;
+    }
+
+  // If we have an ABORT edge, create a test to perform the abort.
+  if (abort_edge)
+    {
+      basic_block test_bb = create_empty_bb (transaction_bb);
+      if (current_loops && transaction_bb->loop_father)
+	add_bb_to_loop (test_bb, transaction_bb->loop_father);
+      if (region->restart_block == region->entry_block)
+	region->restart_block = test_bb;
+
+      tree t1 = create_tmp_reg (tm_state_type, NULL);
+      tree t2 = build_int_cst (tm_state_type, A_ABORTTRANSACTION);
+      gimple stmt = gimple_build_assign_with_ops (BIT_AND_EXPR, t1,
+						  tm_state, t2);
+      gimple_stmt_iterator gsi = gsi_last_bb (test_bb);
+      gsi_insert_after (&gsi, stmt, GSI_CONTINUE_LINKING);
+
+      t2 = build_int_cst (tm_state_type, 0);
+      stmt = gimple_build_cond (NE_EXPR, t1, t2, NULL, NULL);
+      gsi_insert_after (&gsi, stmt, GSI_CONTINUE_LINKING);
+
+      edge ei = make_edge (transaction_bb, test_bb, EDGE_FALLTHRU);
+      test_bb->frequency = transaction_bb->frequency;
+      test_bb->count = transaction_bb->count;
+      ei->probability = PROB_ALWAYS;
+
+      // Not abort edge.  If both are live, chose one at random as we'll
+      // we'll be fixing that up below.
+      redirect_edge_pred (fallthru_edge, test_bb);
+      fallthru_edge->flags = EDGE_FALSE_VALUE;
+      fallthru_edge->probability = PROB_VERY_LIKELY;
+      fallthru_edge->count
+	= apply_probability(test_bb->count, fallthru_edge->probability);
+
+      // Abort/over edge.
+      redirect_edge_pred (abort_edge, test_bb);
+      abort_edge->flags = EDGE_TRUE_VALUE;
+      abort_edge->probability = PROB_VERY_UNLIKELY;
+      abort_edge->count
+	= apply_probability(test_bb->count, abort_edge->probability);
+
+      transaction_bb = test_bb;
+    }
+
+  // If we have both instrumented and uninstrumented code paths, select one.
+  if (inst_edge && uninst_edge)
+    {
+      basic_block test_bb = create_empty_bb (transaction_bb);
+      if (current_loops && transaction_bb->loop_father)
+	add_bb_to_loop (test_bb, transaction_bb->loop_father);
+      if (region->restart_block == region->entry_block)
+	region->restart_block = test_bb;
+
+      tree t1 = create_tmp_reg (tm_state_type, NULL);
+      tree t2 = build_int_cst (tm_state_type, A_RUNUNINSTRUMENTEDCODE);
+
+      gimple stmt = gimple_build_assign_with_ops (BIT_AND_EXPR, t1,
+						  tm_state, t2);
+      gimple_stmt_iterator gsi = gsi_last_bb (test_bb);
+      gsi_insert_after (&gsi, stmt, GSI_CONTINUE_LINKING);
+
+      t2 = build_int_cst (tm_state_type, 0);
+      stmt = gimple_build_cond (NE_EXPR, t1, t2, NULL, NULL);
+      gsi_insert_after (&gsi, stmt, GSI_CONTINUE_LINKING);
+
+      // Create the edge into test_bb first, as we want to copy values
+      // out of the fallthru edge.
+      edge e = make_edge (transaction_bb, test_bb, fallthru_edge->flags);
+      e->probability = fallthru_edge->probability;
+      test_bb->count = e->count = fallthru_edge->count;
+      test_bb->frequency = EDGE_FREQUENCY (e);
+
+      // Now update the edges to the inst/uninist implementations.
+      // For now assume that the paths are equally likely.  When using HTM,
+      // we'll try the uninst path first and fallback to inst path if htm
+      // buffers are exceeded.  Without HTM we start with the inst path and
+      // use the uninst path when falling back to serial mode.
+      redirect_edge_pred (inst_edge, test_bb);
+      inst_edge->flags = EDGE_FALSE_VALUE;
+      inst_edge->probability = REG_BR_PROB_BASE / 2;
+      inst_edge->count
+	= apply_probability(test_bb->count, inst_edge->probability);
+
+      redirect_edge_pred (uninst_edge, test_bb);
+      uninst_edge->flags = EDGE_TRUE_VALUE;
+      uninst_edge->probability = REG_BR_PROB_BASE / 2;
+      uninst_edge->count
+	= apply_probability(test_bb->count, uninst_edge->probability);
+    }
+
+  // If we have no previous special cases, and we have PHIs at the beginning
+  // of the atomic region, this means we have a loop at the beginning of the
+  // atomic region that shares the first block.  This can cause problems with
+  // the transaction restart abnormal edges to be added in the tm_edges pass.
+  // Solve this by adding a new empty block to receive the abnormal edges.
+  if (region->restart_block == region->entry_block
+      && phi_nodes (region->entry_block))
+    {
+      basic_block empty_bb = create_empty_bb (transaction_bb);
+      region->restart_block = empty_bb;
+      if (current_loops && transaction_bb->loop_father)
+	add_bb_to_loop (empty_bb, transaction_bb->loop_father);
+
+      redirect_edge_pred (fallthru_edge, empty_bb);
+      make_edge (transaction_bb, empty_bb, EDGE_FALLTHRU);
+    }
+
+  return NULL;
+}
+
+/* Generate the temporary to be used for the return value of
+   BUILT_IN_TM_START.  */
+
+static void *
+generate_tm_state (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
+{
+  tree tm_start = builtin_decl_explicit (BUILT_IN_TM_START);
+  region->tm_state =
+    create_tmp_reg (TREE_TYPE (TREE_TYPE (tm_start)), "tm_state");
+
+  // Reset the subcode, post optimizations.  We'll fill this in
+  // again as we process blocks.
+  if (region->exit_blocks)
+    {
+      unsigned int subcode
+	= gimple_transaction_subcode (region->transaction_stmt);
+
+      if (subcode & GTMA_DOES_GO_IRREVOCABLE)
+	subcode &= (GTMA_DECLARATION_MASK | GTMA_DOES_GO_IRREVOCABLE
+		    | GTMA_MAY_ENTER_IRREVOCABLE);
+      else
+	subcode &= GTMA_DECLARATION_MASK;
+      gimple_transaction_set_subcode (region->transaction_stmt, subcode);
+    }
+
+  return NULL;
+}
+
+// Propagate flags from inner transactions outwards.
+static void
+propagate_tm_flags_out (struct tm_region *region)
+{
+  if (region == NULL)
+    return;
+  propagate_tm_flags_out (region->inner);
+
+  if (region->outer && region->outer->transaction_stmt)
+    {
+      unsigned s = gimple_transaction_subcode (region->transaction_stmt);
+      s &= (GTMA_HAVE_ABORT | GTMA_HAVE_LOAD | GTMA_HAVE_STORE
+            | GTMA_MAY_ENTER_IRREVOCABLE);
+      s |= gimple_transaction_subcode (region->outer->transaction_stmt);
+      gimple_transaction_set_subcode (region->outer->transaction_stmt, s);
+    }
+
+  propagate_tm_flags_out (region->next);
 }
 
 /* Entry point to the MARK phase of TM expansion.  Here we replace
@@ -2484,46 +2822,39 @@ compute_transaction_bits (void)
 static unsigned int
 execute_tm_mark (void)
 {
-  struct tm_region *region;
-  basic_block bb;
-  VEC (basic_block, heap) *queue;
-  size_t i;
-
-  queue = VEC_alloc (basic_block, heap, 10);
   pending_edge_inserts_p = false;
 
-  for (region = all_tm_regions; region ; region = region->next)
-    {
-      tm_log_init ();
-      /* If we have a transaction...  */
-      if (region->exit_blocks)
-	{
-	  unsigned int subcode
-	    = gimple_transaction_subcode (region->transaction_stmt);
+  expand_regions (all_tm_regions, generate_tm_state, NULL,
+		  /*traverse_clones=*/true);
 
-	  /* Collect a new SUBCODE set, now that optimizations are done...  */
-	  if (subcode & GTMA_DOES_GO_IRREVOCABLE)
-	    subcode &= (GTMA_DECLARATION_MASK | GTMA_DOES_GO_IRREVOCABLE
-			| GTMA_MAY_ENTER_IRREVOCABLE);
-	  else
-	    subcode &= GTMA_DECLARATION_MASK;
-	  gimple_transaction_set_subcode (region->transaction_stmt, subcode);
-	}
+  tm_log_init ();
 
-      queue = get_tm_region_blocks (region->entry_block,
-				    region->exit_blocks,
-				    region->irr_blocks,
-				    NULL,
-				    /*stop_at_irr_p=*/true);
-      for (i = 0; VEC_iterate (basic_block, queue, i, bb); ++i)
-	expand_block_tm (region, bb);
-      VEC_free (basic_block, heap, queue);
+  vec<tm_region_p> bb_regions
+    = get_bb_regions_instrumented (/*traverse_clones=*/true);
+  struct tm_region *r;
+  unsigned i;
 
-      tm_log_emit ();
-    }
+  // Expand memory operations into calls into the runtime.
+  // This collects log entries as well.
+  FOR_EACH_VEC_ELT (bb_regions, i, r)
+    if (r != NULL)
+      expand_block_tm (r, BASIC_BLOCK (i));
+
+  bb_regions.release ();
+
+  // Propagate flags from inner transactions outwards.
+  propagate_tm_flags_out (all_tm_regions);
+
+  // Expand GIMPLE_TRANSACTIONs into calls into the runtime.
+  expand_regions (all_tm_regions, expand_transaction, NULL,
+		  /*traverse_clones=*/false);
+
+  tm_log_emit ();
+  tm_log_delete ();
 
   if (pending_edge_inserts_p)
     gsi_commit_edge_inserts ();
+  free_dominance_info (CDI_DOMINATORS);
   return 0;
 }
 
@@ -2532,6 +2863,7 @@ struct gimple_opt_pass pass_tm_mark =
  {
   GIMPLE_PASS,
   "tmmark",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,					/* gate */
   execute_tm_mark,			/* execute */
   NULL,					/* sub */
@@ -2547,23 +2879,33 @@ struct gimple_opt_pass pass_tm_mark =
  }
 };
 
-/* Create an abnormal call edge from BB to the first block of the region
-   represented by STATE.  Also record the edge in the TM_RESTART map.  */
+
+/* Create an abnormal edge from STMT at iter, splitting the block
+   as necessary.  Adjust *PNEXT as needed for the split block.  */
 
 static inline void
-make_tm_edge (gimple stmt, basic_block bb, struct tm_region *region)
+split_bb_make_tm_edge (gimple stmt, basic_block dest_bb,
+                       gimple_stmt_iterator iter, gimple_stmt_iterator *pnext)
 {
-  void **slot;
-  struct tm_restart_node *n, dummy;
+  basic_block bb = gimple_bb (stmt);
+  if (!gsi_one_before_end_p (iter))
+    {
+      edge e = split_block (bb, stmt);
+      *pnext = gsi_start_bb (e->dest);
+    }
+  make_edge (bb, dest_bb, EDGE_ABNORMAL);
 
+  // Record the need for the edge for the benefit of the rtl passes.
   if (cfun->gimple_df->tm_restart == NULL)
     cfun->gimple_df->tm_restart = htab_create_ggc (31, struct_ptr_hash,
 						   struct_ptr_eq, ggc_free);
 
+  struct tm_restart_node dummy;
   dummy.stmt = stmt;
-  dummy.label_or_list = gimple_block_label (region->entry_block);
-  slot = htab_find_slot (cfun->gimple_df->tm_restart, &dummy, INSERT);
-  n = (struct tm_restart_node *) *slot;
+  dummy.label_or_list = gimple_block_label (dest_bb);
+
+  void **slot = htab_find_slot (cfun->gimple_df->tm_restart, &dummy, INSERT);
+  struct tm_restart_node *n = (struct tm_restart_node *) *slot;
   if (n == NULL)
     {
       n = ggc_alloc_tm_restart_node ();
@@ -2573,216 +2915,86 @@ make_tm_edge (gimple stmt, basic_block bb, struct tm_region *region)
     {
       tree old = n->label_or_list;
       if (TREE_CODE (old) == LABEL_DECL)
-	old = tree_cons (NULL, old, NULL);
+        old = tree_cons (NULL, old, NULL);
       n->label_or_list = tree_cons (NULL, dummy.label_or_list, old);
     }
-
-  make_edge (bb, region->entry_block, EDGE_ABNORMAL | EDGE_ABNORMAL_CALL);
 }
-
 
 /* Split block BB as necessary for every builtin function we added, and
    wire up the abnormal back edges implied by the transaction restart.  */
 
 static void
-expand_block_edges (struct tm_region *region, basic_block bb)
+expand_block_edges (struct tm_region *const region, basic_block bb)
 {
-  gimple_stmt_iterator gsi;
+  gimple_stmt_iterator gsi, next_gsi;
 
-  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); )
+  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi = next_gsi)
     {
-      bool do_next = true;
       gimple stmt = gsi_stmt (gsi);
 
-      /* ??? TM_COMMIT (and any other tm builtin function) in a nested
-	 transaction has an abnormal edge back to the outer-most transaction
-	 (there are no nested retries), while a TM_ABORT also has an abnormal
-	 backedge to the inner-most transaction.  We haven't actually saved
-	 the inner-most transaction here.  We should be able to get to it
-	 via the region_nr saved on STMT, and read the transaction_stmt from
-	 that, and find the first region block from there.  */
-      /* ??? Shouldn't we split for any non-pure, non-irrevocable function?  */
-      if (gimple_code (stmt) == GIMPLE_CALL
-	  && (gimple_call_flags (stmt) & ECF_TM_BUILTIN) != 0)
+      next_gsi = gsi;
+      gsi_next (&next_gsi);
+
+      // ??? Shouldn't we split for any non-pure, non-irrevocable function?
+      if (gimple_code (stmt) != GIMPLE_CALL
+	  || (gimple_call_flags (stmt) & ECF_TM_BUILTIN) == 0)
+	continue;
+
+      if (DECL_FUNCTION_CODE (gimple_call_fndecl (stmt)) == BUILT_IN_TM_ABORT)
 	{
-	  if (gsi_one_before_end_p (gsi))
-	    make_tm_edge (stmt, bb, region);
-	  else
+	  // If we have a ``_transaction_cancel [[outer]]'', there is only
+	  // one abnormal edge: to the transaction marked OUTER.
+	  // All compiler-generated instances of BUILT_IN_TM_ABORT have a
+	  // constant argument, which we can examine here.  Users invoking
+	  // TM_ABORT directly get what they deserve.
+	  tree arg = gimple_call_arg (stmt, 0);
+	  if (TREE_CODE (arg) == INTEGER_CST
+	      && (TREE_INT_CST_LOW (arg) & AR_OUTERABORT) != 0
+	      && !decl_is_tm_clone (current_function_decl))
 	    {
-	      edge e = split_block (bb, stmt);
-	      make_tm_edge (stmt, bb, region);
-	      bb = e->dest;
-	      gsi = gsi_start_bb (bb);
-	      do_next = false;
+	      // Find the GTMA_IS_OUTER transaction.
+	      for (struct tm_region *o = region; o; o = o->outer)
+		if (o->original_transaction_was_outer)
+		  {
+		    split_bb_make_tm_edge (stmt, o->restart_block,
+					   gsi, &next_gsi);
+		    break;
+		  }
+
+	      // Otherwise, the front-end should have semantically checked
+	      // outer aborts, but in either case the target region is not
+	      // within this function.
+	      continue;
 	    }
 
-	  /* Delete any tail-call annotation that may have been added.
-	     The tail-call pass may have mis-identified the commit as being
-	     a candidate because we had not yet added this restart edge.  */
-	  gimple_call_set_tail (stmt, false);
+	  // Non-outer, TM aborts have an abnormal edge to the inner-most
+	  // transaction, the one being aborted;
+	  split_bb_make_tm_edge (stmt, region->restart_block, gsi, &next_gsi);
 	}
 
-      if (do_next)
-	gsi_next (&gsi);
-    }
-}
+      // All TM builtins have an abnormal edge to the outer-most transaction.
+      // We never restart inner transactions.  For tm clones, we know a-priori
+      // that the outer-most transaction is outside the function.
+      if (decl_is_tm_clone (current_function_decl))
+	continue;
 
-/* Expand the GIMPLE_TRANSACTION statement into the STM library call.  */
+      if (cfun->gimple_df->tm_restart == NULL)
+	cfun->gimple_df->tm_restart
+	  = htab_create_ggc (31, struct_ptr_hash, struct_ptr_eq, ggc_free);
 
-static void
-expand_transaction (struct tm_region *region)
-{
-  tree status, tm_start;
-  basic_block atomic_bb, slice_bb;
-  gimple_stmt_iterator gsi;
-  tree t1, t2;
-  gimple g;
-  int flags, subcode;
+      // All TM builtins have an abnormal edge to the outer-most transaction.
+      // We never restart inner transactions.
+      for (struct tm_region *o = region; o; o = o->outer)
+	if (!o->outer)
+	  {
+            split_bb_make_tm_edge (stmt, o->restart_block, gsi, &next_gsi);
+	    break;
+	  }
 
-  tm_start = builtin_decl_explicit (BUILT_IN_TM_START);
-  status = make_rename_temp (TREE_TYPE (TREE_TYPE (tm_start)), "tm_state");
-
-  /* ??? There are plenty of bits here we're not computing.  */
-  subcode = gimple_transaction_subcode (region->transaction_stmt);
-  if (subcode & GTMA_DOES_GO_IRREVOCABLE)
-    flags = PR_DOESGOIRREVOCABLE | PR_UNINSTRUMENTEDCODE;
-  else
-    flags = PR_INSTRUMENTEDCODE;
-  if ((subcode & GTMA_MAY_ENTER_IRREVOCABLE) == 0)
-    flags |= PR_HASNOIRREVOCABLE;
-  /* If the transaction does not have an abort in lexical scope and is not
-     marked as an outer transaction, then it will never abort.  */
-  if ((subcode & GTMA_HAVE_ABORT) == 0
-      && (subcode & GTMA_IS_OUTER) == 0)
-    flags |= PR_HASNOABORT;
-  if ((subcode & GTMA_HAVE_STORE) == 0)
-    flags |= PR_READONLY;
-  t2 = build_int_cst (TREE_TYPE (status), flags);
-  g = gimple_build_call (tm_start, 1, t2);
-  gimple_call_set_lhs (g, status);
-  gimple_set_location (g, gimple_location (region->transaction_stmt));
-
-  atomic_bb = gimple_bb (region->transaction_stmt);
-
-  if (!VEC_empty (tree, tm_log_save_addresses))
-    tm_log_emit_saves (region->entry_block, atomic_bb);
-
-  gsi = gsi_last_bb (atomic_bb);
-  gsi_insert_before (&gsi, g, GSI_SAME_STMT);
-  gsi_remove (&gsi, true);
-
-  if (!VEC_empty (tree, tm_log_save_addresses))
-    region->entry_block =
-      tm_log_emit_save_or_restores (region->entry_block,
-				    A_RESTORELIVEVARIABLES,
-				    status,
-				    tm_log_emit_restores,
-				    atomic_bb,
-				    FALLTHRU_EDGE (atomic_bb),
-				    &slice_bb);
-  else
-    slice_bb = atomic_bb;
-
-  /* If we have an ABORT statement, create a test following the start
-     call to perform the abort.  */
-  if (gimple_transaction_label (region->transaction_stmt))
-    {
-      edge e;
-      basic_block test_bb;
-
-      test_bb = create_empty_bb (slice_bb);
-      if (current_loops && slice_bb->loop_father)
-	add_bb_to_loop (test_bb, slice_bb->loop_father);
-      if (VEC_empty (tree, tm_log_save_addresses))
-	region->entry_block = test_bb;
-      gsi = gsi_last_bb (test_bb);
-
-      t1 = make_rename_temp (TREE_TYPE (status), NULL);
-      t2 = build_int_cst (TREE_TYPE (status), A_ABORTTRANSACTION);
-      g = gimple_build_assign_with_ops (BIT_AND_EXPR, t1, status, t2);
-      gsi_insert_after (&gsi, g, GSI_CONTINUE_LINKING);
-
-      t2 = build_int_cst (TREE_TYPE (status), 0);
-      g = gimple_build_cond (NE_EXPR, t1, t2, NULL, NULL);
-      gsi_insert_after (&gsi, g, GSI_CONTINUE_LINKING);
-
-      e = FALLTHRU_EDGE (slice_bb);
-      redirect_edge_pred (e, test_bb);
-      e->flags = EDGE_FALSE_VALUE;
-      e->probability = PROB_ALWAYS - PROB_VERY_UNLIKELY;
-
-      e = BRANCH_EDGE (atomic_bb);
-      redirect_edge_pred (e, test_bb);
-      e->flags = EDGE_TRUE_VALUE;
-      e->probability = PROB_VERY_UNLIKELY;
-
-      e = make_edge (slice_bb, test_bb, EDGE_FALLTHRU);
-    }
-
-  /* If we've no abort, but we do have PHIs at the beginning of the atomic
-     region, that means we've a loop at the beginning of the atomic region
-     that shares the first block.  This can cause problems with the abnormal
-     edges we're about to add for the transaction restart.  Solve this by
-     adding a new empty block to receive the abnormal edges.  */
-  else if (phi_nodes (region->entry_block))
-    {
-      edge e;
-      basic_block empty_bb;
-
-      region->entry_block = empty_bb = create_empty_bb (atomic_bb);
-      if (current_loops && atomic_bb->loop_father)
-	add_bb_to_loop (empty_bb, atomic_bb->loop_father);
-
-      e = FALLTHRU_EDGE (atomic_bb);
-      redirect_edge_pred (e, empty_bb);
-
-      e = make_edge (atomic_bb, empty_bb, EDGE_FALLTHRU);
-    }
-
-  /* The GIMPLE_TRANSACTION statement no longer exists.  */
-  region->transaction_stmt = NULL;
-}
-
-static void expand_regions (struct tm_region *);
-
-/* Helper function for expand_regions.  Expand REGION and recurse to
-   the inner region.  */
-
-static void
-expand_regions_1 (struct tm_region *region)
-{
-  if (region->exit_blocks)
-    {
-      unsigned int i;
-      basic_block bb;
-      VEC (basic_block, heap) *queue;
-
-      /* Collect the set of blocks in this region.  Do this before
-	 splitting edges, so that we don't have to play with the
-	 dominator tree in the middle.  */
-      queue = get_tm_region_blocks (region->entry_block,
-				    region->exit_blocks,
-				    region->irr_blocks,
-				    NULL,
-				    /*stop_at_irr_p=*/false);
-      expand_transaction (region);
-      for (i = 0; VEC_iterate (basic_block, queue, i, bb); ++i)
-	expand_block_edges (region, bb);
-      VEC_free (basic_block, heap, queue);
-    }
-  if (region->inner)
-    expand_regions (region->inner);
-}
-
-/* Expand regions starting at REGION.  */
-
-static void
-expand_regions (struct tm_region *region)
-{
-  while (region)
-    {
-      expand_regions_1 (region);
-      region = region->next;
+      // Delete any tail-call annotation that may have been added.
+      // The tail-call pass may have mis-identified the commit as being
+      // a candidate because we had not yet added this restart edge.
+      gimple_call_set_tail (stmt, false);
     }
 }
 
@@ -2791,8 +3003,16 @@ expand_regions (struct tm_region *region)
 static unsigned int
 execute_tm_edges (void)
 {
-  expand_regions (all_tm_regions);
-  tm_log_delete ();
+  vec<tm_region_p> bb_regions
+    = get_bb_regions_instrumented (/*traverse_clones=*/false);
+  struct tm_region *r;
+  unsigned i;
+
+  FOR_EACH_VEC_ELT (bb_regions, i, r)
+    if (r != NULL)
+      expand_block_edges (r, BASIC_BLOCK (i));
+
+  bb_regions.release ();
 
   /* We've got to release the dominance info now, to indicate that it
      must be rebuilt completely.  Otherwise we'll crash trying to update
@@ -2809,6 +3029,7 @@ struct gimple_opt_pass pass_tm_edges =
  {
   GIMPLE_PASS,
   "tmedge",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,					/* gate */
   execute_tm_edges,			/* execute */
   NULL,					/* sub */
@@ -2823,6 +3044,59 @@ struct gimple_opt_pass pass_tm_edges =
   | TODO_verify_ssa,			/* todo_flags_finish */
  }
 };
+
+/* Helper function for expand_regions.  Expand REGION and recurse to
+   the inner region.  Call CALLBACK on each region.  CALLBACK returns
+   NULL to continue the traversal, otherwise a non-null value which
+   this function will return as well.  TRAVERSE_CLONES is true if we
+   should traverse transactional clones.  */
+
+static void *
+expand_regions_1 (struct tm_region *region,
+		  void *(*callback)(struct tm_region *, void *),
+		  void *data,
+		  bool traverse_clones)
+{
+  void *retval = NULL;
+  if (region->exit_blocks
+      || (traverse_clones && decl_is_tm_clone (current_function_decl)))
+    {
+      retval = callback (region, data);
+      if (retval)
+	return retval;
+    }
+  if (region->inner)
+    {
+      retval = expand_regions (region->inner, callback, data, traverse_clones);
+      if (retval)
+	return retval;
+    }
+  return retval;
+}
+
+/* Traverse the regions enclosed and including REGION.  Execute
+   CALLBACK for each region, passing DATA.  CALLBACK returns NULL to
+   continue the traversal, otherwise a non-null value which this
+   function will return as well.  TRAVERSE_CLONES is true if we should
+   traverse transactional clones.  */
+
+static void *
+expand_regions (struct tm_region *region,
+		void *(*callback)(struct tm_region *, void *),
+		void *data,
+		bool traverse_clones)
+{
+  void *retval = NULL;
+  while (region)
+    {
+      retval = expand_regions_1 (region, callback, data, traverse_clones);
+      if (retval)
+	return retval;
+      region = region->next;
+    }
+  return retval;
+}
+
 
 /* A unique TM memory operation.  */
 typedef struct tm_memop
@@ -3000,12 +3274,12 @@ dump_tm_memopt_set (const char *set_name, bitmap bits)
 /* Prettily dump all of the memopt sets in BLOCKS.  */
 
 static void
-dump_tm_memopt_sets (VEC (basic_block, heap) *blocks)
+dump_tm_memopt_sets (vec<basic_block> blocks)
 {
   size_t i;
   basic_block bb;
 
-  for (i = 0; VEC_iterate (basic_block, blocks, i, bb); ++i)
+  for (i = 0; blocks.iterate (i, &bb); ++i)
     {
       fprintf (dump_file, "------------BB %d---------\n", bb->index);
       dump_tm_memopt_set ("STORE_LOCAL", STORE_LOCAL (bb));
@@ -3103,7 +3377,7 @@ tm_memopt_compute_antin (basic_block bb)
 
 static void
 tm_memopt_compute_available (struct tm_region *region,
-			     VEC (basic_block, heap) *blocks)
+			     vec<basic_block> blocks)
 {
   edge e;
   basic_block *worklist, *qin, *qout, *qend, bb;
@@ -3114,12 +3388,12 @@ tm_memopt_compute_available (struct tm_region *region,
   /* Allocate a worklist array/queue.  Entries are only added to the
      list if they were not already on the list.  So the size is
      bounded by the number of basic blocks in the region.  */
-  qlen = VEC_length (basic_block, blocks) - 1;
+  qlen = blocks.length () - 1;
   qin = qout = worklist =
     XNEWVEC (basic_block, qlen);
 
   /* Put every block in the region on the worklist.  */
-  for (i = 0; VEC_iterate (basic_block, blocks, i, bb); ++i)
+  for (i = 0; blocks.iterate (i, &bb); ++i)
     {
       /* Seed AVAIL_OUT with the LOCAL set.  */
       bitmap_ior_into (STORE_AVAIL_OUT (bb), STORE_LOCAL (bb));
@@ -3191,7 +3465,7 @@ tm_memopt_compute_available (struct tm_region *region,
 
 static void
 tm_memopt_compute_antic (struct tm_region *region,
-			 VEC (basic_block, heap) *blocks)
+			 vec<basic_block> blocks)
 {
   edge e;
   basic_block *worklist, *qin, *qout, *qend, bb;
@@ -3202,12 +3476,11 @@ tm_memopt_compute_antic (struct tm_region *region,
   /* Allocate a worklist array/queue.  Entries are only added to the
      list if they were not already on the list.  So the size is
      bounded by the number of basic blocks in the region.  */
-  qin = qout = worklist =
-    XNEWVEC (basic_block, VEC_length (basic_block, blocks));
+  qin = qout = worklist = XNEWVEC (basic_block, blocks.length ());
 
-  for (qlen = 0, i = VEC_length (basic_block, blocks) - 1; i >= 0; --i)
+  for (qlen = 0, i = blocks.length () - 1; i >= 0; --i)
     {
-      bb = VEC_index (basic_block, blocks, i);
+      bb = blocks[i];
 
       /* Seed ANTIC_OUT with the LOCAL set.  */
       bitmap_ior_into (STORE_ANTIC_OUT (bb), STORE_LOCAL (bb));
@@ -3321,13 +3594,13 @@ tm_memopt_transform_stmt (unsigned int offset,
    basic blocks in BLOCKS.  */
 
 static void
-tm_memopt_transform_blocks (VEC (basic_block, heap) *blocks)
+tm_memopt_transform_blocks (vec<basic_block> blocks)
 {
   size_t i;
   basic_block bb;
   gimple_stmt_iterator gsi;
 
-  for (i = 0; VEC_iterate (basic_block, blocks, i, bb); ++i)
+  for (i = 0; blocks.iterate (i, &bb); ++i)
     {
       for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
 	{
@@ -3390,24 +3663,24 @@ tm_memopt_init_sets (void)
 /* Free sets computed for each BB.  */
 
 static void
-tm_memopt_free_sets (VEC (basic_block, heap) *blocks)
+tm_memopt_free_sets (vec<basic_block> blocks)
 {
   size_t i;
   basic_block bb;
 
-  for (i = 0; VEC_iterate (basic_block, blocks, i, bb); ++i)
+  for (i = 0; blocks.iterate (i, &bb); ++i)
     bb->aux = NULL;
 }
 
 /* Clear the visited bit for every basic block in BLOCKS.  */
 
 static void
-tm_memopt_clear_visited (VEC (basic_block, heap) *blocks)
+tm_memopt_clear_visited (vec<basic_block> blocks)
 {
   size_t i;
   basic_block bb;
 
-  for (i = 0; VEC_iterate (basic_block, blocks, i, bb); ++i)
+  for (i = 0; blocks.iterate (i, &bb); ++i)
     BB_VISITED_P (bb) = false;
 }
 
@@ -3419,7 +3692,7 @@ static unsigned int
 execute_tm_memopt (void)
 {
   struct tm_region *region;
-  VEC (basic_block, heap) *bbs;
+  vec<basic_block> bbs;
 
   tm_memopt_value_id = 0;
   tm_memopt_value_numbers = htab_create (10, tm_memop_hash, tm_memop_eq, free);
@@ -3440,7 +3713,7 @@ execute_tm_memopt (void)
 				  false);
 
       /* Collect all the memory operations.  */
-      for (i = 0; VEC_iterate (basic_block, bbs, i, bb); ++i)
+      for (i = 0; bbs.iterate (i, &bb); ++i)
 	{
 	  bb->aux = tm_memopt_init_sets ();
 	  tm_memopt_accumulate_memops (bb);
@@ -3454,7 +3727,7 @@ execute_tm_memopt (void)
       tm_memopt_transform_blocks (bbs);
 
       tm_memopt_free_sets (bbs);
-      VEC_free (basic_block, heap, bbs);
+      bbs.release ();
       bitmap_obstack_release (&tm_memopt_obstack);
       htab_empty (tm_memopt_value_numbers);
     }
@@ -3474,6 +3747,7 @@ struct gimple_opt_pass pass_tm_memopt =
  {
   GIMPLE_PASS,
   "tmmemopt",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_tm_memopt,			/* gate */
   execute_tm_memopt,			/* execute */
   NULL,					/* sub */
@@ -3571,12 +3845,7 @@ struct tm_ipa_cg_data
   bool want_irr_scan_normal;
 };
 
-typedef struct cgraph_node *cgraph_node_p;
-
-DEF_VEC_P (cgraph_node_p);
-DEF_VEC_ALLOC_P (cgraph_node_p, heap);
-
-typedef VEC (cgraph_node_p, heap) *cgraph_node_queue;
+typedef vec<cgraph_node_ptr> cgraph_node_queue;
 
 /* Return the ipa data associated with NODE, allocating zeroed memory
    if necessary.  TRAVERSE_ALIASES is true if we must traverse aliases
@@ -3613,8 +3882,36 @@ maybe_push_queue (struct cgraph_node *node,
   if (!*in_queue_p)
     {
       *in_queue_p = true;
-      VEC_safe_push (cgraph_node_p, heap, *queue_p, node);
+      queue_p->safe_push (node);
     }
+}
+
+/* Duplicate the basic blocks in QUEUE for use in the uninstrumented
+   code path.  QUEUE are the basic blocks inside the transaction
+   represented in REGION.
+
+   Later in split_code_paths() we will add the conditional to choose
+   between the two alternatives.  */
+
+static void
+ipa_uninstrument_transaction (struct tm_region *region,
+			      vec<basic_block> queue)
+{
+  gimple transaction = region->transaction_stmt;
+  basic_block transaction_bb = gimple_bb (transaction);
+  int n = queue.length ();
+  basic_block *new_bbs = XNEWVEC (basic_block, n);
+
+  copy_bbs (queue.address (), n, new_bbs, NULL, 0, NULL, NULL, transaction_bb);
+  edge e = make_edge (transaction_bb, new_bbs[0], EDGE_TM_UNINSTRUMENTED);
+  add_phi_args_after_copy (new_bbs, n, e);
+
+  // Now we will have a GIMPLE_ATOMIC with 3 possible edges out of it.
+  //   a) EDGE_FALLTHRU into the transaction
+  //   b) EDGE_TM_ABORT out of the transaction
+  //   c) EDGE_TM_UNINSTRUMENTED into the uninstrumented blocks.
+
+  free (new_bbs);
 }
 
 /* A subroutine of ipa_tm_scan_calls_transaction and ipa_tm_scan_calls_clone.
@@ -3671,18 +3968,36 @@ ipa_tm_scan_calls_transaction (struct tm_ipa_cg_data *d,
 
   for (r = all_tm_regions; r; r = r->next)
     {
-      VEC (basic_block, heap) *bbs;
+      vec<basic_block> bbs;
       basic_block bb;
       unsigned i;
 
       bbs = get_tm_region_blocks (r->entry_block, r->exit_blocks, NULL,
 				  d->transaction_blocks_normal, false);
 
-      FOR_EACH_VEC_ELT (basic_block, bbs, i, bb)
+      // Generate the uninstrumented code path for this transaction.
+      ipa_uninstrument_transaction (r, bbs);
+
+      FOR_EACH_VEC_ELT (bbs, i, bb)
 	ipa_tm_scan_calls_block (callees_p, bb, false);
 
-      VEC_free (basic_block, heap, bbs);
+      bbs.release ();
     }
+
+  // ??? copy_bbs should maintain cgraph edges for the blocks as it is
+  // copying them, rather than forcing us to do this externally.
+  rebuild_cgraph_edges ();
+
+  // ??? In ipa_uninstrument_transaction we don't try to update dominators
+  // because copy_bbs doesn't return a VEC like iterate_fix_dominators expects.
+  // Instead, just release dominators here so update_ssa recomputes them.
+  free_dominance_info (CDI_DOMINATORS);
+
+  // When building the uninstrumented code path, copy_bbs will have invoked
+  // create_new_def_for starting an "ssa update context".  There is only one
+  // instance of this context, so resolve ssa updates before moving on to
+  // the next function.
+  update_ssa (TODO_update_ssa);
 }
 
 /* Scan all calls in NODE as if this is the transactional clone,
@@ -3753,40 +4068,56 @@ ipa_tm_scan_irr_block (basic_block bb)
       gimple stmt = gsi_stmt (gsi);
       switch (gimple_code (stmt))
 	{
-	case GIMPLE_CALL:
-	  if (is_tm_pure_call (stmt))
-	    break;
-
-	  fn = gimple_call_fn (stmt);
-
-	  /* Functions with the attribute are by definition irrevocable.  */
-	  if (is_tm_irrevocable (fn))
-	    return true;
-
-	  /* For direct function calls, go ahead and check for replacement
-	     functions, or transitive irrevocable functions.  For indirect
-	     functions, we'll ask the runtime.  */
-	  if (TREE_CODE (fn) == ADDR_EXPR)
+	case GIMPLE_ASSIGN:
+	  if (gimple_assign_single_p (stmt))
 	    {
-	      struct tm_ipa_cg_data *d;
-	      struct cgraph_node *node;
-
-	      fn = TREE_OPERAND (fn, 0);
-	      if (is_tm_ending_fndecl (fn))
-		break;
-	      if (find_tm_replacement_function (fn))
-		break;
-
-	      node = cgraph_get_node(fn);
-	      d = get_cg_data (&node, true);
-
-	      /* Return true if irrevocable, but above all, believe
-		 the user.  */
-	      if (d->is_irrevocable
-		  && !is_tm_safe_or_pure (fn))
+	      tree lhs = gimple_assign_lhs (stmt);
+	      tree rhs = gimple_assign_rhs1 (stmt);
+	      if (volatile_var_p (lhs) || volatile_var_p (rhs))
 		return true;
 	    }
 	  break;
+
+	case GIMPLE_CALL:
+	  {
+	    tree lhs = gimple_call_lhs (stmt);
+	    if (lhs && volatile_var_p (lhs))
+	      return true;
+
+	    if (is_tm_pure_call (stmt))
+	      break;
+
+	    fn = gimple_call_fn (stmt);
+
+	    /* Functions with the attribute are by definition irrevocable.  */
+	    if (is_tm_irrevocable (fn))
+	      return true;
+
+	    /* For direct function calls, go ahead and check for replacement
+	       functions, or transitive irrevocable functions.  For indirect
+	       functions, we'll ask the runtime.  */
+	    if (TREE_CODE (fn) == ADDR_EXPR)
+	      {
+		struct tm_ipa_cg_data *d;
+		struct cgraph_node *node;
+
+		fn = TREE_OPERAND (fn, 0);
+		if (is_tm_ending_fndecl (fn))
+		  break;
+		if (find_tm_replacement_function (fn))
+		  break;
+
+		node = cgraph_get_node(fn);
+		d = get_cg_data (&node, true);
+
+		/* Return true if irrevocable, but above all, believe
+		   the user.  */
+		if (d->is_irrevocable
+		    && !is_tm_safe_or_pure (fn))
+		  return true;
+	      }
+	    break;
+	  }
 
 	case GIMPLE_ASM:
 	  /* ??? The Approved Method of indicating that an inline
@@ -3797,7 +4128,6 @@ ipa_tm_scan_irr_block (basic_block bb)
 	    {
 	      tree t = build1 (NOP_EXPR, void_type_node, size_zero_node);
 	      SET_EXPR_LOCATION (t, gimple_location (stmt));
-	      TREE_BLOCK (t) = gimple_block (stmt);
 	      error ("%Kasm not allowed in %<transaction_safe%> function", t);
 	    }
 	  return true;
@@ -3815,7 +4145,7 @@ ipa_tm_scan_irr_block (basic_block bb)
    scanning past OLD_IRR or EXIT_BLOCKS.  */
 
 static bool
-ipa_tm_scan_irr_blocks (VEC (basic_block, heap) **pqueue, bitmap new_irr,
+ipa_tm_scan_irr_blocks (vec<basic_block> *pqueue, bitmap new_irr,
 			bitmap old_irr, bitmap exit_blocks)
 {
   bool any_new_irr = false;
@@ -3825,7 +4155,7 @@ ipa_tm_scan_irr_blocks (VEC (basic_block, heap) **pqueue, bitmap new_irr,
 
   do
     {
-      basic_block bb = VEC_pop (basic_block, *pqueue);
+      basic_block bb = pqueue->pop ();
 
       /* Don't re-scan blocks we know already are irrevocable.  */
       if (old_irr && bitmap_bit_p (old_irr, bb->index))
@@ -3842,11 +4172,11 @@ ipa_tm_scan_irr_blocks (VEC (basic_block, heap) **pqueue, bitmap new_irr,
 	    if (!bitmap_bit_p (visited_blocks, e->dest->index))
 	      {
 		bitmap_set_bit (visited_blocks, e->dest->index);
-		VEC_safe_push (basic_block, heap, *pqueue, e->dest);
+		pqueue->safe_push (e->dest);
 	      }
 	}
     }
-  while (!VEC_empty (basic_block, *pqueue));
+  while (!pqueue->is_empty ());
 
   BITMAP_FREE (visited_blocks);
 
@@ -3863,7 +4193,7 @@ static void
 ipa_tm_propagate_irr (basic_block entry_block, bitmap new_irr,
 		      bitmap old_irr, bitmap exit_blocks)
 {
-  VEC (basic_block, heap) *bbs;
+  vec<basic_block> bbs;
   bitmap all_region_blocks;
 
   /* If this block is in the old set, no need to rescan.  */
@@ -3875,7 +4205,7 @@ ipa_tm_propagate_irr (basic_block entry_block, bitmap new_irr,
 			      all_region_blocks, false);
   do
     {
-      basic_block bb = VEC_pop (basic_block, bbs);
+      basic_block bb = bbs.pop ();
       bool this_irr = bitmap_bit_p (new_irr, bb->index);
       bool all_son_irr = false;
       edge_iterator ei;
@@ -3922,10 +4252,10 @@ ipa_tm_propagate_irr (basic_block entry_block, bitmap new_irr,
 	    }
 	}
     }
-  while (!VEC_empty (basic_block, bbs));
+  while (!bbs.is_empty ());
 
   BITMAP_FREE (all_region_blocks);
-  VEC_free (basic_block, heap, bbs);
+  bbs.release ();
 }
 
 static void
@@ -3974,7 +4304,7 @@ ipa_tm_scan_irr_function (struct cgraph_node *node, bool for_clone)
 {
   struct tm_ipa_cg_data *d;
   bitmap new_irr, old_irr;
-  VEC (basic_block, heap) *queue;
+  vec<basic_block> queue;
   bool ret = false;
 
   /* Builtin operators (operator new, and such).  */
@@ -3982,19 +4312,18 @@ ipa_tm_scan_irr_function (struct cgraph_node *node, bool for_clone)
       || DECL_STRUCT_FUNCTION (node->symbol.decl)->cfg == NULL)
     return false;
 
-  current_function_decl = node->symbol.decl;
   push_cfun (DECL_STRUCT_FUNCTION (node->symbol.decl));
   calculate_dominance_info (CDI_DOMINATORS);
 
   d = get_cg_data (&node, true);
-  queue = VEC_alloc (basic_block, heap, 10);
+  queue.create (10);
   new_irr = BITMAP_ALLOC (&tm_obstack);
 
   /* Scan each tm region, propagating irrevocable status through the tree.  */
   if (for_clone)
     {
       old_irr = d->irrevocable_blocks_clone;
-      VEC_quick_push (basic_block, queue, single_succ (ENTRY_BLOCK_PTR));
+      queue.quick_push (single_succ (ENTRY_BLOCK_PTR));
       if (ipa_tm_scan_irr_blocks (&queue, new_irr, old_irr, NULL))
 	{
 	  ipa_tm_propagate_irr (single_succ (ENTRY_BLOCK_PTR), new_irr,
@@ -4009,7 +4338,7 @@ ipa_tm_scan_irr_function (struct cgraph_node *node, bool for_clone)
       old_irr = d->irrevocable_blocks_normal;
       for (region = d->all_tm_regions; region; region = region->next)
 	{
-	  VEC_quick_push (basic_block, queue, region->entry_block);
+	  queue.quick_push (region->entry_block);
 	  if (ipa_tm_scan_irr_blocks (&queue, new_irr, old_irr,
 				      region->exit_blocks))
 	    ipa_tm_propagate_irr (region->entry_block, new_irr, old_irr,
@@ -4052,9 +4381,8 @@ ipa_tm_scan_irr_function (struct cgraph_node *node, bool for_clone)
   else
     BITMAP_FREE (new_irr);
 
-  VEC_free (basic_block, heap, queue);
+  queue.release ();
   pop_cfun ();
-  current_function_decl = NULL;
 
   return ret;
 }
@@ -4155,7 +4483,7 @@ ipa_tm_diagnose_transaction (struct cgraph_node *node,
       }
     else
       {
-	VEC (basic_block, heap) *bbs;
+	vec<basic_block> bbs;
 	gimple_stmt_iterator gsi;
 	basic_block bb;
 	size_t i;
@@ -4163,7 +4491,7 @@ ipa_tm_diagnose_transaction (struct cgraph_node *node,
 	bbs = get_tm_region_blocks (r->entry_block, r->exit_blocks,
 				    r->irr_blocks, NULL, false);
 
-	for (i = 0; VEC_iterate (basic_block, bbs, i, bb); ++i)
+	for (i = 0; bbs.iterate (i, &bb); ++i)
 	  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
 	    {
 	      gimple stmt = gsi_stmt (gsi);
@@ -4204,7 +4532,7 @@ ipa_tm_diagnose_transaction (struct cgraph_node *node,
 			  "atomic transaction", fndecl);
 	    }
 
-	VEC_free (basic_block, heap, bbs);
+	bbs.release ();
       }
 }
 
@@ -4361,7 +4689,7 @@ ipa_tm_create_version (struct cgraph_node *old_node)
   if (DECL_ONE_ONLY (new_decl))
     DECL_COMDAT_GROUP (new_decl) = tm_mangle (DECL_COMDAT_GROUP (old_decl));
 
-  new_node = cgraph_copy_node_for_versioning (old_node, new_decl, NULL, NULL);
+  new_node = cgraph_copy_node_for_versioning (old_node, new_decl, vNULL, NULL);
   new_node->symbol.externally_visible = old_node->symbol.externally_visible;
   new_node->lowered = true;
   new_node->tm_clone = 1;
@@ -4378,8 +4706,9 @@ ipa_tm_create_version (struct cgraph_node *old_node)
 	  DECL_WEAK (new_decl) = 0;
 	}
 
-      tree_function_versioning (old_decl, new_decl, NULL, false, NULL, false,
-				NULL, NULL);
+      tree_function_versioning (old_decl, new_decl,
+				NULL, false, NULL,
+				false, NULL, NULL);
     }
 
   record_tm_clone_pair (old_decl, new_decl);
@@ -4456,7 +4785,6 @@ ipa_tm_insert_gettmclone_call (struct cgraph_node *node,
   gettm_fn = builtin_decl_explicit (safe ? BUILT_IN_TM_GETTMCLONE_SAFE
 				    : BUILT_IN_TM_GETTMCLONE_IRR);
   ret = create_tmp_var (ptr_type_node, NULL);
-  add_referenced_var (ret);
 
   if (!safe)
     transaction_subcode_ior (region, GTMA_MAY_ENTER_IRREVOCABLE);
@@ -4478,7 +4806,6 @@ ipa_tm_insert_gettmclone_call (struct cgraph_node *node,
   /* Cast return value from tm_gettmclone* into appropriate function
      pointer.  */
   callfn = create_tmp_var (TREE_TYPE (old_fn), NULL);
-  add_referenced_var (callfn);
   g2 = gimple_build_assign (callfn,
 			    fold_build1 (NOP_EXPR, TREE_TYPE (callfn), ret));
   callfn = make_ssa_name (callfn, g2);
@@ -4503,7 +4830,7 @@ ipa_tm_insert_gettmclone_call (struct cgraph_node *node,
     {
       tree temp;
 
-      temp = make_rename_temp (rettype, 0);
+      temp = create_tmp_reg (rettype, 0);
       gimple_call_set_lhs (stmt, temp);
 
       g2 = gimple_build_assign (lhs,
@@ -4651,13 +4978,13 @@ ipa_tm_transform_calls (struct cgraph_node *node, struct tm_region *region,
   bool need_ssa_rename = false;
   edge e;
   edge_iterator ei;
-  VEC(basic_block, heap) *queue = NULL;
+  vec<basic_block> queue = vNULL;
   bitmap visited_blocks = BITMAP_ALLOC (NULL);
 
-  VEC_safe_push (basic_block, heap, queue, bb);
+  queue.safe_push (bb);
   do
     {
-      bb = VEC_pop (basic_block, queue);
+      bb = queue.pop ();
 
       need_ssa_rename |=
 	ipa_tm_transform_calls_1 (node, region, bb, irr_blocks);
@@ -4672,12 +4999,12 @@ ipa_tm_transform_calls (struct cgraph_node *node, struct tm_region *region,
 	if (!bitmap_bit_p (visited_blocks, e->dest->index))
 	  {
 	    bitmap_set_bit (visited_blocks, e->dest->index);
-	    VEC_safe_push (basic_block, heap, queue, e->dest);
+	    queue.safe_push (e->dest);
 	  }
     }
-  while (!VEC_empty (basic_block, queue));
+  while (!queue.is_empty ());
 
-  VEC_free (basic_block, heap, queue);
+  queue.release ();
   BITMAP_FREE (visited_blocks);
 
   return need_ssa_rename;
@@ -4694,7 +5021,6 @@ ipa_tm_transform_transaction (struct cgraph_node *node)
 
   d = get_cg_data (&node, true);
 
-  current_function_decl = node->symbol.decl;
   push_cfun (DECL_STRUCT_FUNCTION (node->symbol.decl));
   calculate_dominance_info (CDI_DOMINATORS);
 
@@ -4719,7 +5045,6 @@ ipa_tm_transform_transaction (struct cgraph_node *node)
     update_ssa (TODO_update_ssa_only_virtuals);
 
   pop_cfun ();
-  current_function_decl = NULL;
 }
 
 /* Transform the calls within the transactional clone of NODE.  */
@@ -4738,8 +5063,7 @@ ipa_tm_transform_clone (struct cgraph_node *node)
   if (!node->callees && !node->indirect_calls && !d->irrevocable_blocks_clone)
     return;
 
-  current_function_decl = d->clone->symbol.decl;
-  push_cfun (DECL_STRUCT_FUNCTION (current_function_decl));
+  push_cfun (DECL_STRUCT_FUNCTION (d->clone->symbol.decl));
   calculate_dominance_info (CDI_DOMINATORS);
 
   need_ssa_rename =
@@ -4750,7 +5074,6 @@ ipa_tm_transform_clone (struct cgraph_node *node)
     update_ssa (TODO_update_ssa_only_virtuals);
 
   pop_cfun ();
-  current_function_decl = NULL;
 }
 
 /* Main entry point for the transactional memory IPA pass.  */
@@ -4758,9 +5081,9 @@ ipa_tm_transform_clone (struct cgraph_node *node)
 static unsigned int
 ipa_tm_execute (void)
 {
-  cgraph_node_queue tm_callees = NULL;
+  cgraph_node_queue tm_callees = cgraph_node_queue();
   /* List of functions that will go irrevocable.  */
-  cgraph_node_queue irr_worklist = NULL;
+  cgraph_node_queue irr_worklist = cgraph_node_queue();
 
   struct cgraph_node *node;
   struct tm_ipa_cg_data *d;
@@ -4772,6 +5095,7 @@ ipa_tm_execute (void)
 #endif
 
   bitmap_obstack_initialize (&tm_obstack);
+  initialize_original_copy_tables ();
 
   /* For all local functions marked tm_callable, queue them.  */
   FOR_EACH_DEFINED_FUNCTION (node)
@@ -4797,7 +5121,6 @@ ipa_tm_execute (void)
 	    continue;
 	  }
 
-	current_function_decl = node->symbol.decl;
 	push_cfun (DECL_STRUCT_FUNCTION (node->symbol.decl));
 	calculate_dominance_info (CDI_DOMINATORS);
 
@@ -4806,7 +5129,8 @@ ipa_tm_execute (void)
 	  {
 	    d = get_cg_data (&node, true);
 
-	    /* Scan for calls that are in each transaction.  */
+	    /* Scan for calls that are in each transaction, and
+	       generate the uninstrumented code path.  */
 	    ipa_tm_scan_calls_transaction (d, &tm_callees);
 
 	    /* Put it in the worklist so we can scan the function
@@ -4817,15 +5141,14 @@ ipa_tm_execute (void)
 	  }
 
 	pop_cfun ();
-	current_function_decl = NULL;
       }
 
   /* For every local function on the callee list, scan as if we will be
      creating a transactional clone, queueing all new functions we find
      along the way.  */
-  for (i = 0; i < VEC_length (cgraph_node_p, tm_callees); ++i)
+  for (i = 0; i < tm_callees.length (); ++i)
     {
-      node = VEC_index (cgraph_node_p, tm_callees, i);
+      node = tm_callees[i];
       a = cgraph_function_body_availability (node);
       d = get_cg_data (&node, true);
 
@@ -4865,19 +5188,19 @@ ipa_tm_execute (void)
     }
 
   /* Iterate scans until no more work to be done.  Prefer not to use
-     VEC_pop because the worklist tends to follow a breadth-first
+     vec::pop because the worklist tends to follow a breadth-first
      search of the callgraph, which should allow convergance with a
      minimum number of scans.  But we also don't want the worklist
      array to grow without bound, so we shift the array up periodically.  */
-  for (i = 0; i < VEC_length (cgraph_node_p, irr_worklist); ++i)
+  for (i = 0; i < irr_worklist.length (); ++i)
     {
-      if (i > 256 && i == VEC_length (cgraph_node_p, irr_worklist) / 8)
+      if (i > 256 && i == irr_worklist.length () / 8)
 	{
-	  VEC_block_remove (cgraph_node_p, irr_worklist, 0, i);
+	  irr_worklist.block_remove (0, i);
 	  i = 0;
 	}
 
-      node = VEC_index (cgraph_node_p, irr_worklist, i);
+      node = irr_worklist[i];
       d = get_cg_data (&node, true);
       d->in_worklist = false;
 
@@ -4892,10 +5215,10 @@ ipa_tm_execute (void)
 
   /* For every function on the callee list, collect the tm_may_enter_irr
      bit on the node.  */
-  VEC_truncate (cgraph_node_p, irr_worklist, 0);
-  for (i = 0; i < VEC_length (cgraph_node_p, tm_callees); ++i)
+  irr_worklist.truncate (0);
+  for (i = 0; i < tm_callees.length (); ++i)
     {
-      node = VEC_index (cgraph_node_p, tm_callees, i);
+      node = tm_callees[i];
       if (ipa_tm_mayenterirr_function (node))
 	{
 	  d = get_cg_data (&node, true);
@@ -4905,20 +5228,20 @@ ipa_tm_execute (void)
     }
 
   /* Propagate the tm_may_enter_irr bit to callers until stable.  */
-  for (i = 0; i < VEC_length (cgraph_node_p, irr_worklist); ++i)
+  for (i = 0; i < irr_worklist.length (); ++i)
     {
       struct cgraph_node *caller;
       struct cgraph_edge *e;
       struct ipa_ref *ref;
       unsigned j;
 
-      if (i > 256 && i == VEC_length (cgraph_node_p, irr_worklist) / 8)
+      if (i > 256 && i == irr_worklist.length () / 8)
 	{
-	  VEC_block_remove (cgraph_node_p, irr_worklist, 0, i);
+	  irr_worklist.block_remove (0, i);
 	  i = 0;
 	}
 
-      node = VEC_index (cgraph_node_p, irr_worklist, i);
+      node = irr_worklist[i];
       d = get_cg_data (&node, true);
       d->in_worklist = false;
       node->local.tm_may_enter_irr = true;
@@ -4965,11 +5288,11 @@ ipa_tm_execute (void)
   /* Create clones.  Do those that are not irrevocable and have a
      positive call count.  Do those publicly visible functions that
      the user directed us to clone.  */
-  for (i = 0; i < VEC_length (cgraph_node_p, tm_callees); ++i)
+  for (i = 0; i < tm_callees.length (); ++i)
     {
       bool doit = false;
 
-      node = VEC_index (cgraph_node_p, tm_callees, i);
+      node = tm_callees[i];
       if (node->same_body_alias)
 	continue;
 
@@ -4989,9 +5312,9 @@ ipa_tm_execute (void)
     }
 
   /* Redirect calls to the new clones, and insert irrevocable marks.  */
-  for (i = 0; i < VEC_length (cgraph_node_p, tm_callees); ++i)
+  for (i = 0; i < tm_callees.length (); ++i)
     {
-      node = VEC_index (cgraph_node_p, tm_callees, i);
+      node = tm_callees[i];
       if (node->analyzed)
 	{
 	  d = get_cg_data (&node, true);
@@ -5009,9 +5332,10 @@ ipa_tm_execute (void)
       }
 
   /* Free and clear all data structures.  */
-  VEC_free (cgraph_node_p, heap, tm_callees);
-  VEC_free (cgraph_node_p, heap, irr_worklist);
+  tm_callees.release ();
+  irr_worklist.release ();
   bitmap_obstack_release (&tm_obstack);
+  free_original_copy_tables ();
 
   FOR_EACH_FUNCTION (node)
     node->symbol.aux = NULL;
@@ -5028,6 +5352,7 @@ struct simple_ipa_opt_pass pass_ipa_tm =
  {
   SIMPLE_IPA_PASS,
   "tmipa",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_tm,				/* gate */
   ipa_tm_execute,			/* execute */
   NULL,					/* sub */
@@ -5038,7 +5363,7 @@ struct simple_ipa_opt_pass pass_ipa_tm =
   0,			                /* properties_provided */
   0,					/* properties_destroyed */
   0,					/* todo_flags_start */
-  0,             			/* todo_flags_finish */
+  0,					/* todo_flags_finish */
  },
 };
 

@@ -846,8 +846,7 @@ pp_c_function_definition (c_pretty_printer *pp, tree t)
   pp_declarator (pp, t);
   pp_needs_newline (pp) = true;
   pp_statement (pp, DECL_SAVED_TREE (t));
-  pp_newline (pp);
-  pp_flush (pp);
+  pp_newline_and_flush (pp);
 }
 
 
@@ -1663,7 +1662,7 @@ pp_c_expression_list (c_pretty_printer *pp, tree e)
 /* Print out V, which contains the elements of a constructor.  */
 
 void
-pp_c_constructor_elts (c_pretty_printer *pp, VEC(constructor_elt,gc) *v)
+pp_c_constructor_elts (c_pretty_printer *pp, vec<constructor_elt, va_gc> *v)
 {
   unsigned HOST_WIDE_INT ix;
   tree value;
@@ -1671,7 +1670,7 @@ pp_c_constructor_elts (c_pretty_printer *pp, VEC(constructor_elt,gc) *v)
   FOR_EACH_CONSTRUCTOR_VALUE (v, ix, value)
     {
       pp_expression (pp, value);
-      if (ix != VEC_length (constructor_elt, v) - 1)
+      if (ix != vec_safe_length (v) - 1)
 	pp_separate_with (pp, ',');
     }
 }
@@ -2142,7 +2141,8 @@ pp_c_expression (c_pretty_printer *pp, tree e)
       break;
 
     case SSA_NAME:
-      if (!DECL_ARTIFICIAL (SSA_NAME_VAR (e)))
+      if (SSA_NAME_VAR (e)
+	  && !DECL_ARTIFICIAL (SSA_NAME_VAR (e)))
 	pp_c_expression (pp, SSA_NAME_VAR (e));
       else
 	pp_c_ws_string (pp, M_("<unknown>"));
@@ -2361,8 +2361,7 @@ print_c_tree (FILE *file, tree t)
 
   pp_statement (pp, t);
 
-  pp_newline (pp);
-  pp_flush (pp);
+  pp_newline_and_flush (pp);
 }
 
 /* Print the tree T in full, on stderr.  */

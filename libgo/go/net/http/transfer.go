@@ -71,7 +71,9 @@ func newTransferWriter(r interface{}) (t *transferWriter, err error) {
 			}
 		}
 	case *Response:
-		t.Method = rr.Request.Method
+		if rr.Request != nil {
+			t.Method = rr.Request.Method
+		}
 		t.Body = rr.Body
 		t.BodyCloser = rr.Body
 		t.ContentLength = rr.ContentLength
@@ -79,7 +81,7 @@ func newTransferWriter(r interface{}) (t *transferWriter, err error) {
 		t.TransferEncoding = rr.TransferEncoding
 		t.Trailer = rr.Trailer
 		atLeastHTTP11 = rr.ProtoAtLeast(1, 1)
-		t.ResponseToHEAD = noBodyExpected(rr.Request.Method)
+		t.ResponseToHEAD = noBodyExpected(t.Method)
 	}
 
 	// Sanitize Body,ContentLength,TransferEncoding
@@ -430,7 +432,7 @@ func fixLength(isResponse bool, status int, requestMethod string, header Header,
 	}
 
 	// Logic based on Content-Length
-	cl := strings.TrimSpace(header.Get("Content-Length"))
+	cl := strings.TrimSpace(header.get("Content-Length"))
 	if cl != "" {
 		n, err := strconv.ParseInt(cl, 10, 64)
 		if err != nil || n < 0 {
@@ -452,7 +454,7 @@ func fixLength(isResponse bool, status int, requestMethod string, header Header,
 	// Logic based on media type. The purpose of the following code is just
 	// to detect whether the unsupported "multipart/byteranges" is being
 	// used. A proper Content-Type parser is needed in the future.
-	if strings.Contains(strings.ToLower(header.Get("Content-Type")), "multipart/byteranges") {
+	if strings.Contains(strings.ToLower(header.get("Content-Type")), "multipart/byteranges") {
 		return -1, ErrNotSupported
 	}
 
@@ -467,14 +469,14 @@ func shouldClose(major, minor int, header Header) bool {
 	if major < 1 {
 		return true
 	} else if major == 1 && minor == 0 {
-		if !strings.Contains(strings.ToLower(header.Get("Connection")), "keep-alive") {
+		if !strings.Contains(strings.ToLower(header.get("Connection")), "keep-alive") {
 			return true
 		}
 		return false
 	} else {
 		// TODO: Should split on commas, toss surrounding white space,
 		// and check each field.
-		if strings.ToLower(header.Get("Connection")) == "close" {
+		if strings.ToLower(header.get("Connection")) == "close" {
 			header.Del("Connection")
 			return true
 		}
@@ -484,7 +486,7 @@ func shouldClose(major, minor int, header Header) bool {
 
 // Parse the trailer header
 func fixTrailer(header Header, te []string) (Header, error) {
-	raw := header.Get("Trailer")
+	raw := header.get("Trailer")
 	if raw == "" {
 		return nil, nil
 	}
@@ -565,13 +567,21 @@ func seeUpcomingDoubleCRLF(r *bufio.Reader) bool {
 	return false
 }
 
+var errTrailerEOF = errors.New("http: unexpected EOF reading trailer")
+
 func (b *body) readTrailer() error {
 	// The common case, since nobody uses trailers.
-	buf, _ := b.r.Peek(2)
+	buf, err := b.r.Peek(2)
 	if bytes.Equal(buf, singleCRLF) {
 		b.r.ReadByte()
 		b.r.ReadByte()
 		return nil
+	}
+	if len(buf) < 2 {
+		return errTrailerEOF
+	}
+	if err != nil {
+		return err
 	}
 
 	// Make sure there's a header terminator coming up, to prevent
@@ -588,6 +598,9 @@ func (b *body) readTrailer() error {
 
 	hdr, err := textproto.NewReader(b.r).ReadMIMEHeader()
 	if err != nil {
+		if err == io.EOF {
+			return errTrailerEOF
+		}
 		return err
 	}
 	switch rr := b.hdr.(type) {

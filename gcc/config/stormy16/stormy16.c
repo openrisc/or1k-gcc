@@ -58,7 +58,7 @@ static void xstormy16_asm_output_mi_thunk (FILE *, tree, HOST_WIDE_INT,
 static void xstormy16_init_builtins (void);
 static rtx xstormy16_expand_builtin (tree, rtx, rtx, enum machine_mode, int);
 static bool xstormy16_rtx_costs (rtx, int, int, int, int *, bool);
-static int xstormy16_address_cost (rtx, bool);
+static int xstormy16_address_cost (rtx, enum machine_mode, addr_space_t, bool);
 static bool xstormy16_return_in_memory (const_tree, const_tree);
 
 static GTY(()) section *bss100_section;
@@ -103,7 +103,9 @@ xstormy16_rtx_costs (rtx x, int code, int outer_code ATTRIBUTE_UNUSED,
 }
 
 static int
-xstormy16_address_cost (rtx x, bool speed ATTRIBUTE_UNUSED)
+xstormy16_address_cost (rtx x, enum machine_mode mode ATTRIBUTE_UNUSED,
+			addr_space_t as ATTRIBUTE_UNUSED,
+			bool speed ATTRIBUTE_UNUSED)
 {
   return (CONST_INT_P (x) ? 2
 	  : GET_CODE (x) == PLUS ? 7
@@ -669,7 +671,8 @@ xstormy16_legitimate_address_p (enum machine_mode mode ATTRIBUTE_UNUSED,
    or pre-decrement address.  */
 
 static bool
-xstormy16_mode_dependent_address_p (const_rtx x)
+xstormy16_mode_dependent_address_p (const_rtx x,
+				    addr_space_t as ATTRIBUTE_UNUSED)
 {
   if (LEGITIMATE_ADDRESS_CONST_INT_P (x, 0)
       && ! LEGITIMATE_ADDRESS_CONST_INT_P (x, 6))
@@ -917,7 +920,7 @@ struct xstormy16_stack_layout
   ((df_regs_ever_live_p (REGNUM) && ! call_used_regs[REGNUM])		\
    || (IFUN && ! fixed_regs[REGNUM] && call_used_regs[REGNUM]		\
        && (REGNUM != CARRY_REGNUM)					\
-       && (df_regs_ever_live_p (REGNUM) || ! current_function_is_leaf)))
+       && (df_regs_ever_live_p (REGNUM) || ! crtl->is_leaf)))
 
 /* Compute the stack layout.  */
 
@@ -1034,6 +1037,9 @@ xstormy16_expand_prologue (void)
 
   if (layout.locals_size >= 32768)
     error ("local variable memory requirements exceed capacity");
+
+  if (flag_stack_usage_info)
+    current_function_static_stack_size = layout.frame_size;
 
   /* Save the argument registers if necessary.  */
   if (layout.stdarg_save_size)

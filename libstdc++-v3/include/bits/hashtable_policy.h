@@ -79,8 +79,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       return __distance_fw(__first, __last, _Tag());
     }
 
-  // Helper type used to detect when the hash functor is noexcept qualified or
-  // not
+  // Helper type used to detect whether the hash functor is noexcept.
   template <typename _Key, typename _Hash>
     struct __is_noexcept_hash : std::integral_constant<bool,
 	noexcept(declval<const _Hash&>()(declval<const _Key&>()))>
@@ -111,20 +110,20 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *
    *  Important traits for hash tables.
    *
-   *  @tparam __cache_hash_code  Boolean value. True if the value of
+   *  @tparam _Cache_hash_code  Boolean value. True if the value of
    *  the hash function is stored along with the value. This is a
    *  time-space tradeoff.  Storing it may improve lookup speed by
    *  reducing the number of times we need to call the _Equal
    *  function.
    *
-   *  @tparam __constant_iterators  Boolean value. True if iterator and
+   *  @tparam _Constant_iterators  Boolean value. True if iterator and
    *  const_iterator are both constant iterator types. This is true
    *  for unordered_set and unordered_multiset, false for
    *  unordered_map and unordered_multimap.
    *
-   *  @tparam __unique_keys  Boolean value. True if the return value
+   *  @tparam _Unique_keys  Boolean value. True if the return value
    *  of _Hashtable::count(k) is always at most one, false if it may
-   *  be an arbitrary number. This true for unordered_set and
+   *  be an arbitrary number. This is true for unordered_set and
    *  unordered_map, false for unordered_multiset and
    *  unordered_multimap.
    */
@@ -358,7 +357,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   struct _Prime_rehash_policy
   {
     _Prime_rehash_policy(float __z = 1.0)
-    : _M_max_load_factor(__z), _M_prev_resize(0), _M_next_resize(0) { }
+    : _M_max_load_factor(__z), _M_next_resize(0) { }
 
     float
     max_load_factor() const noexcept
@@ -380,23 +379,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
     _M_need_rehash(std::size_t __n_bkt, std::size_t __n_elt,
 		   std::size_t __n_ins) const;
 
-    typedef std::pair<std::size_t, std::size_t> _State;
+    typedef std::size_t _State;
 
     _State
     _M_state() const
-    { return std::make_pair(_M_prev_resize, _M_next_resize); }
+    { return _M_next_resize; }
 
     void
-    _M_reset(const _State& __state)
-    {
-      _M_prev_resize = __state.first;
-      _M_next_resize = __state.second;
-    }
+    _M_reset(_State __state)
+    { _M_next_resize = __state; }
 
     enum { _S_n_primes = sizeof(unsigned long) != 8 ? 256 : 256 + 48 };
 
+    static const std::size_t _S_growth_factor = 2;
+
     float                _M_max_load_factor;
-    mutable std::size_t  _M_prev_resize;
     mutable std::size_t  _M_next_resize;
   };
 
@@ -417,34 +414,26 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
     if (__n <= 11)
       {
-	_M_prev_resize = 0;
 	_M_next_resize
-	  = __builtin_ceil(__fast_bkt[__n] * (long double)_M_max_load_factor);
+	  = __builtin_ceil(__fast_bkt[__n]
+			   * (long double)_M_max_load_factor);
 	return __fast_bkt[__n];
       }
 
-    const unsigned long* __p
-      = std::lower_bound(__prime_list + 5, __prime_list + _S_n_primes, __n);
-
-    // Shrink will take place only if the number of elements is small enough
-    // so that the prime number 2 steps before __p is large enough to still
-    // conform to the max load factor:
-    _M_prev_resize
-      = __builtin_floor(*(__p - 2) * (long double)_M_max_load_factor);
-
-    // Let's guaranty that a minimal grow step of 11 is used
-    if (*__p - __n < 11)
-      __p = std::lower_bound(__p, __prime_list + _S_n_primes, __n + 11);
-    _M_next_resize = __builtin_ceil(*__p * (long double)_M_max_load_factor);
-    return *__p;
+    const unsigned long* __next_bkt
+      = std::lower_bound(__prime_list + 5, __prime_list + _S_n_primes,
+			 __n);
+    _M_next_resize
+      = __builtin_ceil(*__next_bkt * (long double)_M_max_load_factor);
+    return *__next_bkt;
   }
 
-  // Return the smallest prime p such that alpha p >= n, where alpha
+  // Return the smallest integer p such that alpha p >= n, where alpha
   // is the load factor.
   inline std::size_t
   _Prime_rehash_policy::
   _M_bkt_for_elements(std::size_t __n) const
-  { return _M_next_bkt(__builtin_ceil(__n / (long double)_M_max_load_factor)); }
+  { return __builtin_ceil(__n / (long double)_M_max_load_factor); }
 
   // Finds the smallest prime p such that alpha p > __n_elt + __n_ins.
   // If p > __n_bkt, return make_pair(true, p); otherwise return
@@ -466,20 +455,14 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 				 / (long double)_M_max_load_factor;
 	if (__min_bkts >= __n_bkt)
 	  return std::make_pair(true,
-				_M_next_bkt(__builtin_floor(__min_bkts) + 1));
+	    _M_next_bkt(std::max<std::size_t>(__builtin_floor(__min_bkts) + 1,
+					      __n_bkt * _S_growth_factor)));
 	else
 	  {
 	    _M_next_resize
 	      = __builtin_floor(__n_bkt * (long double)_M_max_load_factor);
 	    return std::make_pair(false, 0);
 	  }
-      }
-    else if (__n_elt + __n_ins < _M_prev_resize)
-      {
-	long double __min_bkts = (__n_elt + __n_ins)
-				 / (long double)_M_max_load_factor;
-	return std::make_pair(true,
-			      _M_next_bkt(__builtin_floor(__min_bkts) + 1));
       }
     else
       return std::make_pair(false, 0);
@@ -576,8 +559,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __node_type* __p = __h->_M_find_node(__n, __k, __code);
 
       if (!__p)
-	return __h->_M_insert_bucket(std::make_pair(__k, mapped_type()),
-				     __n, __code)->second;
+	{
+	  __p = __h->_M_allocate_node(std::piecewise_construct,
+				      std::tuple<const key_type&>(__k),
+				      std::tuple<>());
+	  return __h->_M_insert_unique_node(__n, __code, __p)->second;
+	}
+
       return (__p->_M_v).second;
     }
 
@@ -597,9 +585,13 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       __node_type* __p = __h->_M_find_node(__n, __k, __code);
 
       if (!__p)
-	return __h->_M_insert_bucket(std::make_pair(std::move(__k),
-						    mapped_type()),
-				     __n, __code)->second;
+	{
+	  __p = __h->_M_allocate_node(std::piecewise_construct,
+				      std::forward_as_tuple(std::move(__k)),
+				      std::tuple<>());
+	  return __h->_M_insert_unique_node(__n, __code, __p)->second;
+	}
+
       return (__p->_M_v).second;
     }
 
@@ -831,15 +823,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using __base_type::insert;
 
       template<typename _Pair>
-	using __is_conv = std::is_convertible<_Pair, value_type>;
+	using __is_cons = std::is_constructible<value_type, _Pair&&>;
 
       template<typename _Pair>
-	using _IFconv = std::enable_if<__is_conv<_Pair>::value>;
+	using _IFcons = std::enable_if<__is_cons<_Pair>::value>;
 
       template<typename _Pair>
-	using _IFconvp = typename _IFconv<_Pair>::type;
+	using _IFconsp = typename _IFcons<_Pair>::type;
 
-      template<typename _Pair, typename = _IFconvp<_Pair>>
+      template<typename _Pair, typename = _IFconsp<_Pair>>
 	__ireturn_type
 	insert(_Pair&& __v)
 	{
@@ -847,7 +839,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  return __h._M_insert(std::forward<_Pair>(__v), __unique_keys());
 	}
 
-      template<typename _Pair, typename = _IFconvp<_Pair>>
+      template<typename _Pair, typename = _IFconsp<_Pair>>
 	iterator
 	insert(const_iterator, _Pair&& __v)
 	{ return __iconv_type()(insert(std::forward<_Pair>(__v))); }
@@ -911,8 +903,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /// Specialization using EBO.
   template<int _Nm, typename _Tp>
     struct _Hashtable_ebo_helper<_Nm, _Tp, true>
-    // See PR53067.
-    : public _Tp
+    : private _Tp
     {
       _Hashtable_ebo_helper() = default;
 
@@ -979,9 +970,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   template<typename _Key, typename _Value, typename _ExtractKey,
 	   typename _H1, typename _H2, typename _Hash>
     struct _Hash_code_base<_Key, _Value, _ExtractKey, _H1, _H2, _Hash, false>
-    // See PR53067.
-    : public  _Hashtable_ebo_helper<0, _ExtractKey>,
-      public  _Hashtable_ebo_helper<1, _Hash>
+    : private _Hashtable_ebo_helper<0, _ExtractKey>,
+      private _Hashtable_ebo_helper<1, _Hash>
     {
     private:
       typedef _Hashtable_ebo_helper<0, _ExtractKey> 	_EboExtractKey;
@@ -1056,10 +1046,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	   typename _H1, typename _H2>
     struct _Hash_code_base<_Key, _Value, _ExtractKey, _H1, _H2,
 			   _Default_ranged_hash, false>
-    // See PR53067.
-    : public  _Hashtable_ebo_helper<0, _ExtractKey>,
-      public  _Hashtable_ebo_helper<1, _H1>,
-      public  _Hashtable_ebo_helper<2, _H2>
+    : private _Hashtable_ebo_helper<0, _ExtractKey>,
+      private _Hashtable_ebo_helper<1, _H1>,
+      private _Hashtable_ebo_helper<2, _H2>
     {
     private:
       typedef _Hashtable_ebo_helper<0, _ExtractKey> 	_EboExtractKey;
@@ -1140,10 +1129,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	   typename _H1, typename _H2>
     struct _Hash_code_base<_Key, _Value, _ExtractKey, _H1, _H2,
 			   _Default_ranged_hash, true>
-    // See PR53067.
-    : public  _Hashtable_ebo_helper<0, _ExtractKey>,
-      public  _Hashtable_ebo_helper<1, _H1>,
-      public  _Hashtable_ebo_helper<2, _H2>
+    : private _Hashtable_ebo_helper<0, _ExtractKey>,
+      private _Hashtable_ebo_helper<1, _H1>,
+      private _Hashtable_ebo_helper<2, _H2>
     {
     private:
       typedef _Hashtable_ebo_helper<0, _ExtractKey>	_EboExtractKey;
@@ -1262,8 +1250,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	   typename _H1, typename _H2, typename _Hash>
     struct _Local_iterator_base<_Key, _Value, _ExtractKey,
 				_H1, _H2, _Hash, true>
-    // See PR53067.
-    : public _H2
+    : private _H2
     {
       _Local_iterator_base() = default;
       _Local_iterator_base(_Hash_node<_Value, true>* __p,
@@ -1295,9 +1282,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	   typename _H1, typename _H2, typename _Hash>
     struct _Local_iterator_base<_Key, _Value, _ExtractKey,
 				_H1, _H2, _Hash, false>
-    // See PR53067.
-    : public _Hash_code_base<_Key, _Value, _ExtractKey,
-			     _H1, _H2, _Hash, false>
+    : private _Hash_code_base<_Key, _Value, _ExtractKey,
+			      _H1, _H2, _Hash, false>
     {
       _Local_iterator_base() = default;
       _Local_iterator_base(_Hash_node<_Value, false>* __p,
@@ -1460,10 +1446,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	   typename _ExtractKey, typename _Equal,
 	   typename _H1, typename _H2, typename _Hash, typename _Traits>
   struct _Hashtable_base
-  // See PR53067.
-  : public  _Hash_code_base<_Key, _Value, _ExtractKey, _H1, _H2, _Hash,
-			      _Traits::__hash_cached::value>,
-    public _Hashtable_ebo_helper<0, _Equal>
+  : public _Hash_code_base<_Key, _Value, _ExtractKey, _H1, _H2, _Hash,
+			   _Traits::__hash_cached::value>,
+    private _Hashtable_ebo_helper<0, _Equal>
   {
   public:
     typedef _Key                                    key_type;
@@ -1704,6 +1689,24 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	}
       return true;
     }
+
+  /**
+   * This type is to combine a _Hash_node_base instance with an allocator
+   * instance through inheritance to benefit from EBO when possible.
+   */
+  template<typename _NodeAlloc>
+    struct _Before_begin : public _NodeAlloc
+    {
+      _Hash_node_base _M_node;
+
+      _Before_begin(const _Before_begin&) = default;
+      _Before_begin(_Before_begin&&) = default;
+
+      template<typename _Alloc>
+	_Before_begin(_Alloc&& __a)
+	  : _NodeAlloc(std::forward<_Alloc>(__a))
+	{ }
+    };
 
  //@} hashtable-detail
 _GLIBCXX_END_NAMESPACE_VERSION

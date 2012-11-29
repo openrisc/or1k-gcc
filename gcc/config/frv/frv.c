@@ -48,6 +48,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "targhooks.h"
 #include "langhooks.h"
 #include "df.h"
+#include "dumpfile.h"
 
 #ifndef FRV_INLINE
 #define FRV_INLINE inline
@@ -1760,6 +1761,9 @@ frv_expand_prologue (void)
   if (TARGET_DEBUG_STACK)
     frv_debug_stack (info);
 
+  if (flag_stack_usage_info)
+    current_function_static_stack_size = info->total_size;
+
   if (info->total_size == 0)
     return;
 
@@ -1895,7 +1899,7 @@ frv_expand_epilogue (bool emit_return)
 
   /* Restore the stack pointer to its original value if alloca or the like
      is used.  */
-  if (! current_function_sp_is_unchanging)
+  if (! crtl->sp_is_unchanging)
     emit_insn (gen_addsi3 (sp, fp, frv_frame_offset_rtx (-fp_offset)));
 
   /* Restore the callee-saved registers that were used in this function.  */
@@ -2064,9 +2068,9 @@ frv_frame_pointer_required (void)
   /* If we forgoing the usual linkage requirements, we only need
      a frame pointer if the stack pointer might change.  */
   if (!TARGET_LINKED_FP)
-    return !current_function_sp_is_unchanging;
+    return !crtl->sp_is_unchanging;
 
-  if (! current_function_is_leaf)
+  if (! crtl->is_leaf)
     return true;
 
   if (get_frame_size () != 0)
@@ -2075,7 +2079,7 @@ frv_frame_pointer_required (void)
   if (cfun->stdarg)
     return true;
 
-  if (!current_function_sp_is_unchanging)
+  if (!crtl->sp_is_unchanging)
     return true;
 
   if (!TARGET_FDPIC && flag_pic && crtl->uses_pic_offset_table)
@@ -5221,12 +5225,11 @@ frv_clear_registers_used (rtx *ptr, void *data)
 }
 
 
-/* Initialize the extra fields provided by IFCVT_EXTRA_FIELDS.  */
-
-/* On the FR-V, we don't have any extra fields per se, but it is useful hook to
+/* Initialize machine-specific if-conversion data.
+   On the FR-V, we don't have any extra fields per se, but it is useful hook to
    initialize the static storage.  */
 void
-frv_ifcvt_init_extra_fields (ce_if_block_t *ce_info ATTRIBUTE_UNUSED)
+frv_ifcvt_machdep_init (void *ce_info ATTRIBUTE_UNUSED)
 {
   frv_ifcvt.added_insns_list = NULL_RTX;
   frv_ifcvt.cur_scratch_regs = 0;
@@ -8435,7 +8438,7 @@ frv_init_builtins (void)
   build_function_type_list (RET, T1, T2, T3, NULL_TREE)
 
 #define QUAD(RET, T1, T2, T3, T4) \
-  build_function_type_list (RET, T1, T2, T3, NULL_TREE)
+  build_function_type_list (RET, T1, T2, T3, T4, NULL_TREE)
 
   tree void_ftype_void = build_function_type_list (voidt, NULL_TREE);
 

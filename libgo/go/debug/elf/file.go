@@ -31,6 +31,7 @@ type FileHeader struct {
 	ByteOrder  binary.ByteOrder
 	Type       Type
 	Machine    Machine
+	Entry      uint64
 }
 
 // A File represents an open ELF file.
@@ -240,6 +241,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 		}
 		f.Type = Type(hdr.Type)
 		f.Machine = Machine(hdr.Machine)
+		f.Entry = uint64(hdr.Entry)
 		if v := Version(hdr.Version); v != f.Version {
 			return nil, &FormatError{0, "mismatched ELF version", v}
 		}
@@ -258,6 +260,7 @@ func NewFile(r io.ReaderAt) (*File, error) {
 		}
 		f.Type = Type(hdr.Type)
 		f.Machine = Machine(hdr.Machine)
+		f.Entry = uint64(hdr.Entry)
 		if v := Version(hdr.Version); v != f.Version {
 			return nil, &FormatError{0, "mismatched ELF version", v}
 		}
@@ -414,10 +417,6 @@ func (f *File) getSymbols32(typ SectionType) ([]Symbol, []byte, error) {
 		return nil, nil, errors.New("cannot load string table section")
 	}
 
-	// The first entry is all zeros.
-	var skip [Sym32Size]byte
-	symtab.Read(skip[0:])
-
 	symbols := make([]Symbol, symtab.Len()/Sym32Size)
 
 	i := 0
@@ -456,10 +455,6 @@ func (f *File) getSymbols64(typ SectionType) ([]Symbol, []byte, error) {
 	if err != nil {
 		return nil, nil, errors.New("cannot load string table section")
 	}
-
-	// The first entry is all zeros.
-	var skip [Sym64Size]byte
-	symtab.Read(skip[0:])
 
 	symbols := make([]Symbol, symtab.Len()/Sym64Size)
 
@@ -563,7 +558,7 @@ func (f *File) DWARF() (*dwarf.Data, error) {
 	// There are many other DWARF sections, but these
 	// are the required ones, and the debug/dwarf package
 	// does not use the others, so don't bother loading them.
-	var names = [...]string{"abbrev", "info", "line", "str"}
+	var names = [...]string{"abbrev", "info", "line", "ranges", "str"}
 	var dat [len(names)][]byte
 	for i, name := range names {
 		name = ".debug_" + name
@@ -592,8 +587,8 @@ func (f *File) DWARF() (*dwarf.Data, error) {
 		}
 	}
 
-	abbrev, info, line, str := dat[0], dat[1], dat[2], dat[3]
-	return dwarf.New(abbrev, nil, nil, info, line, nil, nil, str)
+	abbrev, info, line, ranges, str := dat[0], dat[1], dat[2], dat[3], dat[4]
+	return dwarf.New(abbrev, nil, nil, info, line, nil, ranges, str)
 }
 
 // Symbols returns the symbol table for f.
@@ -705,8 +700,8 @@ func (f *File) gnuVersionInit(str []byte) {
 // gnuVersion adds Library and Version information to sym,
 // which came from offset i of the symbol table.
 func (f *File) gnuVersion(i int, sym *ImportedSymbol) {
-	// Each entry is two bytes; skip undef entry at beginning.
-	i = (i + 1) * 2
+	// Each entry is two bytes.
+	i = i * 2
 	if i >= len(f.gnuVersym) {
 		return
 	}
@@ -723,6 +718,20 @@ func (f *File) gnuVersion(i int, sym *ImportedSymbol) {
 // referred to by the binary f that are expected to be
 // linked with the binary at dynamic link time.
 func (f *File) ImportedLibraries() ([]string, error) {
+	return f.DynString(DT_NEEDED)
+}
+
+// DynString returns the strings listed for the given tag in the file's dynamic
+// section.
+//
+// The tag must be one that takes string values: DT_NEEDED, DT_SONAME, DT_RPATH, or
+// DT_RUNPATH.
+func (f *File) DynString(tag DynTag) ([]string, error) {
+	switch tag {
+	case DT_NEEDED, DT_SONAME, DT_RPATH, DT_RUNPATH:
+	default:
+		return nil, fmt.Errorf("non-string-valued tag %v", tag)
+	}
 	ds := f.SectionByType(SHT_DYNAMIC)
 	if ds == nil {
 		// not dynamic, so no libraries
@@ -738,25 +747,24 @@ func (f *File) ImportedLibraries() ([]string, error) {
 	}
 	var all []string
 	for len(d) > 0 {
-		var tag DynTag
-		var value uint64
+		var t DynTag
+		var v uint64
 		switch f.Class {
 		case ELFCLASS32:
-			tag = DynTag(f.ByteOrder.Uint32(d[0:4]))
-			value = uint64(f.ByteOrder.Uint32(d[4:8]))
+			t = DynTag(f.ByteOrder.Uint32(d[0:4]))
+			v = uint64(f.ByteOrder.Uint32(d[4:8]))
 			d = d[8:]
 		case ELFCLASS64:
-			tag = DynTag(f.ByteOrder.Uint64(d[0:8]))
-			value = f.ByteOrder.Uint64(d[8:16])
+			t = DynTag(f.ByteOrder.Uint64(d[0:8]))
+			v = f.ByteOrder.Uint64(d[8:16])
 			d = d[16:]
 		}
-		if tag == DT_NEEDED {
-			s, ok := getString(str, int(value))
+		if t == tag {
+			s, ok := getString(str, int(v))
 			if ok {
 				all = append(all, s)
 			}
 		}
 	}
-
 	return all, nil
 }

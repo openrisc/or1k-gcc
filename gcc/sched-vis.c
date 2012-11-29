@@ -1,6 +1,5 @@
-/* Instruction scheduling pass.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010
+/* Printing of RTL in "slim", mnemonic like form.
+   Copyright (C) 1992-2012
    Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com) Enhanced by,
    and currently maintained by, Jim Wilson (wilson@cygnus.com)
@@ -20,18 +19,22 @@ for more details.
 You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
+
+/* Historically this form of RTL dumping was introduced along with
+   the Haifa instruction scheduling pass, hence the name of this file.
+   But there is nothing in this file left that is scheduler-specific.  */
 
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
 #include "tm.h"
 #include "rtl.h"
+#include "tree.h"	/* FIXME: To dump INSN_VAR_LOCATION_DECL.  */
 #include "obstack.h"
 #include "hard-reg-set.h"
 #include "basic-block.h"
 #include "insn-attr.h"
-#include "sched-int.h"
-#include "tree-pass.h"
+#include "dumpfile.h"	/* for the TDF_* flags */
 
 static char *safe_concat (char *, char *, const char *);
 
@@ -112,6 +115,15 @@ print_exp (char *buf, const_rtx x, int verbose)
     case NEG:
       st[0] = "-";
       op[0] = XEXP (x, 0);
+      break;
+    case FMA:
+      st[0] = "{";
+      op[0] = XEXP (x, 0);
+      st[1] = "*";
+      op[1] = XEXP (x, 1);
+      st[2] = "+";
+      op[2] = XEXP (x, 2);
+      st[3] = "}";
       break;
     case MULT:
       op[0] = XEXP (x, 0);
@@ -202,46 +214,14 @@ print_exp (char *buf, const_rtx x, int verbose)
       st[1] = ">->";
       op[1] = XEXP (x, 1);
       break;
-    case ABS:
-      fun = "abs";
-      op[0] = XEXP (x, 0);
-      break;
-    case SQRT:
-      fun = "sqrt";
-      op[0] = XEXP (x, 0);
-      break;
-    case FFS:
-      fun = "ffs";
-      op[0] = XEXP (x, 0);
-      break;
-    case EQ:
-      op[0] = XEXP (x, 0);
-      st[1] = "==";
-      op[1] = XEXP (x, 1);
-      break;
     case NE:
       op[0] = XEXP (x, 0);
       st[1] = "!=";
       op[1] = XEXP (x, 1);
       break;
-    case GT:
+    case EQ:
       op[0] = XEXP (x, 0);
-      st[1] = ">";
-      op[1] = XEXP (x, 1);
-      break;
-    case GTU:
-      fun = "gtu";
-      op[0] = XEXP (x, 0);
-      op[1] = XEXP (x, 1);
-      break;
-    case LT:
-      op[0] = XEXP (x, 0);
-      st[1] = "<";
-      op[1] = XEXP (x, 1);
-      break;
-    case LTU:
-      fun = "ltu";
-      op[0] = XEXP (x, 0);
+      st[1] = "==";
       op[1] = XEXP (x, 1);
       break;
     case GE:
@@ -249,9 +229,9 @@ print_exp (char *buf, const_rtx x, int verbose)
       st[1] = ">=";
       op[1] = XEXP (x, 1);
       break;
-    case GEU:
-      fun = "geu";
+    case GT:
       op[0] = XEXP (x, 0);
+      st[1] = ">";
       op[1] = XEXP (x, 1);
       break;
     case LE:
@@ -259,9 +239,9 @@ print_exp (char *buf, const_rtx x, int verbose)
       st[1] = "<=";
       op[1] = XEXP (x, 1);
       break;
-    case LEU:
-      fun = "leu";
+    case LT:
       op[0] = XEXP (x, 0);
+      st[1] = "<";
       op[1] = XEXP (x, 1);
       break;
     case SIGN_EXTRACT:
@@ -389,8 +369,33 @@ print_exp (char *buf, const_rtx x, int verbose)
       }
       break;
     default:
-      /* If (verbose) debug_rtx (x);  */
-      st[0] = GET_RTX_NAME (GET_CODE (x));
+      {
+	/* Most unhandled codes can be printed as pseudo-functions.  */
+        if (GET_RTX_CLASS (GET_CODE (x)) == RTX_UNARY)
+	  {
+	    fun = GET_RTX_NAME (GET_CODE (x));
+	    op[0] = XEXP (x, 0);
+	  }
+        else if (GET_RTX_CLASS (GET_CODE (x)) == RTX_COMPARE
+		 || GET_RTX_CLASS (GET_CODE (x)) == RTX_COMM_COMPARE
+		 || GET_RTX_CLASS (GET_CODE (x)) == RTX_BIN_ARITH
+		 || GET_RTX_CLASS (GET_CODE (x)) == RTX_COMM_ARITH)
+	  {
+	    fun = GET_RTX_NAME (GET_CODE (x));
+	    op[0] = XEXP (x, 0);
+	    op[1] = XEXP (x, 1);
+	  }
+        else if (GET_RTX_CLASS (GET_CODE (x)) == RTX_TERNARY)
+	  {
+	    fun = GET_RTX_NAME (GET_CODE (x));
+	    op[0] = XEXP (x, 0);
+	    op[1] = XEXP (x, 1);
+	    op[2] = XEXP (x, 2);
+	  }
+	else
+	  /* Give up, just print the RTX name.  */
+	  st[0] = GET_RTX_NAME (GET_CODE (x));
+      }
       break;
     }
 
@@ -495,11 +500,7 @@ print_value (char *buf, const_rtx x, int verbose)
 	  sprintf (t, "r%d", REGNO (x));
 	  cur = safe_concat (buf, cur, t);
 	}
-      if (verbose
-#ifdef INSN_SCHEDULING
-	  && !current_sched_info
-#endif
-	 )
+      if (verbose)
 	{
 	  sprintf (t, ":%s", GET_MODE_NAME (GET_MODE (x)));
 	  cur = safe_concat (buf, cur, t);
@@ -543,12 +544,33 @@ print_value (char *buf, const_rtx x, int verbose)
     }
 }				/* print_value */
 
+/* Print X, an RTL value node, to file F in slim format.  Include
+   additional information if VERBOSE is nonzero.
+
+   Value nodes are constants, registers, labels, symbols and
+   memory.  */
+
+void
+dump_value_slim (FILE *f, const_rtx x, int verbose)
+{
+  char buf[BUF_LEN];
+
+  print_value (buf, x, verbose);
+  fprintf (f, "%s", buf);
+}
+
 /* The next step in insn detalization, its pattern recognition.  */
 
 void
 print_pattern (char *buf, const_rtx x, int verbose)
 {
   char t1[BUF_LEN], t2[BUF_LEN], t3[BUF_LEN];
+
+  if (! x)
+    {
+      sprintf (buf, "(nil)");
+      return;
+    }
 
   switch (GET_CODE (x))
     {
@@ -558,21 +580,17 @@ print_pattern (char *buf, const_rtx x, int verbose)
       sprintf (buf, "%s=%s", t1, t2);
       break;
     case RETURN:
-      sprintf (buf, "return");
-      break;
     case SIMPLE_RETURN:
-      sprintf (buf, "simple_return");
+    case EH_RETURN:
+      sprintf (buf, GET_RTX_NAME (GET_CODE (x)));
       break;
     case CALL:
       print_exp (buf, x, verbose);
       break;
     case CLOBBER:
-      print_value (t1, XEXP (x, 0), verbose);
-      sprintf (buf, "clobber %s", t1);
-      break;
     case USE:
       print_value (t1, XEXP (x, 0), verbose);
-      sprintf (buf, "use %s", t1);
+      sprintf (buf, "%s %s", GET_RTX_NAME (GET_CODE (x)), t1);
       break;
     case VAR_LOCATION:
       print_value (t1, PAT_VAR_LOCATION_LOC (x), verbose);
@@ -608,8 +626,19 @@ print_pattern (char *buf, const_rtx x, int verbose)
       }
       break;
     case SEQUENCE:
-      /* Should never see SEQUENCE codes until after reorg.  */
-      gcc_unreachable ();
+      {
+	int i;
+
+	sprintf (t1, "sequence{");
+	for (i = 0; i < XVECLEN (x, 0); i++)
+	  {
+	    print_pattern (t2, XVECEXP (x, 0, i), verbose);
+	    sprintf (t3, "%s%s;", t1, t2);
+	    strcpy (t1, t3);
+	  }
+	sprintf (buf, "%s}", t1);
+      }
+      break;
     case ASM_INPUT:
       sprintf (buf, "asm {%s}", XSTR (x, 0));
       break;
@@ -623,222 +652,211 @@ print_pattern (char *buf, const_rtx x, int verbose)
       sprintf (buf, "trap_if %s", t1);
       break;
     case UNSPEC:
-      {
-	int i;
-
-	sprintf (t1, "unspec{");
-	for (i = 0; i < XVECLEN (x, 0); i++)
-	  {
-	    print_pattern (t2, XVECEXP (x, 0, i), verbose);
-	    sprintf (t3, "%s%s;", t1, t2);
-	    strcpy (t1, t3);
-	  }
-	sprintf (buf, "%s}", t1);
-      }
-      break;
     case UNSPEC_VOLATILE:
-      {
-	int i;
-
-	sprintf (t1, "unspec/v{");
-	for (i = 0; i < XVECLEN (x, 0); i++)
-	  {
-	    print_pattern (t2, XVECEXP (x, 0, i), verbose);
-	    sprintf (t3, "%s%s;", t1, t2);
-	    strcpy (t1, t3);
-	  }
-	sprintf (buf, "%s}", t1);
-      }
-      break;
+      /* Fallthru -- leave UNSPECs to print_exp.  */
     default:
       print_value (buf, x, verbose);
     }
 }				/* print_pattern */
 
-/* This is the main function in rtl visualization mechanism. It
-   accepts an rtx and tries to recognize it as an insn, then prints it
-   properly in human readable form, resembling assembler mnemonics.
-   For every insn it prints its UID and BB the insn belongs too.
-   (Probably the last "option" should be extended somehow, since it
-   depends now on sched.c inner variables ...)  */
+/* This is the main function in slim rtl visualization mechanism.
+
+   X is an insn, to be printed into BUF.
+
+   This function tries to print it properly in human-readable form,
+   resembling assembler mnemonics (instead of the older Lisp-style
+   form).
+
+   If VERBOSE is TRUE, insns are printed with more complete (but
+   longer) pattern names and with extra information, and prefixed
+   with their INSN_UIDs.  */
 
 void
 print_insn (char *buf, const_rtx x, int verbose)
 {
-  char t[BUF_LEN];
-  const_rtx insn = x;
+  /* Collect the string to output for X in t1.  t2 is a scratch area.  */
+  char t1[BUF_LEN], t2[BUF_LEN];
 
   switch (GET_CODE (x))
     {
     case INSN:
-      print_pattern (t, PATTERN (x), verbose);
-#ifdef INSN_SCHEDULING
-      if (verbose && current_sched_info)
-	sprintf (buf, "%s: %s", (*current_sched_info->print_insn) (x, 1),
-		 t);
-      else
-#endif
-	sprintf (buf, " %4d %s", INSN_UID (x), t);
+      print_pattern (t1, PATTERN (x), verbose);
       break;
 
     case DEBUG_INSN:
       {
 	const char *name = "?";
 
-	if (DECL_P (INSN_VAR_LOCATION_DECL (insn)))
+	if (DECL_P (INSN_VAR_LOCATION_DECL (x)))
 	  {
-	    tree id = DECL_NAME (INSN_VAR_LOCATION_DECL (insn));
+	    tree id = DECL_NAME (INSN_VAR_LOCATION_DECL (x));
 	    char idbuf[32];
 	    if (id)
 	      name = IDENTIFIER_POINTER (id);
-	    else if (TREE_CODE (INSN_VAR_LOCATION_DECL (insn))
+	    else if (TREE_CODE (INSN_VAR_LOCATION_DECL (x))
 		     == DEBUG_EXPR_DECL)
 	      {
 		sprintf (idbuf, "D#%i",
-			 DEBUG_TEMP_UID (INSN_VAR_LOCATION_DECL (insn)));
+			 DEBUG_TEMP_UID (INSN_VAR_LOCATION_DECL (x)));
 		name = idbuf;
 	      }
 	    else
 	      {
 		sprintf (idbuf, "D.%i",
-			 DECL_UID (INSN_VAR_LOCATION_DECL (insn)));
+			 DECL_UID (INSN_VAR_LOCATION_DECL (x)));
 		name = idbuf;
 	      }
 	  }
-	if (VAR_LOC_UNKNOWN_P (INSN_VAR_LOCATION_LOC (insn)))
-	  sprintf (buf, " %4d: debug %s optimized away", INSN_UID (insn), name);
+	if (VAR_LOC_UNKNOWN_P (INSN_VAR_LOCATION_LOC (x)))
+	  sprintf (t1, "debug %s optimized away", name);
 	else
 	  {
-	    print_pattern (t, INSN_VAR_LOCATION_LOC (insn), verbose);
-	    sprintf (buf, " %4d: debug %s => %s", INSN_UID (insn), name, t);
+	    print_pattern (t2, INSN_VAR_LOCATION_LOC (x), verbose);
+	    sprintf (t1, "debug %s => %s", name, t2);
 	  }
       }
       break;
 
     case JUMP_INSN:
-      print_pattern (t, PATTERN (x), verbose);
-#ifdef INSN_SCHEDULING
-      if (verbose && current_sched_info)
-	sprintf (buf, "%s: jump %s", (*current_sched_info->print_insn) (x, 1),
-		 t);
-      else
-#endif
-	sprintf (buf, " %4d %s", INSN_UID (x), t);
+      print_pattern (t1, PATTERN (x), verbose);
       break;
     case CALL_INSN:
-      x = PATTERN (insn);
-      if (GET_CODE (x) == PARALLEL)
-	{
-	  x = XVECEXP (x, 0, 0);
-	  print_pattern (t, x, verbose);
-	}
+      if (GET_CODE (PATTERN (x)) == PARALLEL)
+        print_pattern (t1, XVECEXP (PATTERN (x), 0, 0), verbose);
       else
-	strcpy (t, "call <...>");
-#ifdef INSN_SCHEDULING
-      if (verbose && current_sched_info)
-	sprintf (buf, "%s: %s", (*current_sched_info->print_insn) (insn, 1), t);
-      else
-#endif
-	sprintf (buf, " %4d %s", INSN_UID (insn), t);
+	print_pattern (t1, PATTERN (x), verbose);
       break;
     case CODE_LABEL:
-      sprintf (buf, "L%d:", INSN_UID (x));
+      sprintf (t1, "L%d:", INSN_UID (x));
       break;
     case BARRIER:
-      sprintf (buf, "i%4d: barrier", INSN_UID (x));
+      sprintf (t1, "barrier");
       break;
     case NOTE:
-      sprintf (buf, " %4d %s", INSN_UID (x),
-	       GET_NOTE_INSN_NAME (NOTE_KIND (x)));
-      break;
+      {
+	switch (NOTE_KIND (x))
+	  {
+	  case NOTE_INSN_EH_REGION_BEG:
+	  case NOTE_INSN_EH_REGION_END:
+	    sprintf (t2, "%d", NOTE_EH_HANDLER (x));
+	    break;
+
+	  case NOTE_INSN_BLOCK_BEG:
+	  case NOTE_INSN_BLOCK_END:
+	    sprintf (t2, "%d", BLOCK_NUMBER (NOTE_BLOCK (x)));
+	    break;
+
+	  case NOTE_INSN_BASIC_BLOCK:
+	    sprintf (t2, "%d", NOTE_BASIC_BLOCK (x)->index);
+	    break;
+
+	  case NOTE_INSN_DELETED_LABEL:
+	  case NOTE_INSN_DELETED_DEBUG_LABEL:
+	    {
+	      const char *label = NOTE_DELETED_LABEL_NAME (x);
+	      if (label == NULL)
+		label = "";
+	      sprintf (t2, "(\"%s\")", label);
+	    }
+	    break;
+
+	  case NOTE_INSN_VAR_LOCATION:
+	  case NOTE_INSN_CALL_ARG_LOCATION:
+	    /* It's safe here to use t1 for scratch because the output
+	       is printed in t2 and put back in t1 at the bottom of
+	       the inner switch statement.  */
+	    print_pattern (t1, NOTE_VAR_LOCATION (x), verbose);
+	    sprintf (t2, "{%s}", t1);
+	    break;
+
+	  default:
+	    t2[0] = '\0';
+	    break;
+	  }
+	sprintf (t1, "%s %s", GET_NOTE_INSN_NAME (NOTE_KIND (x)), t2);
+	break;
+      }
     default:
-      sprintf (buf, "i%4d  <What %s?>", INSN_UID (x),
-	       GET_RTX_NAME (GET_CODE (x)));
+      sprintf (t1, "<What %s?>", GET_RTX_NAME (GET_CODE (x)));
+      break;
     }
+
+  if (verbose)
+    sprintf (buf, " %4d: %s", INSN_UID (x), t1);
+  else
+    sprintf (buf, "%s", t1);
 }				/* print_insn */
 
 /* Emit a slim dump of X (an insn) to the file F, including any register
    note attached to the instruction.  */
 void
-dump_insn_slim (FILE *f, rtx x)
+dump_insn_slim (FILE *f, const_rtx x)
 {
   char t[BUF_LEN + 32];
   rtx note;
 
   print_insn (t, x, 1);
+  fputs (print_rtx_head, f);
   fputs (t, f);
   putc ('\n', f);
   if (INSN_P (x) && REG_NOTES (x))
     for (note = REG_NOTES (x); note; note = XEXP (note, 1))
       {
-        print_value (t, XEXP (note, 0), 1);
+	fputs (print_rtx_head, f);
+        print_pattern (t, XEXP (note, 0), 1);
 	fprintf (f, "      %s: %s\n",
 		 GET_REG_NOTE_NAME (REG_NOTE_KIND (note)), t);
       }
 }
 
-/* Emit a slim dump of X (an insn) to stderr.  */
-DEBUG_FUNCTION void
-debug_insn_slim (rtx x)
-{
-  dump_insn_slim (stderr, x);
-}
-
-/* Provide a slim dump the instruction chain starting at FIRST to F, honoring
-   the dump flags given in FLAGS.  Currently, TDF_BLOCKS and TDF_DETAILS
-   include more information on the basic blocks.  */
-void
-print_rtl_slim_with_bb (FILE *f, rtx first, int flags)
-{
-  print_rtl_slim (f, first, NULL, -1, flags);
-}
-
 /* Same as above, but stop at LAST or when COUNT == 0.
    If COUNT < 0 it will stop only at LAST or NULL rtx.  */
+
 void
-print_rtl_slim (FILE *f, rtx first, rtx last, int count, int flags)
+dump_rtl_slim (FILE *f, const_rtx first, const_rtx last,
+	       int count, int flags ATTRIBUTE_UNUSED)
 {
-  basic_block current_bb = NULL;
-  rtx insn, tail;
+  const_rtx insn, tail;
 
   tail = last ? NEXT_INSN (last) : NULL_RTX;
   for (insn = first;
        (insn != NULL) && (insn != tail) && (count != 0);
        insn = NEXT_INSN (insn))
     {
-      if ((flags & TDF_BLOCKS)
-	  && (INSN_P (insn) || NOTE_P (insn))
-	  && BLOCK_FOR_INSN (insn)
-	  && !current_bb)
-	{
-	  current_bb = BLOCK_FOR_INSN (insn);
-	  dump_bb_info (current_bb, true, false, flags, ";; ", f);
-	}
-
       dump_insn_slim (f, insn);
-
-      if ((flags & TDF_BLOCKS)
-	  && current_bb
-	  && insn == BB_END (current_bb))
-	{
-	  dump_bb_info (current_bb, false, true, flags, ";; ", f);
-	  current_bb = NULL;
-	}
       if (count > 0)
         count--;
     }
 }
 
+/* Emit a slim dump of X (an insn) to stderr.  */
+extern void debug_insn_slim (const_rtx);
 DEBUG_FUNCTION void
-debug_bb_slim (struct basic_block_def *bb)
+debug_insn_slim (const_rtx x)
 {
-  print_rtl_slim (stderr, BB_HEAD (bb), BB_END (bb), -1, 32);
+  dump_insn_slim (stderr, x);
 }
 
+/* Same as above, but using dump_rtl_slim.  */
+extern void debug_rtl_slim (FILE *, const_rtx, const_rtx, int, int);
+DEBUG_FUNCTION void
+debug_rtl_slim (const_rtx first, const_rtx last, int count, int flags)
+{
+  dump_rtl_slim (stderr, first, last, count, flags);
+}
+
+extern void debug_bb_slim (basic_block);
+DEBUG_FUNCTION void
+debug_bb_slim (basic_block bb)
+{
+  dump_bb (stderr, bb, 0, TDF_SLIM | TDF_BLOCKS);
+}
+
+extern void debug_bb_n_slim (int);
 DEBUG_FUNCTION void
 debug_bb_n_slim (int n)
 {
-  struct basic_block_def *bb = BASIC_BLOCK (n);
+  basic_block bb = BASIC_BLOCK (n);
   debug_bb_slim (bb);
 }
 

@@ -116,7 +116,8 @@ enum unwind_info_type
   UI_NONE,
   UI_SJLJ,
   UI_DWARF2,
-  UI_TARGET
+  UI_TARGET,
+  UI_SEH
 };
 
 /* Callgraph node profile representation.  */
@@ -195,5 +196,12 @@ enum memmodel
 /* Suppose that higher bits are target dependant. */
 #define MEMMODEL_MASK ((1<<16)-1)
 
-#endif /* coretypes.h */
+/* Support for user-provided GGC and PCH markers.  The first parameter
+   is a pointer to a pointer, the second a cookie.  */
+typedef void (*gt_pointer_operator) (void *, void *);
 
+#if !defined (HAVE_UCHAR)
+typedef unsigned char uchar;
+#endif
+
+#endif /* coretypes.h */

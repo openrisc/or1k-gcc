@@ -577,6 +577,8 @@ package body Sem_Ch8 is
       else
          Find_Expanded_Name (N);
       end if;
+
+      Analyze_Dimension (N);
    end Analyze_Expanded_Name;
 
    ---------------------------------------
@@ -707,6 +709,7 @@ package body Sem_Ch8 is
       ------------------------------
 
       procedure Check_Constrained_Object is
+         Typ  : constant Entity_Id := Etype (Nam);
          Subt : Entity_Id;
 
       begin
@@ -726,7 +729,21 @@ package body Sem_Ch8 is
             --  A renaming of an unchecked union does not have an
             --  actual subtype.
 
-            elsif Is_Unchecked_Union (Etype (Nam)) then
+            elsif Is_Unchecked_Union (Typ) then
+               null;
+
+            --  If a record is limited its size is invariant. This is the case
+            --  in particular with record types with an access discirminant
+            --  that are used in iterators. This is an optimization, but it
+            --  also prevents typing anomalies when the prefix is further
+            --  expanded. Limited types with discriminants are included.
+
+            elsif Is_Limited_Record (Typ)
+              or else
+                (Ekind (Typ) = E_Limited_Private_Type
+                  and then Has_Discriminants (Typ)
+                  and then Is_Access_Type (Etype (First_Discriminant (Typ))))
+            then
                null;
 
             else
@@ -736,7 +753,7 @@ package body Sem_Ch8 is
                  Make_Subtype_Declaration (Loc,
                    Defining_Identifier => Subt,
                    Subtype_Indication  =>
-                     Make_Subtype_From_Expr (Nam, Etype (Nam))));
+                     Make_Subtype_From_Expr (Nam, Typ)));
                Rewrite (Subtype_Mark (N), New_Occurrence_Of (Subt, Loc));
                Set_Etype (Nam, Subt);
             end if;
@@ -1456,9 +1473,10 @@ package body Sem_Ch8 is
       New_S   : Entity_Id;
       Is_Body : Boolean)
    is
-      Nam   : constant Node_Id := Name (N);
-      Sel   : constant Node_Id := Selector_Name (Nam);
-      Old_S : Entity_Id;
+      Nam       : constant Node_Id := Name (N);
+      Sel       : constant Node_Id := Selector_Name (Nam);
+      Is_Actual : constant Boolean := Present (Corresponding_Formal_Spec (N));
+      Old_S     : Entity_Id;
 
    begin
       if Entity (Sel) = Any_Id then
@@ -1489,14 +1507,32 @@ package body Sem_Ch8 is
 
          Inherit_Renamed_Profile (New_S, Old_S);
 
-         --  The prefix can be an arbitrary expression that yields a task type,
-         --  so it must be resolved.
+         --  The prefix can be an arbitrary expression that yields a task or
+         --  protected object, so it must be resolved.
 
          Resolve (Prefix (Nam), Scope (Old_S));
       end if;
 
       Set_Convention (New_S, Convention (Old_S));
       Set_Has_Completion (New_S, Inside_A_Generic);
+
+      --  AI05-0225: If the renamed entity is a procedure or entry of a
+      --  protected object, the target object must be a variable.
+
+      if Ekind (Scope (Old_S)) in Protected_Kind
+        and then Ekind (New_S) = E_Procedure
+        and then not Is_Variable (Prefix (Nam))
+      then
+         if Is_Actual then
+            Error_Msg_N
+              ("target object of protected operation used as actual for "
+               & "formal procedure must be a variable", Nam);
+         else
+            Error_Msg_N
+              ("target object of protected operation renamed as procedure, "
+               & "must be a variable", Nam);
+         end if;
+      end if;
 
       if Is_Body then
          Check_Frozen_Renaming (N, New_S);
@@ -1687,6 +1723,11 @@ package body Sem_Ch8 is
       --    profile has a null exclusion, then Sub's return profile must
       --    have one. Otherwise the subtype of Sub's return profile must
       --    exclude null.
+
+      procedure Freeze_Actual_Profile;
+      --  In Ada 2012, enforce the freezing rule concerning formal incomplete
+      --  types: a callable entity freezes its profile, unless it has an
+      --  incomplete untagged formal (RM 13.14(10.2/3)).
 
       function Original_Subprogram (Subp : Entity_Id) return Entity_Id;
       --  Find renamed entity when the declaration is a renaming_as_body and
@@ -1924,6 +1965,57 @@ package body Sem_Ch8 is
                Result_Definition (Parent (Sub)));
          end if;
       end Check_Null_Exclusion;
+
+      ---------------------------
+      -- Freeze_Actual_Profile --
+      ---------------------------
+
+      procedure Freeze_Actual_Profile is
+         F                  : Entity_Id;
+         Has_Untagged_Inc   : Boolean;
+         Instantiation_Node : constant Node_Id := Parent (N);
+
+      begin
+         if Ada_Version >= Ada_2012 then
+            F := First_Formal (Formal_Spec);
+            Has_Untagged_Inc := False;
+            while Present (F) loop
+               if Ekind (Etype (F)) = E_Incomplete_Type
+                 and then not Is_Tagged_Type (Etype (F))
+               then
+                  Has_Untagged_Inc := True;
+                  exit;
+               end if;
+
+               F := Next_Formal (F);
+            end loop;
+
+            if Ekind (Formal_Spec) = E_Function
+              and then Ekind (Etype (Formal_Spec)) = E_Incomplete_Type
+              and then not Is_Tagged_Type (Etype (F))
+            then
+               Has_Untagged_Inc := True;
+            end if;
+
+            if not Has_Untagged_Inc then
+               F := First_Formal (Old_S);
+               while Present (F) loop
+                  Freeze_Before (Instantiation_Node, Etype (F));
+
+                  if Is_Incomplete_Or_Private_Type (Etype (F))
+                    and then No (Underlying_Type (Etype (F)))
+                    and then not Is_Generic_Type (Etype (F))
+                  then
+                     Error_Msg_NE
+                       ("type& must be frozen before this point",
+                          Instantiation_Node, Etype (F));
+                  end if;
+
+                  F := Next_Formal (F);
+               end loop;
+            end if;
+         end if;
+      end Freeze_Actual_Profile;
 
       ---------------------------
       -- Has_Class_Wide_Actual --
@@ -2516,6 +2608,8 @@ package body Sem_Ch8 is
             Generate_Reference (Old_S, Nam);
          end if;
 
+         Check_Internal_Protected_Use (N, Old_S);
+
          --  For a renaming-as-body, require subtype conformance, but if the
          --  declaration being completed has not been frozen, then inherit the
          --  convention of the renamed subprogram prior to checking conformance
@@ -2702,6 +2796,7 @@ package body Sem_Ch8 is
 
          if Is_Actual then
             Freeze_Before (N, Old_S);
+            Freeze_Actual_Profile;
             Set_Has_Delayed_Freeze (New_S, False);
             Freeze_Before (N, New_S);
 
@@ -4941,10 +5036,14 @@ package body Sem_Ch8 is
 
             Set_Entity_Or_Discriminal (N, E);
 
+            --  The name may designate a generalized reference, in which case
+            --  the dereference interpretation will be included.
+
             if Ada_Version >= Ada_2012
               and then
                 (Nkind (Parent (N)) in N_Subexpr
-                  or else Nkind (Parent (N)) = N_Object_Declaration)
+                  or else Nkind_In (Parent (N), N_Object_Declaration,
+                                                N_Assignment_Statement))
             then
                Check_Implicit_Dereference (N, Etype (E));
             end if;
@@ -6075,6 +6174,8 @@ package body Sem_Ch8 is
 
          Analyze_Selected_Component (N);
       end if;
+
+      Analyze_Dimension (N);
    end Find_Selected_Component;
 
    ---------------
@@ -7166,7 +7267,7 @@ package body Sem_Ch8 is
       --  If the actions to be wrapped are still there they will get lost
       --  causing incomplete code to be generated. It is better to abort in
       --  this case (and we do the abort even with assertions off since the
-      --  penalty is incorrect code generation)
+      --  penalty is incorrect code generation).
 
       if SST.Actions_To_Be_Wrapped_Before /= No_List
            or else

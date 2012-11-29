@@ -1,5 +1,5 @@
 /* RTL-level loop invariant motion.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010
+   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -47,6 +47,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfgloop.h"
 #include "expr.h"
 #include "recog.h"
+#include "target.h"
 #include "function.h"
 #include "flags.h"
 #include "df.h"
@@ -55,6 +56,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "params.h"
 #include "regs.h"
 #include "ira.h"
+#include "dumpfile.h"
 
 /* The data stored for the loop.  */
 
@@ -169,12 +171,10 @@ static unsigned actual_stamp;
 
 typedef struct invariant *invariant_p;
 
-DEF_VEC_P(invariant_p);
-DEF_VEC_ALLOC_P(invariant_p, heap);
 
 /* The invariants.  */
 
-static VEC(invariant_p,heap) *invariants;
+static vec<invariant_p> invariants;
 
 /* Check the size of the invariant table and realloc if necessary.  */
 
@@ -186,7 +186,7 @@ check_invariant_table_size (void)
       unsigned int new_size = DF_DEFS_TABLE_SIZE () + (DF_DEFS_TABLE_SIZE () / 4);
       invariant_table = XRESIZEVEC (struct invariant *, invariant_table, new_size);
       memset (&invariant_table[invariant_table_size], 0,
-	      (new_size - invariant_table_size) * sizeof (struct rtx_iv *));
+	      (new_size - invariant_table_size) * sizeof (struct invariant *));
       invariant_table_size = new_size;
     }
 }
@@ -202,9 +202,7 @@ check_maybe_invariant (rtx x)
 
   switch (code)
     {
-    case CONST_INT:
-    case CONST_DOUBLE:
-    case CONST_FIXED:
+    CASE_CONST_ANY:
     case SYMBOL_REF:
     case CONST:
     case LABEL_REF:
@@ -301,9 +299,7 @@ hash_invariant_expr_1 (rtx insn, rtx x)
 
   switch (code)
     {
-    case CONST_INT:
-    case CONST_DOUBLE:
-    case CONST_FIXED:
+    CASE_CONST_ANY:
     case SYMBOL_REF:
     case CONST:
     case LABEL_REF:
@@ -362,9 +358,7 @@ invariant_expr_equal_p (rtx insn1, rtx e1, rtx insn2, rtx e2)
 
   switch (code)
     {
-    case CONST_INT:
-    case CONST_DOUBLE:
-    case CONST_FIXED:
+    CASE_CONST_ANY:
     case SYMBOL_REF:
     case CONST:
     case LABEL_REF:
@@ -508,7 +502,7 @@ find_identical_invariants (htab_t eq, struct invariant *inv)
 
   EXECUTE_IF_SET_IN_BITMAP (inv->depends_on, 0, depno, bi)
     {
-      dep = VEC_index (invariant_p, invariants, depno);
+      dep = invariants[depno];
       find_identical_invariants (eq, dep);
     }
 
@@ -532,10 +526,10 @@ merge_identical_invariants (void)
 {
   unsigned i;
   struct invariant *inv;
-  htab_t eq = htab_create (VEC_length (invariant_p, invariants),
+  htab_t eq = htab_create (invariants.length (),
 			   hash_invariant_expr, eq_invariant_expr, free);
 
-  FOR_EACH_VEC_ELT (invariant_p, invariants, i, inv)
+  FOR_EACH_VEC_ELT (invariants, i, inv)
     find_identical_invariants (eq, inv);
 
   htab_delete (eq);
@@ -664,20 +658,28 @@ find_defs (struct loop *loop, basic_block *body)
   for (i = 0; i < loop->num_nodes; i++)
     bitmap_set_bit (blocks, body[i]->index);
 
+  if (dump_file)
+    {
+      fprintf (dump_file,
+	       "*****starting processing of loop %d ******\n",
+	       loop->num);
+    }
+
   df_remove_problem (df_chain);
   df_process_deferred_rescans ();
   df_chain_add_problem (DF_UD_CHAIN);
   df_set_blocks (blocks);
+  df_set_flags (DF_RD_PRUNE_DEAD_DEFS);
   df_analyze ();
+  check_invariant_table_size ();
 
   if (dump_file)
     {
       df_dump_region (dump_file);
-      fprintf (dump_file, "*****starting processing of loop  ******\n");
-      print_rtl_with_bb (dump_file, get_insns ());
-      fprintf (dump_file, "*****ending processing of loop  ******\n");
+      fprintf (dump_file,
+	       "*****ending processing of loop %d ******\n",
+	       loop->num);
     }
-  check_invariant_table_size ();
 
   BITMAP_FREE (blocks);
 }
@@ -728,11 +730,11 @@ create_new_invariant (struct def *def, rtx insn, bitmap depends_on,
   inv->stamp = 0;
   inv->insn = insn;
 
-  inv->invno = VEC_length (invariant_p, invariants);
+  inv->invno = invariants.length ();
   inv->eqto = ~0u;
   if (def)
     def->invno = inv->invno;
-  VEC_safe_push (invariant_p, heap, invariants, inv);
+  invariants.safe_push (inv);
 
   if (dump_file)
     {
@@ -781,7 +783,22 @@ check_dependency (basic_block bb, df_ref use, bitmap depends_on)
 
   defs = DF_REF_CHAIN (use);
   if (!defs)
-    return true;
+    {
+      unsigned int regno = DF_REF_REGNO (use);
+
+      /* If this is the use of an uninitialized argument register that is
+	 likely to be spilled, do not move it lest this might extend its
+	 lifetime and cause reload to die.  This can occur for a call to
+	 a function taking complex number arguments and moving the insns
+	 preparing the arguments without moving the call itself wouldn't
+	 gain much in practice.  */
+      if ((DF_REF_FLAGS (use) & DF_HARD_REG_LIVE)
+	  && FUNCTION_ARG_REGNO_P (regno)
+	  && targetm.class_likely_spilled_p (REGNO_REG_CLASS (regno)))
+	return false;
+
+      return true;
+    }
 
   if (defs->next)
     return false;
@@ -1060,7 +1077,7 @@ get_inv_cost (struct invariant *inv, int *comp_cost, unsigned *regs_needed)
   bitmap_iterator bi;
 
   /* Find the representative of the class of the equivalent invariants.  */
-  inv = VEC_index (invariant_p, invariants, inv->eqto);
+  inv = invariants[inv->eqto];
 
   *comp_cost = 0;
   if (! flag_ira_loop_pressure)
@@ -1126,7 +1143,7 @@ get_inv_cost (struct invariant *inv, int *comp_cost, unsigned *regs_needed)
     {
       bool check_p;
 
-      dep = VEC_index (invariant_p, invariants, depno);
+      dep = invariants[depno];
 
       get_inv_cost (dep, &acomp_cost, aregs_needed);
 
@@ -1257,7 +1274,7 @@ best_gain_for_invariant (struct invariant **best, unsigned *regs_needed,
   int i, gain = 0, again;
   unsigned aregs_needed[N_REG_CLASSES], invno;
 
-  FOR_EACH_VEC_ELT (invariant_p, invariants, invno, inv)
+  FOR_EACH_VEC_ELT (invariants, invno, inv)
     {
       if (inv->move)
 	continue;
@@ -1291,11 +1308,11 @@ best_gain_for_invariant (struct invariant **best, unsigned *regs_needed,
 static void
 set_move_mark (unsigned invno, int gain)
 {
-  struct invariant *inv = VEC_index (invariant_p, invariants, invno);
+  struct invariant *inv = invariants[invno];
   bitmap_iterator bi;
 
   /* Find the representative of the class of the equivalent invariants.  */
-  inv = VEC_index (invariant_p, invariants, inv->eqto);
+  inv = invariants[inv->eqto];
 
   if (inv->move)
     return;
@@ -1326,7 +1343,7 @@ find_invariants_to_move (bool speed, bool call_p)
   unsigned i, regs_used, regs_needed[N_REG_CLASSES], new_regs[N_REG_CLASSES];
   struct invariant *inv = NULL;
 
-  if (!VEC_length (invariant_p, invariants))
+  if (!invariants.length ())
     return;
 
   if (flag_ira_loop_pressure)
@@ -1406,8 +1423,8 @@ replace_uses (struct invariant *inv, rtx reg, bool in_group)
 static bool
 move_invariant_reg (struct loop *loop, unsigned invno)
 {
-  struct invariant *inv = VEC_index (invariant_p, invariants, invno);
-  struct invariant *repr = VEC_index (invariant_p, invariants, inv->eqto);
+  struct invariant *inv = invariants[invno];
+  struct invariant *repr = invariants[inv->eqto];
   unsigned i;
   basic_block preheader = loop_preheader_edge (loop)->src;
   rtx reg, set, dest, note;
@@ -1511,11 +1528,11 @@ move_invariants (struct loop *loop)
   struct invariant *inv;
   unsigned i;
 
-  FOR_EACH_VEC_ELT (invariant_p, invariants, i, inv)
+  FOR_EACH_VEC_ELT (invariants, i, inv)
     move_invariant_reg (loop, i);
   if (flag_ira_loop_pressure && resize_reg_info ())
     {
-      FOR_EACH_VEC_ELT (invariant_p, invariants, i, inv)
+      FOR_EACH_VEC_ELT (invariants, i, inv)
 	if (inv->reg != NULL_RTX)
 	  {
 	    if (inv->orig_regno >= 0)
@@ -1537,7 +1554,7 @@ init_inv_motion_data (void)
 {
   actual_stamp = 1;
 
-  invariants = VEC_alloc (invariant_p, heap, 100);
+  invariants.create (100);
 }
 
 /* Frees the data allocated by invariant motion.  */
@@ -1564,12 +1581,12 @@ free_inv_motion_data (void)
 	}
     }
 
-  FOR_EACH_VEC_ELT (invariant_p, invariants, i, inv)
+  FOR_EACH_VEC_ELT (invariants, i, inv)
     {
       BITMAP_FREE (inv->depends_on);
       free (inv);
     }
-  VEC_free (invariant_p, heap, invariants);
+  invariants.release ();
 }
 
 /* Move the invariants out of the LOOP.  */
@@ -1805,7 +1822,7 @@ calculate_loop_reg_pressure (void)
 	bitmap_initialize (&LOOP_DATA (loop)->regs_ref, &reg_obstack);
 	bitmap_initialize (&LOOP_DATA (loop)->regs_live, &reg_obstack);
       }
-  ira_setup_eliminable_regset ();
+  ira_setup_eliminable_regset (false);
   bitmap_initialize (&curr_regs_live, &reg_obstack);
   FOR_EACH_BB (bb)
     {
@@ -1920,7 +1937,7 @@ move_loop_invariants (void)
     {
       df_analyze ();
       regstat_init_n_sets_and_refs ();
-      ira_set_pseudo_classes (dump_file);
+      ira_set_pseudo_classes (true, dump_file);
       calculate_loop_reg_pressure ();
       regstat_free_n_sets_and_refs ();
     }

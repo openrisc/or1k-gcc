@@ -83,6 +83,9 @@
 #endif
 
 
+# The amount of space we ask for when calling non-split-stack code.
+#define NON_SPLIT_STACK 0x100000
+
 # This entry point is for split-stack code which calls non-split-stack
 # code.  When the linker sees this case, it converts the call to
 # __morestack to call __morestack_non_split instead.  We just bump the
@@ -109,7 +112,7 @@ __morestack_non_split:
 
 	movl	%esp,%eax		# Current stack,
 	subl	8(%esp),%eax		# less required stack frame size,
-	subl	$0x4000,%eax		# less space for non-split code.
+	subl	$NON_SPLIT_STACK,%eax	# less space for non-split code.
 	cmpl	%gs:0x30,%eax		# See if we have enough space.
 	jb	2f			# Get more space if we need it.
 
@@ -171,7 +174,8 @@ __morestack_non_split:
 
 	.cfi_adjust_cfa_offset -4	# Account for popped register.
 
-	addl	$0x5000+BACKOFF,4(%esp)	# Increment space we request.
+	# Increment space we request.
+	addl	$NON_SPLIT_STACK+0x1000+BACKOFF,4(%esp)
 
 	# Fall through into morestack.
 
@@ -186,7 +190,7 @@ __morestack_non_split:
 
 	movq	%rsp,%rax		# Current stack,
 	subq	%r10,%rax		# less required stack frame size,
-	subq	$0x4000,%rax		# less space for non-split code.
+	subq	$NON_SPLIT_STACK,%rax	# less space for non-split code.
 
 #ifdef __LP64__
 	cmpq	%fs:0x70,%rax		# See if we have enough space.
@@ -196,17 +200,18 @@ __morestack_non_split:
 
 	jb	2f			# Get more space if we need it.
 
-	# This breaks call/return prediction, as described above.
-	incq	8(%rsp)			# Increment the return address.
-
 	# If the instruction that we return to is
 	#   leaq  24(%rbp), %r11n
 	# then we have been called by a varargs function that expects
 	# %ebp to hold a real value.  That can only work if we do the
 	# full stack split routine.  FIXME: This is fragile.
 	movq	8(%rsp),%rax
+	incq	%rax			# Skip ret instruction in caller.
 	cmpl	$0x185d8d4c,(%rax)
 	je	2f
+
+	# This breaks call/return prediction, as described above.
+	incq	8(%rsp)			# Increment the return address.
 
 	popq	%rax			# Restore register.
 
@@ -219,7 +224,8 @@ __morestack_non_split:
 
 	.cfi_adjust_cfa_offset -8	# Adjust for popped register.
 
-	addq	$0x5000+BACKOFF,%r10	# Increment space we request.
+	# Increment space we request.
+	addq	$NON_SPLIT_STACK+0x1000+BACKOFF,%r10
 
 	# Fall through into morestack.
 
@@ -291,9 +297,13 @@ __morestack:
 	# argument size is pushed then the new stack frame size is
 	# pushed.
 
-	# Align stack to 16-byte boundary with enough space for saving
-	# registers and passing parameters to functions we call.
-	subl	$40,%esp
+	# In the body of a non-leaf function, the stack pointer will
+	# be aligned to a 16-byte boundary.  That is CFA + 12 in the
+	# stack picture above: (CFA + 12) % 16 == 0.  At this point we
+	# have %esp == CFA - 8, so %esp % 16 == 12.  We need some
+	# space for saving registers and passing parameters, and we
+	# need to wind up with %esp % 16 == 0.
+	subl	$44,%esp
 
 	# Because our cleanup code may need to clobber %ebx, we need
 	# to save it here so the unwinder can restore the value used
@@ -388,13 +398,15 @@ __morestack:
 
 	movl	%ebp,%esp		# Restore stack pointer.
 
+	# As before, we now have %esp % 16 == 12.
+
 	pushl	%eax			# Push return value on old stack.
 	pushl	%edx
-	subl	$8,%esp			# Align stack to 16-byte boundary.
+	subl	$4,%esp			# Align stack to 16-byte boundary.
 
 	call	__morestack_unblock_signals
 
-	addl	$8,%esp
+	addl	$4,%esp
 	popl	%edx			# Restore return value.
 	popl	%eax
 
@@ -480,14 +492,20 @@ __morestack:
 	pushq	%r9
 
 	pushq	%r11
-	pushq	$0			# For alignment.
+
+	# We entered morestack with the stack pointer aligned to a
+	# 16-byte boundary (the call to morestack's caller used 8
+	# bytes, and the call to morestack used 8 bytes).  We have now
+	# pushed 10 registers, so we are still aligned to a 16-byte
+	# boundary.
 
 	call	__morestack_block_signals
 
 	leaq	-8(%rbp),%rdi		# Address of new frame size.
 	leaq	24(%rbp),%rsi		# The caller's parameters.
-	addq	$8,%rsp
 	popq	%rdx			# The size of the parameters.
+
+	subq	$8,%rsp			# Align stack.
 
 	call	__generic_morestack
 
@@ -559,6 +577,9 @@ __morestack:
 
 	movq	%rbp,%rsp		# Restore stack pointer.
 
+	# Now (%rsp & 16) == 8.
+
+	subq	$8,%rsp			# For alignment.
 	pushq	%rax			# Push return value on old stack.
 	pushq	%rdx
 
@@ -566,6 +587,7 @@ __morestack:
 
 	popq	%rdx			# Restore return value.
 	popq	%rax
+	addq	$8,%rsp
 
 	.cfi_remember_state
 	popq	%rbp

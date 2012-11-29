@@ -65,7 +65,7 @@
 	     "g" ((USItype) (y0)))
 
 
-#define _FP_MUL_MEAT_Q(R,X,Y)					\
+#define _FP_MUL_MEAT_Q(R,X,Y)				\
   _FP_MUL_MEAT_4_wide(_FP_WFRACBITS_Q,R,X,Y,umul_ppmm)
 
 #define _FP_DIV_MEAT_Q(R,X,Y)   _FP_DIV_MEAT_4_udiv(Q,R,X,Y)
@@ -76,7 +76,20 @@
    16byte since soft-fp emulation is done in 16byte.  */
 #define _FP_NANFRAC_E		_FP_QNANBIT_E, 0, 0, 0
 #define _FP_NANFRAC_Q		_FP_QNANBIT_Q, 0, 0, 0
-#define _FP_NANSIGN_S		1
-#define _FP_NANSIGN_D		1
-#define _FP_NANSIGN_E		1
-#define _FP_NANSIGN_Q		1
+
+#ifndef _SOFT_FLOAT
+#define FP_RND_NEAREST		0
+#define FP_RND_ZERO		0xc00
+#define FP_RND_PINF		0x800
+#define FP_RND_MINF		0x400
+
+#define FP_RND_MASK		0xc00
+
+#define _FP_DECL_EX \
+  unsigned short _fcw __attribute__ ((unused)) = FP_RND_NEAREST;
+
+#define FP_INIT_ROUNDMODE				\
+  do {							\
+    __asm__ __volatile__ ("fnstcw\t%0" : "=m" (_fcw));	\
+  } while (0)
+#endif

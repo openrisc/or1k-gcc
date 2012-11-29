@@ -27,6 +27,7 @@ with Atree;    use Atree;
 with Checks;   use Checks;
 with Einfo;    use Einfo;
 with Elists;   use Elists;
+with Errout;   use Errout;
 with Exp_Atag; use Exp_Atag;
 with Exp_Ch2;  use Exp_Ch2;
 with Exp_Ch3;  use Exp_Ch3;
@@ -421,7 +422,7 @@ package body Exp_Attr is
             Par := Parent (Par);
          end if;
 
-         if Nkind_In (Par, N_Procedure_Call_Statement, N_Function_Call)
+         if Nkind (Par) in N_Subprogram_Call
             and then Is_Entity_Name (Name (Par))
          then
             Subp := Entity (Name (Par));
@@ -815,11 +816,19 @@ package body Exp_Attr is
       --  rewrite into reference to current instance.
 
       if Is_Protected_Self_Reference (Pref)
-           and then not
-             (Nkind_In (Parent (N), N_Index_Or_Discriminant_Constraint,
-                                    N_Discriminant_Association)
-                and then Nkind (Parent (Parent (Parent (Parent (N))))) =
+        and then not
+          (Nkind_In (Parent (N), N_Index_Or_Discriminant_Constraint,
+                                 N_Discriminant_Association)
+            and then Nkind (Parent (Parent (Parent (Parent (N))))) =
                                                       N_Component_Definition)
+
+         --  No action needed for these attributes since the current instance
+         --  will be rewritten to be the name of the _object parameter
+         --  associated with the enclosing protected subprogram (see below).
+
+        and then Id /= Attribute_Access
+        and then Id /= Attribute_Unchecked_Access
+        and then Id /= Attribute_Unrestricted_Access
       then
          Rewrite (Pref, Concurrent_Ref (Pref));
          Analyze (Pref);
@@ -827,15 +836,27 @@ package body Exp_Attr is
 
       --  Remaining processing depends on specific attribute
 
+      --  Note: individual sections of the following case statement are
+      --  allowed to assume there is no code after the case statement, and
+      --  are legitimately allowed to execute return statements if they have
+      --  nothing more to do.
+
       case Id is
 
       --  Attributes related to Ada 2012 iterators (placeholder ???)
 
-      when Attribute_Constant_Indexing    => null;
-      when Attribute_Default_Iterator     => null;
-      when Attribute_Implicit_Dereference => null;
-      when Attribute_Iterator_Element     => null;
-      when Attribute_Variable_Indexing    => null;
+      when Attribute_Constant_Indexing    |
+           Attribute_Default_Iterator     |
+           Attribute_Implicit_Dereference |
+           Attribute_Iterator_Element     |
+           Attribute_Variable_Indexing    =>
+         null;
+
+      --  Internal attributes used to deal with Ada 2012 delayed aspects. These
+      --  were already rejected by the parser. Thus they shouldn't appear here.
+
+      when Internal_Attribute_Id =>
+         raise Program_Error;
 
       ------------
       -- Access --
@@ -1021,10 +1042,36 @@ package body Exp_Attr is
                          New_Occurrence_Of (Formal, Loc)));
                      Set_Etype (N, Typ);
 
-                     --  The expression must appear in a default expression,
-                     --  (which in the initialization procedure is the
-                     --  right-hand side of an assignment), and not in a
-                     --  discriminant constraint.
+                  elsif Is_Protected_Type (Entity (Pref)) then
+
+                     --  No action needed for current instance located in a
+                     --  component definition (expansion will occur in the
+                     --  init proc)
+
+                     if Is_Protected_Type (Current_Scope) then
+                        null;
+
+                     --  If the current instance reference is located in a
+                     --  protected subprogram or entry then rewrite the access
+                     --  attribute to be the name of the "_object" parameter.
+                     --  An unchecked conversion is applied to ensure a type
+                     --  match in cases of expander-generated calls (e.g. init
+                     --  procs).
+
+                     else
+                        Formal :=
+                          First_Entity
+                            (Protected_Body_Subprogram (Current_Scope));
+                        Rewrite (N,
+                          Unchecked_Convert_To (Typ,
+                            New_Occurrence_Of (Formal, Loc)));
+                        Set_Etype (N, Typ);
+                     end if;
+
+                  --  The expression must appear in a default expression,
+                  --  (which in the initialization procedure is the right-hand
+                  --  side of an assignment), and not in a discriminant
+                  --  constraint.
 
                   else
                      Par := Parent (N);
@@ -2907,7 +2954,7 @@ package body Exp_Attr is
       -- Length --
       ------------
 
-      when Attribute_Length => declare
+      when Attribute_Length => Length : declare
          Ityp : Entity_Id;
          Xnum : Uint;
 
@@ -3057,7 +3104,13 @@ package body Exp_Attr is
          else
             Apply_Universal_Integer_Attribute_Checks (N);
          end if;
-      end;
+      end Length;
+
+      --  The expansion of this attribute is carried out when the target loop
+      --  is processed. See Expand_Loop_Entry_Attributes for details.
+
+      when Attribute_Loop_Entry =>
+         null;
 
       -------------
       -- Machine --
@@ -3147,8 +3200,25 @@ package body Exp_Attr is
       -- Max_Size_In_Storage_Elements --
       ----------------------------------
 
-      when Attribute_Max_Size_In_Storage_Elements =>
+      when Attribute_Max_Size_In_Storage_Elements => declare
+         Typ  : constant Entity_Id := Etype (N);
+         Attr : Node_Id;
+
+         Conversion_Added : Boolean := False;
+         --  A flag which tracks whether the original attribute has been
+         --  wrapped inside a type conversion.
+
+      begin
          Apply_Universal_Integer_Attribute_Checks (N);
+
+         --  The universal integer check may sometimes add a type conversion,
+         --  retrieve the original attribute reference from the expression.
+
+         Attr := N;
+         if Nkind (Attr) = N_Type_Conversion then
+            Attr := Expression (Attr);
+            Conversion_Added := True;
+         end if;
 
          --  Heap-allocated controlled objects contain two extra pointers which
          --  are not part of the actual type. Transform the attribute reference
@@ -3158,20 +3228,20 @@ package body Exp_Attr is
          --  two pointers are already present in the type.
 
          if VM_Target = No_VM
-           and then Nkind (N) = N_Attribute_Reference
+           and then Nkind (Attr) = N_Attribute_Reference
            and then Needs_Finalization (Ptyp)
-           and then not Header_Size_Added (N)
+           and then not Header_Size_Added (Attr)
          then
-            Set_Header_Size_Added (N);
+            Set_Header_Size_Added (Attr);
 
             --  Generate:
             --    P'Max_Size_In_Storage_Elements +
             --      Universal_Integer
             --        (Header_Size_With_Padding (Ptyp'Alignment))
 
-            Rewrite (N,
+            Rewrite (Attr,
               Make_Op_Add (Loc,
-                Left_Opnd  => Relocate_Node (N),
+                Left_Opnd  => Relocate_Node (Attr),
                 Right_Opnd =>
                   Convert_To (Universal_Integer,
                     Make_Function_Call (Loc,
@@ -3185,9 +3255,19 @@ package body Exp_Attr is
                             New_Reference_To (Ptyp, Loc),
                           Attribute_Name => Name_Alignment))))));
 
-            Analyze (N);
+            --  Add a conversion to the target type
+
+            if not Conversion_Added then
+               Rewrite (Attr,
+                 Make_Type_Conversion (Loc,
+                   Subtype_Mark => New_Reference_To (Typ, Loc),
+                   Expression   => Relocate_Node (Attr)));
+            end if;
+
+            Analyze (Attr);
             return;
          end if;
+      end;
 
       --------------------
       -- Mechanism_Code --
@@ -3251,13 +3331,13 @@ package body Exp_Attr is
          --    Furthermore, (-value - 1) can be expressed as -(value + 1)
          --    which we can compute using the integer base type.
 
-         --  Once this is done we analyze the conditional expression without
-         --  range checks, because we know everything is in range, and we
-         --  want to prevent spurious warnings on either branch.
+         --  Once this is done we analyze the if expression without range
+         --  checks, because we know everything is in range, and we want
+         --  to prevent spurious warnings on either branch.
 
          else
             Rewrite (N,
-              Make_Conditional_Expression (Loc,
+              Make_If_Expression (Loc,
                 Expressions => New_List (
                   Make_Op_Ge (Loc,
                     Left_Opnd  => Duplicate_Subexpr (Arg),
@@ -3311,6 +3391,13 @@ package body Exp_Attr is
          Asn_Stm : Node_Id;
 
       begin
+         --  If assertions are disabled, no need to create the declaration
+         --  that preserves the value.
+
+         if not Assertions_Enabled then
+            return;
+         end if;
+
          --  Find the nearest subprogram body, ignoring _Preconditions
 
          Subp := N;
@@ -3420,7 +3507,7 @@ package body Exp_Attr is
               Right_Opnd => Y_Addr);
 
          Rewrite (N,
-           Make_Conditional_Expression (Loc,
+           Make_If_Expression (Loc,
              New_List (
                Cond,
 
@@ -5061,7 +5148,8 @@ package body Exp_Attr is
       begin
          Rewrite (N,
            Build_To_Any_Call
-             (Convert_To (P_Type,
+             (Loc,
+              Convert_To (P_Type,
               Relocate_Node (First (Exprs))), Decls));
          Insert_Actions (N, Decls);
          Analyze_And_Resolve (N, RTE (RE_Any));
@@ -5291,6 +5379,13 @@ package body Exp_Attr is
 
          Validity_Checks_On := False;
 
+         --  Retrieve the base type. Handle the case where the base type is a
+         --  private enumeration type.
+
+         if Is_Private_Type (Btyp) and then Present (Full_View (Btyp)) then
+            Btyp := Full_View (Btyp);
+         end if;
+
          --  Floating-point case. This case is handled by the Valid attribute
          --  code in the floating-point attribute run-time library.
 
@@ -5391,15 +5486,14 @@ package body Exp_Attr is
          --       (X >= type(X)'First and then type(X)'Last <= X)
 
          elsif Is_Enumeration_Type (Ptyp)
-           and then Present (Enum_Pos_To_Rep (Base_Type (Ptyp)))
+           and then Present (Enum_Pos_To_Rep (Btyp))
          then
             Tst :=
               Make_Op_Ge (Loc,
                 Left_Opnd =>
                   Make_Function_Call (Loc,
                     Name =>
-                      New_Reference_To
-                        (TSS (Base_Type (Ptyp), TSS_Rep_To_Pos), Loc),
+                      New_Reference_To (TSS (Btyp, TSS_Rep_To_Pos), Loc),
                     Parameter_Associations => New_List (
                       Pref,
                       New_Occurrence_Of (Standard_False, Loc))),
@@ -5515,6 +5609,35 @@ package body Exp_Attr is
             Rewrite (N, Make_Range_Test);
          end if;
 
+         --  If a predicate is present, then we do the predicate test, even if
+         --  within the predicate function (infinite recursion is warned about
+         --  in that case).
+
+         declare
+            Pred_Func : constant Entity_Id := Predicate_Function (Ptyp);
+
+         begin
+            if Present (Pred_Func) then
+               Rewrite (N,
+                 Make_And_Then (Loc,
+                   Left_Opnd  => Relocate_Node (N),
+                   Right_Opnd => Make_Predicate_Call (Ptyp, Pref)));
+
+               --  If the attribute appears within the subtype's own predicate
+               --  function, then issue a warning that this will cause infinite
+               --  recursion.
+
+               --  Do we have to issue these warnings in the expander rather
+               --  than during analysis (means they are skipped in -gnatc???).
+
+               if Current_Scope = Pred_Func then
+                  Error_Msg_N
+                    ("attribute Valid requires a predicate check?", N);
+                  Error_Msg_N ("\and will result in infinite recursion?", N);
+               end if;
+            end if;
+         end;
+
          Analyze_And_Resolve (N, Standard_Boolean);
          Validity_Checks_On := Save_Validity_Checks_On;
       end Valid;
@@ -5557,8 +5680,8 @@ package body Exp_Attr is
 
             Analyze_And_Resolve (N, Standard_Boolean);
 
-         --  For record types, we build a big conditional expression, applying
-         --  Valid or Valid_Scalars as appropriate to all relevant components.
+         --  For record types, we build a big if expression, applying Valid or
+         --  Valid_Scalars as appropriate to all relevant components.
 
          elsif (Is_Record_Type (Ptyp) or else Has_Discriminants (Ptyp))
            and then not No_Scalar_Parts (Ptyp)
@@ -5931,6 +6054,7 @@ package body Exp_Attr is
 
       when Attribute_Abort_Signal                 |
            Attribute_Address_Size                 |
+           Attribute_Atomic_Always_Lock_Free      |
            Attribute_Base                         |
            Attribute_Class                        |
            Attribute_Compiler_Version             |
@@ -5948,6 +6072,7 @@ package body Exp_Attr is
            Attribute_Has_Tagged_Values            |
            Attribute_Large                        |
            Attribute_Last_Valid                   |
+           Attribute_Lock_Free                    |
            Attribute_Machine_Emax                 |
            Attribute_Machine_Emin                 |
            Attribute_Machine_Mantissa             |
@@ -5990,6 +6115,11 @@ package body Exp_Attr is
            Attribute_Asm_Output                   =>
          null;
       end case;
+
+   --  Note: as mentioned earlier, individual sections of the above case
+   --  statement assume there is no code after the case statement, and are
+   --  legitimately allowed to execute return statements if they have nothing
+   --  more to do, so DO NOT add code at this point.
 
    exception
       when RE_Not_Available =>

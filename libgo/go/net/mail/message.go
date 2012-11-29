@@ -47,7 +47,8 @@ type Message struct {
 }
 
 // ReadMessage reads a message from r.
-// The headers are parsed, and the body of the message will be reading from r.
+// The headers are parsed, and the body of the message will be available
+// for reading from r.
 func ReadMessage(r io.Reader) (msg *Message, err error) {
 	tp := textproto.NewReader(bufio.NewReader(r))
 
@@ -69,11 +70,12 @@ var dateLayouts []string
 func init() {
 	// Generate layouts based on RFC 5322, section 3.3.
 
-	dows := [...]string{"", "Mon, "}     // day-of-week
-	days := [...]string{"2", "02"}       // day = 1*2DIGIT
-	years := [...]string{"2006", "06"}   // year = 4*DIGIT / 2*DIGIT
-	seconds := [...]string{":05", ""}    // second
-	zones := [...]string{"-0700", "MST"} // zone = (("+" / "-") 4DIGIT) / "GMT" / ...
+	dows := [...]string{"", "Mon, "}   // day-of-week
+	days := [...]string{"2", "02"}     // day = 1*2DIGIT
+	years := [...]string{"2006", "06"} // year = 4*DIGIT / 2*DIGIT
+	seconds := [...]string{":05", ""}  // second
+	// "-0700 (MST)" is not in RFC 5322, but is common.
+	zones := [...]string{"-0700", "MST", "-0700 (MST)"} // zone = (("+" / "-") 4DIGIT) / "GMT" / ...
 
 	for _, dow := range dows {
 		for _, day := range days {
@@ -125,7 +127,7 @@ func (h Header) AddressList(key string) ([]*Address, error) {
 	if hdr == "" {
 		return nil, ErrHeaderNotPresent
 	}
-	return newAddrParser(hdr).parseAddressList()
+	return ParseAddressList(hdr)
 }
 
 // Address represents a single mail address.
@@ -134,6 +136,16 @@ func (h Header) AddressList(key string) ([]*Address, error) {
 type Address struct {
 	Name    string // Proper name; may be empty.
 	Address string // user@domain
+}
+
+// Parses a single RFC 5322 address, e.g. "Barry Gibbs <bg@example.com>"
+func ParseAddress(address string) (*Address, error) {
+	return newAddrParser(address).parseAddress()
+}
+
+// ParseAddressList parses the given string as a list of addresses.
+func ParseAddressList(list string) ([]*Address, error) {
+	return newAddrParser(list).parseAddressList()
 }
 
 // String formats the address as a valid RFC 5322 address.

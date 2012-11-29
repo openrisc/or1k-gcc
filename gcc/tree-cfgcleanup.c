@@ -31,8 +31,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "ggc.h"
 #include "langhooks.h"
 #include "tree-flow.h"
-#include "timevar.h"
-#include "tree-dump.h"
 #include "tree-pass.h"
 #include "except.h"
 #include "cfgloop.h"
@@ -52,7 +50,7 @@ bitmap cfgcleanup_altered_bbs;
 /* Remove any fallthru edge from EV.  Return true if an edge was removed.  */
 
 static bool
-remove_fallthru_edge (VEC(edge,gc) *ev)
+remove_fallthru_edge (vec<edge, va_gc> *ev)
 {
   edge_iterator ei;
   edge e;
@@ -90,40 +88,11 @@ cleanup_control_expr_graph (basic_block bb, gimple_stmt_iterator gsi)
       switch (gimple_code (stmt))
 	{
 	case GIMPLE_COND:
-	  {
-	    tree lhs = gimple_cond_lhs (stmt);
-	    tree rhs = gimple_cond_rhs (stmt);
-	    /* For conditions try harder and lookup single-argument
-	       PHI nodes.  Only do so from the same basic-block though
-	       as other basic-blocks may be dead already.  */
-	    if (TREE_CODE (lhs) == SSA_NAME
-		&& !name_registered_for_update_p (lhs))
-	      {
-		gimple def_stmt = SSA_NAME_DEF_STMT (lhs);
-		if (gimple_code (def_stmt) == GIMPLE_PHI
-		    && gimple_phi_num_args (def_stmt) == 1
-		    && gimple_bb (def_stmt) == gimple_bb (stmt)
-		    && (TREE_CODE (PHI_ARG_DEF (def_stmt, 0)) != SSA_NAME
-			|| !name_registered_for_update_p (PHI_ARG_DEF (def_stmt,
-								       0))))
-		  lhs = PHI_ARG_DEF (def_stmt, 0);
-	      }
-	    if (TREE_CODE (rhs) == SSA_NAME
-		&& !name_registered_for_update_p (rhs))
-	      {
-		gimple def_stmt = SSA_NAME_DEF_STMT (rhs);
-		if (gimple_code (def_stmt) == GIMPLE_PHI
-		    && gimple_phi_num_args (def_stmt) == 1
-		    && gimple_bb (def_stmt) == gimple_bb (stmt)
-		    && (TREE_CODE (PHI_ARG_DEF (def_stmt, 0)) != SSA_NAME
-			|| !name_registered_for_update_p (PHI_ARG_DEF (def_stmt,
-								       0))))
-		  rhs = PHI_ARG_DEF (def_stmt, 0);
-	      }
-	    val = fold_binary_loc (loc, gimple_cond_code (stmt),
-				   boolean_type_node, lhs, rhs);
-	    break;
-	  }
+	  val = fold_binary_loc (loc, gimple_cond_code (stmt),
+				 boolean_type_node,
+			         gimple_cond_lhs (stmt),
+				 gimple_cond_rhs (stmt));
+	  break;
 
 	case GIMPLE_SWITCH:
 	  val = gimple_switch_index (stmt);
@@ -589,9 +558,9 @@ split_bbs_on_noreturn_calls (void)
 
   /* Detect cases where a mid-block call is now known not to return.  */
   if (cfun->gimple_df)
-    while (VEC_length (gimple, MODIFIED_NORETURN_CALLS (cfun)))
+    while (vec_safe_length (MODIFIED_NORETURN_CALLS (cfun)))
       {
-	stmt = VEC_pop (gimple, MODIFIED_NORETURN_CALLS (cfun));
+	stmt = MODIFIED_NORETURN_CALLS (cfun)->pop ();
 	bb = gimple_bb (stmt);
 	/* BB might be deleted at this point, so verify first
 	   BB is present in the cfg.  */
@@ -608,48 +577,13 @@ split_bbs_on_noreturn_calls (void)
   return changed;
 }
 
-/* If GIMPLE_OMP_RETURN in basic block BB is unreachable, remove it.  */
-
-static bool
-cleanup_omp_return (basic_block bb)
-{
-  gimple stmt = last_stmt (bb);
-  basic_block control_bb;
-
-  if (stmt == NULL
-      || gimple_code (stmt) != GIMPLE_OMP_RETURN
-      || !single_pred_p (bb))
-    return false;
-
-  control_bb = single_pred (bb);
-  stmt = last_stmt (control_bb);
-
-  if (stmt == NULL || gimple_code (stmt) != GIMPLE_OMP_SECTIONS_SWITCH)
-    return false;
-
-  /* The block with the control statement normally has two entry edges -- one
-     from entry, one from continue.  If continue is removed, return is
-     unreachable, so we remove it here as well.  */
-  if (EDGE_COUNT (control_bb->preds) == 2)
-    return false;
-
-  gcc_assert (EDGE_COUNT (control_bb->preds) == 1);
-  remove_edge_and_dominated_blocks (single_pred_edge (bb));
-  return true;
-}
-
 /* Tries to cleanup cfg in basic block BB.  Returns true if anything
    changes.  */
 
 static bool
 cleanup_tree_cfg_bb (basic_block bb)
 {
-  bool retval = false;
-
-  if (cleanup_omp_return (bb))
-    return true;
-
-  retval = cleanup_control_flow_bb (bb);
+  bool retval = cleanup_control_flow_bb (bb);
 
   if (tree_forwarder_block_p (bb, false)
       && remove_forwarder_block (bb))
@@ -774,6 +708,8 @@ repair_loop_structures (void)
 {
   bitmap changed_bbs;
 
+  calculate_dominance_info (CDI_DOMINATORS);
+
   timevar_push (TV_REPAIR_LOOPS);
   changed_bbs = BITMAP_ALLOC (NULL);
   fix_loop_structure (changed_bbs);
@@ -874,7 +810,7 @@ remove_forwarder_block_with_phi (basic_block bb)
 
 	  if (TREE_CODE (def) == SSA_NAME)
 	    {
-	      edge_var_map_vector head;
+	      edge_var_map_vector *head;
 	      edge_var_map *vm;
 	      size_t i;
 
@@ -882,7 +818,7 @@ remove_forwarder_block_with_phi (basic_block bb)
 		 redirection, replace it with the PHI argument that used
 		 to be on E.  */
 	      head = redirect_edge_var_map_vector (e);
-	      FOR_EACH_VEC_ELT (edge_var_map, head, i, vm)
+	      FOR_EACH_VEC_ELT (*head, i, vm)
 		{
 		  tree old_arg = redirect_edge_var_map_result (vm);
 		  tree new_arg = redirect_edge_var_map_def (vm);
@@ -1041,6 +977,7 @@ struct gimple_opt_pass pass_merge_phi =
  {
   GIMPLE_PASS,
   "mergephi",			/* name */
+  OPTGROUP_NONE,                /* optinfo_flags */
   gate_merge_phi,		/* gate */
   merge_phi_nodes,		/* execute */
   NULL,				/* sub */

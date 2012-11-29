@@ -24,7 +24,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm.h"
 #include "cgraph.h"
 #include "tree-pass.h"
-#include "timevar.h"
 #include "gimple.h"
 #include "ggc.h"
 #include "flags.h"
@@ -85,7 +84,7 @@ process_references (struct ipa_ref_list *list,
   struct ipa_ref *ref;
   for (i = 0; ipa_ref_list_reference_iterate (list, i, ref); i++)
     {
-      if (symtab_function_p (ref->referred))
+      if (is_a <cgraph_node> (ref->referred))
 	{
 	  struct cgraph_node *node = ipa_ref_node (ref);
 
@@ -291,10 +290,8 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
 			      before_inlining_p, reachable);
 	}
 
-      if (symtab_function_p (node))
+      if (cgraph_node *cnode = dyn_cast <cgraph_node> (node))
 	{
-	  struct cgraph_node *cnode = cgraph (node);
-
 	  /* Mark the callees reachable unless they are direct calls to extern
  	     inline functions we decided to not inline.  */
 	  if (!in_boundary_p)
@@ -333,18 +330,18 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
 	    }
 	}
       /* When we see constructor of external variable, keep referred nodes in the
-	 boundary.  This will also hold initializers of the external vars NODE
-	 reffers to.  */
-      if (symtab_variable_p (node)
+	boundary.  This will also hold initializers of the external vars NODE
+	refers to.  */
+      varpool_node *vnode = dyn_cast <varpool_node> (node);
+      if (vnode
 	  && DECL_EXTERNAL (node->symbol.decl)
-	  && !varpool (node)->alias
+	  && !vnode->alias
 	  && in_boundary_p)
-        {
-	  int i;
+	{
 	  struct ipa_ref *ref;
-	  for (i = 0; ipa_ref_list_reference_iterate (&node->symbol.ref_list, i, ref); i++)
+	  for (int i = 0; ipa_ref_list_reference_iterate (&node->symbol.ref_list, i, ref); i++)
 	    enqueue_node (ref->referred, &first, reachable);
-        }
+	}
     }
 
   /* Remove unreachable functions.   */
@@ -450,7 +447,7 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
 #endif
 
   /* If we removed something, perhaps profile could be improved.  */
-  if (changed && optimize && inline_edge_summary_vec)
+  if (changed && optimize && inline_edge_summary_vec.exists ())
     FOR_EACH_DEFINED_FUNCTION (node)
       cgraph_propagate_frequency (node);
 
@@ -527,7 +524,7 @@ cgraph_address_taken_from_non_vtable_p (struct cgraph_node *node)
     if (ref->use == IPA_REF_ADDR)
       {
 	struct varpool_node *node;
-	if (symtab_function_p (ref->referring))
+	if (is_a <cgraph_node> (ref->referring))
 	  return true;
 	node = ipa_ref_referring_varpool_node (ref);
 	if (!DECL_VIRTUAL_P (node->symbol.decl))
@@ -738,16 +735,16 @@ function_and_variable_visibility (bool whole_program)
   alias_pair *p;
 
   /* Discover aliased nodes.  */
-  FOR_EACH_VEC_ELT (alias_pair, alias_pairs, i, p)
+  FOR_EACH_VEC_SAFE_ELT (alias_pairs, i, p)
     {
       if (dump_file)
-       fprintf (dump_file, "Alias %s->%s",
-		IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (p->decl)),
-		IDENTIFIER_POINTER (p->target));
+      fprintf (dump_file, "Alias %s->%s",
+	       IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (p->decl)),
+	       IDENTIFIER_POINTER (p->target));
 		
       if ((node = cgraph_node_for_asm (p->target)) != NULL
-	  && !DECL_EXTERNAL (node->symbol.decl))
-        {
+	   && !DECL_EXTERNAL (node->symbol.decl))
+	{
 	  if (!node->analyzed)
 	    continue;
 	  cgraph_mark_force_output_node (node);
@@ -755,18 +752,18 @@ function_and_variable_visibility (bool whole_program)
 	  if (dump_file)
 	    fprintf (dump_file, "  node %s/%i",
 		     cgraph_node_name (node), node->uid);
-        }
+	}
       else if ((vnode = varpool_node_for_asm (p->target)) != NULL
 	       && !DECL_EXTERNAL (vnode->symbol.decl))
-        {
+	{
 	  vnode->symbol.force_output = 1;
 	  pointer_set_insert (aliased_vnodes, vnode);
 	  if (dump_file)
 	    fprintf (dump_file, "  varpool node %s",
 		     varpool_node_name (vnode));
-        }
+	}
       if (dump_file)
-       fprintf (dump_file, "\n");
+	fprintf (dump_file, "\n");
     }
 
   FOR_EACH_FUNCTION (node)
@@ -951,6 +948,7 @@ struct simple_ipa_opt_pass pass_ipa_function_and_variable_visibility =
  {
   SIMPLE_IPA_PASS,
   "visibility",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,					/* gate */
   local_function_and_variable_visibility,/* execute */
   NULL,					/* sub */
@@ -963,6 +961,35 @@ struct simple_ipa_opt_pass pass_ipa_function_and_variable_visibility =
   0,					/* todo_flags_start */
   TODO_remove_functions | TODO_dump_symtab
   | TODO_ggc_collect			/* todo_flags_finish */
+ }
+};
+
+/* Free inline summary.  */
+
+static unsigned
+free_inline_summary (void)
+{
+  inline_free_summary ();
+  return 0;
+}
+
+struct simple_ipa_opt_pass pass_ipa_free_inline_summary =
+{
+ {
+  SIMPLE_IPA_PASS,
+  "*free_inline_summary",		/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
+  NULL,					/* gate */
+  free_inline_summary,			/* execute */
+  NULL,					/* sub */
+  NULL,					/* next */
+  0,					/* static_pass_number */
+  TV_IPA_FREE_INLINE_SUMMARY,		/* tv_id */
+  0,	                                /* properties_required */
+  0,					/* properties_provided */
+  0,					/* properties_destroyed */
+  0,					/* todo_flags_start */
+  TODO_ggc_collect			/* todo_flags_finish */
  }
 };
 
@@ -990,6 +1017,7 @@ struct ipa_opt_pass_d pass_ipa_whole_program_visibility =
  {
   IPA_PASS,
   "whole-program",			/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_whole_program_function_and_variable_visibility,/* gate */
   whole_program_function_and_variable_visibility,/* execute */
   NULL,					/* sub */
@@ -1073,6 +1101,7 @@ struct ipa_opt_pass_d pass_ipa_profile =
  {
   IPA_PASS,
   "profile_estimate",			/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_ipa_profile,			/* gate */
   ipa_profile,			        /* execute */
   NULL,					/* sub */
@@ -1186,9 +1215,9 @@ cgraph_build_static_cdtor (char which, tree body, int priority)
 }
 
 /* A vector of FUNCTION_DECLs declared as static constructors.  */
-static VEC(tree, heap) *static_ctors;
+static vec<tree> static_ctors;
 /* A vector of FUNCTION_DECLs declared as static destructors.  */
-static VEC(tree, heap) *static_dtors;
+static vec<tree> static_dtors;
 
 /* When target does not have ctors and dtors, we call all constructor
    and destructor by special initialization/destruction function
@@ -1201,9 +1230,9 @@ static void
 record_cdtor_fn (struct cgraph_node *node)
 {
   if (DECL_STATIC_CONSTRUCTOR (node->symbol.decl))
-    VEC_safe_push (tree, heap, static_ctors, node->symbol.decl);
+    static_ctors.safe_push (node->symbol.decl);
   if (DECL_STATIC_DESTRUCTOR (node->symbol.decl))
-    VEC_safe_push (tree, heap, static_dtors, node->symbol.decl);
+    static_dtors.safe_push (node->symbol.decl);
   node = cgraph_get_node (node->symbol.decl);
   DECL_DISREGARD_INLINE_LIMITS (node->symbol.decl) = 1;
 }
@@ -1214,10 +1243,10 @@ record_cdtor_fn (struct cgraph_node *node)
    they are destructors.  */
 
 static void
-build_cdtor (bool ctor_p, VEC (tree, heap) *cdtors)
+build_cdtor (bool ctor_p, vec<tree> cdtors)
 {
   size_t i,j;
-  size_t len = VEC_length (tree, cdtors);
+  size_t len = cdtors.length ();
 
   i = 0;
   while (i < len)
@@ -1232,7 +1261,7 @@ build_cdtor (bool ctor_p, VEC (tree, heap) *cdtors)
       do
 	{
 	  priority_type p;
-	  fn = VEC_index (tree, cdtors, j);
+	  fn = cdtors[j];
 	  p = ctor_p ? DECL_INIT_PRIORITY (fn) : DECL_FINI_PRIORITY (fn);
 	  if (j == i)
 	    priority = p;
@@ -1254,7 +1283,7 @@ build_cdtor (bool ctor_p, VEC (tree, heap) *cdtors)
       for (;i < j; i++)
 	{
 	  tree call;
-	  fn = VEC_index (tree, cdtors, i);
+	  fn = cdtors[i];
 	  call = build_call_expr (fn, 0);
 	  if (ctor_p)
 	    DECL_STATIC_CONSTRUCTOR (fn) = 0;
@@ -1333,17 +1362,17 @@ compare_dtor (const void *p1, const void *p2)
 static void
 build_cdtor_fns (void)
 {
-  if (!VEC_empty (tree, static_ctors))
+  if (!static_ctors.is_empty ())
     {
       gcc_assert (!targetm.have_ctors_dtors || in_lto_p);
-      VEC_qsort (tree, static_ctors, compare_ctor);
+      static_ctors.qsort (compare_ctor);
       build_cdtor (/*ctor_p=*/true, static_ctors);
     }
 
-  if (!VEC_empty (tree, static_dtors))
+  if (!static_dtors.is_empty ())
     {
       gcc_assert (!targetm.have_ctors_dtors || in_lto_p);
-      VEC_qsort (tree, static_dtors, compare_dtor);
+      static_dtors.qsort (compare_dtor);
       build_cdtor (/*ctor_p=*/false, static_dtors);
     }
 }
@@ -1363,8 +1392,8 @@ ipa_cdtor_merge (void)
 	|| DECL_STATIC_DESTRUCTOR (node->symbol.decl))
        record_cdtor_fn (node);
   build_cdtor_fns ();
-  VEC_free (tree, heap, static_ctors);
-  VEC_free (tree, heap, static_dtors);
+  static_ctors.release ();
+  static_dtors.release ();
   return 0;
 }
 
@@ -1383,6 +1412,7 @@ struct ipa_opt_pass_d pass_ipa_cdtor_merge =
  {
   IPA_PASS,
   "cdtor",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_ipa_cdtor_merge,			/* gate */
   ipa_cdtor_merge,		        /* execute */
   NULL,					/* sub */

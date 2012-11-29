@@ -129,17 +129,17 @@ package body Debug is
    --  d.I  SCIL generation mode
    --  d.J  Disable parallel SCIL generation mode
    --  d.K  Alfa detection only mode for gnat2why
-   --  d.L  Depend on back end for limited types in conditional expressions
+   --  d.L  Depend on back end for limited types in if and case expressions
    --  d.M
    --  d.N  Add node to all entities
    --  d.O  Dump internal SCO tables
    --  d.P  Previous (non-optimized) handling of length comparisons
    --  d.Q
-   --  d.R
+   --  d.R  Restrictions in ali files in positional form
    --  d.S  Force Optimize_Alignment (Space)
    --  d.T  Force Optimize_Alignment (Time)
    --  d.U  Ignore indirect calls for static elaboration
-   --  d.V
+   --  d.V  Extensions for formal verification
    --  d.W  Print out debugging information for Walk_Library_Items
    --  d.X  Use Expression_With_Actions
    --  d.Y  Do not use Expression_With_Actions
@@ -641,6 +641,11 @@ package body Debug is
    --       flag inhibits the effect of Optimize_Length_Comparison in Exp_Ch4.
    --       This is there in case we find a situation where the optimization
    --       malfunctions, to provide a work around.
+
+   --  d.R  As documented in lib-writ.ads, restrictions in the ali file can
+   --       have two forms, positional and named. The named notation is the
+   --       current preferred form, but the use of this debug switch will force
+   --       the use of the obsolescent positional form.
 
    --  d.S  Force Optimize_Alignment (Space) mode as the default
 

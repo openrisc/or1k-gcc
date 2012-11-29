@@ -14,6 +14,14 @@
 // To use pprof, link this package into your program:
 //	import _ "net/http/pprof"
 //
+// If your application is not already running an http server, you
+// need to start one.  Add "net/http" and "log" to your imports and
+// the following code to your main function:
+//
+// 	go func() {
+// 		log.Println(http.ListenAndServe("localhost:6060", nil))
+// 	}()
+//
 // Then use the pprof tool to look at the heap profile:
 //
 //	go tool pprof http://localhost:6060/debug/pprof/heap
@@ -21,6 +29,10 @@
 // Or to look at a 30-second CPU profile:
 //
 //	go tool pprof http://localhost:6060/debug/pprof/profile
+//
+// Or to look at the goroutine blocking profile:
+//
+//	go tool pprof http://localhost:6060/debug/pprof/block
 //
 // Or to view all available profiles:
 //
@@ -35,7 +47,6 @@ package pprof
 import (
 	"bufio"
 	"bytes"
-	_ "debug/elf"
 	"fmt"
 	"html/template"
 	"io"

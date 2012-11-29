@@ -26,11 +26,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "tm_p.h"
 #include "basic-block.h"
-#include "timevar.h"
 #include "gimple-pretty-print.h"
 #include "tree-flow.h"
 #include "tree-pass.h"
-#include "tree-dump.h"
 #include "domwalk.h"
 #include "flags.h"
 #include "langhooks.h"
@@ -94,7 +92,7 @@ dse_possible_dead_store_p (gimple stmt, gimple *use_stmt)
   temp = stmt;
   do
     {
-      gimple use_stmt;
+      gimple use_stmt, defvar_def;
       imm_use_iterator ui;
       bool fail = false;
       tree defvar;
@@ -108,6 +106,7 @@ dse_possible_dead_store_p (gimple stmt, gimple *use_stmt)
 	defvar = PHI_RESULT (temp);
       else
 	defvar = gimple_vdef (temp);
+      defvar_def = temp;
       temp = NULL;
       FOR_EACH_IMM_USE_STMT (use_stmt, ui, defvar)
 	{
@@ -139,7 +138,14 @@ dse_possible_dead_store_p (gimple stmt, gimple *use_stmt)
 		  fail = true;
 		  BREAK_FROM_IMM_USE_STMT (ui);
 		}
-	      temp = use_stmt;
+	      /* Do not consider the PHI as use if it dominates the 
+	         stmt defining the virtual operand we are processing,
+		 we have processed it already in this case.  */
+	      if (gimple_bb (defvar_def) != gimple_bb (use_stmt)
+		  && !dominated_by_p (CDI_DOMINATORS,
+				      gimple_bb (defvar_def),
+				      gimple_bb (use_stmt)))
+		temp = use_stmt;
 	    }
 	  /* If the statement is a use the store is not dead.  */
 	  else if (ref_maybe_used_by_stmt_p (use_stmt,
@@ -350,6 +356,7 @@ struct gimple_opt_pass pass_dse =
  {
   GIMPLE_PASS,
   "dse",			/* name */
+  OPTGROUP_NONE,                /* optinfo_flags */
   gate_dse,			/* gate */
   tree_ssa_dse,			/* execute */
   NULL,				/* sub */

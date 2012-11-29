@@ -125,7 +125,7 @@ static bool
 tree_is_indexable (tree t)
 {
   if (TREE_CODE (t) == PARM_DECL)
-    return false;
+    return true;
   else if (TREE_CODE (t) == VAR_DECL && decl_function_context (t)
 	   && !TREE_STATIC (t))
     return false;
@@ -148,13 +148,13 @@ tree_is_indexable (tree t)
    After outputting bitpack, lto_output_location_data has
    to be done to output actual data.  */
 
-static inline void
-lto_output_location_bitpack (struct bitpack_d *bp,
-			     struct output_block *ob,
-			     location_t loc)
+void
+lto_output_location (struct output_block *ob, struct bitpack_d *bp,
+		     location_t loc)
 {
   expanded_location xloc;
 
+  loc = LOCATION_LOCUS (loc);
   bp_pack_value (bp, loc == UNKNOWN_LOCATION, 1);
   if (loc == UNKNOWN_LOCATION)
     return;
@@ -178,25 +178,6 @@ lto_output_location_bitpack (struct bitpack_d *bp,
   if (ob->current_col != xloc.column)
     bp_pack_var_len_unsigned (bp, xloc.column);
   ob->current_col = xloc.column;
-}
-
-
-/* Emit location LOC to output block OB.
-   If the output_location streamer hook exists, call it.
-   Otherwise, when bitpack is handy, it is more space efficient to call
-   lto_output_location_bitpack with existing bitpack.  */
-
-void
-lto_output_location (struct output_block *ob, location_t loc)
-{
-  if (streamer_hooks.output_location)
-    streamer_hooks.output_location (ob, loc);
-  else
-    {
-      struct bitpack_d bp = bitpack_create (ob->main_stream);
-      lto_output_location_bitpack (&bp, ob, loc);
-      streamer_write_bitpack (&bp);
-    }
 }
 
 
@@ -236,6 +217,7 @@ lto_output_tree_ref (struct output_block *ob, tree expr)
     case VAR_DECL:
     case DEBUG_EXPR_DECL:
       gcc_assert (decl_function_context (expr) == NULL || TREE_STATIC (expr));
+    case PARM_DECL:
       streamer_write_record_start (ob, LTO_global_decl_ref);
       lto_output_var_decl_index (ob->decl_state, ob->main_stream, expr);
       break;
@@ -331,7 +313,7 @@ lto_write_tree (struct output_block *ob, tree expr, bool ref_p)
   /* Pack all the non-pointer fields in EXPR into a bitpack and write
      the resulting bitpack.  */
   bp = bitpack_create (ob->main_stream);
-  streamer_pack_tree_bitfields (&bp, expr);
+  streamer_pack_tree_bitfields (ob, &bp, expr);
   streamer_write_bitpack (&bp);
 
   /* Write all the pointer fields in EXPR.  */
@@ -348,13 +330,13 @@ lto_write_tree (struct output_block *ob, tree expr, bool ref_p)
 	  && (TREE_STATIC (expr) || DECL_EXTERNAL (expr))
 	  && initial)
 	{
-	  lto_varpool_encoder_t varpool_encoder;
+	  lto_symtab_encoder_t encoder;
 	  struct varpool_node *vnode;
 
-	  varpool_encoder = ob->decl_state->varpool_node_encoder;
+	  encoder = ob->decl_state->symtab_node_encoder;
 	  vnode = varpool_get_node (expr);
 	  if (!vnode
-	      || !lto_varpool_encoder_encode_initializer_p (varpool_encoder,
+	      || !lto_symtab_encoder_encode_initializer_p (encoder,
 							    vnode))
 	    initial = error_mark_node;
 	}
@@ -390,9 +372,10 @@ lto_output_tree (struct output_block *ob, tree expr,
       return;
     }
 
-  /* INTEGER_CST nodes are special because they need their original type
+  /* Shared INTEGER_CST nodes are special because they need their original type
      to be materialized by the reader (to implement TYPE_CACHED_VALUES).  */
-  if (TREE_CODE (expr) == INTEGER_CST)
+  if (TREE_CODE (expr) == INTEGER_CST
+      && !TREE_OVERFLOW (expr))
     {
       streamer_write_integer_cst (ob, expr, ref_p);
       return;
@@ -503,7 +486,9 @@ output_eh_region (struct output_block *ob, eh_region r)
   else if (r->type == ERT_MUST_NOT_THROW)
     {
       stream_write_tree (ob, r->u.must_not_throw.failure_decl, true);
-      lto_output_location (ob, r->u.must_not_throw.failure_loc);
+      bitpack_d bp = bitpack_create (ob->main_stream);
+      stream_output_location (ob, &bp, r->u.must_not_throw.failure_loc);
+      streamer_write_bitpack (&bp);
     }
 
   if (r->landing_pads)
@@ -558,35 +543,33 @@ output_eh_regions (struct output_block *ob, struct function *fn)
       streamer_write_hwi (ob, fn->eh->region_tree->index);
 
       /* Emit all the EH regions in the region array.  */
-      streamer_write_hwi (ob, VEC_length (eh_region, fn->eh->region_array));
-      FOR_EACH_VEC_ELT (eh_region, fn->eh->region_array, i, eh)
+      streamer_write_hwi (ob, vec_safe_length (fn->eh->region_array));
+      FOR_EACH_VEC_SAFE_ELT (fn->eh->region_array, i, eh)
 	output_eh_region (ob, eh);
 
       /* Emit all landing pads.  */
-      streamer_write_hwi (ob, VEC_length (eh_landing_pad, fn->eh->lp_array));
-      FOR_EACH_VEC_ELT (eh_landing_pad, fn->eh->lp_array, i, lp)
+      streamer_write_hwi (ob, vec_safe_length (fn->eh->lp_array));
+      FOR_EACH_VEC_SAFE_ELT (fn->eh->lp_array, i, lp)
 	output_eh_lp (ob, lp);
 
       /* Emit all the runtime type data.  */
-      streamer_write_hwi (ob, VEC_length (tree, fn->eh->ttype_data));
-      FOR_EACH_VEC_ELT (tree, fn->eh->ttype_data, i, ttype)
+      streamer_write_hwi (ob, vec_safe_length (fn->eh->ttype_data));
+      FOR_EACH_VEC_SAFE_ELT (fn->eh->ttype_data, i, ttype)
 	stream_write_tree (ob, ttype, true);
 
       /* Emit the table of action chains.  */
       if (targetm.arm_eabi_unwinder)
 	{
 	  tree t;
-	  streamer_write_hwi (ob, VEC_length (tree,
-				              fn->eh->ehspec_data.arm_eabi));
-	  FOR_EACH_VEC_ELT (tree, fn->eh->ehspec_data.arm_eabi, i, t)
+	  streamer_write_hwi (ob, vec_safe_length (fn->eh->ehspec_data.arm_eabi));
+	  FOR_EACH_VEC_SAFE_ELT (fn->eh->ehspec_data.arm_eabi, i, t)
 	    stream_write_tree (ob, t, true);
 	}
       else
 	{
 	  uchar c;
-	  streamer_write_hwi (ob, VEC_length (uchar,
-				              fn->eh->ehspec_data.other));
-	  FOR_EACH_VEC_ELT (uchar, fn->eh->ehspec_data.other, i, c)
+	  streamer_write_hwi (ob, vec_safe_length (fn->eh->ehspec_data.other));
+	  FOR_EACH_VEC_SAFE_ELT (fn->eh->ehspec_data.other, i, c)
 	    streamer_write_char_stream (ob->main_stream, c);
 	}
     }
@@ -604,22 +587,26 @@ output_ssa_names (struct output_block *ob, struct function *fn)
 {
   unsigned int i, len;
 
-  len = VEC_length (tree, SSANAMES (fn));
+  len = vec_safe_length (SSANAMES (fn));
   streamer_write_uhwi (ob, len);
 
   for (i = 1; i < len; i++)
     {
-      tree ptr = VEC_index (tree, SSANAMES (fn), i);
+      tree ptr = (*SSANAMES (fn))[i];
 
       if (ptr == NULL_TREE
 	  || SSA_NAME_IN_FREE_LIST (ptr)
-	  || !is_gimple_reg (ptr))
+	  || virtual_operand_p (ptr))
 	continue;
 
       streamer_write_uhwi (ob, i);
       streamer_write_char_stream (ob->main_stream,
 				  SSA_NAME_IS_DEFAULT_DEF (ptr));
-      stream_write_tree (ob, SSA_NAME_VAR (ptr), true);
+      if (SSA_NAME_VAR (ptr))
+	stream_write_tree (ob, SSA_NAME_VAR (ptr), true);
+      else
+	/* ???  This drops SSA_NAME_IDENTIFIER on the floor.  */
+	stream_write_tree (ob, TREE_TYPE (ptr), true);
     }
 
   streamer_write_zero (ob);
@@ -703,7 +690,6 @@ produce_asm (struct output_block *ob, tree fn)
   /* Write the header.  */
   header.lto_header.major_version = LTO_major_version;
   header.lto_header.minor_version = LTO_minor_version;
-  header.lto_header.section_type = section_type;
 
   header.compressed_size = 0;
 
@@ -742,13 +728,9 @@ output_struct_function_base (struct output_block *ob, struct function *fn)
   stream_write_tree (ob, fn->nonlocal_goto_save_area, true);
 
   /* Output all the local variables in the function.  */
-  streamer_write_hwi (ob, VEC_length (tree, fn->local_decls));
-  FOR_EACH_VEC_ELT (tree, fn->local_decls, i, t)
+  streamer_write_hwi (ob, vec_safe_length (fn->local_decls));
+  FOR_EACH_VEC_SAFE_ELT (fn->local_decls, i, t)
     stream_write_tree (ob, t, true);
-
-  /* Output the function start and end loci.  */
-  lto_output_location (ob, fn->function_start_locus);
-  lto_output_location (ob, fn->function_end_locus);
 
   /* Output current IL state of the function.  */
   streamer_write_uhwi (ob, fn->curr_properties);
@@ -757,10 +739,10 @@ output_struct_function_base (struct output_block *ob, struct function *fn)
   bp = bitpack_create (ob->main_stream);
   bp_pack_value (&bp, fn->is_thunk, 1);
   bp_pack_value (&bp, fn->has_local_explicit_reg_vars, 1);
-  bp_pack_value (&bp, fn->after_tree_profile, 1);
   bp_pack_value (&bp, fn->returns_pcc_struct, 1);
   bp_pack_value (&bp, fn->returns_struct, 1);
   bp_pack_value (&bp, fn->can_throw_non_call_exceptions, 1);
+  bp_pack_value (&bp, fn->can_delete_dead_exceptions, 1);
   bp_pack_value (&bp, fn->always_inline_functions_inlined, 1);
   bp_pack_value (&bp, fn->after_inlining, 1);
   bp_pack_value (&bp, fn->stdarg, 1);
@@ -769,6 +751,11 @@ output_struct_function_base (struct output_block *ob, struct function *fn)
   bp_pack_value (&bp, fn->calls_setjmp, 1);
   bp_pack_value (&bp, fn->va_list_fpr_size, 8);
   bp_pack_value (&bp, fn->va_list_gpr_size, 8);
+
+  /* Output the function start and end loci.  */
+  stream_output_location (ob, &bp, fn->function_start_locus);
+  stream_output_location (ob, &bp, fn->function_end_locus);
+
   streamer_write_bitpack (&bp);
 }
 
@@ -793,7 +780,6 @@ output_function (struct cgraph_node *node)
   gcc_assert (current_function_decl == NULL_TREE && cfun == NULL);
 
   /* Set current_function_decl and cfun.  */
-  current_function_decl = function;
   push_cfun (fn);
 
   /* Make string 0 be a NULL string.  */
@@ -802,9 +788,6 @@ output_function (struct cgraph_node *node)
   streamer_write_record_start (ob, LTO_function);
 
   output_struct_function_base (ob, fn);
-
-  /* Output the head of the arguments list.  */
-  stream_write_tree (ob, DECL_ARGUMENTS (function), true);
 
   /* Output all the SSA names used in the function.  */
   output_ssa_names (ob, fn);
@@ -847,7 +830,6 @@ output_function (struct cgraph_node *node)
 
   destroy_output_block (ob);
 
-  current_function_decl = NULL;
   pop_cfun ();
 }
 
@@ -889,7 +871,6 @@ lto_output_toplevel_asms (void)
   /* Write the header.  */
   header.lto_header.major_version = LTO_major_version;
   header.lto_header.minor_version = LTO_minor_version;
-  header.lto_header.section_type = LTO_section_asm;
 
   header.main_size = ob->main_stream->total_size;
   header.string_size = ob->string_stream->total_size;
@@ -957,7 +938,7 @@ copy_function (struct cgraph_node *node)
 	 must be empty where we reach here. */
       gcc_assert (lto_tree_ref_encoder_size (encoder) == 0);
       for (j = 0; j < n; j++)
-	VEC_safe_push (tree, heap, encoder->trees, trees[j]);
+	encoder->trees.safe_push (trees[j]);
       encoder->next_index = n;
     }
 
@@ -971,25 +952,26 @@ copy_function (struct cgraph_node *node)
 /* Main entry point from the pass manager.  */
 
 static void
-lto_output (cgraph_node_set set, varpool_node_set vset)
+lto_output (void)
 {
-  struct cgraph_node *node;
   struct lto_out_decl_state *decl_state;
 #ifdef ENABLE_CHECKING
   bitmap output = lto_bitmap_alloc ();
 #endif
   int i, n_nodes;
-  lto_cgraph_encoder_t encoder = lto_get_out_decl_state ()->cgraph_node_encoder;
+  lto_symtab_encoder_t encoder = lto_get_out_decl_state ()->symtab_node_encoder;
 
   /* Initialize the streamer.  */
   lto_streamer_init ();
 
-  n_nodes = lto_cgraph_encoder_size (encoder);
+  n_nodes = lto_symtab_encoder_size (encoder);
   /* Process only the functions with bodies.  */
   for (i = 0; i < n_nodes; i++)
     {
-      node = lto_cgraph_encoder_deref (encoder, i);
-      if (lto_cgraph_encoder_encode_body_p (encoder, node)
+      symtab_node snode = lto_symtab_encoder_deref (encoder, i);
+      cgraph_node *node = dyn_cast <cgraph_node> (snode);
+      if (node
+	  && lto_symtab_encoder_encode_body_p (encoder, node)
 	  && !node->alias
 	  && !node->thunk.thunk_p)
 	{
@@ -1013,7 +995,7 @@ lto_output (cgraph_node_set set, varpool_node_set vset)
      be done now to make sure that all the statements in every function
      have been renumbered so that edges can be associated with call
      statements using the statement UIDs.  */
-  output_cgraph (set, vset);
+  output_symtab ();
 
 #ifdef ENABLE_CHECKING
   lto_bitmap_free (output);
@@ -1025,6 +1007,7 @@ struct ipa_opt_pass_d pass_ipa_lto_gimple_out =
  {
   IPA_PASS,
   "lto_gimple_out",	                /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_lto_out,			        /* gate */
   NULL,		                	/* execute */
   NULL,					/* sub */
@@ -1283,12 +1266,9 @@ produce_symtab (struct output_block *ob)
   struct streamer_tree_cache_d *cache = ob->writer_cache;
   char *section_name = lto_get_section_name (LTO_section_symtab, NULL, NULL);
   struct pointer_set_t *seen;
-  struct cgraph_node *node;
-  struct varpool_node *vnode;
   struct lto_output_stream stream;
-  lto_varpool_encoder_t varpool_encoder = ob->decl_state->varpool_node_encoder;
-  lto_cgraph_encoder_t encoder = ob->decl_state->cgraph_node_encoder;
-  int i;
+  lto_symtab_encoder_t encoder = ob->decl_state->symtab_node_encoder;
+  lto_symtab_encoder_iterator lsei;
 
   lto_begin_section (section_name, false);
   free (section_name);
@@ -1296,70 +1276,26 @@ produce_symtab (struct output_block *ob)
   seen = pointer_set_create ();
   memset (&stream, 0, sizeof (stream));
 
-  /* Write all functions. 
-     First write all defined functions and then write all used functions.
-     This is done so only to handle duplicated symbols in cgraph.  */
-  for (i = 0; i < lto_cgraph_encoder_size (encoder); i++)
+  /* Write the symbol table.
+     First write everything defined and then all declarations.
+     This is neccesary to handle cases where we have duplicated symbols.  */
+  for (lsei = lsei_start (encoder);
+       !lsei_end_p (lsei); lsei_next (&lsei))
     {
-      node = lto_cgraph_encoder_deref (encoder, i);
-      if (DECL_EXTERNAL (node->symbol.decl))
-	continue;
-      if (DECL_COMDAT (node->symbol.decl)
-	  && cgraph_comdat_can_be_unshared_p (node))
-	continue;
-      if ((node->alias && !node->thunk.alias) || node->global.inlined_to)
-	continue;
-      write_symbol (cache, &stream, node->symbol.decl, seen, false);
-    }
-  for (i = 0; i < lto_cgraph_encoder_size (encoder); i++)
-    {
-      node = lto_cgraph_encoder_deref (encoder, i);
-      if (!DECL_EXTERNAL (node->symbol.decl))
-	continue;
-      /* We keep around unused extern inlines in order to be able to inline
-	 them indirectly or via vtables.  Do not output them to symbol
-	 table: they end up being undefined and just consume space.  */
-      if (!node->symbol.address_taken && !node->callers)
-	continue;
-      if (DECL_COMDAT (node->symbol.decl)
-	  && cgraph_comdat_can_be_unshared_p (node))
-	continue;
-      if ((node->alias && !node->thunk.alias) || node->global.inlined_to)
-	continue;
-      write_symbol (cache, &stream, node->symbol.decl, seen, false);
-    }
+      symtab_node node = lsei_node (lsei);
 
-  /* Write all variables.  */
-  for (i = 0; i < lto_varpool_encoder_size (varpool_encoder); i++)
-    {
-      vnode = lto_varpool_encoder_deref (varpool_encoder, i);
-      if (DECL_EXTERNAL (vnode->symbol.decl))
+      if (!symtab_real_symbol_p (node) || DECL_EXTERNAL (node->symbol.decl))
 	continue;
-      /* COMDAT virtual tables can be unshared.  Do not declare them
-	 in the LTO symbol table to prevent linker from forcing them
-	 into the output. */
-      if (DECL_COMDAT (vnode->symbol.decl)
-	  && !vnode->symbol.force_output
-	  && vnode->finalized 
-	  && DECL_VIRTUAL_P (vnode->symbol.decl))
-	continue;
-      if (vnode->alias && !vnode->alias_of)
-	continue;
-      write_symbol (cache, &stream, vnode->symbol.decl, seen, false);
+      write_symbol (cache, &stream, node->symbol.decl, seen, false);
     }
-  for (i = 0; i < lto_varpool_encoder_size (varpool_encoder); i++)
+  for (lsei = lsei_start (encoder);
+       !lsei_end_p (lsei); lsei_next (&lsei))
     {
-      vnode = lto_varpool_encoder_deref (varpool_encoder, i);
-      if (!DECL_EXTERNAL (vnode->symbol.decl))
+      symtab_node node = lsei_node (lsei);
+
+      if (!symtab_real_symbol_p (node) || !DECL_EXTERNAL (node->symbol.decl))
 	continue;
-      if (DECL_COMDAT (vnode->symbol.decl)
-	  && !vnode->symbol.force_output
-	  && vnode->finalized 
-	  && DECL_VIRTUAL_P (vnode->symbol.decl))
-	continue;
-      if (vnode->alias && !vnode->alias_of)
-	continue;
-      write_symbol (cache, &stream, vnode->symbol.decl, seen, false);
+      write_symbol (cache, &stream, node->symbol.decl, seen, false);
     }
 
   lto_write_stream (&stream);
@@ -1376,8 +1312,7 @@ produce_symtab (struct output_block *ob)
    recover these on other side.  */
 
 static void
-produce_asm_for_decls (cgraph_node_set set ATTRIBUTE_UNUSED,
-		       varpool_node_set vset ATTRIBUTE_UNUSED)
+produce_asm_for_decls (void)
 {
   struct lto_out_decl_state *out_state;
   struct lto_out_decl_state *fn_out_state;
@@ -1405,18 +1340,17 @@ produce_asm_for_decls (cgraph_node_set set ATTRIBUTE_UNUSED,
 
   /* Write the global symbols.  */
   out_state = lto_get_out_decl_state ();
-  num_fns = VEC_length (lto_out_decl_state_ptr, lto_function_decl_states);
+  num_fns = lto_function_decl_states.length ();
   lto_output_decl_state_streams (ob, out_state);
   for (idx = 0; idx < num_fns; idx++)
     {
       fn_out_state =
-	VEC_index (lto_out_decl_state_ptr, lto_function_decl_states, idx);
+	lto_function_decl_states[idx];
       lto_output_decl_state_streams (ob, fn_out_state);
     }
 
   header.lto_header.major_version = LTO_major_version;
   header.lto_header.minor_version = LTO_minor_version;
-  header.lto_header.section_type = LTO_section_decls;
 
   /* Currently not used.  This field would allow us to preallocate
      the globals vector, so that it need not be resized as it is extended.  */
@@ -1428,7 +1362,7 @@ produce_asm_for_decls (cgraph_node_set set ATTRIBUTE_UNUSED,
   for (idx = 0; idx < num_fns; idx++)
     {
       fn_out_state =
-	VEC_index (lto_out_decl_state_ptr, lto_function_decl_states, idx);
+	lto_function_decl_states[idx];
       decl_state_size += lto_out_decl_state_written_size (fn_out_state);
     }
   header.decl_state_size = decl_state_size;
@@ -1443,8 +1377,7 @@ produce_asm_for_decls (cgraph_node_set set ATTRIBUTE_UNUSED,
 
   /* Write the main out-decl state, followed by out-decl states of
      functions. */
-  decl_state_stream = ((struct lto_output_stream *)
-		       xcalloc (1, sizeof (struct lto_output_stream)));
+  decl_state_stream = XCNEW (struct lto_output_stream);
   num_decl_states = num_fns + 1;
   lto_output_data_stream (decl_state_stream, &num_decl_states,
 			  sizeof (num_decl_states));
@@ -1452,7 +1385,7 @@ produce_asm_for_decls (cgraph_node_set set ATTRIBUTE_UNUSED,
   for (idx = 0; idx < num_fns; idx++)
     {
       fn_out_state =
-	VEC_index (lto_out_decl_state_ptr, lto_function_decl_states, idx);
+	lto_function_decl_states[idx];
       lto_output_decl_state_refs (ob, decl_state_stream, fn_out_state);
     }
   lto_write_stream (decl_state_stream);
@@ -1475,13 +1408,11 @@ produce_asm_for_decls (cgraph_node_set set ATTRIBUTE_UNUSED,
   for (idx = 0; idx < num_fns; idx++)
     {
       fn_out_state =
-	VEC_index (lto_out_decl_state_ptr, lto_function_decl_states, idx);
+	lto_function_decl_states[idx];
       lto_delete_out_decl_state (fn_out_state);
     }
-  lto_cgraph_encoder_delete (ob->decl_state->cgraph_node_encoder);
-  lto_varpool_encoder_delete (ob->decl_state->varpool_node_encoder);
-  VEC_free (lto_out_decl_state_ptr, heap, lto_function_decl_states);
-  lto_function_decl_states = NULL;
+  lto_symtab_encoder_delete (ob->decl_state->symtab_node_encoder);
+  lto_function_decl_states.release ();
   destroy_output_block (ob);
 }
 
@@ -1491,6 +1422,7 @@ struct ipa_opt_pass_d pass_ipa_lto_finish_out =
  {
   IPA_PASS,
   "lto_decls_out",	                /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_lto_out,			        /* gate */
   NULL,        	                        /* execute */
   NULL,					/* sub */

@@ -28,8 +28,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "basic-block.h"
 #include "flags.h"
 #include "tree-flow.h"
-#include "tree-dump.h"
-#include "timevar.h"
 #include "function.h"
 #include "langhooks.h"
 #include "diagnostic-core.h"
@@ -40,7 +38,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h"
 #include "ggc.h"
 #include "cgraph.h"
-#include "graph.h"
 #include "cfgloop.h"
 #include "except.h"
 #include "plugin.h"
@@ -97,6 +94,7 @@ struct gimple_opt_pass pass_cleanup_cfg_post_optimizing =
  {
   GIMPLE_PASS,
   "optimized",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,					/* gate */
   execute_cleanup_cfg_post_optimizing,	/* execute */
   NULL,					/* sub */
@@ -182,16 +180,32 @@ execute_fixup_cfg (void)
       FOR_EACH_EDGE (e, ei, bb->succs)
         e->count = (e->count * count_scale
 		    + REG_BR_PROB_BASE / 2) / REG_BR_PROB_BASE;
+
+      /* If we have a basic block with no successors that does not
+	 end with a control statement or a noreturn call end it with
+	 a call to __builtin_unreachable.  This situation can occur
+	 when inlining a noreturn call that does in fact return.  */
+      if (EDGE_COUNT (bb->succs) == 0)
+	{
+	  gimple stmt = last_stmt (bb);
+	  if (!stmt
+	      || (!is_ctrl_stmt (stmt)
+		  && (!is_gimple_call (stmt)
+		      || (gimple_call_flags (stmt) & ECF_NORETURN) == 0)))
+	    {
+	      stmt = gimple_build_call
+		  (builtin_decl_implicit (BUILT_IN_UNREACHABLE), 0);
+	      gimple_stmt_iterator gsi = gsi_last_bb (bb);
+	      gsi_insert_after (&gsi, stmt, GSI_NEW_STMT);
+	    }
+	}
     }
   if (count_scale != REG_BR_PROB_BASE)
     compute_function_frequency ();
 
   /* We just processed all calls.  */
   if (cfun->gimple_df)
-    {
-      VEC_free (gimple, gc, MODIFIED_NORETURN_CALLS (cfun));
-      MODIFIED_NORETURN_CALLS (cfun) = NULL;
-    }
+    vec_free (MODIFIED_NORETURN_CALLS (cfun));
 
   /* Dump a textual representation of the flowgraph.  */
   if (dump_file)
@@ -205,6 +219,7 @@ struct gimple_opt_pass pass_fixup_cfg =
  {
   GIMPLE_PASS,
   "*free_cfg_annotations",		/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,					/* gate */
   execute_fixup_cfg,			/* execute */
   NULL,					/* sub */

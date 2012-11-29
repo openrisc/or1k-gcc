@@ -33,8 +33,8 @@ type ScanState interface {
 	ReadRune() (r rune, size int, err error)
 	// UnreadRune causes the next call to ReadRune to return the same rune.
 	UnreadRune() error
-	// SkipSpace skips space in the input. Newlines are treated as space 
-	// unless the scan operation is Scanln, Fscanln or Sscanln, in which case 
+	// SkipSpace skips space in the input. Newlines are treated as space
+	// unless the scan operation is Scanln, Fscanln or Sscanln, in which case
 	// a newline is treated as EOF.
 	SkipSpace()
 	// Token skips space in the input if skipSpace is true, then returns the
@@ -312,7 +312,7 @@ func notSpace(r rune) bool {
 	return !isSpace(r)
 }
 
-// skipSpace provides Scan() methods the ability to skip space and newline characters 
+// skipSpace provides Scan() methods the ability to skip space and newline characters
 // in keeping with the current scanning mode set by format strings and Scan()/Scanln().
 func (s *ss) SkipSpace() {
 	s.skipSpace(false)
@@ -1090,7 +1090,8 @@ func (s *ss) advance(format string) (i int) {
 			// There was space in the format, so there should be space (EOF)
 			// in the input.
 			inputc := s.getRune()
-			if inputc == eof {
+			if inputc == eof || inputc == '\n' {
+				// If we've reached a newline, stop now; don't read ahead.
 				return
 			}
 			if !isSpace(inputc) {

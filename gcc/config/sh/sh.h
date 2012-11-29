@@ -31,69 +31,7 @@ along with GCC; see the file COPYING3.  If not see
 /* ??? No longer true.  */
 extern int code_for_indirect_jump_scratch;
 
-#define TARGET_CPU_CPP_BUILTINS() \
-do { \
-  builtin_define ("__sh__"); \
-  builtin_assert ("cpu=sh"); \
-  builtin_assert ("machine=sh"); \
-  switch ((int) sh_cpu) \
-    { \
-    case PROCESSOR_SH1: \
-      builtin_define ("__sh1__"); \
-      break; \
-    case PROCESSOR_SH2: \
-      builtin_define ("__sh2__"); \
-      break; \
-    case PROCESSOR_SH2E: \
-      builtin_define ("__SH2E__"); \
-      break; \
-    case PROCESSOR_SH2A: \
-      builtin_define ("__SH2A__"); \
-      builtin_define (TARGET_SH2A_DOUBLE \
-		      ? (TARGET_FPU_SINGLE ? "__SH2A_SINGLE__" : "__SH2A_DOUBLE__") \
-		      : TARGET_FPU_ANY ? "__SH2A_SINGLE_ONLY__" \
-		      : "__SH2A_NOFPU__"); \
-      break; \
-    case PROCESSOR_SH3: \
-      builtin_define ("__sh3__"); \
-      builtin_define ("__SH3__"); \
-      if (TARGET_HARD_SH4) \
-	builtin_define ("__SH4_NOFPU__"); \
-      break; \
-    case PROCESSOR_SH3E: \
-      builtin_define (TARGET_HARD_SH4 ? "__SH4_SINGLE_ONLY__" : "__SH3E__"); \
-      break; \
-    case PROCESSOR_SH4: \
-      builtin_define (TARGET_FPU_SINGLE ? "__SH4_SINGLE__" : "__SH4__"); \
-      break; \
-    case PROCESSOR_SH4A: \
-      builtin_define ("__SH4A__"); \
-      builtin_define (TARGET_SH4 \
-		      ? (TARGET_FPU_SINGLE ? "__SH4_SINGLE__" : "__SH4__") \
-		      : TARGET_FPU_ANY ? "__SH4_SINGLE_ONLY__" \
-		      : "__SH4_NOFPU__"); \
-      break; \
-    case PROCESSOR_SH5: \
-      { \
-	builtin_define_with_value ("__SH5__", \
-				   TARGET_SHMEDIA64 ? "64" : "32", 0); \
-	builtin_define_with_value ("__SHMEDIA__", \
-				   TARGET_SHMEDIA ? "1" : "0", 0); \
-	if (! TARGET_FPU_DOUBLE) \
-	  builtin_define ("__SH4_NOFPU__"); \
-      } \
-    } \
-  if (TARGET_FPU_ANY) \
-    builtin_define ("__SH_FPU_ANY__"); \
-  if (TARGET_FPU_DOUBLE) \
-    builtin_define ("__SH_FPU_DOUBLE__"); \
-  if (TARGET_HITACHI) \
-    builtin_define ("__HITACHI__"); \
-  if (TARGET_FMOVD) \
-    builtin_define ("__FMOVD_ENABLED__"); \
-  builtin_define (TARGET_LITTLE_ENDIAN \
-		  ? "__LITTLE_ENDIAN__" : "__BIG_ENDIAN__"); \
-} while (0)
+#define TARGET_CPU_CPP_BUILTINS() sh_cpu_cpp_builtins (pfile)
 
 /* Value should be nonzero if functions must have frame pointers.
    Zero means the frame pointer need not be set up (and parms may be accessed
@@ -120,14 +58,8 @@ do { \
 /* Nonzero if we should generate code using type 3E insns.  */
 #define TARGET_SH3E (TARGET_SH3 && TARGET_SH_E)
 
-/* Nonzero if the cache line size is 32.  */
-#define TARGET_CACHE32 (TARGET_HARD_SH4 || TARGET_SH5)
-
 /* Nonzero if we schedule for a superscalar implementation.  */
-#define TARGET_SUPERSCALAR TARGET_HARD_SH4
-
-/* Nonzero if the target has separate instruction and data caches.  */
-#define TARGET_HARVARD (TARGET_HARD_SH4 || TARGET_SH5)
+#define TARGET_SUPERSCALAR (TARGET_HARD_SH4 || TARGET_SH2A)
 
 /* Nonzero if a double-precision FPU is available.  */
 #define TARGET_FPU_DOUBLE \
@@ -171,9 +103,6 @@ do { \
 #define TARGET_VARARGS_PRETEND_ARGS(FUN_DECL) \
   (TARGET_SH1 && ! TARGET_SH2E && ! TARGET_SH5 \
    && ! (TARGET_HITACHI || sh_attr_renesas_p (FUN_DECL)))
-
-/* Nonzero if either soft or hard atomics are enabled.  */
-#define TARGET_ANY_ATOMIC (TARGET_SOFT_ATOMIC | TARGET_HARD_ATOMIC)
 
 #ifndef TARGET_CPU_DEFAULT
 #define TARGET_CPU_DEFAULT SELECT_SH1
@@ -338,8 +267,8 @@ do { \
 #endif
 
 #define SH_ASM_SPEC \
- "%(subtarget_asm_endian_spec) %{mrelax:-relax %(subtarget_asm_relax_spec)}\
-%(subtarget_asm_isa_spec) %(subtarget_asm_spec)\
+ "%(subtarget_asm_endian_spec) %{mrelax:-relax %(subtarget_asm_relax_spec)} \
+%(subtarget_asm_isa_spec) %(subtarget_asm_spec) \
 %{m2a:--isa=sh2a} \
 %{m2a-single:--isa=sh2a} \
 %{m2a-single-only:--isa=sh2a} \
@@ -436,20 +365,8 @@ do { \
 "%{m2a*:%eSH2a does not support little-endian}}"
 #endif
 
-#define UNSUPPORTED_ATOMIC_OPTIONS \
-"%{msoft-atomic:%{mhard-atomic:%e-msoft-atomic and -mhard-atomic cannot be \
-used at the same time}}"
-
-#if TARGET_CPU_DEFAULT & MASK_SH4A
-#define UNSUPPORTED_HARD_ATOMIC_CPU ""
-#else
-#define UNSUPPORTED_HARD_ATOMIC_CPU \
-"%{!m4a*:%{mhard-atomic:%e-mhard-atomic is only available for SH4A targets}}"
-#endif
-
 #undef DRIVER_SELF_SPECS
-#define DRIVER_SELF_SPECS UNSUPPORTED_SH2A, UNSUPPORTED_ATOMIC_OPTIONS,\
-			  UNSUPPORTED_HARD_ATOMIC_CPU
+#define DRIVER_SELF_SPECS UNSUPPORTED_SH2A
 
 #define ASSEMBLER_DIALECT assembler_dialect
 
@@ -538,7 +455,7 @@ extern enum sh_divide_strategy_e sh_div_strategy;
 /* The log (base 2) of the cache line size, in bytes.  Processors prior to
    SH2 have no actual cache, but they fetch code in chunks of 4 bytes.
    The SH2/3 have 16 byte cache lines, and the SH4 has a 32 byte cache line */
-#define CACHE_LOG (TARGET_CACHE32 ? 5 : TARGET_SH2 ? 4 : 2)
+#define CACHE_LOG ((TARGET_HARD_SH4 || TARGET_SH5) ? 5 : TARGET_SH2 ? 4 : 2)
 
 /* ABI given & required minimum allocation boundary (in *bits*) for the
    code of a function.  */
@@ -1213,12 +1130,8 @@ extern enum reg_class regno_reg_class[FIRST_PSEUDO_REGISTER];
 
 /* Defines for sh.md and constraints.md.  */
 
-#define CONST_OK_FOR_I06(VALUE) (((HOST_WIDE_INT)(VALUE)) >= -32 \
-				 && ((HOST_WIDE_INT)(VALUE)) <= 31)
 #define CONST_OK_FOR_I08(VALUE) (((HOST_WIDE_INT)(VALUE))>= -128 \
 				 && ((HOST_WIDE_INT)(VALUE)) <= 127)
-#define CONST_OK_FOR_I10(VALUE) (((HOST_WIDE_INT)(VALUE)) >= -512 \
-				 && ((HOST_WIDE_INT)(VALUE)) <= 511)
 #define CONST_OK_FOR_I16(VALUE) (((HOST_WIDE_INT)(VALUE)) >= -32768 \
 				 && ((HOST_WIDE_INT)(VALUE)) <= 32767)
 
@@ -1656,9 +1569,10 @@ struct sh_args {
 /* Length in units of the trampoline for entering a nested function.  */
 #define TRAMPOLINE_SIZE  (TARGET_SHMEDIA64 ? 40 : TARGET_SH5 ? 24 : 16)
 
-/* Alignment required for a trampoline in bits .  */
+/* Alignment required for a trampoline in bits.  */
 #define TRAMPOLINE_ALIGNMENT \
-  ((CACHE_LOG < 3 || (optimize_size && ! TARGET_HARVARD)) ? 32 \
+  ((CACHE_LOG < 3 \
+    || (optimize_size && ! (TARGET_HARD_SH4 || TARGET_SH5))) ? 32 \
    : TARGET_SHMEDIA ? 256 : 64)
 
 /* A C expression whose value is RTL representing the value of the return
@@ -1932,16 +1846,35 @@ struct sh_args {
 /* Nonzero if access to memory by bytes is no faster than for words.  */
 #define SLOW_BYTE_ACCESS 1
 
-/* Immediate shift counts are truncated by the output routines (or was it
-   the assembler?).  Shift counts in a register are truncated by SH.  Note
-   that the native compiler puts too large (> 32) immediate shift counts
-   into a register and shifts by the register, letting the SH decide what
-   to do instead of doing that itself.  */
-/* ??? The library routines in lib1funcs.S truncate the shift count.
-   However, the SH3 has hardware shifts that do not truncate exactly as gcc
-   expects - the sign bit is significant - so it appears that we need to
-   leave this zero for correct SH3 code.  */
-#define SHIFT_COUNT_TRUNCATED (! TARGET_SH3 && ! TARGET_SH2A)
+/* Nonzero if the target supports dynamic shift instructions
+   like shad and shld.  */
+#define TARGET_DYNSHIFT (TARGET_SH3 || TARGET_SH2A)
+
+/* The cost of using the dynamic shift insns (shad, shld) are the same
+   if they are available.  If they are not available a library function will
+   be emitted instead, which is more expensive.  */
+#define SH_DYNAMIC_SHIFT_COST (TARGET_DYNSHIFT ? 1 : 20)
+
+/* Defining SHIFT_COUNT_TRUNCATED tells the combine pass that code like
+   (X << (Y % 32)) for register X, Y is equivalent to (X << Y).
+   This is not generally true when hardware dynamic shifts (shad, shld) are
+   used, because they check the sign bit _before_ the modulo op.  The sign
+   bit determines whether it is a left shift or a right shift:
+     if (Y < 0)
+       return X << (Y & 31);
+     else
+       return X >> (-Y) & 31);
+ 
+   The dynamic shift library routines in lib1funcs.S do not use the sign bit
+   like the hardware dynamic shifts and truncate the shift count to 31.
+   We define SHIFT_COUNT_TRUNCATED to 0 and express the implied shift count
+   truncation in the library function call patterns, as this gives slightly
+   more compact code.  */
+#define SHIFT_COUNT_TRUNCATED (0)
+
+/* CANONICALIZE_COMPARISON macro for the combine pass.  */
+#define CANONICALIZE_COMPARISON(CODE, OP0, OP1) \
+  sh_canonicalize_comparison ((CODE), (OP0), (OP1))
 
 /* All integers have the same format so truncation is easy.  */
 /* But SHmedia must sign-extend DImode when truncating to SImode.  */
@@ -2321,11 +2254,6 @@ extern int current_function_interrupt;
    prologue rather than duplicate around each call.  */
 #define ACCUMULATE_OUTGOING_ARGS TARGET_ACCUMULATE_OUTGOING_ARGS
 
-#define SH_DYNAMIC_SHIFT_COST \
-  (TARGET_HARD_SH4 ? 1	\
-   : (TARGET_SH3 || TARGET_SH2A) ? (optimize_size ? 1 : 2) : 20)
-
-
 #define NUM_MODES_FOR_MODE_SWITCHING { FP_MODE_NONE }
 
 #define OPTIMIZE_MODE_SWITCHING(ENTITY) (TARGET_SH4 || TARGET_SH2A_DOUBLE)
@@ -2351,7 +2279,7 @@ extern int current_function_interrupt;
    ? get_attr_fp_mode (INSN)						\
    : FP_MODE_NONE)
 
-#define MODE_AFTER(MODE, INSN)                  \
+#define MODE_AFTER(ENTITY, MODE, INSN)		\
      (TARGET_HITACHI				\
       && recog_memoized (INSN) >= 0		\
       && get_attr_fp_set (INSN) != FP_SET_NONE  \

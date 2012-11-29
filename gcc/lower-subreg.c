@@ -27,7 +27,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm.h"
 #include "rtl.h"
 #include "tm_p.h"
-#include "timevar.h"
 #include "flags.h"
 #include "insn-config.h"
 #include "obstack.h"
@@ -49,8 +48,6 @@ along with GCC; see the file COPYING3.  If not see
 # define STACK_GROWS_DOWNWARD 0
 #endif
 
-DEF_VEC_P (bitmap);
-DEF_VEC_ALLOC_P (bitmap,heap);
 
 /* Decompose multi-word pseudo-registers into individual
    pseudo-registers when possible and profitable.  This is possible
@@ -99,7 +96,7 @@ static bitmap subreg_context;
 
 /* Bit N in the bitmap in element M of this array is set if there is a
    copy from reg M to reg N.  */
-static VEC(bitmap,heap) *reg_copy_graph;
+static vec<bitmap> reg_copy_graph;
 
 struct target_lower_subreg default_target_lower_subreg;
 #if SWITCHABLE_TARGET
@@ -300,7 +297,7 @@ simple_move_operand (rtx x)
 
   if (MEM_P (x)
       && (MEM_VOLATILE_P (x)
-	  || mode_dependent_address_p (XEXP (x, 0))))
+	  || mode_dependent_address_p (XEXP (x, 0), MEM_ADDR_SPACE (x))))
     return false;
 
   return true;
@@ -384,11 +381,11 @@ find_pseudo_copy (rtx set)
   if (HARD_REGISTER_NUM_P (rd) || HARD_REGISTER_NUM_P (rs))
     return false;
 
-  b = VEC_index (bitmap, reg_copy_graph, rs);
+  b = reg_copy_graph[rs];
   if (b == NULL)
     {
       b = BITMAP_ALLOC (NULL);
-      VEC_replace (bitmap, reg_copy_graph, rs, b);
+      reg_copy_graph[rs] = b;
     }
 
   bitmap_set_bit (b, rd);
@@ -420,7 +417,7 @@ propagate_pseudo_copies (void)
 
       EXECUTE_IF_SET_IN_BITMAP (queue, 0, i, iter)
 	{
-	  bitmap b = VEC_index (bitmap, reg_copy_graph, i);
+	  bitmap b = reg_copy_graph[i];
 	  if (b)
 	    bitmap_ior_and_compl_into (propagate, b, non_decomposable_context);
 	}
@@ -441,9 +438,9 @@ enum classify_move_insn
 {
   /* Not a simple move from one location to another.  */
   NOT_SIMPLE_MOVE,
-  /* A simple move from one pseudo-register to another.  */
-  SIMPLE_PSEUDO_REG_MOVE,
-  /* A simple move involving a non-pseudo-register.  */
+  /* A simple move we want to decompose.  */
+  DECOMPOSABLE_SIMPLE_MOVE,
+  /* Any other simple move.  */
   SIMPLE_MOVE
 };
 
@@ -519,7 +516,7 @@ find_decomposable_subregs (rtx *px, void *data)
 
 	 If this is not a simple copy from one location to another,
 	 then we can not decompose this register.  If this is a simple
-	 copy from one pseudo-register to another, and the mode is right
+	 copy we want to decompose, and the mode is right,
 	 then we mark the register as decomposable.
 	 Otherwise we don't say anything about this register --
 	 it could be decomposed, but whether that would be
@@ -538,7 +535,7 @@ find_decomposable_subregs (rtx *px, void *data)
 	    case NOT_SIMPLE_MOVE:
 	      bitmap_set_bit (non_decomposable_context, regno);
 	      break;
-	    case SIMPLE_PSEUDO_REG_MOVE:
+	    case DECOMPOSABLE_SIMPLE_MOVE:
 	      if (MODES_TIEABLE_P (GET_MODE (x), word_mode))
 		bitmap_set_bit (decomposable_context, regno);
 	      break;
@@ -554,7 +551,7 @@ find_decomposable_subregs (rtx *px, void *data)
       enum classify_move_insn cmi_mem = NOT_SIMPLE_MOVE;
 
       /* Any registers used in a MEM do not participate in a
-	 SIMPLE_MOVE or SIMPLE_PSEUDO_REG_MOVE.  Do our own recursion
+	 SIMPLE_MOVE or DECOMPOSABLE_SIMPLE_MOVE.  Do our own recursion
 	 here, and return -1 to block the parent's recursion.  */
       for_each_rtx (&XEXP (x, 0), find_decomposable_subregs, &cmi_mem);
       return -1;
@@ -1337,11 +1334,11 @@ dump_choices (bool speed_p, const char *description)
 }
 
 /* Look for registers which are always accessed via word-sized SUBREGs
-   or via copies.  Decompose these registers into several word-sized
-   pseudo-registers.  */
+   or -if DECOMPOSE_COPIES is true- via copies.  Decompose these
+   registers into several word-sized pseudo-registers.  */
 
 static void
-decompose_multiword_subregs (void)
+decompose_multiword_subregs (bool decompose_copies)
 {
   unsigned int max;
   basic_block bb;
@@ -1406,9 +1403,9 @@ decompose_multiword_subregs (void)
   non_decomposable_context = BITMAP_ALLOC (NULL);
   subreg_context = BITMAP_ALLOC (NULL);
 
-  reg_copy_graph = VEC_alloc (bitmap, heap, max);
-  VEC_safe_grow (bitmap, heap, reg_copy_graph, max);
-  memset (VEC_address (bitmap, reg_copy_graph), 0, sizeof (bitmap) * max);
+  reg_copy_graph.create (max);
+  reg_copy_graph.safe_grow_cleared (max);
+  memset (reg_copy_graph.address (), 0, sizeof (bitmap) * max);
 
   speed_p = optimize_function_for_speed_p (cfun);
   FOR_EACH_BB (bb)
@@ -1439,8 +1436,15 @@ decompose_multiword_subregs (void)
 	    cmi = NOT_SIMPLE_MOVE;
 	  else
 	    {
+	      /* We mark pseudo-to-pseudo copies as decomposable during the
+		 second pass only.  The first pass is so early that there is
+		 good chance such moves will be optimized away completely by
+		 subsequent optimizations anyway.
+
+		 However, we call find_pseudo_copy even during the first pass
+		 so as to properly set up the reg_copy_graph.  */
 	      if (find_pseudo_copy (set))
-		cmi = SIMPLE_PSEUDO_REG_MOVE;
+		cmi = decompose_copies? DECOMPOSABLE_SIMPLE_MOVE : SIMPLE_MOVE;
 	      else
 		cmi = SIMPLE_MOVE;
 	    }
@@ -1479,7 +1483,7 @@ decompose_multiword_subregs (void)
       propagate_pseudo_copies ();
 
       sub_blocks = sbitmap_alloc (last_basic_block);
-      sbitmap_zero (sub_blocks);
+      bitmap_clear (sub_blocks);
 
       EXECUTE_IF_SET_IN_BITMAP (decomposable_context, 0, regno, iter)
 	decompose_register (regno);
@@ -1538,7 +1542,7 @@ decompose_multiword_subregs (void)
 			  extract_insn (insn);
 
 			  if (cfi)
-			    SET_BIT (sub_blocks, bb->index);
+			    bitmap_set_bit (sub_blocks, bb->index);
 			}
 		    }
 		  else
@@ -1583,7 +1587,7 @@ decompose_multiword_subregs (void)
 	 of a basic block, split those blocks now.  Note that we only handle
 	 the case where splitting a load has caused multiple possibly trapping
 	 loads to appear.  */
-      EXECUTE_IF_SET_IN_SBITMAP (sub_blocks, 0, i, sbi)
+      EXECUTE_IF_SET_IN_BITMAP (sub_blocks, 0, i, sbi)
 	{
 	  rtx insn, end;
 	  edge fallthru;
@@ -1616,12 +1620,12 @@ decompose_multiword_subregs (void)
     unsigned int i;
     bitmap b;
 
-    FOR_EACH_VEC_ELT (bitmap, reg_copy_graph, i, b)
+    FOR_EACH_VEC_ELT (reg_copy_graph, i, b)
       if (b)
 	BITMAP_FREE (b);
   }
 
-  VEC_free (bitmap, heap, reg_copy_graph);
+  reg_copy_graph.release ();
 
   BITMAP_FREE (decomposable_context);
   BITMAP_FREE (non_decomposable_context);
@@ -1641,7 +1645,7 @@ gate_handle_lower_subreg (void)
 static unsigned int
 rest_of_handle_lower_subreg (void)
 {
-  decompose_multiword_subregs ();
+  decompose_multiword_subregs (false);
   return 0;
 }
 
@@ -1650,7 +1654,7 @@ rest_of_handle_lower_subreg (void)
 static unsigned int
 rest_of_handle_lower_subreg2 (void)
 {
-  decompose_multiword_subregs ();
+  decompose_multiword_subregs (true);
   return 0;
 }
 
@@ -1659,6 +1663,7 @@ struct rtl_opt_pass pass_lower_subreg =
  {
   RTL_PASS,
   "subreg1",	                        /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_handle_lower_subreg,             /* gate */
   rest_of_handle_lower_subreg,          /* execute */
   NULL,                                 /* sub */
@@ -1679,6 +1684,7 @@ struct rtl_opt_pass pass_lower_subreg2 =
  {
   RTL_PASS,
   "subreg2",	                        /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_handle_lower_subreg,             /* gate */
   rest_of_handle_lower_subreg2,          /* execute */
   NULL,                                 /* sub */

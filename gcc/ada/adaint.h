@@ -120,7 +120,7 @@ extern int    __gnat_symlink                       (char *, char *);
 extern int    __gnat_try_lock                      (char *, char *);
 extern int    __gnat_open_new                      (char *, int);
 extern int    __gnat_open_new_temp		   (char *, int);
-extern int    __gnat_mkdir			   (char *);
+extern int    __gnat_mkdir			   (char *, int);
 extern int    __gnat_stat			   (char *,
 						    GNAT_STRUCT_STAT *);
 extern int    __gnat_unlink                        (char *);
@@ -250,7 +250,11 @@ extern char * __gnat_locate_executable_file        (char *, char *);
 extern char * __gnat_locate_file_with_predicate    (char *, char *,
 						    int (*)(char*));
 
-#if defined (linux)
+#if defined (__ANDROID__)
+#undef linux
+extern void   *__gnat_lwp_self                     (void);
+
+#elif defined (linux)
 extern void   *__gnat_lwp_self			   (void);
 
 /* Routines for interface to required CPU set primitives */

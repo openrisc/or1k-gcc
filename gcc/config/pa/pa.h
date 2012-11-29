@@ -1273,8 +1273,8 @@ do { 									\
 
 /* Handling the special cases is going to get too complicated for a macro,
    just call `pa_adjust_insn_length' to do the real work.  */
-#define ADJUST_INSN_LENGTH(INSN, LENGTH)	\
-  LENGTH += pa_adjust_insn_length (INSN, LENGTH);
+#define ADJUST_INSN_LENGTH(INSN, LENGTH) \
+  ((LENGTH) = pa_adjust_insn_length ((INSN), (LENGTH)))
 
 /* Millicode insns are actually function calls with some special
    constraints on arguments and register usage.
@@ -1507,9 +1507,6 @@ do { 									\
   /* The privilege level is in the two low order bits, mask em out	\
      of the return address.  */						\
   (GEN_INT (-4))
-
-/* The number of Pmode words for the setjmp buffer.  */
-#define JMP_BUF_SIZE 50
 
 /* We need a libcall to canonicalize function pointers on TARGET_ELF32.  */
 #define CANONICALIZE_FUNCPTR_FOR_COMPARE_LIBCALL \

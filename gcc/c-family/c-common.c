@@ -45,7 +45,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "opts.h"
 #include "cgraph.h"
 #include "target-def.h"
-#include "libfuncs.h"
 
 cpp_reader *parse_in;		/* Declared in c-pragma.h.  */
 
@@ -194,15 +193,6 @@ const char *pch_file;
    user's namespace.  */
 int flag_iso;
 
-/* Warn about #pragma directives that are not recognized.  */
-
-int warn_unknown_pragmas; /* Tri state variable.  */
-
-/* Warn about format/argument anomalies in calls to formatted I/O functions
-   (*printf, *scanf, strftime, strfmon, etc.).  */
-
-int warn_format;
-
 /* C/ObjC language option variables.  */
 
 
@@ -319,6 +309,8 @@ static tree handle_common_attribute (tree *, tree, tree, int, bool *);
 static tree handle_noreturn_attribute (tree *, tree, tree, int, bool *);
 static tree handle_hot_attribute (tree *, tree, tree, int, bool *);
 static tree handle_cold_attribute (tree *, tree, tree, int, bool *);
+static tree handle_no_address_safety_analysis_attribute (tree *, tree, tree,
+							 int, bool *);
 static tree handle_noinline_attribute (tree *, tree, tree, int, bool *);
 static tree handle_noclone_attribute (tree *, tree, tree, int, bool *);
 static tree handle_leaf_attribute (tree *, tree, tree, int, bool *);
@@ -430,7 +422,7 @@ const struct c_common_resword c_common_reswords[] =
   { "__bases",          RID_BASES, D_CXXONLY },
   { "__builtin_choose_expr", RID_CHOOSE_EXPR, D_CONLY },
   { "__builtin_complex", RID_BUILTIN_COMPLEX, D_CONLY },
-  { "__builtin_shuffle", RID_BUILTIN_SHUFFLE, D_CONLY },
+  { "__builtin_shuffle", RID_BUILTIN_SHUFFLE, 0 },
   { "__builtin_offsetof", RID_OFFSETOF, 0 },
   { "__builtin_types_compatible_p", RID_TYPES_COMPATIBLE_P, D_CONLY },
   { "__builtin_va_arg",	RID_VA_ARG,	0 },
@@ -485,6 +477,7 @@ const struct c_common_resword c_common_reswords[] =
   { "__underlying_type", RID_UNDERLYING_TYPE, D_CXXONLY },
   { "__volatile",	RID_VOLATILE,	0 },
   { "__volatile__",	RID_VOLATILE,	0 },
+  { "alignas",		RID_ALIGNAS,	D_CXXONLY | D_CXX0X | D_CXXWARN },
   { "alignof",		RID_ALIGNOF,	D_CXXONLY | D_CXX0X | D_CXXWARN },
   { "asm",		RID_ASM,	D_ASM },
   { "auto",		RID_AUTO,	0 },
@@ -543,6 +536,7 @@ const struct c_common_resword c_common_reswords[] =
   { "switch",		RID_SWITCH,	0 },
   { "template",		RID_TEMPLATE,	D_CXXONLY | D_CXXWARN },
   { "this",		RID_THIS,	D_CXXONLY | D_CXXWARN },
+  { "thread_local",	RID_THREAD,	D_CXXONLY | D_CXX0X | D_CXXWARN },
   { "throw",		RID_THROW,	D_CXX_OBJC | D_CXXWARN },
   { "true",		RID_TRUE,	D_CXXONLY | D_CXXWARN },
   { "try",		RID_TRY,	D_CXX_OBJC | D_CXXWARN },
@@ -719,6 +713,10 @@ const struct attribute_spec c_common_attribute_table[] =
 			      handle_cold_attribute, false },
   { "hot",                    0, 0, true,  false, false,
 			      handle_hot_attribute, false },
+  { "no_address_safety_analysis",
+			      0, 0, true, false, false,
+			      handle_no_address_safety_analysis_attribute,
+			      false },
   { "warning",		      1, 1, true,  false, false,
 			      handle_error_attribute, false },
   { "error",		      1, 1, true,  false, false,
@@ -1842,6 +1840,285 @@ strict_aliasing_warning (tree otype, tree type, tree expr)
   return false;
 }
 
+/* Warn about memset (&a, 0, sizeof (&a)); and similar mistakes with
+   sizeof as last operand of certain builtins.  */
+
+void
+sizeof_pointer_memaccess_warning (location_t *sizeof_arg_loc, tree callee,
+				  vec<tree, va_gc> *params, tree *sizeof_arg,
+				  bool (*comp_types) (tree, tree))
+{
+  tree type, dest = NULL_TREE, src = NULL_TREE, tem;
+  bool strop = false, cmp = false;
+  unsigned int idx = ~0;
+  location_t loc;
+
+  if (TREE_CODE (callee) != FUNCTION_DECL
+      || DECL_BUILT_IN_CLASS (callee) != BUILT_IN_NORMAL
+      || vec_safe_length (params) <= 1)
+    return;
+
+  switch (DECL_FUNCTION_CODE (callee))
+    {
+    case BUILT_IN_STRNCMP:
+    case BUILT_IN_STRNCASECMP:
+      cmp = true;
+      /* FALLTHRU */
+    case BUILT_IN_STRNCPY:
+    case BUILT_IN_STRNCPY_CHK:
+    case BUILT_IN_STRNCAT:
+    case BUILT_IN_STRNCAT_CHK:
+    case BUILT_IN_STPNCPY:
+    case BUILT_IN_STPNCPY_CHK:
+      strop = true;
+      /* FALLTHRU */
+    case BUILT_IN_MEMCPY:
+    case BUILT_IN_MEMCPY_CHK:
+    case BUILT_IN_MEMMOVE:
+    case BUILT_IN_MEMMOVE_CHK:
+      if (params->length () < 3)
+	return;
+      src = (*params)[1];
+      dest = (*params)[0];
+      idx = 2;
+      break;
+    case BUILT_IN_BCOPY:
+      if (params->length () < 3)
+	return;
+      src = (*params)[0];
+      dest = (*params)[1];
+      idx = 2;
+      break;
+    case BUILT_IN_MEMCMP:
+    case BUILT_IN_BCMP:
+      if (params->length () < 3)
+	return;
+      src = (*params)[1];
+      dest = (*params)[0];
+      idx = 2;
+      cmp = true;
+      break;
+    case BUILT_IN_MEMSET:
+    case BUILT_IN_MEMSET_CHK:
+      if (params->length () < 3)
+	return;
+      dest = (*params)[0];
+      idx = 2;
+      break;
+    case BUILT_IN_BZERO:
+      dest = (*params)[0];
+      idx = 1;
+      break;
+    case BUILT_IN_STRNDUP:
+      src = (*params)[0];
+      strop = true;
+      idx = 1;
+      break;
+    case BUILT_IN_MEMCHR:
+      if (params->length () < 3)
+	return;
+      src = (*params)[0];
+      idx = 2;
+      break;
+    case BUILT_IN_SNPRINTF:
+    case BUILT_IN_SNPRINTF_CHK:
+    case BUILT_IN_VSNPRINTF:
+    case BUILT_IN_VSNPRINTF_CHK:
+      dest = (*params)[0];
+      idx = 1;
+      strop = true;
+      break;
+    default:
+      break;
+    }
+
+  if (idx >= 3)
+    return;
+
+  if (sizeof_arg[idx] == NULL || sizeof_arg[idx] == error_mark_node)
+    return;
+
+  type = TYPE_P (sizeof_arg[idx])
+	 ? sizeof_arg[idx] : TREE_TYPE (sizeof_arg[idx]);
+  if (!POINTER_TYPE_P (type))
+    return;
+
+  if (dest
+      && (tem = tree_strip_nop_conversions (dest))
+      && POINTER_TYPE_P (TREE_TYPE (tem))
+      && comp_types (TREE_TYPE (TREE_TYPE (tem)), type))
+    return;
+
+  if (src
+      && (tem = tree_strip_nop_conversions (src))
+      && POINTER_TYPE_P (TREE_TYPE (tem))
+      && comp_types (TREE_TYPE (TREE_TYPE (tem)), type))
+    return;
+
+  loc = sizeof_arg_loc[idx];
+
+  if (dest && !cmp)
+    {
+      if (!TYPE_P (sizeof_arg[idx])
+	  && operand_equal_p (dest, sizeof_arg[idx], 0)
+	  && comp_types (TREE_TYPE (dest), type))
+	{
+	  if (TREE_CODE (sizeof_arg[idx]) == ADDR_EXPR && !strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the destination; did you mean to "
+			"remove the addressof?", callee);
+	  else if ((TYPE_PRECISION (TREE_TYPE (type))
+		    == TYPE_PRECISION (char_type_node))
+		   || strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the destination; did you mean to "
+			"provide an explicit length?", callee);
+	  else
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the destination; did you mean to "
+			"dereference it?", callee);
+	  return;
+	}
+
+      if (POINTER_TYPE_P (TREE_TYPE (dest))
+	  && !strop
+	  && comp_types (TREE_TYPE (dest), type)
+	  && !VOID_TYPE_P (TREE_TYPE (type)))
+	{
+	  warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+		      "argument to %<sizeof%> in %qD call is the same "
+		      "pointer type %qT as the destination; expected %qT "
+		      "or an explicit length", callee, TREE_TYPE (dest),
+		      TREE_TYPE (TREE_TYPE (dest)));
+	  return;
+	}
+    }
+
+  if (src && !cmp)
+    {
+      if (!TYPE_P (sizeof_arg[idx])
+	  && operand_equal_p (src, sizeof_arg[idx], 0)
+	  && comp_types (TREE_TYPE (src), type))
+	{
+	  if (TREE_CODE (sizeof_arg[idx]) == ADDR_EXPR && !strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the source; did you mean to "
+			"remove the addressof?", callee);
+	  else if ((TYPE_PRECISION (TREE_TYPE (type))
+		    == TYPE_PRECISION (char_type_node))
+		   || strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the source; did you mean to "
+			"provide an explicit length?", callee);
+	  else
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the source; did you mean to "
+			"dereference it?", callee);
+	  return;
+	}
+
+      if (POINTER_TYPE_P (TREE_TYPE (src))
+	  && !strop
+	  && comp_types (TREE_TYPE (src), type)
+	  && !VOID_TYPE_P (TREE_TYPE (type)))
+	{
+	  warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+		      "argument to %<sizeof%> in %qD call is the same "
+		      "pointer type %qT as the source; expected %qT "
+		      "or an explicit length", callee, TREE_TYPE (src),
+		      TREE_TYPE (TREE_TYPE (src)));
+	  return;
+	}
+    }
+
+  if (dest)
+    {
+      if (!TYPE_P (sizeof_arg[idx])
+	  && operand_equal_p (dest, sizeof_arg[idx], 0)
+	  && comp_types (TREE_TYPE (dest), type))
+	{
+	  if (TREE_CODE (sizeof_arg[idx]) == ADDR_EXPR && !strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the first source; did you mean to "
+			"remove the addressof?", callee);
+	  else if ((TYPE_PRECISION (TREE_TYPE (type))
+		    == TYPE_PRECISION (char_type_node))
+		   || strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the first source; did you mean to "
+			"provide an explicit length?", callee);
+	  else
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the first source; did you mean to "
+			"dereference it?", callee);
+	  return;
+	}
+
+      if (POINTER_TYPE_P (TREE_TYPE (dest))
+	  && !strop
+	  && comp_types (TREE_TYPE (dest), type)
+	  && !VOID_TYPE_P (TREE_TYPE (type)))
+	{
+	  warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+		      "argument to %<sizeof%> in %qD call is the same "
+		      "pointer type %qT as the first source; expected %qT "
+		      "or an explicit length", callee, TREE_TYPE (dest),
+		      TREE_TYPE (TREE_TYPE (dest)));
+	  return;
+	}
+    }
+
+  if (src)
+    {
+      if (!TYPE_P (sizeof_arg[idx])
+	  && operand_equal_p (src, sizeof_arg[idx], 0)
+	  && comp_types (TREE_TYPE (src), type))
+	{
+	  if (TREE_CODE (sizeof_arg[idx]) == ADDR_EXPR && !strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the second source; did you mean to "
+			"remove the addressof?", callee);
+	  else if ((TYPE_PRECISION (TREE_TYPE (type))
+		    == TYPE_PRECISION (char_type_node))
+		   || strop)
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the second source; did you mean to "
+			"provide an explicit length?", callee);
+	  else
+	    warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+			"argument to %<sizeof%> in %qD call is the same "
+			"expression as the second source; did you mean to "
+			"dereference it?", callee);
+	  return;
+	}
+
+      if (POINTER_TYPE_P (TREE_TYPE (src))
+	  && !strop
+	  && comp_types (TREE_TYPE (src), type)
+	  && !VOID_TYPE_P (TREE_TYPE (type)))
+	{
+	  warning_at (loc, OPT_Wsizeof_pointer_memaccess,
+		      "argument to %<sizeof%> in %qD call is the same "
+		      "pointer type %qT as the second source; expected %qT "
+		      "or an explicit length", callee, TREE_TYPE (src),
+		      TREE_TYPE (TREE_TYPE (src)));
+	  return;
+	}
+    }
+
+}
+
 /* Warn for unlikely, improbable, or stupid DECL declarations
    of `main'.  */
 
@@ -1948,6 +2225,101 @@ vector_types_convertible_p (const_tree t1, const_tree t2, bool emit_lax_note)
     }
 
   return false;
+}
+
+/* Build a VEC_PERM_EXPR if V0, V1 and MASK are not error_mark_nodes
+   and have vector types, V0 has the same type as V1, and the number of
+   elements of V0, V1, MASK is the same.
+
+   In case V1 is a NULL_TREE it is assumed that __builtin_shuffle was
+   called with two arguments.  In this case implementation passes the
+   first argument twice in order to share the same tree code.  This fact
+   could enable the mask-values being twice the vector length.  This is
+   an implementation accident and this semantics is not guaranteed to
+   the user.  */
+tree
+c_build_vec_perm_expr (location_t loc, tree v0, tree v1, tree mask)
+{
+  tree ret;
+  bool wrap = true;
+  bool maybe_const = false;
+  bool two_arguments = false;
+
+  if (v1 == NULL_TREE)
+    {
+      two_arguments = true;
+      v1 = v0;
+    }
+
+  if (v0 == error_mark_node || v1 == error_mark_node
+      || mask == error_mark_node)
+    return error_mark_node;
+
+  if (TREE_CODE (TREE_TYPE (mask)) != VECTOR_TYPE
+      || TREE_CODE (TREE_TYPE (TREE_TYPE (mask))) != INTEGER_TYPE)
+    {
+      error_at (loc, "__builtin_shuffle last argument must "
+		     "be an integer vector");
+      return error_mark_node;
+    }
+
+  if (TREE_CODE (TREE_TYPE (v0)) != VECTOR_TYPE
+      || TREE_CODE (TREE_TYPE (v1)) != VECTOR_TYPE)
+    {
+      error_at (loc, "__builtin_shuffle arguments must be vectors");
+      return error_mark_node;
+    }
+
+  if (TYPE_MAIN_VARIANT (TREE_TYPE (v0)) != TYPE_MAIN_VARIANT (TREE_TYPE (v1)))
+    {
+      error_at (loc, "__builtin_shuffle argument vectors must be of "
+		     "the same type");
+      return error_mark_node;
+    }
+
+  if (TYPE_VECTOR_SUBPARTS (TREE_TYPE (v0))
+      != TYPE_VECTOR_SUBPARTS (TREE_TYPE (mask))
+      && TYPE_VECTOR_SUBPARTS (TREE_TYPE (v1))
+	 != TYPE_VECTOR_SUBPARTS (TREE_TYPE (mask)))
+    {
+      error_at (loc, "__builtin_shuffle number of elements of the "
+		     "argument vector(s) and the mask vector should "
+		     "be the same");
+      return error_mark_node;
+    }
+
+  if (GET_MODE_BITSIZE (TYPE_MODE (TREE_TYPE (TREE_TYPE (v0))))
+      != GET_MODE_BITSIZE (TYPE_MODE (TREE_TYPE (TREE_TYPE (mask)))))
+    {
+      error_at (loc, "__builtin_shuffle argument vector(s) inner type "
+		     "must have the same size as inner type of the mask");
+      return error_mark_node;
+    }
+
+  if (!c_dialect_cxx ())
+    {
+      /* Avoid C_MAYBE_CONST_EXPRs inside VEC_PERM_EXPR.  */
+      v0 = c_fully_fold (v0, false, &maybe_const);
+      wrap &= maybe_const;
+
+      if (two_arguments)
+        v1 = v0 = save_expr (v0);
+      else
+        {
+          v1 = c_fully_fold (v1, false, &maybe_const);
+          wrap &= maybe_const;
+        }
+
+      mask = c_fully_fold (mask, false, &maybe_const);
+      wrap &= maybe_const;
+    }
+
+  ret = build3_loc (loc, VEC_PERM_EXPR, TREE_TYPE (v0), v0, v1, mask);
+
+  if (!c_dialect_cxx () && !wrap)
+    ret = c_wrap_maybe_const (ret, true);
+
+  return ret;
 }
 
 /* Like tree.c:get_narrower, but retain conversion from C++0x scoped enum
@@ -2295,22 +2667,14 @@ conversion_warning (tree type, tree expr)
 
     case COND_EXPR:
       {
-	/* In case of COND_EXPR, if both operands are constants or
-	   COND_EXPR, then we do not care about the type of COND_EXPR,
-	   only about the conversion of each operand.  */
-	tree op1 = TREE_OPERAND (expr, 1);
-	tree op2 = TREE_OPERAND (expr, 2);
-
-	if ((TREE_CODE (op1) == REAL_CST || TREE_CODE (op1) == INTEGER_CST
-	     || TREE_CODE (op1) == COND_EXPR)
-	    && (TREE_CODE (op2) == REAL_CST || TREE_CODE (op2) == INTEGER_CST
-		|| TREE_CODE (op2) == COND_EXPR))
-	  {
-	    conversion_warning (type, op1);
-	    conversion_warning (type, op2);
-	    return;
-	  }
-	/* Fall through.  */
+        /* In case of COND_EXPR, we do not care about the type of
+           COND_EXPR, only about the conversion of each operand.  */
+        tree op1 = TREE_OPERAND (expr, 1);
+        tree op2 = TREE_OPERAND (expr, 2);
+        
+        conversion_warning (type, op1);
+        conversion_warning (type, op2);
+        return;
       }
 
     default: /* 'expr' is not a constant.  */
@@ -6075,7 +6439,8 @@ static tree
 handle_hot_attribute (tree *node, tree name, tree ARG_UNUSED (args),
 		      int ARG_UNUSED (flags), bool *no_add_attrs)
 {
-  if (TREE_CODE (*node) == FUNCTION_DECL)
+  if (TREE_CODE (*node) == FUNCTION_DECL
+      || TREE_CODE (*node) == LABEL_DECL)
     {
       if (lookup_attribute ("cold", DECL_ATTRIBUTES (*node)) != NULL)
 	{
@@ -6094,6 +6459,7 @@ handle_hot_attribute (tree *node, tree name, tree ARG_UNUSED (args),
 
   return NULL_TREE;
 }
+
 /* Handle a "cold" and attribute; arguments as in
    struct attribute_spec.handler.  */
 
@@ -6101,7 +6467,8 @@ static tree
 handle_cold_attribute (tree *node, tree name, tree ARG_UNUSED (args),
 		       int ARG_UNUSED (flags), bool *no_add_attrs)
 {
-  if (TREE_CODE (*node) == FUNCTION_DECL)
+  if (TREE_CODE (*node) == FUNCTION_DECL
+      || TREE_CODE (*node) == LABEL_DECL)
     {
       if (lookup_attribute ("hot", DECL_ATTRIBUTES (*node)) != NULL)
 	{
@@ -6113,6 +6480,22 @@ handle_cold_attribute (tree *node, tree name, tree ARG_UNUSED (args),
 	 lookup_attribute.  */
     }
   else
+    {
+      warning (OPT_Wattributes, "%qE attribute ignored", name);
+      *no_add_attrs = true;
+    }
+
+  return NULL_TREE;
+}
+
+/* Handle a "no_address_safety_analysis" attribute; arguments as in
+   struct attribute_spec.handler.  */
+
+static tree
+handle_no_address_safety_analysis_attribute (tree *node, tree name, tree, int,
+					     bool *no_add_attrs)
+{
+  if (TREE_CODE (*node) != FUNCTION_DECL)
     {
       warning (OPT_Wattributes, "%qE attribute ignored", name);
       *no_add_attrs = true;
@@ -6425,7 +6808,9 @@ handle_transparent_union_attribute (tree *node, tree name,
 
   *no_add_attrs = true;
 
-  if (TREE_CODE (*node) == TYPE_DECL)
+
+  if (TREE_CODE (*node) == TYPE_DECL
+      && ! (flags & ATTR_FLAG_CXX11))
     node = &TREE_TYPE (*node);
   type = *node;
 
@@ -6492,11 +6877,12 @@ get_priority (tree args, bool is_destructor)
     }
 
   arg = TREE_VALUE (args);
+  arg = default_conversion (arg);
   if (!host_integerp (arg, /*pos=*/0)
       || !INTEGRAL_TYPE_P (TREE_TYPE (arg)))
     goto invalid;
 
-  pri = tree_low_cst (TREE_VALUE (args), /*pos=*/0);
+  pri = tree_low_cst (arg, /*pos=*/0);
   if (pri < 0 || pri > MAX_INIT_PRIORITY)
     goto invalid;
 
@@ -6896,6 +7282,89 @@ check_user_alignment (const_tree align, bool allow_zero)
   return i;
 }
 
+/* 
+   If in c++-11, check if the c++-11 alignment constraint with respect
+   to fundamental alignment (in [dcl.align]) are satisfied.  If not in
+   c++-11 mode, does nothing.
+
+   [dcl.align]2/ says:
+
+   [* if the constant expression evaluates to a fundamental alignment,
+   the alignment requirement of the declared entity shall be the
+   specified fundamental alignment.
+
+   * if the constant expression evaluates to an extended alignment
+   and the implementation supports that alignment in the context
+   of the declaration, the alignment of the declared entity shall
+   be that alignment
+
+   * if the constant expression evaluates to an extended alignment
+   and the implementation does not support that alignment in the
+   context of the declaration, the program is ill-formed].  */
+
+static bool
+check_cxx_fundamental_alignment_constraints (tree node,
+					     unsigned align_log,
+					     int flags)
+{
+  bool alignment_too_large_p = false;
+  unsigned requested_alignment = 1U << align_log;
+  unsigned max_align = 0;
+
+  if ((!(flags & ATTR_FLAG_CXX11) && !warn_cxx_compat)
+      || (node == NULL_TREE || node == error_mark_node))
+    return true;
+
+  if (cxx_fundamental_alignment_p (requested_alignment))
+    return true;
+
+  if (DECL_P (node))
+    {
+      if (TREE_STATIC (node))
+	{
+	  /* For file scope variables and static members, the target
+	     supports alignments that are at most
+	     MAX_OFILE_ALIGNMENT.  */
+	  if (requested_alignment > (max_align = MAX_OFILE_ALIGNMENT))
+	    alignment_too_large_p = true;
+	}
+      else
+	{
+#ifdef BIGGEST_FIELD_ALIGNMENT
+#define MAX_TARGET_FIELD_ALIGNMENT BIGGEST_FIELD_ALIGNMENT
+#else
+#define MAX_TARGET_FIELD_ALIGNMENT BIGGEST_ALIGNMENT
+#endif
+	  /* For non-static members, the target supports either
+	     alignments that at most either BIGGEST_FIELD_ALIGNMENT
+	     if it is defined or BIGGEST_ALIGNMENT.  */
+	  max_align = MAX_TARGET_FIELD_ALIGNMENT;
+	  if (TREE_CODE (node) == FIELD_DECL
+	      && requested_alignment > (max_align = MAX_TARGET_FIELD_ALIGNMENT))
+	    alignment_too_large_p = true;
+#undef MAX_TARGET_FIELD_ALIGNMENT
+	  /* For stack variables, the target supports at most
+	     MAX_STACK_ALIGNMENT.  */
+	  else if (decl_function_context (node) != NULL
+		   && requested_alignment > (max_align = MAX_STACK_ALIGNMENT))
+	    alignment_too_large_p = true;
+	}
+    }
+  else if (TYPE_P (node))
+    {
+      /* Let's be liberal for types.  */
+      if (requested_alignment > (max_align = BIGGEST_ALIGNMENT))
+	alignment_too_large_p = true;
+    }
+
+  if (alignment_too_large_p)
+    pedwarn (input_location, OPT_Wattributes,
+	     "requested alignment %d is larger than %d",
+	     requested_alignment, max_align);
+
+  return !alignment_too_large_p;
+}
+
 /* Handle a "aligned" attribute; arguments as in
    struct attribute_spec.handler.  */
 
@@ -6919,7 +7388,8 @@ handle_aligned_attribute (tree *node, tree ARG_UNUSED (name), tree args,
   else if (TYPE_P (*node))
     type = node, is_type = 1;
 
-  if ((i = check_user_alignment (align_expr, false)) == -1)
+  if ((i = check_user_alignment (align_expr, false)) == -1
+      || !check_cxx_fundamental_alignment_constraints (*node, i, flags))
     *no_add_attrs = true;
   else if (is_type)
     {
@@ -6949,6 +7419,17 @@ handle_aligned_attribute (tree *node, tree ARG_UNUSED (name), tree args,
       error ("alignment may not be specified for %q+D", decl);
       *no_add_attrs = true;
     }
+  else if (DECL_USER_ALIGN (decl)
+	   && DECL_ALIGN (decl) > (1U << i) * BITS_PER_UNIT)
+    /* C++-11 [dcl.align/4]:
+
+           When multiple alignment-specifiers are specified for an
+	   entity, the alignment requirement shall be set to the
+	   strictest specified alignment.
+
+      This formally comes from the c++11 specification but we are
+      doing it for the GNU attribute syntax as well.  */
+    *no_add_attrs = true;
   else if (TREE_CODE (decl) == FUNCTION_DECL
 	   && DECL_ALIGN (decl) > (1U << i) * BITS_PER_UNIT)
     {
@@ -7956,26 +8437,42 @@ handle_nonnull_attribute (tree *node, tree ARG_UNUSED (name),
 static void
 check_function_nonnull (tree attrs, int nargs, tree *argarray)
 {
-  tree a, args;
+  tree a;
   int i;
 
-  for (a = attrs; a; a = TREE_CHAIN (a))
-    {
-      if (is_attribute_p ("nonnull", TREE_PURPOSE (a)))
-	{
-	  args = TREE_VALUE (a);
+  attrs = lookup_attribute ("nonnull", attrs);
+  if (attrs == NULL_TREE)
+    return;
 
-	  /* Walk the argument list.  If we encounter an argument number we
-	     should check for non-null, do it.  If the attribute has no args,
-	     then every pointer argument is checked (in which case the check
-	     for pointer type is done in check_nonnull_arg).  */
-	  for (i = 0; i < nargs; i++)
+  a = attrs;
+  /* See if any of the nonnull attributes has no arguments.  If so,
+     then every pointer argument is checked (in which case the check
+     for pointer type is done in check_nonnull_arg).  */
+  if (TREE_VALUE (a) != NULL_TREE)
+    do
+      a = lookup_attribute ("nonnull", TREE_CHAIN (a));
+    while (a != NULL_TREE && TREE_VALUE (a) != NULL_TREE);
+
+  if (a != NULL_TREE)
+    for (i = 0; i < nargs; i++)
+      check_function_arguments_recurse (check_nonnull_arg, NULL, argarray[i],
+					i + 1);
+  else
+    {
+      /* Walk the argument list.  If we encounter an argument number we
+	 should check for non-null, do it.  */
+      for (i = 0; i < nargs; i++)
+	{
+	  for (a = attrs; ; a = TREE_CHAIN (a))
 	    {
-	      if (!args || nonnull_check_p (args, i + 1))
-		check_function_arguments_recurse (check_nonnull_arg, NULL,
-						  argarray[i],
-						  i + 1);
+	      a = lookup_attribute ("nonnull", a);
+	      if (a == NULL_TREE || nonnull_check_p (TREE_VALUE (a), i + 1))
+		break;
 	    }
+
+	  if (a != NULL_TREE)
+	    check_function_arguments_recurse (check_nonnull_arg, NULL,
+					      argarray[i], i + 1);
 	}
     }
 }
@@ -8015,7 +8512,7 @@ check_function_sentinel (const_tree fntype, int nargs, tree *argarray)
 	 in position >= the number of fixed arguments.  */
       if ((nargs - 1 - pos) < len)
 	{
-	  warning (OPT_Wformat,
+	  warning (OPT_Wformat_,
 		   "not enough variable arguments to fit a sentinel");
 	  return;
 	}
@@ -8030,7 +8527,7 @@ check_function_sentinel (const_tree fntype, int nargs, tree *argarray)
 	     users to cast the NULL they have written there.
 	     We warn with -Wstrict-null-sentinel, though.  */
 	  && (warn_strict_null_sentinel || null_node != sentinel))
-	warning (OPT_Wformat, "missing sentinel in function call");
+	warning (OPT_Wformat_, "missing sentinel in function call");
     }
 }
 
@@ -8254,9 +8751,7 @@ handle_target_attribute (tree *node, tree name, tree args, int flags,
 
 /* Arguments being collected for optimization.  */
 typedef const char *const_char_p;		/* For DEF_VEC_P.  */
-DEF_VEC_P(const_char_p);
-DEF_VEC_ALLOC_P(const_char_p, gc);
-static GTY(()) VEC(const_char_p, gc) *optimize_args;
+static GTY(()) vec<const_char_p, va_gc> *optimize_args;
 
 
 /* Inner function to convert a TREE_LIST to argv string to parse the optimize
@@ -8277,8 +8772,8 @@ parse_optimize_options (tree args, bool attr_p)
 
   /* Build up argv vector.  Just in case the string is stored away, use garbage
      collected strings.  */
-  VEC_truncate (const_char_p, optimize_args, 0);
-  VEC_safe_push (const_char_p, gc, optimize_args, NULL);
+  vec_safe_truncate (optimize_args, 0);
+  vec_safe_push (optimize_args, (const char *) NULL);
 
   for (ap = args; ap != NULL_TREE; ap = TREE_CHAIN (ap))
     {
@@ -8288,7 +8783,7 @@ parse_optimize_options (tree args, bool attr_p)
 	{
 	  char buffer[20];
 	  sprintf (buffer, "-O%ld", (long) TREE_INT_CST_LOW (value));
-	  VEC_safe_push (const_char_p, gc, optimize_args, ggc_strdup (buffer));
+	  vec_safe_push (optimize_args, ggc_strdup (buffer));
 	}
 
       else if (TREE_CODE (value) == STRING_CST)
@@ -8350,17 +8845,17 @@ parse_optimize_options (tree args, bool attr_p)
 
 	      memcpy (r, p, len2);
 	      r[len2] = '\0';
-	      VEC_safe_push (const_char_p, gc, optimize_args, q);
+	      vec_safe_push (optimize_args, (const char *) q);
 	    }
 
 	}
     }
 
-  opt_argc = VEC_length (const_char_p, optimize_args);
+  opt_argc = optimize_args->length ();
   opt_argv = (const char **) alloca (sizeof (char *) * (opt_argc + 1));
 
   for (i = 1; i < opt_argc; i++)
-    opt_argv[i] = VEC_index (const_char_p, optimize_args, i);
+    opt_argv[i] = (*optimize_args)[i];
 
   saved_flag_strict_aliasing = flag_strict_aliasing;
 
@@ -8377,7 +8872,7 @@ parse_optimize_options (tree args, bool attr_p)
   /* Don't allow changing -fstrict-aliasing.  */
   flag_strict_aliasing = saved_flag_strict_aliasing;
 
-  VEC_truncate (const_char_p, optimize_args, 0);
+  optimize_args->truncate (0);
   return ret;
 }
 
@@ -9261,9 +9756,9 @@ complete_array_type (tree *ptype, tree initial_value, bool do_default)
 	}
       else if (TREE_CODE (initial_value) == CONSTRUCTOR)
 	{
-	  VEC(constructor_elt,gc) *v = CONSTRUCTOR_ELTS (initial_value);
+	  vec<constructor_elt, va_gc> *v = CONSTRUCTOR_ELTS (initial_value);
 
-	  if (VEC_empty (constructor_elt, v))
+	  if (vec_safe_is_empty (v))
 	    {
 	      if (pedantic)
 		failure = 3;
@@ -9276,15 +9771,12 @@ complete_array_type (tree *ptype, tree initial_value, bool do_default)
 	      constructor_elt *ce;
 	      bool fold_p = false;
 
-	      if (VEC_index (constructor_elt, v, 0)->index)
+	      if ((*v)[0].index)
 		maxindex = fold_convert_loc (input_location, sizetype,
-					     VEC_index (constructor_elt,
-							v, 0)->index);
+					     (*v)[0].index);
 	      curindex = maxindex;
 
-	      for (cnt = 1;
-		   VEC_iterate (constructor_elt, v, cnt, ce);
-		   cnt++)
+	      for (cnt = 1; vec_safe_iterate (v, cnt, &ce); cnt++)
 		{
 		  bool curfold_p = false;
 		  if (ce->index)
@@ -9404,18 +9896,18 @@ builtin_type_for_size (int size, bool unsignedp)
    Returns 0 if an error is encountered.  */
 
 static int
-sync_resolve_size (tree function, VEC(tree,gc) *params)
+sync_resolve_size (tree function, vec<tree, va_gc> *params)
 {
   tree type;
   int size;
 
-  if (VEC_empty (tree, params))
+  if (!params)
     {
       error ("too few arguments to function %qE", function);
       return 0;
     }
 
-  type = TREE_TYPE (VEC_index (tree, params, 0));
+  type = TREE_TYPE ((*params)[0]);
   if (TREE_CODE (type) != POINTER_TYPE)
     goto incompatible;
 
@@ -9439,7 +9931,7 @@ sync_resolve_size (tree function, VEC(tree,gc) *params)
 
 static bool
 sync_resolve_params (location_t loc, tree orig_function, tree function,
-		     VEC(tree, gc) *params, bool orig_format)
+		     vec<tree, va_gc> *params, bool orig_format)
 {
   function_args_iterator iter;
   tree ptype;
@@ -9450,7 +9942,7 @@ sync_resolve_params (location_t loc, tree orig_function, tree function,
      as the pointer parameter, so we shouldn't get any complaints from the
      call to check_function_arguments what ever type the user used.  */
   function_args_iter_next (&iter);
-  ptype = TREE_TYPE (TREE_TYPE (VEC_index (tree, params, 0)));
+  ptype = TREE_TYPE (TREE_TYPE ((*params)[0]));
 
   /* For the rest of the values, we need to cast these to FTYPE, so that we
      don't get warnings for passing pointer types, etc.  */
@@ -9465,7 +9957,7 @@ sync_resolve_params (location_t loc, tree orig_function, tree function,
 	break;
 
       ++parmnum;
-      if (VEC_length (tree, params) <= parmnum)
+      if (params->length () <= parmnum)
 	{
 	  error_at (loc, "too few arguments to function %qE", orig_function);
 	  return false;
@@ -9481,17 +9973,17 @@ sync_resolve_params (location_t loc, tree orig_function, tree function,
 	  /* Ideally for the first conversion we'd use convert_for_assignment
 	     so that we get warnings for anything that doesn't match the pointer
 	     type.  This isn't portable across the C and C++ front ends atm.  */
-	  val = VEC_index (tree, params, parmnum);
+	  val = (*params)[parmnum];
 	  val = convert (ptype, val);
 	  val = convert (arg_type, val);
-	  VEC_replace (tree, params, parmnum, val);
+	  (*params)[parmnum] = val;
 	}
 
       function_args_iter_next (&iter);
     }
 
   /* __atomic routines are not variadic.  */
-  if (!orig_format && VEC_length (tree, params) != parmnum + 1)
+  if (!orig_format && params->length () != parmnum + 1)
     {
       error_at (loc, "too many arguments to function %qE", orig_function);
       return false;
@@ -9501,7 +9993,7 @@ sync_resolve_params (location_t loc, tree orig_function, tree function,
      being "an optional list of variables protected by the memory barrier".
      No clue what that's supposed to mean, precisely, but we consider all
      call-clobbered variables to be protected so we're safe.  */
-  VEC_truncate (tree, params, parmnum + 1);
+  params->truncate (parmnum + 1);
 
   return true;
 }
@@ -9529,7 +10021,8 @@ sync_resolve_return (tree first_param, tree result, bool orig_format)
    0 is returned if the parameters are invalid.  */
 
 static int
-get_atomic_generic_size (location_t loc, tree function, VEC(tree,gc) *params)
+get_atomic_generic_size (location_t loc, tree function,
+			 vec<tree, va_gc> *params)
 {
   unsigned int n_param;
   unsigned int n_model;
@@ -9557,14 +10050,14 @@ get_atomic_generic_size (location_t loc, tree function, VEC(tree,gc) *params)
       gcc_unreachable ();
     }
 
-  if (VEC_length (tree, params) != n_param)
+  if (vec_safe_length (params) != n_param)
     {
       error_at (loc, "incorrect number of arguments to function %qE", function);
       return 0;
     }
 
   /* Get type of first parameter, and determine its size.  */
-  type_0 = TREE_TYPE (VEC_index (tree, params, 0));
+  type_0 = TREE_TYPE ((*params)[0]);
   if (TREE_CODE (type_0) != POINTER_TYPE || VOID_TYPE_P (TREE_TYPE (type_0)))
     {
       error_at (loc, "argument 1 of %qE must be a non-void pointer type",
@@ -9596,7 +10089,7 @@ get_atomic_generic_size (location_t loc, tree function, VEC(tree,gc) *params)
   for (x = 0; x < n_param - n_model; x++)
     {
       int size;
-      tree type = TREE_TYPE (VEC_index (tree, params, x));
+      tree type = TREE_TYPE ((*params)[x]);
       /* __atomic_compare_exchange has a bool in the 4th postion, skip it.  */
       if (n_param == 6 && x == 3)
         continue;
@@ -9618,11 +10111,11 @@ get_atomic_generic_size (location_t loc, tree function, VEC(tree,gc) *params)
   /* Check memory model parameters for validity.  */
   for (x = n_param - n_model ; x < n_param; x++)
     {
-      tree p = VEC_index (tree, params, x);
+      tree p = (*params)[x];
       if (TREE_CODE (p) == INTEGER_CST)
         {
 	  int i = tree_low_cst (p, 1);
-	  if (i < 0 || i >= MEMMODEL_LAST)
+	  if (i < 0 || (i & MEMMODEL_MASK) >= MEMMODEL_LAST)
 	    {
 	      warning_at (loc, OPT_Winvalid_memory_model,
 			  "invalid memory model argument %d of %qE", x + 1,
@@ -9651,30 +10144,30 @@ get_atomic_generic_size (location_t loc, tree function, VEC(tree,gc) *params)
 
 static tree
 add_atomic_size_parameter (unsigned n, location_t loc, tree function, 
-			   VEC(tree,gc) *params)
+			   vec<tree, va_gc> *params)
 {
   tree size_node;
 
   /* Insert a SIZE_T parameter as the first param.  If there isn't
      enough space, allocate a new vector and recursively re-build with that.  */
-  if (!VEC_space (tree, params, 1))
+  if (!params->space (1))
     {
       unsigned int z, len;
-      VEC(tree,gc) *vec;
+      vec<tree, va_gc> *v;
       tree f;
 
-      len = VEC_length (tree, params);
-      vec = VEC_alloc (tree, gc, len + 1);
+      len = params->length ();
+      vec_alloc (v, len + 1);
       for (z = 0; z < len; z++)
-	VEC_quick_push (tree, vec, VEC_index (tree, params, z));
-      f = build_function_call_vec (loc, function, vec, NULL);
-      VEC_free (tree, gc, vec);
+	v->quick_push ((*params)[z]);
+      f = build_function_call_vec (loc, function, v, NULL);
+      vec_free (v);
       return f;
     }
 
   /* Add the size parameter and leave as a function call for processing.  */
   size_node = build_int_cst (size_type_node, n);
-  VEC_quick_insert (tree, params, 0, size_node);
+  params->quick_insert (0, size_node);
   return NULL_TREE;
 }
 
@@ -9690,7 +10183,7 @@ add_atomic_size_parameter (unsigned n, location_t loc, tree function,
    NEW_RETURN is set to the the return value the result is copied into.  */
 static bool
 resolve_overloaded_atomic_exchange (location_t loc, tree function, 
-				    VEC(tree,gc) *params, tree *new_return)
+				    vec<tree, va_gc> *params, tree *new_return)
 {	
   tree p0, p1, p2, p3;
   tree I_type, I_type_ptr;
@@ -9715,10 +10208,10 @@ resolve_overloaded_atomic_exchange (location_t loc, tree function,
      into
        *return = (T) (fn (In* mem, (In) *desired, model))  */
 
-  p0 = VEC_index (tree, params, 0);
-  p1 = VEC_index (tree, params, 1);
-  p2 = VEC_index (tree, params, 2);
-  p3 = VEC_index (tree, params, 3);
+  p0 = (*params)[0];
+  p1 = (*params)[1];
+  p2 = (*params)[2];
+  p3 = (*params)[3];
   
   /* Create pointer to appropriate size.  */
   I_type = builtin_type_for_size (BITS_PER_UNIT * n, 1);
@@ -9726,15 +10219,15 @@ resolve_overloaded_atomic_exchange (location_t loc, tree function,
 
   /* Convert object pointer to required type.  */
   p0 = build1 (VIEW_CONVERT_EXPR, I_type_ptr, p0);
-  VEC_replace (tree, params, 0, p0); 
+  (*params)[0] = p0; 
   /* Convert new value to required type, and dereference it.  */
   p1 = build_indirect_ref (loc, p1, RO_UNARY_STAR);
   p1 = build1 (VIEW_CONVERT_EXPR, I_type, p1);
-  VEC_replace (tree, params, 1, p1);
+  (*params)[1] = p1;
 
   /* Move memory model to the 3rd position, and end param list.  */
-  VEC_replace (tree, params, 2, p3);
-  VEC_truncate (tree, params, 3);
+  (*params)[2] = p3;
+  params->truncate (3);
 
   /* Convert return pointer and dereference it for later assignment.  */
   *new_return = build_indirect_ref (loc, p2, RO_UNARY_STAR);
@@ -9754,7 +10247,7 @@ resolve_overloaded_atomic_exchange (location_t loc, tree function,
 
 static bool
 resolve_overloaded_atomic_compare_exchange (location_t loc, tree function, 
-					    VEC(tree,gc) *params, 
+					    vec<tree, va_gc> *params, 
 					    tree *new_return)
 {	
   tree p0, p1, p2;
@@ -9778,9 +10271,9 @@ resolve_overloaded_atomic_compare_exchange (location_t loc, tree function,
 	 there is no danger this will be done twice.  */
       if (n > 0)
         {
-	  VEC_replace (tree, params, 3, VEC_index (tree, params, 4));
-	  VEC_replace (tree, params, 4, VEC_index (tree, params, 5));
-	  VEC_truncate (tree, params, 5);
+	  (*params)[3] = (*params)[4];
+	  (*params)[4] = (*params)[5];
+	  params->truncate (5);
 	}
       *new_return = add_atomic_size_parameter (n, loc, function, params);
       return true;
@@ -9791,9 +10284,9 @@ resolve_overloaded_atomic_compare_exchange (location_t loc, tree function,
      into
        bool fn ((In *)mem, (In *)expected, (In) *desired, weak, succ, fail)  */
 
-  p0 = VEC_index (tree, params, 0);
-  p1 = VEC_index (tree, params, 1);
-  p2 = VEC_index (tree, params, 2);
+  p0 = (*params)[0];
+  p1 = (*params)[1];
+  p2 = (*params)[2];
   
   /* Create pointer to appropriate size.  */
   I_type = builtin_type_for_size (BITS_PER_UNIT * n, 1);
@@ -9801,16 +10294,16 @@ resolve_overloaded_atomic_compare_exchange (location_t loc, tree function,
 
   /* Convert object pointer to required type.  */
   p0 = build1 (VIEW_CONVERT_EXPR, I_type_ptr, p0);
-  VEC_replace (tree, params, 0, p0);
+  (*params)[0] = p0;
 
   /* Convert expected pointer to required type.  */
   p1 = build1 (VIEW_CONVERT_EXPR, I_type_ptr, p1);
-  VEC_replace (tree, params, 1, p1);
+  (*params)[1] = p1;
 
   /* Convert desired value to required type, and dereference it.  */
   p2 = build_indirect_ref (loc, p2, RO_UNARY_STAR);
   p2 = build1 (VIEW_CONVERT_EXPR, I_type, p2);
-  VEC_replace (tree, params, 2, p2);
+  (*params)[2] = p2;
 
   /* The rest of the parameters are fine. NULL means no special return value
      processing.*/
@@ -9831,7 +10324,7 @@ resolve_overloaded_atomic_compare_exchange (location_t loc, tree function,
 
 static bool
 resolve_overloaded_atomic_load (location_t loc, tree function, 
-				VEC(tree,gc) *params, tree *new_return)
+				vec<tree, va_gc> *params, tree *new_return)
 {	
   tree p0, p1, p2;
   tree I_type, I_type_ptr;
@@ -9856,9 +10349,9 @@ resolve_overloaded_atomic_load (location_t loc, tree function,
      into
        *return = (T) (fn ((In *) mem, model))  */
 
-  p0 = VEC_index (tree, params, 0);
-  p1 = VEC_index (tree, params, 1);
-  p2 = VEC_index (tree, params, 2);
+  p0 = (*params)[0];
+  p1 = (*params)[1];
+  p2 = (*params)[2];
   
   /* Create pointer to appropriate size.  */
   I_type = builtin_type_for_size (BITS_PER_UNIT * n, 1);
@@ -9866,11 +10359,11 @@ resolve_overloaded_atomic_load (location_t loc, tree function,
 
   /* Convert object pointer to required type.  */
   p0 = build1 (VIEW_CONVERT_EXPR, I_type_ptr, p0);
-  VEC_replace (tree, params, 0, p0);
+  (*params)[0] = p0;
 
   /* Move memory model to the 2nd position, and end param list.  */
-  VEC_replace (tree, params, 1, p2);
-  VEC_truncate (tree, params, 2);
+  (*params)[1] = p2;
+  params->truncate (2);
 
   /* Convert return pointer and dereference it for later assignment.  */
   *new_return = build_indirect_ref (loc, p1, RO_UNARY_STAR);
@@ -9891,7 +10384,7 @@ resolve_overloaded_atomic_load (location_t loc, tree function,
 
 static bool
 resolve_overloaded_atomic_store (location_t loc, tree function, 
-				 VEC(tree,gc) *params, tree *new_return)
+				 vec<tree, va_gc> *params, tree *new_return)
 {	
   tree p0, p1;
   tree I_type, I_type_ptr;
@@ -9916,8 +10409,8 @@ resolve_overloaded_atomic_store (location_t loc, tree function,
      into
        fn ((In *) mem, (In) *value, model)  */
 
-  p0 = VEC_index (tree, params, 0);
-  p1 = VEC_index (tree, params, 1);
+  p0 = (*params)[0];
+  p1 = (*params)[1];
   
   /* Create pointer to appropriate size.  */
   I_type = builtin_type_for_size (BITS_PER_UNIT * n, 1);
@@ -9925,12 +10418,12 @@ resolve_overloaded_atomic_store (location_t loc, tree function,
 
   /* Convert object pointer to required type.  */
   p0 = build1 (VIEW_CONVERT_EXPR, I_type_ptr, p0);
-  VEC_replace (tree, params, 0, p0);
+  (*params)[0] = p0;
 
   /* Convert new value to required type, and dereference it.  */
   p1 = build_indirect_ref (loc, p1, RO_UNARY_STAR);
   p1 = build1 (VIEW_CONVERT_EXPR, I_type, p1);
-  VEC_replace (tree, params, 1, p1);
+  (*params)[1] = p1;
   
   /* The memory model is in the right spot already. Return is void.  */
   *new_return = NULL_TREE;
@@ -9951,7 +10444,8 @@ resolve_overloaded_atomic_store (location_t loc, tree function,
    continue.  */
 
 tree
-resolve_overloaded_builtin (location_t loc, tree function, VEC(tree,gc) *params)
+resolve_overloaded_builtin (location_t loc, tree function,
+			    vec<tree, va_gc> *params)
 {
   enum built_in_function orig_code = DECL_FUNCTION_CODE (function);
   bool orig_format = true;
@@ -10075,7 +10569,7 @@ resolve_overloaded_builtin (location_t loc, tree function, VEC(tree,gc) *params)
 				  orig_format))
 	  return error_mark_node;
 
-	first_param = VEC_index (tree, params, 0);
+	first_param = (*params)[0];
 	result = build_function_call_vec (loc, new_function, params, NULL);
 	if (result == error_mark_node)
 	  return result;
@@ -10171,7 +10665,7 @@ warn_array_subscript_with_type_char (tree index)
    was enclosed in parentheses.  */
 
 void
-warn_about_parentheses (enum tree_code code,
+warn_about_parentheses (location_t loc, enum tree_code code,
 			enum tree_code code_left, tree arg_left,
 			enum tree_code code_right, tree arg_right)
 {
@@ -10191,104 +10685,147 @@ warn_about_parentheses (enum tree_code code,
   switch (code)
     {
     case LSHIFT_EXPR:
-      if (code_left == PLUS_EXPR || code_right == PLUS_EXPR)
-	warning (OPT_Wparentheses,
-		 "suggest parentheses around %<+%> inside %<<<%>");
-      else if (code_left == MINUS_EXPR || code_right == MINUS_EXPR)
-	warning (OPT_Wparentheses,
-		 "suggest parentheses around %<-%> inside %<<<%>");
+      if (code_left == PLUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<+%> inside %<<<%>");
+      else if (code_right == PLUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<+%> inside %<<<%>");
+      else if (code_left == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<-%> inside %<<<%>");
+      else if (code_right == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<-%> inside %<<<%>");
       return;
 
     case RSHIFT_EXPR:
-      if (code_left == PLUS_EXPR || code_right == PLUS_EXPR)
-	warning (OPT_Wparentheses,
-		 "suggest parentheses around %<+%> inside %<>>%>");
-      else if (code_left == MINUS_EXPR || code_right == MINUS_EXPR)
-	warning (OPT_Wparentheses,
-		 "suggest parentheses around %<-%> inside %<>>%>");
+      if (code_left == PLUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<+%> inside %<>>%>");
+      else if (code_right == PLUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<+%> inside %<>>%>");
+      else if (code_left == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<-%> inside %<>>%>");
+      else if (code_right == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<-%> inside %<>>%>");
       return;
 
     case TRUTH_ORIF_EXPR:
-      if (code_left == TRUTH_ANDIF_EXPR || code_right == TRUTH_ANDIF_EXPR)
-	warning (OPT_Wparentheses,
-		 "suggest parentheses around %<&&%> within %<||%>");
+      if (code_left == TRUTH_ANDIF_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<&&%> within %<||%>");
+      else if (code_right == TRUTH_ANDIF_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
+		    "suggest parentheses around %<&&%> within %<||%>");
       return;
 
     case BIT_IOR_EXPR:
       if (code_left == BIT_AND_EXPR || code_left == BIT_XOR_EXPR
-	  || code_left == PLUS_EXPR || code_left == MINUS_EXPR
-	  || code_right == BIT_AND_EXPR || code_right == BIT_XOR_EXPR
-	  || code_right == PLUS_EXPR || code_right == MINUS_EXPR)
-	warning (OPT_Wparentheses,
+	  || code_left == PLUS_EXPR || code_left == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around arithmetic in operand of %<|%>");
+      else if (code_right == BIT_AND_EXPR || code_right == BIT_XOR_EXPR
+	       || code_right == PLUS_EXPR || code_right == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around arithmetic in operand of %<|%>");
       /* Check cases like x|y==z */
-      else if (TREE_CODE_CLASS (code_left) == tcc_comparison
-	       || TREE_CODE_CLASS (code_right) == tcc_comparison)
-	warning (OPT_Wparentheses,
+      else if (TREE_CODE_CLASS (code_left) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around comparison in operand of %<|%>");
+      else if (TREE_CODE_CLASS (code_right) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around comparison in operand of %<|%>");
       /* Check cases like !x | y */
       else if (code_left == TRUTH_NOT_EXPR
 	       && !APPEARS_TO_BE_BOOLEAN_EXPR_P (code_right, arg_right))
-	warning (OPT_Wparentheses, "suggest parentheses around operand of "
-		 "%<!%> or change %<|%> to %<||%> or %<!%> to %<~%>");
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		    "suggest parentheses around operand of "
+		    "%<!%> or change %<|%> to %<||%> or %<!%> to %<~%>");
       return;
 
     case BIT_XOR_EXPR:
       if (code_left == BIT_AND_EXPR
-	  || code_left == PLUS_EXPR || code_left == MINUS_EXPR
-	  || code_right == BIT_AND_EXPR
-	  || code_right == PLUS_EXPR || code_right == MINUS_EXPR)
-	warning (OPT_Wparentheses,
+	  || code_left == PLUS_EXPR || code_left == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around arithmetic in operand of %<^%>");
+      else if (code_right == BIT_AND_EXPR
+	       || code_right == PLUS_EXPR || code_right == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around arithmetic in operand of %<^%>");
       /* Check cases like x^y==z */
-      else if (TREE_CODE_CLASS (code_left) == tcc_comparison
-	       || TREE_CODE_CLASS (code_right) == tcc_comparison)
-	warning (OPT_Wparentheses,
+      else if (TREE_CODE_CLASS (code_left) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around comparison in operand of %<^%>");
+      else if (TREE_CODE_CLASS (code_right) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around comparison in operand of %<^%>");
       return;
 
     case BIT_AND_EXPR:
-      if (code_left == PLUS_EXPR || code_right == PLUS_EXPR)
-	warning (OPT_Wparentheses,
+      if (code_left == PLUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
 		 "suggest parentheses around %<+%> in operand of %<&%>");
-      else if (code_left == MINUS_EXPR || code_right == MINUS_EXPR)
-	warning (OPT_Wparentheses,
+      else if (code_right == PLUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
+		 "suggest parentheses around %<+%> in operand of %<&%>");
+      else if (code_left == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around %<-%> in operand of %<&%>");
+      else if (code_right == MINUS_EXPR)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around %<-%> in operand of %<&%>");
       /* Check cases like x&y==z */
-      else if (TREE_CODE_CLASS (code_left) == tcc_comparison
-	       || TREE_CODE_CLASS (code_right) == tcc_comparison)
-	warning (OPT_Wparentheses,
+      else if (TREE_CODE_CLASS (code_left) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around comparison in operand of %<&%>");
+      else if (TREE_CODE_CLASS (code_right) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around comparison in operand of %<&%>");
       /* Check cases like !x & y */
       else if (code_left == TRUTH_NOT_EXPR
 	       && !APPEARS_TO_BE_BOOLEAN_EXPR_P (code_right, arg_right))
-	warning (OPT_Wparentheses, "suggest parentheses around operand of "
-		 "%<!%> or change %<&%> to %<&&%> or %<!%> to %<~%>");
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		    "suggest parentheses around operand of "
+		    "%<!%> or change %<&%> to %<&&%> or %<!%> to %<~%>");
       return;
 
     case EQ_EXPR:
-      if (TREE_CODE_CLASS (code_left) == tcc_comparison
-          || TREE_CODE_CLASS (code_right) == tcc_comparison)
-	warning (OPT_Wparentheses,
+      if (TREE_CODE_CLASS (code_left) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around comparison in operand of %<==%>");
+      else if (TREE_CODE_CLASS (code_right) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around comparison in operand of %<==%>");
       return;
     case NE_EXPR:
-      if (TREE_CODE_CLASS (code_left) == tcc_comparison
-          || TREE_CODE_CLASS (code_right) == tcc_comparison)
-	warning (OPT_Wparentheses,
+      if (TREE_CODE_CLASS (code_left) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+		 "suggest parentheses around comparison in operand of %<!=%>");
+      else if (TREE_CODE_CLASS (code_right) == tcc_comparison)
+	warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
 		 "suggest parentheses around comparison in operand of %<!=%>");
       return;
 
     default:
-      if (TREE_CODE_CLASS (code) == tcc_comparison
-	   && ((TREE_CODE_CLASS (code_left) == tcc_comparison
+      if (TREE_CODE_CLASS (code) == tcc_comparison)
+	{
+	  if (TREE_CODE_CLASS (code_left) == tcc_comparison
 		&& code_left != NE_EXPR && code_left != EQ_EXPR
 		&& INTEGRAL_TYPE_P (TREE_TYPE (arg_left)))
-	       || (TREE_CODE_CLASS (code_right) == tcc_comparison
+	    warning_at (EXPR_LOC_OR_LOC (arg_left, loc), OPT_Wparentheses,
+			"comparisons like %<X<=Y<=Z%> do not "
+			"have their mathematical meaning");
+	  else if (TREE_CODE_CLASS (code_right) == tcc_comparison
 		   && code_right != NE_EXPR && code_right != EQ_EXPR
-		   && INTEGRAL_TYPE_P (TREE_TYPE (arg_right)))))
-	warning (OPT_Wparentheses, "comparisons like %<X<=Y<=Z%> do not "
-		 "have their mathematical meaning");
+		   && INTEGRAL_TYPE_P (TREE_TYPE (arg_right)))
+	    warning_at (EXPR_LOC_OR_LOC (arg_right, loc), OPT_Wparentheses,
+			"comparisons like %<X<=Y<=Z%> do not "
+			"have their mathematical meaning");
+	}
       return;
     }
 #undef NOT_A_BOOLEAN_EXPR_P
@@ -10579,9 +11116,9 @@ record_types_used_by_current_var_decl (tree decl)
 {
   gcc_assert (decl && DECL_P (decl) && TREE_STATIC (decl));
 
-  while (!VEC_empty (tree, types_used_by_cur_var_decl))
+  while (types_used_by_cur_var_decl && !types_used_by_cur_var_decl->is_empty ())
     {
-      tree type = VEC_pop (tree, types_used_by_cur_var_decl);
+      tree type = types_used_by_cur_var_decl->pop ();
       types_used_by_var_decl_insert (type, decl);
     }
 }
@@ -10603,7 +11140,7 @@ record_locally_defined_typedef (tree decl)
     return;
 
   l = (struct c_language_function *) cfun->language;
-  VEC_safe_push (tree, gc, l->local_typedefs, decl);
+  vec_safe_push (l->local_typedefs, decl);
 }
 
 /* If T is a TYPE_DECL declared locally, mark it as used.  */
@@ -10641,7 +11178,7 @@ maybe_warn_unused_local_typedefs (void)
   if (warn_unused_local_typedefs
       && errorcount == unused_local_typedefs_warn_count)
     {
-      FOR_EACH_VEC_ELT (tree, l->local_typedefs, i, decl)
+      FOR_EACH_VEC_SAFE_ELT (l->local_typedefs, i, decl)
 	if (!TREE_USED (decl))
 	  warning_at (DECL_SOURCE_LOCATION (decl),
 		      OPT_Wunused_local_typedefs,
@@ -10649,86 +11186,82 @@ maybe_warn_unused_local_typedefs (void)
       unused_local_typedefs_warn_count = errorcount;
     }
 
-  if (l->local_typedefs)
-    {
-      VEC_free (tree, gc, l->local_typedefs);
-      l->local_typedefs = NULL;
-    }
+  vec_free (l->local_typedefs);
 }
 
 /* The C and C++ parsers both use vectors to hold function arguments.
    For efficiency, we keep a cache of unused vectors.  This is the
    cache.  */
 
-typedef VEC(tree,gc)* tree_gc_vec;
-DEF_VEC_P(tree_gc_vec);
-DEF_VEC_ALLOC_P(tree_gc_vec,gc);
-static GTY((deletable)) VEC(tree_gc_vec,gc) *tree_vector_cache;
+typedef vec<tree, va_gc> *tree_gc_vec;
+static GTY((deletable)) vec<tree_gc_vec, va_gc> *tree_vector_cache;
 
 /* Return a new vector from the cache.  If the cache is empty,
    allocate a new vector.  These vectors are GC'ed, so it is OK if the
    pointer is not released..  */
 
-VEC(tree,gc) *
+vec<tree, va_gc> *
 make_tree_vector (void)
 {
-  if (!VEC_empty (tree_gc_vec, tree_vector_cache))
-    return VEC_pop (tree_gc_vec, tree_vector_cache);
+  if (tree_vector_cache && !tree_vector_cache->is_empty ())
+    return tree_vector_cache->pop ();
   else
     {
-      /* Passing 0 to VEC_alloc returns NULL, and our callers require
+      /* Passing 0 to vec::alloc returns NULL, and our callers require
 	 that we always return a non-NULL value.  The vector code uses
 	 4 when growing a NULL vector, so we do too.  */
-      return VEC_alloc (tree, gc, 4);
+      vec<tree, va_gc> *v;
+      vec_alloc (v, 4);
+      return v;
     }
 }
 
 /* Release a vector of trees back to the cache.  */
 
 void
-release_tree_vector (VEC(tree,gc) *vec)
+release_tree_vector (vec<tree, va_gc> *vec)
 {
   if (vec != NULL)
     {
-      VEC_truncate (tree, vec, 0);
-      VEC_safe_push (tree_gc_vec, gc, tree_vector_cache, vec);
+      vec->truncate (0);
+      vec_safe_push (tree_vector_cache, vec);
     }
 }
 
 /* Get a new tree vector holding a single tree.  */
 
-VEC(tree,gc) *
+vec<tree, va_gc> *
 make_tree_vector_single (tree t)
 {
-  VEC(tree,gc) *ret = make_tree_vector ();
-  VEC_quick_push (tree, ret, t);
+  vec<tree, va_gc> *ret = make_tree_vector ();
+  ret->quick_push (t);
   return ret;
 }
 
 /* Get a new tree vector of the TREE_VALUEs of a TREE_LIST chain.  */
 
-VEC(tree,gc) *
+vec<tree, va_gc> *
 make_tree_vector_from_list (tree list)
 {
-  VEC(tree,gc) *ret = make_tree_vector ();
+  vec<tree, va_gc> *ret = make_tree_vector ();
   for (; list; list = TREE_CHAIN (list))
-    VEC_safe_push (tree, gc, ret, TREE_VALUE (list));
+    vec_safe_push (ret, TREE_VALUE (list));
   return ret;
 }
 
 /* Get a new tree vector which is a copy of an existing one.  */
 
-VEC(tree,gc) *
-make_tree_vector_copy (const VEC(tree,gc) *orig)
+vec<tree, va_gc> *
+make_tree_vector_copy (const vec<tree, va_gc> *orig)
 {
-  VEC(tree,gc) *ret;
+  vec<tree, va_gc> *ret;
   unsigned int ix;
   tree t;
 
   ret = make_tree_vector ();
-  VEC_reserve (tree, gc, ret, VEC_length (tree, orig));
-  FOR_EACH_VEC_ELT (tree, orig, ix, t)
-    VEC_quick_push (tree, ret, t);
+  vec_safe_reserve (ret, vec_safe_length (orig));
+  FOR_EACH_VEC_SAFE_ELT (orig, ix, t)
+    ret->quick_push (t);
   return ret;
 }
 
@@ -10862,11 +11395,13 @@ c_common_init_ts (void)
    with identifier SUFFIX.  */
 
 tree
-build_userdef_literal (tree suffix_id, tree value, tree num_string)
+build_userdef_literal (tree suffix_id, tree value,
+		       enum overflow_type overflow, tree num_string)
 {
   tree literal = make_node (USERDEF_LITERAL);
   USERDEF_LITERAL_SUFFIX_ID (literal) = suffix_id;
   USERDEF_LITERAL_VALUE (literal) = value;
+  USERDEF_LITERAL_OVERFLOW (literal) = overflow;
   USERDEF_LITERAL_NUM_STRING (literal) = num_string;
   return literal;
 }
@@ -10895,6 +11430,129 @@ convert_vector_to_pointer_for_subscript (location_t loc,
       *vecp = build1 (ADDR_EXPR, type1, *vecp);
       *vecp = convert (type, *vecp);
     }
+}
+
+/* Determine which of the operands, if any, is a scalar that needs to be
+   converted to a vector, for the range of operations.  */
+enum stv_conv
+scalar_to_vector (location_t loc, enum tree_code code, tree op0, tree op1,
+		  bool complain)
+{
+  tree type0 = TREE_TYPE (op0);
+  tree type1 = TREE_TYPE (op1);
+  bool integer_only_op = false;
+  enum stv_conv ret = stv_firstarg;
+
+  gcc_assert (TREE_CODE (type0) == VECTOR_TYPE
+	      || TREE_CODE (type1) == VECTOR_TYPE);
+  switch (code)
+    {
+      /* Most GENERIC binary expressions require homogeneous arguments.
+	 LSHIFT_EXPR and RSHIFT_EXPR are exceptions and accept a first
+	 argument that is a vector and a second one that is a scalar, so
+	 we never return stv_secondarg for them.  */
+      case RSHIFT_EXPR:
+      case LSHIFT_EXPR:
+	if (TREE_CODE (type0) == INTEGER_TYPE
+	    && TREE_CODE (TREE_TYPE (type1)) == INTEGER_TYPE)
+	  {
+	    if (unsafe_conversion_p (TREE_TYPE (type1), op0, false))
+	      {
+		if (complain)
+		  error_at (loc, "conversion of scalar %qT to vector %qT "
+			    "involves truncation", type0, type1);
+		return stv_error;
+	      }
+	    else
+	      return stv_firstarg;
+	  }
+	break;
+
+      case BIT_IOR_EXPR:
+      case BIT_XOR_EXPR:
+      case BIT_AND_EXPR:
+	integer_only_op = true;
+	/* ... fall through ...  */
+
+      case VEC_COND_EXPR:
+
+      case PLUS_EXPR:
+      case MINUS_EXPR:
+      case MULT_EXPR:
+      case TRUNC_DIV_EXPR:
+      case CEIL_DIV_EXPR:
+      case FLOOR_DIV_EXPR:
+      case ROUND_DIV_EXPR:
+      case EXACT_DIV_EXPR:
+      case TRUNC_MOD_EXPR:
+      case FLOOR_MOD_EXPR:
+      case RDIV_EXPR:
+      case EQ_EXPR:
+      case NE_EXPR:
+      case LE_EXPR:
+      case GE_EXPR:
+      case LT_EXPR:
+      case GT_EXPR:
+      /* What about UNLT_EXPR?  */
+	if (TREE_CODE (type0) == VECTOR_TYPE)
+	  {
+	    tree tmp;
+	    ret = stv_secondarg;
+	    /* Swap TYPE0 with TYPE1 and OP0 with OP1  */
+	    tmp = type0; type0 = type1; type1 = tmp;
+	    tmp = op0; op0 = op1; op1 = tmp;
+	  }
+
+	if (TREE_CODE (type0) == INTEGER_TYPE
+	    && TREE_CODE (TREE_TYPE (type1)) == INTEGER_TYPE)
+	  {
+	    if (unsafe_conversion_p (TREE_TYPE (type1), op0, false))
+	      {
+		if (complain)
+		  error_at (loc, "conversion of scalar %qT to vector %qT "
+			    "involves truncation", type0, type1);
+		return stv_error;
+	      }
+	    return ret;
+	  }
+	else if (!integer_only_op
+		    /* Allow integer --> real conversion if safe.  */
+		 && (TREE_CODE (type0) == REAL_TYPE
+		     || TREE_CODE (type0) == INTEGER_TYPE)
+		 && SCALAR_FLOAT_TYPE_P (TREE_TYPE (type1)))
+	  {
+	    if (unsafe_conversion_p (TREE_TYPE (type1), op0, false))
+	      {
+		if (complain)
+		  error_at (loc, "conversion of scalar %qT to vector %qT "
+			    "involves truncation", type0, type1);
+		return stv_error;
+	      }
+	    return ret;
+	  }
+      default:
+	break;
+    }
+
+  return stv_nothing;
+}
+
+/* Return true iff ALIGN is an integral constant that is a fundamental
+   alignment, as defined by [basic.align] in the c++-11
+   specifications.
+
+   That is:
+
+       [A fundamental alignment is represented by an alignment less than or
+        equal to the greatest alignment supported by the implementation
+        in all contexts, which is equal to
+        alignof(max_align_t)].  */
+
+bool
+cxx_fundamental_alignment_p  (unsigned align)
+{
+  return (align <=  MAX (TYPE_ALIGN (long_long_integer_type_node),
+			 TYPE_ALIGN (long_double_type_node)));
 }
 
 #include "gt-c-family-c-common.h"
