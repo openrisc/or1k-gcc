@@ -1,5 +1,10 @@
 2012-11-29  Peter Gavin  <pgavin@gmail.com>
 
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_sibcall) removed, unneeded
+
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
 	fix some things that broke in merge with upstream
 	* config/or1k/or1k.h:
 	(GO_IF_MODE_DEPENDENT_ADDRESS) poisoned in last GCC merge, seems
