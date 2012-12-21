@@ -64,6 +64,8 @@ Boston, MA 02111-1307, USA.  */
 #undef DRIVER_SELF_SPECS
 #define DRIVER_SELF_SPECS "%{!mglibc:-muclibc}"
 
+#define GLIBC_DYNAMIC_LINKER "/lib/ld.so.1"
+
 /* Define a set of Linux builtins. This is copied from linux.h. We can't
    include the whole file for now, because that causes configure to require ld
    to support --eh-frame-header, which it currently doesn't */
@@ -86,4 +88,10 @@ Boston, MA 02111-1307, USA.  */
     if (c_dialect_cxx ())					\
       builtin_define ("_GNU_SOURCE");				\
   } while (0)
+
+#undef LINK_SPEC
+#define LINK_SPEC "%{mnewlib:-entry 0x100} \
+  -dynamic-linker " GNU_USER_DYNAMIC_LINKER " \
+  %{static:-static} \
+  %{shared:-shared}"
 
