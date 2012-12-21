@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -39,7 +40,7 @@ func main() {
 const file = "NormalizationTest.txt"
 
 var url = flag.String("url",
-	"http://www.unicode.org/Public/6.0.0/ucd/"+file,
+	"http://www.unicode.org/Public/"+unicode.Version+"/ucd/"+file,
 	"URL of Unicode database directory")
 var localFiles = flag.Bool("local",
 	false,
@@ -48,7 +49,7 @@ var localFiles = flag.Bool("local",
 var logger = log.New(os.Stderr, "", log.Lshortfile)
 
 // This regression test runs the test set in NormalizationTest.txt
-// (taken from http://www.unicode.org/Public/6.0.0/ucd/).
+// (taken from http://www.unicode.org/Public/<unicode.Version>/ucd/).
 //
 // NormalizationTest.txt has form:
 // @Part0 # Specific cases
@@ -56,7 +57,7 @@ var logger = log.New(os.Stderr, "", log.Lshortfile)
 // 1E0A;1E0A;0044 0307;1E0A;0044 0307; # (Ḋ; Ḋ; D◌̇; Ḋ; D◌̇; ) LATIN CAPITAL LETTER D WITH DOT ABOVE
 // 1E0C;1E0C;0044 0323;1E0C;0044 0323; # (Ḍ; Ḍ; D◌̣; Ḍ; D◌̣; ) LATIN CAPITAL LETTER D WITH DOT BELOW
 //
-// Each test has 5 columns (c1, c2, c3, c4, c5), where 
+// Each test has 5 columns (c1, c2, c3, c4, c5), where
 // (c1, c2, c3, c4, c5) == (c1, NFC(c1), NFD(c1), NFKC(c1), NFKD(c1))
 //
 // CONFORMANCE:

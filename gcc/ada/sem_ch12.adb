@@ -2664,6 +2664,14 @@ package body Sem_Ch12 is
                Error_Msg_N
                  ("abstract formal subprogram must have a controlling type",
                   N);
+
+            elsif Ada_Version >= Ada_2012
+              and then Is_Incomplete_Type (Ctrl_Type)
+            then
+               Error_Msg_NE
+                 ("controlling type of abstract formal subprogram cannot " &
+                     "be incomplete type", N, Ctrl_Type);
+
             else
                Check_Controlling_Formals (Ctrl_Type, Nam);
             end if;
@@ -7060,6 +7068,8 @@ package body Sem_Ch12 is
       D2 : Integer := 0;
       P1 : Node_Id := N1;
       P2 : Node_Id := N2;
+      T1 : Source_Ptr;
+      T2 : Source_Ptr;
 
    --  Start of processing for Earlier
 
@@ -7200,19 +7210,21 @@ package body Sem_Ch12 is
       --  At this point either both nodes came from source or we approximated
       --  their source locations through neighbouring source statements.
 
+      T1 := Top_Level_Location (Sloc (P1));
+      T2 := Top_Level_Location (Sloc (P2));
+
       --  When two nodes come from the same instance, they have identical top
       --  level locations. To determine proper relation within the tree, check
       --  their locations within the template.
 
-      if Top_Level_Location (Sloc (P1)) = Top_Level_Location (Sloc (P2)) then
+      if T1 = T2 then
          return Sloc (P1) < Sloc (P2);
 
       --  The two nodes either come from unrelated instances or do not come
       --  from instantiated code at all.
 
       else
-         return Top_Level_Location (Sloc (P1))
-              < Top_Level_Location (Sloc (P2));
+         return T1 < T2;
       end if;
    end Earlier;
 
@@ -7844,9 +7856,9 @@ package body Sem_Ch12 is
      (N      : Node_Id;
       F_Node : Node_Id)
    is
-      Inst  : constant Entity_Id := Entity (F_Node);
       Decl  : Node_Id;
       Decls : List_Id;
+      Inst  : Entity_Id;
       Par_N : Node_Id;
 
       function Enclosing_Body (N : Node_Id) return Node_Id;
@@ -7913,9 +7925,18 @@ package body Sem_Ch12 is
 
    begin
       if not Is_List_Member (F_Node) then
-         Decls := List_Containing (N);
-         Par_N := Parent (Decls);
          Decl  := N;
+         Decls := List_Containing (N);
+         Inst  := Entity (F_Node);
+         Par_N := Parent (Decls);
+
+         --  When processing a subprogram instantiation, utilize the actual
+         --  subprogram instantiation rather than its package wrapper as it
+         --  carries all the context information.
+
+         if Is_Wrapper_Package (Inst) then
+            Inst := Related_Instance (Inst);
+         end if;
 
          --  If this is a package instance, check whether the generic is
          --  declared in a previous instance and the current instance is
@@ -10803,10 +10824,26 @@ package body Sem_Ch12 is
 
                pragma Assert (Present (Ancestor));
 
+               --  The ancestor itself may be a previous formal that has been
+               --  instantiated.
+
+               Ancestor := Get_Instance_Of (Ancestor);
+
             else
                Ancestor :=
                  Get_Instance_Of (Base_Type (Get_Instance_Of (A_Gen_T)));
             end if;
+
+         --  An unusual case: the actual is a type declared in a parent unit,
+         --  but is not a formal type so there is no instance_of for it.
+         --  Retrieve it by analyzing the record extension.
+
+         elsif Is_Child_Unit (Scope (A_Gen_T))
+           and then In_Open_Scopes (Scope (Act_T))
+           and then Is_Generic_Instance (Scope (Act_T))
+         then
+            Analyze (Subtype_Mark (Def));
+            Ancestor := Entity (Subtype_Mark (Def));
 
          else
             Ancestor := Get_Instance_Of (Etype (Base_Type (A_Gen_T)));
@@ -11442,7 +11479,7 @@ package body Sem_Ch12 is
             then
                null;
             else
-               Error_Msg_N ("Unchecked_Union cannot be the actual for a" &
+               Error_Msg_N ("unchecked union cannot be the actual for a" &
                  " discriminated formal type", Act_T);
 
             end if;
@@ -13517,9 +13554,7 @@ package body Sem_Ch12 is
                      --  information on aggregates in instances.
 
                      if Nkind (N2) = Nkind (N)
-                       and then
-                         Nkind_In (Parent (N2), N_Procedure_Call_Statement,
-                                                N_Function_Call)
+                       and then Nkind (Parent (N2)) in N_Subprogram_Call
                        and then Comes_From_Source (Typ)
                      then
                         if Is_Immediately_Visible (Scope (Typ)) then

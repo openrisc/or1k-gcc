@@ -28,7 +28,7 @@ type parser struct {
 	// Tracing/debugging
 	mode   Mode // parsing mode
 	trace  bool // == (mode & Trace != 0)
-	indent uint // indentation used for tracing output
+	indent int  // indentation used for tracing output
 
 	// Comments
 	comments    []*ast.CommentGroup
@@ -56,7 +56,7 @@ type parser struct {
 	unresolved []*ast.Ident      // unresolved identifiers
 	imports    []*ast.ImportSpec // list of imports
 
-	// Label scope
+	// Label scopes
 	// (maintained by open/close LabelScope)
 	labelScope  *ast.Scope     // label scope for current function
 	targetStack [][]*ast.Ident // stack of unresolved labels
@@ -75,14 +75,6 @@ func (p *parser) init(fset *token.FileSet, filename string, src []byte, mode Mod
 	p.trace = mode&Trace != 0 // for convenience (p.trace is used frequently)
 
 	p.next()
-
-	// set up the pkgScope here (as opposed to in parseFile) because
-	// there are other parser entry points (ParseExpr, etc.)
-	p.openScope()
-	p.pkgScope = p.topScope
-
-	// for the same reason, set up a label scope
-	p.openLabelScope()
 }
 
 // ----------------------------------------------------------------------------
@@ -199,15 +191,16 @@ func (p *parser) resolve(x ast.Expr) {
 // Parsing support
 
 func (p *parser) printTrace(a ...interface{}) {
-	const dots = ". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . " +
-		". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . "
-	const n = uint(len(dots))
+	const dots = ". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . "
+	const n = len(dots)
 	pos := p.file.Position(p.pos)
 	fmt.Printf("%5d:%3d: ", pos.Line, pos.Column)
 	i := 2 * p.indent
-	for ; i > n; i -= n {
+	for i > n {
 		fmt.Print(dots)
+		i -= n
 	}
+	// i <= n
 	fmt.Print(dots[0:i])
 	fmt.Println(a...)
 }
@@ -218,7 +211,7 @@ func trace(p *parser, msg string) *parser {
 	return p
 }
 
-// Usage pattern: defer un(trace(p, "..."));
+// Usage pattern: defer un(trace(p, "..."))
 func un(p *parser) {
 	p.indent--
 	p.printTrace(")")
@@ -267,13 +260,13 @@ func (p *parser) consumeComment() (comment *ast.Comment, endline int) {
 
 // Consume a group of adjacent comments, add it to the parser's
 // comments list, and return it together with the line at which
-// the last comment in the group ends. An empty line or non-comment
-// token terminates a comment group.
+// the last comment in the group ends. A non-comment token or n
+// empty lines terminate a comment group.
 //
-func (p *parser) consumeCommentGroup() (comments *ast.CommentGroup, endline int) {
+func (p *parser) consumeCommentGroup(n int) (comments *ast.CommentGroup, endline int) {
 	var list []*ast.Comment
 	endline = p.file.Line(p.pos)
-	for p.tok == token.COMMENT && endline+1 >= p.file.Line(p.pos) {
+	for p.tok == token.COMMENT && p.file.Line(p.pos) <= endline+n {
 		var comment *ast.Comment
 		comment, endline = p.consumeComment()
 		list = append(list, comment)
@@ -304,17 +297,17 @@ func (p *parser) consumeCommentGroup() (comments *ast.CommentGroup, endline int)
 func (p *parser) next() {
 	p.leadComment = nil
 	p.lineComment = nil
-	line := p.file.Line(p.pos) // current line
+	prev := p.pos
 	p.next0()
 
 	if p.tok == token.COMMENT {
 		var comment *ast.CommentGroup
 		var endline int
 
-		if p.file.Line(p.pos) == line {
+		if p.file.Line(p.pos) == p.file.Line(prev) {
 			// The comment is on same line as the previous token; it
 			// cannot be a lead comment but may be a line comment.
-			comment, endline = p.consumeCommentGroup()
+			comment, endline = p.consumeCommentGroup(0)
 			if p.file.Line(p.pos) != endline {
 				// The next token is on a different line, thus
 				// the last comment group is a line comment.
@@ -325,7 +318,7 @@ func (p *parser) next() {
 		// consume successor comments, if any
 		endline = -1
 		for p.tok == token.COMMENT {
-			comment, endline = p.consumeCommentGroup()
+			comment, endline = p.consumeCommentGroup(1)
 		}
 
 		if endline+1 == p.file.Line(p.pos) {
@@ -627,10 +620,10 @@ func (p *parser) parseFieldDecl(scope *ast.Scope) *ast.Field {
 
 	doc := p.leadComment
 
-	// fields
+	// FieldDecl
 	list, typ := p.parseVarList(false)
 
-	// optional tag
+	// Tag
 	var tag *ast.BasicLit
 	if p.tok == token.STRING {
 		tag = &ast.BasicLit{ValuePos: p.pos, Kind: p.tok, Value: p.lit}
@@ -645,7 +638,6 @@ func (p *parser) parseFieldDecl(scope *ast.Scope) *ast.Field {
 	} else {
 		// ["*"] TypeName (AnonymousField)
 		typ = list[0] // we always have at least one element
-		p.resolve(typ)
 		if n := len(list); n > 1 || !isTypeName(deref(typ)) {
 			pos := typ.Pos()
 			p.errorExpected(pos, "anonymous field")
@@ -657,6 +649,7 @@ func (p *parser) parseFieldDecl(scope *ast.Scope) *ast.Field {
 
 	field := &ast.Field{Doc: doc, Names: idents, Type: typ, Tag: tag, Comment: p.lineComment}
 	p.declare(field, nil, scope, ast.Var, idents...)
+	p.resolve(typ)
 
 	return field
 }
@@ -699,12 +692,15 @@ func (p *parser) parsePointerType() *ast.StarExpr {
 	return &ast.StarExpr{Star: star, X: base}
 }
 
+// If the result is an identifier, it is not resolved.
 func (p *parser) tryVarType(isParam bool) ast.Expr {
 	if isParam && p.tok == token.ELLIPSIS {
 		pos := p.pos
 		p.next()
 		typ := p.tryIdentOrType(isParam) // don't use parseType so we can provide better error message
-		if typ == nil {
+		if typ != nil {
+			p.resolve(typ)
+		} else {
 			p.error(pos, "'...' parameter is missing type")
 			typ = &ast.BadExpr{From: pos, To: p.pos}
 		}
@@ -713,6 +709,7 @@ func (p *parser) tryVarType(isParam bool) ast.Expr {
 	return p.tryIdentOrType(false)
 }
 
+// If the result is an identifier, it is not resolved.
 func (p *parser) parseVarType(isParam bool) ast.Expr {
 	typ := p.tryVarType(isParam)
 	if typ == nil {
@@ -724,6 +721,7 @@ func (p *parser) parseVarType(isParam bool) ast.Expr {
 	return typ
 }
 
+// If any of the results are identifiers, they are not resolved.
 func (p *parser) parseVarList(isParam bool) (list []ast.Expr, typ ast.Expr) {
 	if p.trace {
 		defer un(trace(p, "VarList"))
@@ -744,9 +742,7 @@ func (p *parser) parseVarList(isParam bool) (list []ast.Expr, typ ast.Expr) {
 	}
 
 	// if we had a list of identifiers, it must be followed by a type
-	if typ = p.tryVarType(isParam); typ != nil {
-		p.resolve(typ)
-	}
+	typ = p.tryVarType(isParam)
 
 	return
 }
@@ -756,7 +752,10 @@ func (p *parser) parseParameterList(scope *ast.Scope, ellipsisOk bool) (params [
 		defer un(trace(p, "ParameterList"))
 	}
 
+	// ParameterDecl
 	list, typ := p.parseVarList(ellipsisOk)
+
+	// analyze case
 	if typ != nil {
 		// IdentifierList Type
 		idents := p.makeIdentList(list)
@@ -765,10 +764,10 @@ func (p *parser) parseParameterList(scope *ast.Scope, ellipsisOk bool) (params [
 		// Go spec: The scope of an identifier denoting a function
 		// parameter or result variable is the function body.
 		p.declare(field, nil, scope, ast.Var, idents...)
+		p.resolve(typ)
 		if p.tok == token.COMMA {
 			p.next()
 		}
-
 		for p.tok != token.RPAREN && p.tok != token.EOF {
 			idents := p.parseIdentList()
 			typ := p.parseVarType(ellipsisOk)
@@ -777,18 +776,18 @@ func (p *parser) parseParameterList(scope *ast.Scope, ellipsisOk bool) (params [
 			// Go spec: The scope of an identifier denoting a function
 			// parameter or result variable is the function body.
 			p.declare(field, nil, scope, ast.Var, idents...)
+			p.resolve(typ)
 			if !p.atComma("parameter list") {
 				break
 			}
 			p.next()
 		}
-
 	} else {
 		// Type { "," Type } (anonymous parameters)
 		params = make([]*ast.Field, len(list))
-		for i, x := range list {
-			p.resolve(x)
-			params[i] = &ast.Field{Type: x}
+		for i, typ := range list {
+			p.resolve(typ)
+			params[i] = &ast.Field{Type: typ}
 		}
 	}
 
@@ -925,20 +924,22 @@ func (p *parser) parseChanType() *ast.ChanType {
 
 	pos := p.pos
 	dir := ast.SEND | ast.RECV
+	var arrow token.Pos
 	if p.tok == token.CHAN {
 		p.next()
 		if p.tok == token.ARROW {
+			arrow = p.pos
 			p.next()
 			dir = ast.SEND
 		}
 	} else {
-		p.expect(token.ARROW)
+		arrow = p.expect(token.ARROW)
 		p.expect(token.CHAN)
 		dir = ast.RECV
 	}
 	value := p.parseType()
 
-	return &ast.ChanType{Begin: pos, Dir: dir, Value: value}
+	return &ast.ChanType{Begin: pos, Arrow: arrow, Dir: dir, Value: value}
 }
 
 // If the result is an identifier, it is not resolved.
@@ -1398,16 +1399,49 @@ func (p *parser) parseUnaryExpr(lhs bool) ast.Expr {
 
 	case token.ARROW:
 		// channel type or receive expression
-		pos := p.pos
+		arrow := p.pos
 		p.next()
-		if p.tok == token.CHAN {
-			p.next()
-			value := p.parseType()
-			return &ast.ChanType{Begin: pos, Dir: ast.RECV, Value: value}
-		}
+
+		// If the next token is token.CHAN we still don't know if it
+		// is a channel type or a receive operation - we only know
+		// once we have found the end of the unary expression. There
+		// are two cases:
+		//
+		//   <- type  => (<-type) must be channel type
+		//   <- expr  => <-(expr) is a receive from an expression
+		//
+		// In the first case, the arrow must be re-associated with
+		// the channel type parsed already:
+		//
+		//   <- (chan type)    =>  (<-chan type)
+		//   <- (chan<- type)  =>  (<-chan (<-type))
 
 		x := p.parseUnaryExpr(false)
-		return &ast.UnaryExpr{OpPos: pos, Op: token.ARROW, X: p.checkExpr(x)}
+
+		// determine which case we have
+		if typ, ok := x.(*ast.ChanType); ok {
+			// (<-type)
+
+			// re-associate position info and <-
+			dir := ast.SEND
+			for ok && dir == ast.SEND {
+				if typ.Dir == ast.RECV {
+					// error: (<-type) is (<-(<-chan T))
+					p.errorExpected(typ.Arrow, "'chan'")
+				}
+				arrow, typ.Begin, typ.Arrow = typ.Arrow, arrow, arrow
+				dir, typ.Dir = typ.Dir, ast.RECV
+				typ, ok = typ.Value.(*ast.ChanType)
+			}
+			if dir == ast.SEND {
+				p.errorExpected(arrow, "channel type")
+			}
+
+			return x
+		}
+
+		// <-(expr)
+		return &ast.UnaryExpr{OpPos: arrow, Op: token.ARROW, X: p.checkExpr(x)}
 
 	case token.MUL:
 		// pointer type or unary "*" expression
@@ -2006,7 +2040,7 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 // ----------------------------------------------------------------------------
 // Declarations
 
-type parseSpecFunction func(p *parser, doc *ast.CommentGroup, iota int) ast.Spec
+type parseSpecFunction func(p *parser, doc *ast.CommentGroup, keyword token.Token, iota int) ast.Spec
 
 func isValidImport(lit string) bool {
 	const illegalChars = `!"#$%&'()*,:;<=>?[\]^{|}` + "`\uFFFD"
@@ -2019,7 +2053,7 @@ func isValidImport(lit string) bool {
 	return s != ""
 }
 
-func parseImportSpec(p *parser, doc *ast.CommentGroup, _ int) ast.Spec {
+func (p *parser) parseImportSpec(doc *ast.CommentGroup, _ token.Token, _ int) ast.Spec {
 	if p.trace {
 		defer un(trace(p, "ImportSpec"))
 	}
@@ -2057,15 +2091,15 @@ func parseImportSpec(p *parser, doc *ast.CommentGroup, _ int) ast.Spec {
 	return spec
 }
 
-func parseConstSpec(p *parser, doc *ast.CommentGroup, iota int) ast.Spec {
+func (p *parser) parseValueSpec(doc *ast.CommentGroup, keyword token.Token, iota int) ast.Spec {
 	if p.trace {
-		defer un(trace(p, "ConstSpec"))
+		defer un(trace(p, keyword.String()+"Spec"))
 	}
 
 	idents := p.parseIdentList()
 	typ := p.tryType()
 	var values []ast.Expr
-	if typ != nil || p.tok == token.ASSIGN || iota == 0 {
+	if p.tok == token.ASSIGN || keyword == token.CONST && (typ != nil || iota == 0) || keyword == token.VAR && typ == nil {
 		p.expect(token.ASSIGN)
 		values = p.parseRhsList()
 	}
@@ -2082,12 +2116,16 @@ func parseConstSpec(p *parser, doc *ast.CommentGroup, iota int) ast.Spec {
 		Values:  values,
 		Comment: p.lineComment,
 	}
-	p.declare(spec, iota, p.topScope, ast.Con, idents...)
+	kind := ast.Con
+	if keyword == token.VAR {
+		kind = ast.Var
+	}
+	p.declare(spec, iota, p.topScope, kind, idents...)
 
 	return spec
 }
 
-func parseTypeSpec(p *parser, doc *ast.CommentGroup, _ int) ast.Spec {
+func (p *parser) parseTypeSpec(doc *ast.CommentGroup, _ token.Token, _ int) ast.Spec {
 	if p.trace {
 		defer un(trace(p, "TypeSpec"))
 	}
@@ -2108,36 +2146,6 @@ func parseTypeSpec(p *parser, doc *ast.CommentGroup, _ int) ast.Spec {
 	return spec
 }
 
-func parseVarSpec(p *parser, doc *ast.CommentGroup, _ int) ast.Spec {
-	if p.trace {
-		defer un(trace(p, "VarSpec"))
-	}
-
-	idents := p.parseIdentList()
-	typ := p.tryType()
-	var values []ast.Expr
-	if typ == nil || p.tok == token.ASSIGN {
-		p.expect(token.ASSIGN)
-		values = p.parseRhsList()
-	}
-	p.expectSemi() // call before accessing p.linecomment
-
-	// Go spec: The scope of a constant or variable identifier declared inside
-	// a function begins at the end of the ConstSpec or VarSpec and ends at
-	// the end of the innermost containing block.
-	// (Global identifiers are resolved in a separate phase after parsing.)
-	spec := &ast.ValueSpec{
-		Doc:     doc,
-		Names:   idents,
-		Type:    typ,
-		Values:  values,
-		Comment: p.lineComment,
-	}
-	p.declare(spec, nil, p.topScope, ast.Var, idents...)
-
-	return spec
-}
-
 func (p *parser) parseGenDecl(keyword token.Token, f parseSpecFunction) *ast.GenDecl {
 	if p.trace {
 		defer un(trace(p, "GenDecl("+keyword.String()+")"))
@@ -2151,12 +2159,12 @@ func (p *parser) parseGenDecl(keyword token.Token, f parseSpecFunction) *ast.Gen
 		lparen = p.pos
 		p.next()
 		for iota := 0; p.tok != token.RPAREN && p.tok != token.EOF; iota++ {
-			list = append(list, f(p, p.leadComment, iota))
+			list = append(list, f(p, p.leadComment, keyword, iota))
 		}
 		rparen = p.expect(token.RPAREN)
 		p.expectSemi()
 	} else {
-		list = append(list, f(p, nil, 0))
+		list = append(list, f(p, nil, keyword, 0))
 	}
 
 	return &ast.GenDecl{
@@ -2256,14 +2264,11 @@ func (p *parser) parseDecl(sync func(*parser)) ast.Decl {
 
 	var f parseSpecFunction
 	switch p.tok {
-	case token.CONST:
-		f = parseConstSpec
+	case token.CONST, token.VAR:
+		f = (*parser).parseValueSpec
 
 	case token.TYPE:
-		f = parseTypeSpec
-
-	case token.VAR:
-		f = parseVarSpec
+		f = (*parser).parseTypeSpec
 
 	case token.FUNC:
 		return p.parseFuncDecl()
@@ -2286,6 +2291,12 @@ func (p *parser) parseFile() *ast.File {
 		defer un(trace(p, "File"))
 	}
 
+	// Don't bother parsing the rest if we had errors scanning the first token.
+	// Likely not a Go source file at all.
+	if p.errors.Len() != 0 {
+		return nil
+	}
+
 	// package clause
 	doc := p.leadComment
 	pos := p.expect(token.PACKAGE)
@@ -2297,15 +2308,19 @@ func (p *parser) parseFile() *ast.File {
 	}
 	p.expectSemi()
 
-	var decls []ast.Decl
-
-	// Don't bother parsing the rest if we had errors already.
+	// Don't bother parsing the rest if we had errors parsing the package clause.
 	// Likely not a Go source file at all.
+	if p.errors.Len() != 0 {
+		return nil
+	}
 
-	if p.errors.Len() == 0 && p.mode&PackageClauseOnly == 0 {
+	p.openScope()
+	p.pkgScope = p.topScope
+	var decls []ast.Decl
+	if p.mode&PackageClauseOnly == 0 {
 		// import decls
 		for p.tok == token.IMPORT {
-			decls = append(decls, p.parseGenDecl(token.IMPORT, parseImportSpec))
+			decls = append(decls, p.parseGenDecl(token.IMPORT, (*parser).parseImportSpec))
 		}
 
 		if p.mode&ImportsOnly == 0 {
@@ -2315,8 +2330,9 @@ func (p *parser) parseFile() *ast.File {
 			}
 		}
 	}
-
-	assert(p.topScope == p.pkgScope, "imbalanced scopes")
+	p.closeScope()
+	assert(p.topScope == nil, "unbalanced scopes")
+	assert(p.labelScope == nil, "unbalanced label scopes")
 
 	// resolve global identifiers within the same file
 	i := 0

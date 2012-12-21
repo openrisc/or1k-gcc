@@ -1,6 +1,5 @@
 /* Target definitions for PowerPC running Darwin (Mac OS X).
-   Copyright (C) 1997, 2000, 2001, 2003, 2004, 2005, 2006, 2007, 2008, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1997-2012 Free Software Foundation, Inc.
    Contributed by Apple Computer Inc.
 
    This file is part of GCC.
@@ -281,12 +280,9 @@ extern int darwin_emit_branch_islands;
    default as well.  */
 
 #undef  TARGET_DEFAULT
-#define TARGET_DEFAULT (MASK_POWERPC | MASK_MULTIPLE | MASK_NEW_MNEMONICS \
-                      | MASK_PPC_GFXOPT)
+#define TARGET_DEFAULT (MASK_MULTIPLE | MASK_PPC_GFXOPT)
 
-/* Darwin only runs on PowerPC, so short-circuit POWER patterns.  */
-#undef  TARGET_POWER
-#define TARGET_POWER 0
+/* Darwin always uses IBM long double, never IEEE long double.  */
 #undef  TARGET_IEEEQUAD
 #define TARGET_IEEEQUAD 0
 
@@ -422,3 +418,7 @@ do {									\
   rs6000_builtin_decls[(unsigned) (RS6000_BUILTIN_CFSTRING)]		\
     = darwin_init_cfstring_builtins ((unsigned) (RS6000_BUILTIN_CFSTRING)); \
 } while(0)
+
+/* So far, there is no rs6000_fold_builtin, if one is introduced, then
+   this will need to be modified similar to the x86 case.  */
+#define TARGET_FOLD_BUILTIN SUBTARGET_FOLD_BUILTIN

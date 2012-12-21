@@ -45,12 +45,6 @@
 #endif
 
 
-/* Define if building with C++. */
-#ifndef USED_FOR_TARGET
-#undef ENABLE_BUILD_WITH_CXX
-#endif
-
-
 /* Define if you want more run-time sanity checks. This one gets a grab bag of
    miscellaneous but relatively cheap checks. */
 #ifndef USED_FOR_TARGET
@@ -272,6 +266,12 @@
 #endif
 
 
+/* Define if your assembler supports SPARC4 instructions. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_SPARC4
+#endif
+
+
 /* Define if your assembler supports fprnd. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_FPRND
@@ -444,6 +444,12 @@
 /* Define if your assembler supports POPCNTD instructions. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_AS_POPCNTD
+#endif
+
+
+/* Define if your assembler supports POWER8 instructions. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_AS_POWER8
 #endif
 
 
@@ -624,6 +630,12 @@
    define to 0. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_DECL_FFLUSH_UNLOCKED
+#endif
+
+
+/* Define to 1 if we found a declaration for 'ffs', otherwise define to 0. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_DECL_FFS
 #endif
 
 
@@ -1266,6 +1278,12 @@
 #endif
 
 
+/* Define to 1 if you have the <libintl.h> header file. */
+#ifndef USED_FOR_TARGET
+#undef HAVE_LIBINTL_H
+#endif
+
+
 /* Define to 1 if you have the <limits.h> header file. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_LIMITS_H
@@ -1591,6 +1609,12 @@
 /* Define if cloog is in use. */
 #ifndef USED_FOR_TARGET
 #undef HAVE_cloog
+#endif
+
+
+/* Define if F_SETLKW supported by fcntl. */
+#ifndef USED_FOR_TARGET
+#undef HOST_HAS_F_SETLKW
 #endif
 
 

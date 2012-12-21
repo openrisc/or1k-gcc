@@ -1,3 +1,70 @@
+2012-11-19  Matthias Klose  <doko@ubuntu.com>
+
+	* libtool-version: Bump soversion.
+
+2012-10-15  Matthias Klose  <doko@ubuntu.com>
+
+	* configure.ac: Match arm*-*-linux-* for ARM Linux/GNU.
+	* configure: Regenerate.
+
+2012-09-14  Dehao Chen  <dehao@google.com>
+
+	* testsuite/libjava.lang/sourcelocation.java: New cases.
+	* testsuite/libjava.lang/sourcelocation.out: New cases.
+
+2012-09-14  David Edelsohn  <dje.gcc@gmail.com>
+
+	* configure: Regenerated.
+
+2012-07-19  Tristan Gingold  <gingold@adacore.com>
+	    Richard Henderson  <rth@redhat.com>
+
+	* libgcj.ver: Add __gcj_personality_seh0.
+	* exception.cc (__gcj_personality_seh0): New function.
+	Adjust for SEH.
+
+2012-07-18  H.J. Lu  <hongjiu.lu@intel.com>
+
+	PR libjava/53973
+	* include/x86_64-signal.h (CHECK_67H_PREFIX): Removed.
+	(HANDLE_DIVIDE_OVERFLOW): Skip 67h address size prefix
+	unconditionally.
+
+2012-07-18  H.J. Lu  <hongjiu.lu@intel.com>
+
+	PR libjava/53973
+	* include/x86_64-signal.h (CHECK_67H_PREFIX): New.
+	(HANDLE_DIVIDE_OVERFLOW): Check and and skip 67h address size
+	prefix if CHECK_67H_PREFIX is 1.  Use ULL suffix for 64-bit
+	integer.
+
+2012-06-20  David Edelsohn  <dje.gcc@gmail.com>
+	    Alan Modra  <amodra@gmail.com>
+
+	* sysdep/powerpc/locks.h (compare_and_swap): Use GCC atomic
+	intrinsics.
+	(release_set): Same.
+	(compare_and_swap_release): Same.
+	(read_barrier): Same.
+	(write_barrier): Same.
+
+2012-06-15  Andreas Schwab  <schwab@linux-m68k.org>
+
+	* sysdep/m68k/locks.h (compare_and_swap): Use
+	__sync_bool_compare_and_swap.
+	(release_set): Use write_barrier instead of inlining it.
+
+2012-06-15  Andreas Krebbel  <Andreas.Krebbel@de.ibm.com>
+
+	* sysdep/s390/locks.h (compare_and_swap, release_set)
+	(read_barrier, write_barrier): Use the GCC atomic builtins.
+
+2012-06-14  Kaz Kojima  <kkojima@gcc.gnu.org>
+
+	* sysdep/sh/locks.h (__cas_lock): Remove.
+	(__cas_start_atomic, __cas_end_atomic): Likewise.
+	(compare_and_swap): Call __sync_bool_compare_and_swap.
+
 2012-05-21  Benjamin Kosnik  <bkoz@redhat.com>
 
 	PR libstdc++/52700

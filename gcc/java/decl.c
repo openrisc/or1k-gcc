@@ -34,7 +34,6 @@ The Free Software Foundation is independent of Sun Microsystems, Inc.  */
 #include "flags.h"
 #include "java-tree.h"
 #include "jcf.h"
-#include "libfuncs.h"
 #include "java-except.h"
 #include "ggc.h"
 #include "cgraph.h"
@@ -618,7 +617,7 @@ java_init_decl_processing (void)
   decimal_int_max = build_int_cstu (unsigned_int_type_node, 0x80000000);
   decimal_long_max
     = double_int_to_tree (unsigned_long_type_node,
-			  double_int_setbit (double_int_zero, 64));
+			  double_int_zero.set_bit (64));
 
   long_zero_node = build_int_cst (long_type_node, 0);
 
@@ -1954,7 +1953,7 @@ java_mark_class_local (tree klass)
     if (FIELD_STATIC (t))
       {
 	if (DECL_EXTERNAL (t))
-	  VEC_safe_push (tree, gc, pending_static_fields, t);
+	  vec_safe_push (pending_static_fields, t);
 	java_mark_decl_local (t);
       }
 

@@ -765,9 +765,6 @@ enum reg_class
 #define REGNO_OK_FOR_INDEX_P(X) 0
 
 
-/* OR1K addresses do not depend on the machine mode they are being used in. */
-#define GO_IF_MODE_DEPENDENT_ADDRESS(addr,label)
-
 /* Specify the machine mode that this machine uses for the index in the
    tablejump instruction.  */
 #define CASE_VECTOR_MODE SImode
@@ -781,10 +778,6 @@ enum reg_class
 
 /* Define this as 1 if `char' should by default be signed; else as 0.  */
 #define DEFAULT_SIGNED_CHAR 1
-
-/* This flag, if defined, says the same insns that convert to a signed fixnum
-   also convert validly to an unsigned one.  */
-#define FIXUNS_TRUNC_LIKE_FIX_TRUNC
 
 /* The maximum number of bytes that a single instruction can move quickly
    between memory and registers or between two memory locations. */

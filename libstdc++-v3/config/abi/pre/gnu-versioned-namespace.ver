@@ -27,19 +27,10 @@ GLIBCXX_7.0 {
     # Names inside the 'extern' block are demangled names.
     extern "C++"
     {
+      std::*;
       std::__7::*;
-      std::*
+      std::random_device::*
     };
-
-    # locale
-    _ZNSt3__79has_facetINS_*;
-
-    # hash 
-    _ZNSt8__detail3__712__prime_listE;
-    _ZNSt3tr18__detail3__712__prime_listE;
-
-    # thread/mutex/condition_variable/future
-    __once_proxy;
 
     # operator new(size_t)
     _Znw[jmy];
@@ -64,13 +55,37 @@ GLIBCXX_7.0 {
     # function-scope static objects requires a guard variable.
     _ZGVNSt*;
 
-    _ZTT*;
-    _ZTV*;
+    # construction vtable
+    _ZTCNSt*;
 
-    _ZTI*;
-    _ZTS*;
+    # VTT structure
+    _ZTTNSt*;
 
-    _ZTv0_n*;
+    # vtable
+    _ZTVSt*;
+    _ZTVNSt*;
+    _ZTVN9__gnu_cxx3__718stdio_sync_filebufI[cw]NSt3__711char_traitsI[cw]EEEE;
+
+    # thunk
+    _ZTv0_n24_NS*;
+
+    # typeinfo structure
+    _ZTISt*;
+    _ZTINSt*;
+
+    # typeinfo name
+    _ZTSSt*;
+    _ZTSNSt*;
+
+    # locale
+    _ZNSt3__79has_facetINS_*;
+
+    # hash 
+    _ZNSt8__detail3__712__prime_listE;
+    _ZNSt3tr18__detail3__712__prime_listE;
+
+    # thread/mutex/condition_variable/future
+    __once_proxy;
 
     # std::__detail::_List_node_base
     _ZNSt8__detail3__715_List_node_base7_M_hook*;
@@ -130,6 +145,14 @@ GLIBCXX_7.0 {
     _ZNK11__gnu_debug16_Error_formatter15_M_print_string*;
     _ZNK11__gnu_debug16_Error_formatter8_M_error*;
     _ZNK11__gnu_debug16_Error_formatter17_M_get_max_lengthEv;
+
+    # __gnu_debug::_Safe_unordered_container_base
+    # __gnu_debug::_Safe_local_iterator_base
+    _ZN11__gnu_debug30_Safe_unordered_container_base7_M_swapERS0_;
+    _ZN11__gnu_debug30_Safe_unordered_container_base13_M_detach_allEv;
+    _ZN11__gnu_debug25_Safe_local_iterator_base9_M_attachEPNS_19_Safe_sequence_baseEb;
+    _ZN11__gnu_debug25_Safe_local_iterator_base9_M_detachEv;
+
 
     # parallel mode
     _ZN14__gnu_parallel9_Settings3getEv;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin freebsd linux
+// +build darwin freebsd linux netbsd
 // +build cgo
 
 package user
@@ -44,7 +44,7 @@ func bytePtrToString(p *byte) string {
 	return string(a[:i])
 }
 
-// Current returns the current user. 
+// Current returns the current user.
 func Current() (*User, error) {
 	return lookup(syscall.Getuid(), "", false)
 }
@@ -73,11 +73,14 @@ func lookup(uid int, username string, lookupByName bool) (*User, error) {
 	const bufSize = 1024
 	buf := make([]byte, bufSize)
 	if lookupByName {
-		rv := libc_getpwnam_r(syscall.StringBytePtr(username),
+		p := syscall.StringBytePtr(username)
+		syscall.Entersyscall()
+		rv := libc_getpwnam_r(p,
 			&pwd,
 			&buf[0],
 			bufSize,
 			&result)
+		syscall.Exitsyscall()
 		if rv != 0 {
 			return nil, fmt.Errorf("user: lookup username %s: %s", username, syscall.GetErrno())
 		}
@@ -85,11 +88,13 @@ func lookup(uid int, username string, lookupByName bool) (*User, error) {
 			return nil, UnknownUserError(username)
 		}
 	} else {
+		syscall.Entersyscall()
 		rv := libc_getpwuid_r(syscall.Uid_t(uid),
 			&pwd,
 			&buf[0],
 			bufSize,
 			&result)
+		syscall.Exitsyscall()
 		if rv != 0 {
 			return nil, fmt.Errorf("user: lookup userid %d: %s", uid, syscall.GetErrno())
 		}

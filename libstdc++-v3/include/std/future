@@ -1,6 +1,6 @@
 // <future> -*- C++ -*-
 
-// Copyright (C) 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+// Copyright (C) 2009-2012 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -31,19 +31,21 @@
 
 #pragma GCC system_header
 
-#ifndef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus < 201103L
 # include <bits/c++0x_warning.h>
 #else
 
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <thread>
 #include <condition_variable>
 #include <system_error>
-#include <exception>
 #include <atomic>
 #include <bits/functexcept.h>
+#include <bits/unique_ptr.h>
+#include <bits/shared_ptr.h>
+#include <bits/uses_allocator.h>
+#include <bits/alloc_traits.h>
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -112,9 +114,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 
   template<typename _Res>
     class shared_future;
-
-  template<typename _Res>
-    class atomic_future;
 
   template<typename _Signature>
     class packaged_task;
@@ -1133,6 +1132,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  _M_storage(__future_base::_S_allocate_result<void>(__a))
         { }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2095.  missing constructors needed for uses-allocator construction
       template<typename _Allocator>
         promise(allocator_arg_t, const _Allocator&, promise&& __rhs)
         : _M_future(std::move(__rhs._M_future)),
@@ -1307,6 +1308,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       // Construction and destruction
       packaged_task() noexcept { }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2095.  missing constructors needed for uses-allocator construction
       template<typename _Allocator>
         explicit
         packaged_task(allocator_arg_t, const _Allocator& __a) noexcept
@@ -1319,6 +1322,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
         : _M_state(std::make_shared<_State_type>(std::forward<_Fn>(__fn)))
         { }
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 2097.  packaged_task constructors should be constrained
       template<typename _Fn, typename _Allocator, typename = typename
                __constrain_pkgdtask<packaged_task, _Fn>::__type>
         explicit
@@ -1425,10 +1430,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   class __future_base::_Async_state_common : public __future_base::_State_base
   {
   protected:
-#ifdef _GLIBCXX_HAVE_TLS
+#ifdef _GLIBCXX_ASYNC_ABI_COMPAT
     ~_Async_state_common();
 #else
-    ~_Async_state_common() { _M_join(); }
+    ~_Async_state_common() = default;
 #endif
 
     // Allow non-timed waiting functions to block until the thread completes,
@@ -1454,6 +1459,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  _M_set_result(_S_task_setter(_M_result, _M_fn));
         } };
       }
+
+      ~_Async_state_impl() { _M_join(); }
 
     private:
       typedef __future_base::_Ptr<_Result<_Res>> _Ptr_type;
@@ -1517,6 +1524,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 _GLIBCXX_END_NAMESPACE_VERSION
 } // namespace
 
-#endif // __GXX_EXPERIMENTAL_CXX0X__
+#endif // C++11
 
 #endif // _GLIBCXX_FUTURE

@@ -30,9 +30,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "df.h"
 #include "basic-block.h"
 
-/* For VEC (int, heap).  */
-#include "vecprim.h"
-
 /* Identificator of a scheduler pass.  */
 enum sched_pass_id_t { SCHED_PASS_UNKNOWN, SCHED_RGN_PASS, SCHED_EBB_PASS,
 		       SCHED_SMS_PASS, SCHED_SEL_PASS };
@@ -45,9 +42,9 @@ enum sched_pressure_algorithm
   SCHED_PRESSURE_MODEL
 };
 
-typedef VEC (basic_block, heap) *bb_vec_t;
-typedef VEC (rtx, heap) *insn_vec_t;
-typedef VEC (rtx, heap) *rtx_vec_t;
+typedef vec<basic_block> bb_vec_t;
+typedef vec<rtx> insn_vec_t;
+typedef vec<rtx> rtx_vec_t;
 
 extern void sched_init_bbs (void);
 
@@ -115,12 +112,12 @@ extern int sched_emulate_haifa_p;
 
 /* Mapping from INSN_UID to INSN_LUID.  In the end all other per insn data
    structures should be indexed by luid.  */
-extern VEC (int, heap) *sched_luids;
-#define INSN_LUID(INSN) (VEC_index (int, sched_luids, INSN_UID (INSN)))
-#define LUID_BY_UID(UID) (VEC_index (int, sched_luids, UID))
+extern vec<int> sched_luids;
+#define INSN_LUID(INSN) (sched_luids[INSN_UID (INSN)])
+#define LUID_BY_UID(UID) (sched_luids[UID])
 
 #define SET_INSN_LUID(INSN, LUID) \
-(VEC_replace (int, sched_luids, INSN_UID (INSN), (LUID)))
+(sched_luids[INSN_UID (INSN)] = (LUID))
 
 /* The highest INSN_LUID.  */
 extern int sched_max_luid;
@@ -206,6 +203,18 @@ typedef int dw_t;
 extern enum reg_note ds_to_dk (ds_t);
 extern ds_t dk_to_ds (enum reg_note);
 
+/* Describe a dependency that can be broken by making a replacement
+   in one of the patterns.  LOC is the location, ORIG and NEWVAL the
+   two alternative contents, and INSN the instruction that must be
+   changed.  */
+struct dep_replacement
+{
+  rtx *loc;
+  rtx orig;
+  rtx newval;
+  rtx insn;
+};
+
 /* Information about the dependency.  */
 struct _dep
 {
@@ -215,17 +224,29 @@ struct _dep
   /* Consumer.  */
   rtx con;
 
-  /* Dependency major type.  This field is superseded by STATUS below.
-     Though, it is still in place because some targets use it.  */
-  enum reg_note type;
+  /* If nonnull, holds a pointer to information about how to break the
+     dependency by making a replacement in one of the insns.  There is
+     only one such dependency for each insn that must be modified in
+     order to break such a dependency.  */
+  struct dep_replacement *replace;
 
   /* Dependency status.  This field holds all dependency types and additional
      information for speculative dependencies.  */
   ds_t status;
 
-  /* Cached cost of the dependency.  */
-  int cost;
+  /* Dependency major type.  This field is superseded by STATUS above.
+     Though, it is still in place because some targets use it.  */
+  ENUM_BITFIELD(reg_note) type:6;
+
+  unsigned nonreg:1;
+  unsigned multiple:1;
+
+  /* Cached cost of the dependency.  Make sure to update UNKNOWN_DEP_COST
+     when changing the size of this field.  */
+  int cost:20;
 };
+
+#define UNKNOWN_DEP_COST (-1<<19)
 
 typedef struct _dep dep_def;
 typedef dep_def *dep_t;
@@ -235,8 +256,9 @@ typedef dep_def *dep_t;
 #define DEP_TYPE(D) ((D)->type)
 #define DEP_STATUS(D) ((D)->status)
 #define DEP_COST(D) ((D)->cost)
-
-#define UNKNOWN_DEP_COST INT_MIN
+#define DEP_NONREG(D) ((D)->nonreg)
+#define DEP_MULTIPLE(D) ((D)->multiple)
+#define DEP_REPLACE(D) ((D)->replace)
 
 /* Functions to work with dep.  */
 
@@ -868,12 +890,10 @@ struct _haifa_insn_data
 typedef struct _haifa_insn_data haifa_insn_data_def;
 typedef haifa_insn_data_def *haifa_insn_data_t;
 
-DEF_VEC_O (haifa_insn_data_def);
-DEF_VEC_ALLOC_O (haifa_insn_data_def, heap);
 
-extern VEC(haifa_insn_data_def, heap) *h_i_d;
+extern vec<haifa_insn_data_def> h_i_d;
 
-#define HID(INSN) (VEC_index (haifa_insn_data_def, h_i_d, INSN_UID (INSN)))
+#define HID(INSN) (&h_i_d[INSN_UID (INSN)])
 
 /* Accessor macros for h_i_d.  There are more in haifa-sched.c and
    sched-rgn.c.  */
@@ -890,13 +910,10 @@ extern VEC(haifa_insn_data_def, heap) *h_i_d;
 typedef struct _haifa_deps_insn_data haifa_deps_insn_data_def;
 typedef haifa_deps_insn_data_def *haifa_deps_insn_data_t;
 
-DEF_VEC_O (haifa_deps_insn_data_def);
-DEF_VEC_ALLOC_O (haifa_deps_insn_data_def, heap);
 
-extern VEC(haifa_deps_insn_data_def, heap) *h_d_i_d;
+extern vec<haifa_deps_insn_data_def> h_d_i_d;
 
-#define HDID(INSN) (VEC_index (haifa_deps_insn_data_def, h_d_i_d,	\
-			       INSN_LUID (INSN)))
+#define HDID(INSN) (&h_d_i_d[INSN_LUID (INSN)])
 #define INSN_DEP_COUNT(INSN)	(HDID (INSN)->dep_count)
 #define HAS_INTERNAL_DEP(INSN)  (HDID (INSN)->has_internal_dep)
 #define INSN_FORW_DEPS(INSN) (HDID (INSN)->forw_deps)
@@ -908,8 +925,7 @@ extern VEC(haifa_deps_insn_data_def, heap) *h_d_i_d;
 #define INSN_REVERSE_COND(INSN) (HDID (INSN)->reverse_cond)
 #define INSN_COND_DEPS(INSN)	(HDID (INSN)->cond_deps)
 #define CANT_MOVE(INSN)	(HDID (INSN)->cant_move)
-#define CANT_MOVE_BY_LUID(LUID)	(VEC_index (haifa_deps_insn_data_def, h_d_i_d, \
-                                            LUID)->cant_move)
+#define CANT_MOVE_BY_LUID(LUID)	(h_d_i_d[LUID].cant_move)
 
 
 #define INSN_PRIORITY(INSN)	(HID (INSN)->priority)
@@ -1047,7 +1063,11 @@ enum SPEC_TYPES_OFFSETS {
    Therefore, it can appear only in TODO_SPEC field of an instruction.  */
 #define HARD_DEP (DEP_CONTROL << 1)
 
-#define DEP_CANCELLED (HARD_DEP << 1)
+/* Set in the TODO_SPEC field of an instruction for which new_ready
+   has decided not to schedule it speculatively.  */
+#define DEP_POSTPONED (HARD_DEP << 1)
+
+#define DEP_CANCELLED (DEP_POSTPONED << 1)
 
 /* This represents the results of calling sched-deps.c functions,
    which modify dependencies.  */
@@ -1074,7 +1094,8 @@ enum SCHED_FLAGS {
   DO_SPECULATION = USE_DEPS_LIST << 1,
   DO_BACKTRACKING = DO_SPECULATION << 1,
   DO_PREDICATION = DO_BACKTRACKING << 1,
-  SCHED_RGN = DO_PREDICATION << 1,
+  DONT_BREAK_DEPENDENCIES = DO_PREDICATION << 1,
+  SCHED_RGN = DONT_BREAK_DEPENDENCIES << 1,
   SCHED_EBB = SCHED_RGN << 1,
   /* Scheduler can possibly create new basic blocks.  Used for assertions.  */
   NEW_BBS = SCHED_EBB << 1,
@@ -1291,7 +1312,7 @@ extern int dep_cost (dep_t);
 extern int set_priorities (rtx, rtx);
 
 extern void sched_setup_bb_reg_pressure_info (basic_block, rtx);
-extern bool schedule_block (basic_block *);
+extern bool schedule_block (basic_block *, state_t);
 
 extern int cycle_issued_insns;
 extern int issue_rate;
@@ -1405,6 +1426,8 @@ extern void dump_region_dot_file (const char *, int);
 
 extern void haifa_sched_init (void);
 extern void haifa_sched_finish (void);
+
+extern void find_modifiable_mems (rtx, rtx);
 
 /* sched-deps.c interface to walk, add, search, update, resolve, delete
    and debug instruction dependencies.  */
@@ -1554,12 +1577,6 @@ extern void sd_delete_dep (sd_iterator_def);
 extern void sd_debug_lists (rtx, sd_list_types_def);
 
 #endif /* INSN_SCHEDULING */
-
-/* Functions in sched-vis.c.  These must be outside INSN_SCHEDULING as
-   sched-vis.c is compiled always.  */
-extern void print_insn (char *, const_rtx, int);
-extern void print_pattern (char *, const_rtx, int);
-extern void print_value (char *, const_rtx, int);
 
 #endif /* GCC_SCHED_INT_H */
 

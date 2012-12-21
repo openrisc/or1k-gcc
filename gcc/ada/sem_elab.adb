@@ -153,7 +153,7 @@ package body Sem_Elab is
    --  This is set True till the compilation is complete, including the
    --  insertion of all instance bodies. Then when Check_Elab_Calls is called,
    --  the delay table is used to make the delayed calls and this flag is reset
-   --  to False, so that the calls are processed
+   --  to False, so that the calls are processed.
 
    -----------------------
    -- Local Subprograms --
@@ -325,11 +325,13 @@ package body Sem_Elab is
    --  Given two scopes E1 and E2, returns True if E1 is equal to E2, or is one
    --  of its contained scopes, False otherwise.
 
-   function Within_Elaborate_All (E : Entity_Id) return Boolean;
-   --  Before emitting a warning on a scope E for a missing elaborate_all,
-   --  check whether E may be in the context of a directly visible unit U to
-   --  which the pragma applies. This prevents spurious warnings when the
-   --  called entity is renamed within U.
+   function Within_Elaborate_All
+     (Unit : Unit_Number_Type;
+      E    : Entity_Id) return Boolean;
+   --  Return True if we are within the scope of an Elaborate_All for E, or if
+   --  we are within the scope of an Elaborate_All for some other unit U, and U
+   --  with's E. This prevents spurious warnings when the called entity is
+   --  renamed within U, or in case of generic instances.
 
    --------------------------------------
    -- Activate_Elaborate_All_Desirable --
@@ -545,8 +547,7 @@ package body Sem_Elab is
       --  If the call is known to be within a local Suppress Elaboration
       --  pragma, nothing to check. This can happen in task bodies.
 
-      if (Nkind (N) = N_Function_Call
-           or else Nkind (N) = N_Procedure_Call_Statement)
+      if Nkind (N) in N_Subprogram_Call
         and then No_Elaboration_Check (N)
       then
          return;
@@ -827,12 +828,13 @@ package body Sem_Elab is
                --  If no alias, there is a previous error
 
                if No (Ent) then
+                  Check_Error_Detected;
                   return;
                end if;
             end loop;
          end if;
 
-         if Within_Elaborate_All (E_Scope) then
+         if Within_Elaborate_All (Current_Sem_Unit, E_Scope) then
             return;
          end if;
 
@@ -990,9 +992,7 @@ package body Sem_Elab is
                --  which can happen if the body enclosing the call appears
                --  itself in a call whose elaboration check is delayed.
 
-               if Nkind_In (N, N_Function_Call,
-                               N_Procedure_Call_Statement)
-               then
+               if Nkind (N) in N_Subprogram_Call then
                   Set_No_Elaboration_Check (N);
                end if;
             end if;
@@ -1138,15 +1138,13 @@ package body Sem_Elab is
 
       --  Here we definitely have a bad instantiation
 
-      Error_Msg_NE
-        ("?cannot instantiate& before body seen", N, Ent);
+      Error_Msg_NE ("?cannot instantiate& before body seen", N, Ent);
 
       if Present (Instance_Spec (N)) then
          Supply_Bodies (Instance_Spec (N));
       end if;
 
-      Error_Msg_N
-        ("\?Program_Error will be raised at run time", N);
+      Error_Msg_N ("\?Program_Error will be raised at run time", N);
       Insert_Elab_Check (N);
       Set_ABE_Is_Certain (N);
    end Check_Bad_Instantiation;
@@ -1162,8 +1160,6 @@ package body Sem_Elab is
    is
       Ent : Entity_Id;
       P   : Node_Id;
-
-   --  Start of processing for Check_Elab_Call
 
    begin
       --  If the call does not come from the main unit, there is nothing to
@@ -1184,15 +1180,14 @@ package body Sem_Elab is
       --  Nothing to do if this is not a call or attribute reference (happens
       --  in some error conditions, and in some cases where rewriting occurs).
 
-      elsif Nkind (N) /= N_Function_Call
-        and then Nkind (N) /= N_Procedure_Call_Statement
+      elsif Nkind (N) not in N_Subprogram_Call
         and then Nkind (N) /= N_Attribute_Reference
       then
          return;
 
       --  Nothing to do if this is a call already rewritten for elab checking
 
-      elsif Nkind (Parent (N)) = N_Conditional_Expression then
+      elsif Nkind (Parent (N)) = N_If_Expression then
          return;
 
       --  Nothing to do if inside a generic template
@@ -1208,10 +1203,17 @@ package body Sem_Elab is
       if Debug_Flag_LL then
          Write_Str ("  Check_Elab_Call: ");
 
-         if No (Name (N))
-           or else not Is_Entity_Name (Name (N))
-         then
+         if Nkind (N) = N_Attribute_Reference then
+            if not Is_Entity_Name (Prefix (N)) then
+               Write_Str ("<<not entity name>>");
+            else
+               Write_Name (Chars (Entity (Prefix (N))));
+            end if;
+            Write_Str ("'Access");
+
+         elsif No (Name (N)) or else not Is_Entity_Name (Name (N)) then
             Write_Str ("<<not entity name>> ");
+
          else
             Write_Name (Chars (Entity (Name (N))));
          end if;
@@ -1233,9 +1235,8 @@ package body Sem_Elab is
 
       P := Parent (N);
       while Present (P) loop
-         if Nkind (P) = N_Parameter_Specification
-              or else
-            Nkind (P) = N_Component_Declaration
+         if Nkind_In (P, N_Parameter_Specification,
+                         N_Component_Declaration)
          then
             return;
 
@@ -1510,8 +1511,7 @@ package body Sem_Elab is
                Func : Entity_Id;
 
             begin
-               if (Nkind (Nod) = N_Function_Call
-                    or else Nkind (Nod) = N_Procedure_Call_Statement)
+               if Nkind (Nod) in N_Subprogram_Call
                  and then Is_Entity_Name (Name (Nod))
                then
                   Func := Entity (Name (Nod));
@@ -1885,18 +1885,15 @@ package body Sem_Elab is
 
    begin
       --  If not function or procedure call or instantiation, then ignore
-      --  call (this happens in some error case and rewriting cases)
+      --  call (this happens in some error cases and rewriting cases).
 
-      if Nkind (N) /= N_Function_Call
-           and then
-         Nkind (N) /= N_Procedure_Call_Statement
-           and then
-         not Inst_Case
+      if not Nkind_In (N, N_Function_Call, N_Procedure_Call_Statement)
+        and then not Inst_Case
       then
          return;
 
-      --  Nothing to do if this is a call or instantiation that has
-      --  already been found to be a sure ABE
+      --  Nothing to do if this is a call or instantiation that has already
+      --  been found to be a sure ABE.
 
       elsif ABE_Is_Certain (N) then
          return;
@@ -1996,7 +1993,7 @@ package body Sem_Elab is
          then
             return Abandon;
 
-            --  If we have a function call, check it
+         --  If we have a function call, check it
 
          elsif Nkind (N) = N_Function_Call then
             Check_Elab_Call (N, Outer_Scope);
@@ -2077,8 +2074,7 @@ package body Sem_Elab is
 
       Elab_Visited.Append (E);
 
-      --  If the call is to a function that renames a literal, no check
-      --  is needed.
+      --  If the call is to a function that renames a literal, no check needed
 
       if Ekind (E) = E_Enumeration_Literal then
          return;
@@ -2187,12 +2183,10 @@ package body Sem_Elab is
             Error_Msg_NE
               ("?cannot instantiate& before body seen", N, Orig_Ent);
          else
-            Error_Msg_NE
-              ("?cannot call& before body seen", N, Orig_Ent);
+            Error_Msg_NE ("?cannot call& before body seen", N, Orig_Ent);
          end if;
 
-         Error_Msg_N
-           ("\?Program_Error will be raised at run time", N);
+         Error_Msg_N ("\?Program_Error will be raised at run time", N);
          Insert_Elab_Check (N);
 
       --  Call is not at outer level
@@ -2934,7 +2928,8 @@ package body Sem_Elab is
       --  the context of the call has already been analyzed, an insertion
       --  will not work if it depends on subsequent expansion (e.g. a call in
       --  a branch of a short-circuit). In that case we replace the call with
-      --  a conditional expression, or with a Raise if it is unconditional.
+      --  an if expression, or with a Raise if it is unconditional.
+
       --  Unfortunately this does not work if the call has a dynamic size,
       --  because gigi regards it as a dynamic-sized temporary. If such a call
       --  appears in a short-circuit expression, the elaboration check will be
@@ -2971,14 +2966,14 @@ package body Sem_Elab is
                   Reloc_N := Relocate_Node (N);
                   Save_Interps (N, Reloc_N);
                   Rewrite (N,
-                    Make_Conditional_Expression (Loc,
+                    Make_If_Expression (Loc,
                       Expressions => New_List (C, Reloc_N, R)));
                end if;
 
                Analyze_And_Resolve (N, Typ);
 
                --  If the original call requires a range check, so does the
-               --  conditional expression.
+               --  if expression.
 
                if Chk then
                   Enable_Range_Check (N);
@@ -3287,46 +3282,121 @@ package body Sem_Elab is
    -- Within_Elaborate_All --
    --------------------------
 
-   function Within_Elaborate_All (E : Entity_Id) return Boolean is
-      Item    : Node_Id;
-      Item2   : Node_Id;
-      Elab_Id : Entity_Id;
-      Par     : Node_Id;
+   function Within_Elaborate_All
+     (Unit : Unit_Number_Type;
+      E    : Entity_Id) return Boolean
+   is
+      type Unit_Number_Set is array (Main_Unit .. Last_Unit) of Boolean;
+      pragma Pack (Unit_Number_Set);
 
-   begin
-      Item := First (Context_Items (Cunit (Current_Sem_Unit)));
-      while Present (Item) loop
-         if Nkind (Item) = N_Pragma
-           and then Pragma_Name (Item) = Name_Elaborate_All
-         then
-            --  Return if some previous error on the pragma itself
+      Seen : Unit_Number_Set := (others => False);
+      --  Seen (X) is True after we have seen unit X in the walk. This is used
+      --  to prevent processing the same unit more than once.
 
-            if Error_Posted (Item) then
-               return False;
-            end if;
+      Result : Boolean := False;
 
-            Elab_Id :=
-              Entity
-                (Expression (First (Pragma_Argument_Associations (Item))));
+      procedure Helper (Unit : Unit_Number_Type);
+      --  This helper procedure does all the work for Within_Elaborate_All. It
+      --  walks the dependency graph, and sets Result to True if it finds an
+      --  appropriate Elaborate_All.
 
-            Par := Parent (Unit_Declaration_Node (Elab_Id));
+      ------------
+      -- Helper --
+      ------------
 
-            Item2 := First (Context_Items (Par));
-            while Present (Item2) loop
-               if Nkind (Item2) = N_With_Clause
-                 and then Entity (Name (Item2)) = E
-               then
-                  return True;
-               end if;
+      procedure Helper (Unit : Unit_Number_Type) is
+         CU : constant Node_Id := Cunit (Unit);
 
-               Next (Item2);
-            end loop;
+         Item    : Node_Id;
+         Item2   : Node_Id;
+         Elab_Id : Entity_Id;
+         Par     : Node_Id;
+
+      begin
+         if Seen (Unit) then
+            return;
+         else
+            Seen (Unit) := True;
          end if;
 
-         Next (Item);
-      end loop;
+         --  First, check for Elaborate_Alls on this unit
 
-      return False;
+         Item := First (Context_Items (CU));
+         while Present (Item) loop
+            if Nkind (Item) = N_Pragma
+              and then Pragma_Name (Item) = Name_Elaborate_All
+            then
+               --  Return if some previous error on the pragma itself
+
+               if Error_Posted (Item) then
+                  return;
+               end if;
+
+               Elab_Id :=
+                 Entity
+                   (Expression (First (Pragma_Argument_Associations (Item))));
+
+               if E = Elab_Id then
+                  Result := True;
+                  return;
+               end if;
+
+               Par := Parent (Unit_Declaration_Node (Elab_Id));
+
+               Item2 := First (Context_Items (Par));
+               while Present (Item2) loop
+                  if Nkind (Item2) = N_With_Clause
+                    and then Entity (Name (Item2)) = E
+                    and then not Limited_Present (Item2)
+                  then
+                     Result := True;
+                     return;
+                  end if;
+
+                  Next (Item2);
+               end loop;
+            end if;
+
+            Next (Item);
+         end loop;
+
+         --  Second, recurse on with's. We could do this as part of the above
+         --  loop, but it's probably more efficient to have two loops, because
+         --  the relevant Elaborate_All is likely to be on the initial unit. In
+         --  other words, we're walking the with's breadth-first. This part is
+         --  only necessary in the dynamic elaboration model.
+
+         if Dynamic_Elaboration_Checks then
+            Item := First (Context_Items (CU));
+            while Present (Item) loop
+               if Nkind (Item) = N_With_Clause
+                 and then not Limited_Present (Item)
+               then
+                  --  Note: the following call to Get_Cunit_Unit_Number does a
+                  --  linear search, which could be slow, but it's OK because
+                  --  we're about to give a warning anyway. Also, there might
+                  --  be hundreds of units, but not millions. If it turns out
+                  --  to be a problem, we could store the Get_Cunit_Unit_Number
+                  --  in each N_Compilation_Unit node, but that would involve
+                  --  rearranging N_Compilation_Unit_Aux to make room.
+
+                  Helper (Get_Cunit_Unit_Number (Library_Unit (Item)));
+
+                  if Result then
+                     return;
+                  end if;
+               end if;
+
+               Next (Item);
+            end loop;
+         end if;
+      end Helper;
+
+   --  Start of processing for Within_Elaborate_All
+
+   begin
+      Helper (Unit);
+      return Result;
    end Within_Elaborate_All;
 
 end Sem_Elab;

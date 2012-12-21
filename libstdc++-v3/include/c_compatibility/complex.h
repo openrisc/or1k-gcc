@@ -28,12 +28,13 @@
 
 #include <bits/c++config.h>
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
 # include <ccomplex>
-#else
-# if _GLIBCXX_HAVE_COMPLEX_H
-#  include_next <complex.h>
-# endif
+#endif
+
+#if _GLIBCXX_HAVE_COMPLEX_H
+# include_next <complex.h>
+# undef complex
 #endif
 
 #ifndef _GLIBCXX_COMPLEX_H

@@ -1347,12 +1347,13 @@ package VMS_Data is
    --                      if the /CHECKS qualifier is not present on the
    --                      command line. Same as /NOCHECKS.
    --
-   --     OVERFLOW        Enables overflow checking for integer operations and
-   --                     checks for access before elaboration on subprogram
-   --                     calls. This causes GNAT to generate slower and larger
-   --                     executable programs by adding code to check for both
-   --                     overflow and division by zero (resulting in raising
-   --                     "Constraint_Error" as required by Ada semantics).
+   --     OVERFLOW        Enables overflow checking in CHECKED mode for integer
+   --                     operations and checks for access before elaboration
+   --                     on subprogram calls. This causes GNAT to generate
+   --                     slower and larger executable programs by adding code
+   --                     to check for both overflow and division by zero
+   --                     (resulting in raising "Constraint_Error" as required
+   --                     by Ada semantics).
    --                     Similarly, GNAT does not generate elaboration check
    --                     by default, and you must specify this keyword to
    --                     enable them.
@@ -1789,6 +1790,10 @@ package VMS_Data is
    S_GCC_Inline  : aliased constant S := "/INLINE="                        &
                                             "PRAGMA "                      &
                                               "-gnatn "                    &
+                                            "PRAGMA_LEVEL_1 "              &
+                                              "-gnatn1 "                   &
+                                            "PRAGMA_LEVEL_2 "              &
+                                              "-gnatn2 "                   &
                                             "FULL "                        &
                                               "-gnatN "                    &
                                             "SUPPRESS "                    &
@@ -1821,6 +1826,14 @@ package VMS_Data is
    --                    optimization options, to get either lower
    --                    (/OPTIMIZE=SOME) or higher (/OPTIMIZE=UNROLL_LOOPS)
    --                    levels of optimization.
+   --
+   --        PRAGMA_LEVEL_1
+   --                    Direct control of the level of "Inline" pragmas
+   --                    optimization with moderate inlining across modules.
+   --
+   --        PRAGMA_LEVEL_2
+   --                    Direct control of the level of "Inline" pragmas
+   --                    optimization with full inlining across modules.
    --
    --        FULL        Front end inlining. The front end inlining activated
    --                    by this switch is generally more extensive, and quite
@@ -2095,6 +2108,23 @@ package VMS_Data is
    --   fname where the period is replace by an underline. For example, if
    --   file xyz.adb is compiled with -gnatl=.lst, then the output is written
    --   to file xyz.adb_lst.
+
+   S_GCC_Overflo : aliased constant S := "/OVERFLOW_CHECKS=#"              &
+                                             "-gnato#";
+   --        /OVERFLOW_CHECKS=nn
+   --
+   --   Set default overflow cheecking mode. If nn is a single digit, in the
+   --   range 0-3, it sets the overflow checking mode for all expressions,
+   --   including those outside and within assertions. The meaning of nnn is:
+   --
+   --     1   all intermediate computations done using base type (STRICT)
+   --     2   minimize intermediate overflows (MINIMIZED)
+   --     3   eliminate intermediate overflows (ELIMINATED)
+   --
+   --   Otherwise nn can be two digits, both 1-3, and in this case the first
+   --   digit sets the mode (using the above code) for expressions outside an
+   --   assertion, and the second digit sets the mode for expressions within
+   --   an assertion.
 
    S_GCC_Pointer : aliased constant S := "/POINTER_SIZE="                  &
                                             "64 "                          &
@@ -3039,6 +3069,10 @@ package VMS_Data is
                                                "-gnatwk "                  &
                                             "NOCONSTANT_VARIABLES "        &
                                                "-gnatwK "                  &
+                                            "STANDARD_REDEFINITION "       &
+                                               "-gnatw.k "                 &
+                                            "NOSTANDARD_REDEFINITION "     &
+                                               "-gnatw.K "                 &
                                             "ELABORATION "                 &
                                                "-gnatwl "                  &
                                             "NOELABORATION "               &
@@ -3610,6 +3644,7 @@ package VMS_Data is
                      S_GCC_NoWarnP 'Access,
                      S_GCC_Opt     'Access,
                      S_GCC_OptX    'Access,
+                     S_GCC_Overflo 'Access,
                      S_GCC_Pointer 'Access,
                      S_GCC_Polling 'Access,
                      S_GCC_Project 'Access,
@@ -7165,6 +7200,13 @@ package VMS_Data is
                        S_Sync_Details  'Access,
                        S_Sync_Warnoff  'Access,
                        S_Sync_Output   'Access);
+
+   ----------------------------
+   -- Switches for GNAT TEST --
+   ----------------------------
+
+   Test_Switches : aliased constant Switches :=
+     (1 .. 0 => null);
 
    ----------------------------
    -- Switches for GNAT XREF --

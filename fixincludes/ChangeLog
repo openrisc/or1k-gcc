@@ -1,3 +1,49 @@
+2012-10-29  Bruce Korb  <bkorb@gnu.org>
+
+	* README: testing wrap and replacement fixes is pointless.
+	* fixincl.c: export verbosity enumerations to fixlib.h
+	(run_compiles): mark replacement fixes to be skipped when
+	in testing mode
+	* fixlib.h: add a test mode and enumerations from fixincl.c
+	* check.tpl: set TEST_MODE in environment
+	* fixopts.c (initialize_opts): check for TEST_MODE in environment
+	* inclhack.def: move AAB_darwin7_9_long_double_funcs to
+	darwin_9_long_double_funcs_2.  It is not a replacement fix.
+	* fixincl.x: regenerate
+	* tests/base/ioLib.h: the need for this is now exposed, so add it.
+	* tests/base/architecture/ppc/math.h: the correct result is now needed.
+
+2012-10-29  Robert Mason  <rbmj@verizon.net>
+
+	* fixinc.in: Omit machine name checks for vxworks
+	* fixincludes/inclhack.def (AAB_vxworks_assert) new replacement fix
+	(AAB_vxworks_regs_vxtypes): another
+	(AAB_vxworks_stdint): yet another
+	(AAB_vxworks_unistd): and another
+	(vxworks_ioctl_macro): reformatting fix
+	(vxworks_mkdir_macro): again
+	(vxworks_regs): and again
+	(vxworks_write_const): and again
+	* tests/base/ioLib.h: new test result
+	* tests/base/math.h: likewise
+	* tests/base/sys/stat.h: likewise
+	* tests/base/testing.h: and again
+
+2012-09-29  David Edelsohn  <dje.gcc@gmail.com>
+
+	* inclhack.def (AAB_aix_fcntl): New fix.
+	* fixincl.x: Regenerate.
+
+2012-06-19  David Edelsohn  <dje.gcc@gmail.com>
+
+	* inclhack.def (aix_mutex_initializer_1): New fix.
+	(aix_cond_initializer_1): New fix.
+	(aix_rwlock_initializer): New fix.
+	* fixincl.x: Regenerate.
+	* tests/base/pthread.h [AIX_MUTEX_INITIALIZER_1_CHECK]: New.
+	[AIX_COND_INITIALIZER_1_CHECK]: New.
+	[AIX_RWLOCK_INITIALIZER_1_CHECK]: New.
+
 2012-05-29  Thomas Schwinge  <thomas@codesourcery.com>
 
 	* configure.ac: Use GCC_AC_FUNC_MMAP_BLACKLIST instead of
@@ -17,7 +63,7 @@
 	* inclhack.def (aix_malloc): New.
 	* fixincl.x: Regenerate.
 	* tests/base/malloc.h [AIX_MALLOC_CHECK]: New.
-	
+
 2012-03-22  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
 
 	PR other/52626
@@ -454,7 +500,7 @@
 
 	* inclhack.def (aix_complex): New fix.
 	* fixincl.x: Regenerate.
-	
+
 2009-08-01  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
 
 	* inclhack.def (hpux_inttype_int_least8_t): Also apply on hpux10*.
@@ -902,7 +948,7 @@
 
 	* fixincludes/mkfixinc.sh: Add "*-*-vxworks*" to the list of
 	targets for which a no-op fixer is appropriate.
-	
+
 2006-11-07  Richard Guenther  <rguenther@suse.de>
 
 	* inclhack.def (glibc_c99_inline_2): Adjust for glibc 2.3
@@ -988,7 +1034,7 @@
 
 	* inclhack.def (solaris_once_init_1): New.
 	* tests/base/pthread.h: Adjust for new fix.
-	
+
 	* fixincl.x: Regenerate.
 
 2006-07-17  Roger Sayle  <roger@eyesopen.com>

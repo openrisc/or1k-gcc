@@ -1,6 +1,6 @@
 // Profiling unordered_map/unordered_multimap implementation -*- C++ -*-
 
-// Copyright (C) 2009, 2010, 2011 Free Software Foundation, Inc.
+// Copyright (C) 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -28,7 +28,7 @@
 #ifndef _GLIBCXX_PROFILE_UNORDERED_MAP
 #define _GLIBCXX_PROFILE_UNORDERED_MAP 1
 
-#ifndef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus < 201103L
 # include <bits/c++0x_warning.h>
 #else
 # include <unordered_map>
@@ -214,8 +214,8 @@ namespace __profile
       }
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
         std::pair<iterator, bool>
         insert(_Pair&& __obj)
         {
@@ -227,8 +227,8 @@ namespace __profile
 	}
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
         iterator
         insert(const_iterator __iter, _Pair&& __v)
         { 
@@ -330,7 +330,7 @@ namespace __profile
     inline bool
     operator==(const unordered_map<_Key, _Tp, _Hash, _Pred, _Alloc>& __x,
 	       const unordered_map<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
-    { return __x._M_equal(__y); }
+    { return static_cast<const _GLIBCXX_STD_BASE&>(__x) == __y; }
 
   template<typename _Key, typename _Tp, typename _Hash,
 	   typename _Pred, typename _Alloc>
@@ -503,8 +503,8 @@ namespace __profile
       }
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
         iterator
         insert(_Pair&& __obj)
         {
@@ -515,8 +515,8 @@ namespace __profile
 	}
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
         iterator
         insert(const_iterator __iter, _Pair&& __v)
         {
@@ -599,7 +599,7 @@ namespace __profile
     inline bool
     operator==(const unordered_multimap<_Key, _Tp, _Hash, _Pred, _Alloc>& __x,
 	       const unordered_multimap<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
-    { return __x._M_equal(__y); }
+    { return static_cast<const _GLIBCXX_STD_BASE&>(__x) == __y; }
 
   template<typename _Key, typename _Tp, typename _Hash,
 	   typename _Pred, typename _Alloc>
@@ -614,6 +614,6 @@ namespace __profile
 #undef _GLIBCXX_BASE
 #undef _GLIBCXX_STD_BASE
 
-#endif // __GXX_EXPERIMENTAL_CXX0X__
+#endif // C++11
 
 #endif

@@ -1,3 +1,26 @@
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.c:
+	(or1k_output_highadd) removed, unneeded
+
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_sibcall) removed, unneeded
+
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
+	fix some things that broke in merge with upstream
+	* config/or1k/or1k.h:
+	(GO_IF_MODE_DEPENDENT_ADDRESS) poisoned in last GCC merge, seems
+	obsolete now
+	(FIXUNS_TRUNC_LIKE_FIX_TRUNC) ditto
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_pic_symbol_ref) added prototype (function body is in or1k.c)
+	(or1k_legitimate_pic_operand_p) ditto
+	* config/or1k/or1k.c:
+	(or1k_compute_frame_size) use crtl->is_leaf instead of current_function_is_leaf
+
 2012-06-23  Peter Gavin  <pgavin@gmail.com>
 
 	* config/or1k/or1k.c:

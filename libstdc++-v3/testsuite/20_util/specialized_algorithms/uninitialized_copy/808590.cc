@@ -7,7 +7,7 @@
 // any later version.
 
 // This library is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without Pred the implied warranty of
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
@@ -27,7 +27,7 @@ struct c
   c(const c &r) : m(r.m) {}
 
   template<class T>
-    explicit c(T &o) : m((void*)0xdeadfbeef) { }
+    explicit c(T &o) : m((void*)0xdeadbeef) { }
 };
 
 int main() 

@@ -6,6 +6,7 @@ package os_test
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -67,10 +68,10 @@ var sysdir = func() (sd *sysDir) {
 
 func size(name string, t *testing.T) int64 {
 	file, err := Open(name)
-	defer file.Close()
 	if err != nil {
 		t.Fatal("open failed:", err)
 	}
+	defer file.Close()
 	var buf [100]byte
 	len := 0
 	for {
@@ -132,10 +133,10 @@ func TestStat(t *testing.T) {
 func TestFstat(t *testing.T) {
 	path := sfdir + "/" + sfname
 	file, err1 := Open(path)
-	defer file.Close()
 	if err1 != nil {
 		t.Fatal("open failed:", err1)
 	}
+	defer file.Close()
 	dir, err2 := file.Stat()
 	if err2 != nil {
 		t.Fatal("fstat failed:", err2)
@@ -187,10 +188,10 @@ func TestRead0(t *testing.T) {
 
 func testReaddirnames(dir string, contents []string, t *testing.T) {
 	file, err := Open(dir)
-	defer file.Close()
 	if err != nil {
 		t.Fatalf("open %q failed: %v", dir, err)
 	}
+	defer file.Close()
 	s, err2 := file.Readdirnames(-1)
 	if err2 != nil {
 		t.Fatalf("readdirnames %q failed: %v", dir, err2)
@@ -216,10 +217,10 @@ func testReaddirnames(dir string, contents []string, t *testing.T) {
 
 func testReaddir(dir string, contents []string, t *testing.T) {
 	file, err := Open(dir)
-	defer file.Close()
 	if err != nil {
 		t.Fatalf("open %q failed: %v", dir, err)
 	}
+	defer file.Close()
 	s, err2 := file.Readdir(-1)
 	if err2 != nil {
 		t.Fatalf("readdir %q failed: %v", dir, err2)
@@ -283,10 +284,10 @@ func TestReaddirnamesOneAtATime(t *testing.T) {
 		dir = "/bin"
 	}
 	file, err := Open(dir)
-	defer file.Close()
 	if err != nil {
 		t.Fatalf("open %q failed: %v", dir, err)
 	}
+	defer file.Close()
 	all, err1 := file.Readdirnames(-1)
 	if err1 != nil {
 		t.Fatalf("readdirnames %q failed: %v", dir, err1)
@@ -1062,5 +1063,33 @@ func TestDevNullFile(t *testing.T) {
 	}
 	if fi.Size() != 0 {
 		t.Fatalf("wrong file size have %d want 0", fi.Size())
+	}
+}
+
+var testLargeWrite = flag.Bool("large_write", false, "run TestLargeWriteToConsole test that floods console with output")
+
+func TestLargeWriteToConsole(t *testing.T) {
+	if !*testLargeWrite {
+		t.Logf("skipping console-flooding test; enable with -large_write")
+		return
+	}
+	b := make([]byte, 32000)
+	for i := range b {
+		b[i] = '.'
+	}
+	b[len(b)-1] = '\n'
+	n, err := Stdout.Write(b)
+	if err != nil {
+		t.Fatalf("Write to os.Stdout failed: %v", err)
+	}
+	if n != len(b) {
+		t.Errorf("Write to os.Stdout should return %d; got %d", len(b), n)
+	}
+	n, err = Stderr.Write(b)
+	if err != nil {
+		t.Fatalf("Write to os.Stderr failed: %v", err)
+	}
+	if n != len(b) {
+		t.Errorf("Write to os.Stderr should return %d; got %d", len(b), n)
 	}
 }

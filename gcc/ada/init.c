@@ -52,6 +52,10 @@ extern "C" {
 #include "vxWorks.h"
 #endif
 
+#ifdef __ANDROID__
+#undef linux
+#endif
+
 #ifdef IN_RTS
 #include "tconfig.h"
 #include "tsystem.h"
@@ -103,11 +107,13 @@ char *__gl_interrupt_states              = 0;
 int   __gl_num_interrupt_states          = 0;
 int   __gl_unreserve_all_interrupts      = 0;
 int   __gl_exception_tracebacks          = 0;
-int   __gl_zero_cost_exceptions          = 0;
 int   __gl_detect_blocking               = 0;
 int   __gl_default_stack_size            = -1;
 int   __gl_leap_seconds_support          = 0;
 int   __gl_canonical_streams             = 0;
+
+/* This value is not used anymore, but kept for bootstrapping purpose.  */
+int   __gl_zero_cost_exceptions          = 0;
 
 /* Indication of whether synchronous signal handler has already been
    installed by a previous call to adainit.  */
@@ -304,6 +310,27 @@ __gnat_install_handler (void)
 #include <signal.h>
 #include <sys/ucontext.h>
 
+#if defined (IN_RTS) && defined (__ia64__)
+
+#include <sys/uc_access.h>
+
+#define HAVE_GNAT_ADJUST_CONTEXT_FOR_RAISE
+
+void
+__gnat_adjust_context_for_raise (int signo ATTRIBUTE_UNUSED, void *ucontext)
+{
+  ucontext_t *uc = (ucontext_t *) ucontext;
+  uint64_t ip;
+
+  /* Adjust on itanium, as GetIPInfo is not supported.  */
+  __uc_get_ip (uc, &ip);
+  __uc_set_ip (uc, ip + 1);
+}
+#endif /* IN_RTS && __ia64__ */
+
+/* Tasking and Non-tasking signal handler.  Map SIGnal to Ada exception
+   propagation after the required low level adjustments.  */
+
 static void
 __gnat_error_handler (int sig,
 		      siginfo_t *si ATTRIBUTE_UNUSED,
@@ -311,6 +338,8 @@ __gnat_error_handler (int sig,
 {
   struct Exception_Data *exception;
   const char *msg;
+
+  __gnat_adjust_context_for_raise (sig, ucontext);
 
   switch (sig)
     {

@@ -149,13 +149,15 @@ Free Documentation License}''.
 
 The latest version of this document is always available at
 @uref{http://gcc.gnu.org/install/,,http://gcc.gnu.org/install/}.
+It refers to the current development sources, instructions for
+specific released versions are included with the sources.
 
 This document describes the generic installation procedure for GCC as well
 as detailing some target specific installation instructions.
 
 GCC includes several components that previously were separate distributions
 with their own installation instructions.  This document supersedes all
-package specific installation instructions.
+package-specific installation instructions.
 
 @emph{Before} starting the build/install procedure please check the
 @ifnothtml
@@ -362,31 +364,24 @@ installed but it is not in your default library search path, the
 @option{--with-mpc} configure option should be used.  See also
 @option{--with-mpc-lib} and @option{--with-mpc-include}.
 
-@item Parma Polyhedra Library (PPL) version 0.11
+@item ISL Library version 0.10
 
 Necessary to build GCC with the Graphite loop optimizations.
-It can be downloaded from @uref{http://www.cs.unipr.it/ppl/Download/}.
+It can be downloaded from @uref{ftp://gcc.gnu.org/pub/gcc/infrastructure/}.
 
-The @option{--with-ppl} configure option should be used if PPL is not
+The @option{--with-isl} configure option should be used if ISL is not
 installed in your default library search path.
 
-@item CLooG-PPL version 0.15 or CLooG 0.16
+@item CLooG 0.17.0
 
-Necessary to build GCC with the Graphite loop optimizations.  There
-are two versions available.  CLooG-PPL 0.15 as well as CLooG 0.16.
-The former is the default right now.  It can be downloaded from
-@uref{ftp://gcc.gnu.org/pub/gcc/infrastructure/} as
-@file{cloog-ppl-0.15.tar.gz}.
-
-CLooG 0.16 support is still in testing stage, but will be the
-default in future GCC releases.  It is also available at
-@uref{ftp://gcc.gnu.org/pub/gcc/infrastructure/} as
-@file{cloog-0.16.1.tar.gz}.  To use it add the additional configure
-option @option{--enable-cloog-backend=isl}.  Even if CLooG 0.16
-does not use PPL, PPL is still required for Graphite.
-
-In both cases @option{--with-cloog} configure option should be used
-if CLooG is not installed in your default library search path.
+Necessary to build GCC with the Graphite loop optimizations.  It can be
+downloaded from @uref{ftp://gcc.gnu.org/pub/gcc/infrastructure/} as
+@file{cloog-0.17.0.tar.gz}.  The @option{--with-cloog} configure option should
+be used if CLooG is not installed in your default library search path.
+CLooG needs to be built against ISL 0.10, not its included copy of ISL
+which is too old.  Use @option{--with-isl=system} to direct CLooG to pick
+up an already installed ISL.  CLooG needs to be configured to use GMP
+internally, use @option{--with-bits=gmp} to direct it to do that.
 
 @end table
 
@@ -1032,6 +1027,15 @@ For ARM targets, possible values for @var{dialect} are @code{gnu} or
 @code{gnu2}, which select between the original GNU dialect and the GNU TLS
 descriptor-based dialect.
 
+@item --enable-multiarch
+Specify whether to enable or disable multiarch support.  The default is
+to check for glibc start files in a multiarch location, and enable it
+if the files are found.  The auto detection is enabled for native builds,
+and for cross builds configured with @option{--with-sysroot}, and without
+@option{--with-native-system-header-dir}.
+More documentation about multiarch can be found at
+@uref{http://wiki.debian.org/Multiarch}.
+
 @item --disable-multilib
 Specify that multiple target
 libraries to support different target variants, calling
@@ -1292,16 +1296,6 @@ destructors.  Option @option{--disable-initfini-array} has the
 opposite effect.  If neither option is specified, the configure script
 will try to guess whether the @code{.init_array} and
 @code{.fini_array} sections are supported and, if they are, use them.
-
-@item --enable-build-with-cxx
-Build GCC using a C++ compiler rather than a C compiler.  This is an
-experimental option which may become the default in a later release.
-
-@item --enable-build-poststage1-with-cxx
-When bootstrapping, build stages 2 and 3 of GCC using a C++ compiler
-rather than a C compiler.  Stage 1 is still built with a C compiler.
-This is enabled by default and may be disabled using
-@option{--disable-build-poststage1-with-cxx}.
 
 @item --enable-maintainer-mode
 The build rules that regenerate the Autoconf and Automake output files as
@@ -1641,14 +1635,14 @@ a cross compiler, they will not be used to configure target libraries.
 @itemx --with-cloog=@var{pathname}
 @itemx --with-cloog-include=@var{pathname}
 @itemx --with-cloog-lib=@var{pathname}
-If you do not have PPL (the Parma Polyhedra Library) and the CLooG
+If you do not have ISL and the CLooG
 libraries installed in a standard location and you want to build GCC,
 you can explicitly specify the directory where they are installed
-(@samp{--with-ppl=@/@var{pplinstalldir}},
+(@samp{--with-isl=@/@var{islinstalldir}},
 @samp{--with-cloog=@/@var{clooginstalldir}}). The
-@option{--with-ppl=@/@var{pplinstalldir}} option is shorthand for
-@option{--with-ppl-lib=@/@var{pplinstalldir}/lib} and
-@option{--with-ppl-include=@/@var{pplinstalldir}/include}.  Likewise the
+@option{--with-isl=@/@var{islinstalldir}} option is shorthand for
+@option{--with-isl-lib=@/@var{islinstalldir}/lib} and
+@option{--with-isl-include=@/@var{islinstalldir}/include}.  Likewise the
 @option{--with-cloog=@/@var{clooginstalldir}} option is shorthand for
 @option{--with-cloog-lib=@/@var{clooginstalldir}/lib} and
 @option{--with-cloog-include=@/@var{clooginstalldir}/include}.  If these
@@ -1725,6 +1719,14 @@ link time when @option{-fuse-linker-plugin} is enabled.
 This linker should have plugin support such as gold starting with
 version 2.20 or GNU ld starting with version 2.21.
 See @option{-fuse-linker-plugin} for details.
+
+@item --enable-canonical-system-headers
+@itemx --disable-canonical-system-headers
+Enable system header path canonicalization for @file{libcpp}.  This can
+produce shorter header file paths in diagnostics and dependency output
+files, but these changed header paths may conflict with some compilation
+environments.  Enabled by default, and may be disabled using
+@option{--disable-canonical-system-headers}.
 @end table
 
 @subheading Cross-Compiler-Specific Options
@@ -2582,14 +2584,14 @@ The following will run each testsuite eight times using the @samp{arm-sim}
 target, as if you had specified all possible combinations yourself:
 
 @smallexample
---target_board=arm-sim/-mhard-float/-O1
---target_board=arm-sim/-mhard-float/-O2
---target_board=arm-sim/-mhard-float/-O3
---target_board=arm-sim/-mhard-float
---target_board=arm-sim/-msoft-float/-O1
---target_board=arm-sim/-msoft-float/-O2
---target_board=arm-sim/-msoft-float/-O3
---target_board=arm-sim/-msoft-float
+--target_board='arm-sim/-mhard-float/-O1 \
+                arm-sim/-mhard-float/-O2 \
+                arm-sim/-mhard-float/-O3 \
+                arm-sim/-mhard-float \
+                arm-sim/-msoft-float/-O1 \
+                arm-sim/-msoft-float/-O2 \
+                arm-sim/-msoft-float/-O3 \
+                arm-sim/-msoft-float'
 @end smallexample
 
 They can be combined as many times as you wish, in arbitrary ways.  This
@@ -2981,7 +2983,7 @@ GNU Compiler Collection on your machine.
 Note that this list of install notes is @emph{not} a list of supported
 hosts or targets.  Not all supported hosts and targets are listed
 here, only the ones that require host-specific or target-specific
-information are.
+information have to. 
 
 @ifhtml
 @itemize
@@ -3166,7 +3168,7 @@ This is a synonym for @samp{x86_64-*-solaris2.1[0-9]*}.
 @heading @anchor{arm-x-eabi}arm-*-eabi
 ARM-family processors.  Subtargets that use the ELF object format
 require GNU binutils 2.13 or newer.  Such subtargets include:
-@code{arm-*-netbsdelf}, @code{arm-*-*linux-gnueabi}
+@code{arm-*-netbsdelf}, @code{arm-*-*linux-*}
 and @code{arm-*-rtemseabi}.
 
 @html
@@ -3942,8 +3944,7 @@ the O32 ABI.
 <hr />
 @end html
 @heading @anchor{moxie-x-elf}moxie-*-elf
-The moxie processor.  See @uref{http://moxielogic.org/} for more
-information about this processor.
+The moxie processor.
 
 @html
 <hr />
@@ -4275,9 +4276,9 @@ releases mishandled unaligned relocations on @code{sparc-*-*} targets.
 @end html
 @heading @anchor{sparc64-x-solaris2}sparc64-*-solaris2*
 
-When configuring the GNU Multiple Precision Library (GMP) or the
-MPFR library, the canonical target triplet must be specified as
-the @command{build} parameter on the configure line.  For example
+When configuring the GNU Multiple Precision Library (GMP), the MPFR
+library or the MPC library, the canonical target triplet must be specified
+as the @command{build} parameter on the configure line.  For example
 on a Solaris 9 system:
 
 @smallexample

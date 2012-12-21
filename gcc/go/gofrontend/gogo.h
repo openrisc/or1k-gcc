@@ -206,6 +206,17 @@ class Gogo
   pkgpath_from_option() const
   { return this->pkgpath_from_option_; }
 
+  // Return the relative import path as set from the command line.
+  // Returns an empty string if it was not set.
+  const std::string&
+  relative_import_path() const
+  { return this->relative_import_path_; }
+
+  // Set the relative import path from a command line option.
+  void
+  set_relative_import_path(const std::string& s)
+  {this->relative_import_path_ = s; }
+
   // Return the priority to use for the package we are compiling.
   // This is two more than the largest priority of any package we
   // import.
@@ -547,7 +558,7 @@ class Gogo
 	       tree rettype, ...);
 
   // Build a call to the runtime error function.
-  static tree
+  tree
   runtime_error(int code, Location);
 
   // Build a builtin struct with a list of fields.
@@ -574,7 +585,7 @@ class Gogo
   // Build an interface method table for a type: a list of function
   // pointers, one for each interface method.  This returns a decl.
   tree
-  interface_method_table_for_type(const Interface_type*, Named_type*,
+  interface_method_table_for_type(const Interface_type*, Type*,
 				  bool is_pointer);
 
   // Return a tree which allocate SIZE bytes to hold values of type
@@ -732,6 +743,9 @@ class Gogo
   bool pkgpath_from_option_;
   // Whether an explicit prefix was set by -fgo-prefix.
   bool prefix_from_option_;
+  // The relative import path, from the -fgo-relative-import-path
+  // option.
+  std::string relative_import_path_;
   // A list of types to verify.
   std::vector<Type*> verify_types_;
   // A list of interface types defined while parsing.
@@ -897,6 +911,24 @@ class Function
   results_are_named() const
   { return this->results_are_named_; }
 
+  // Whether this method should not be included in the type
+  // descriptor.
+  bool
+  nointerface() const
+  {
+    go_assert(this->is_method());
+    return this->nointerface_;
+  }
+
+  // Record that this method should not be included in the type
+  // descriptor.
+  void
+  set_nointerface()
+  {
+    go_assert(this->is_method());
+    this->nointerface_ = true;
+  }
+
   // Add a new field to the closure variable.
   void
   add_closure_field(Named_object* var, Location loc)
@@ -962,6 +994,11 @@ class Function
   // Warn about labels that are defined but not used.
   void
   check_labels() const;
+
+  // Note that a new local type has been added.  Return its index.
+  unsigned int
+  new_local_type_index()
+  { return this->local_type_count_++; }
 
   // Whether this function calls the predeclared recover function.
   bool
@@ -1084,6 +1121,8 @@ class Function
   Location location_;
   // Labels defined or referenced in the function.
   Labels labels_;
+  // The number of local types defined in this function.
+  unsigned int local_type_count_;
   // The function decl.
   tree fndecl_;
   // The defer stack variable.  A pointer to this variable is used to
@@ -1092,6 +1131,8 @@ class Function
   Temporary_statement* defer_stack_;
   // True if the result variables are named.
   bool results_are_named_;
+  // True if this method should not be included in the type descriptor.
+  bool nointerface_;
   // True if this function calls the predeclared recover function.
   bool calls_recover_;
   // True if this a thunk built for a function which calls recover.
@@ -1638,8 +1679,8 @@ class Type_declaration
 {
  public:
   Type_declaration(Location location)
-    : location_(location), in_function_(NULL), methods_(),
-      issued_warning_(false)
+    : location_(location), in_function_(NULL), in_function_index_(0),
+      methods_(), issued_warning_(false)
   { }
 
   // Return the location.
@@ -1650,13 +1691,19 @@ class Type_declaration
   // Return the function in which this type is declared.  This will
   // return NULL for a type declared in global scope.
   Named_object*
-  in_function()
-  { return this->in_function_; }
+  in_function(unsigned int* pindex)
+  {
+    *pindex = this->in_function_index_;
+    return this->in_function_;
+  }
 
   // Set the function in which this type is declared.
   void
-  set_in_function(Named_object* f)
-  { this->in_function_ = f; }
+  set_in_function(Named_object* f, unsigned int index)
+  {
+    this->in_function_ = f;
+    this->in_function_index_ = index;
+  }
 
   // Add a method to this type.  This is used when methods are defined
   // before the type.
@@ -1689,6 +1736,8 @@ class Type_declaration
   // If this type is declared in a function, a pointer back to the
   // function in which it is defined.
   Named_object* in_function_;
+  // The index of this type in IN_FUNCTION_.
+  unsigned int in_function_index_;
   // Methods defined before the type is defined.
   Methods methods_;
   // True if we have issued a warning about a use of this type

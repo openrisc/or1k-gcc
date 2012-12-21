@@ -154,6 +154,7 @@ package body Ch6 is
    function P_Subprogram (Pf_Flags : Pf_Rec) return Node_Id is
       Specification_Node : Node_Id;
       Name_Node          : Node_Id;
+      Aspects            : List_Id;
       Fpart_List         : List_Id;
       Fpart_Sloc         : Source_Ptr;
       Result_Not_Null    : Boolean := False;
@@ -185,6 +186,8 @@ package body Ch6 is
       Scope.Table (Scope.Last).Etyp := E_Name;
       Scope.Table (Scope.Last).Ecol := Start_Column;
       Scope.Table (Scope.Last).Lreq := False;
+
+      Aspects := Empty_List;
 
       --  Ada 2005: Scan leading NOT OVERRIDING indicator
 
@@ -810,6 +813,16 @@ package body Ch6 is
                     New_Node (N_Subprogram_Body, Sloc (Specification_Node));
                   Set_Specification (Body_Node, Specification_Node);
 
+                  --  If aspects are present, the specification is parsed as
+                  --  a subprogram declaration, and we jump here after seeing
+                  --  the keyword IS. Attach asspects previously collected to
+                  --  the body.
+
+                  if Is_Non_Empty_List (Aspects) then
+                     Set_Parent (Aspects, Body_Node);
+                     Set_Aspect_Specifications (Body_Node, Aspects);
+                  end if;
+
                   --  In SPARK, a HIDE directive can be placed at the beginning
                   --  of a subprogram implementation, thus hiding the
                   --  subprogram body from SPARK tool-set. No violation of the
@@ -841,7 +854,24 @@ package body Ch6 is
          Decl_Node :=
            New_Node (N_Subprogram_Declaration, Sloc (Specification_Node));
          Set_Specification (Decl_Node, Specification_Node);
-         P_Aspect_Specifications (Decl_Node);
+         Aspects := Get_Aspect_Specifications (Semicolon => False);
+
+         --  Aspects may be present on a subprogram body. The source parsed
+         --  so far is that of its specification, go parse the body and attach
+         --  the collected aspects, if any, to the body.
+
+         if Token = Tok_Is then
+            Scan;
+            goto Subprogram_Body;
+
+         else
+            if Is_Non_Empty_List (Aspects) then
+               Set_Parent (Aspects, Decl_Node);
+               Set_Aspect_Specifications (Decl_Node, Aspects);
+            end if;
+
+            TF_Semicolon;
+         end if;
 
          --  If this is a context in which a subprogram body is permitted,
          --  set active SIS entry in case (see section titled "Handling
@@ -1109,6 +1139,7 @@ package body Ch6 is
 
       if Token /= Tok_Dot then
          Change_Identifier_To_Defining_Identifier (Ident_Node);
+         Warn_If_Standard_Redefinition (Ident_Node);
          return Ident_Node;
 
       --  Child library unit name case
@@ -1146,6 +1177,7 @@ package body Ch6 is
          Change_Node (Prefix_Node, N_Defining_Program_Unit_Name);
          Set_Name (Prefix_Node, Name_Node);
          Change_Identifier_To_Defining_Identifier (Ident_Node);
+         Warn_If_Standard_Redefinition (Ident_Node);
          Set_Defining_Identifier (Prefix_Node, Ident_Node);
 
          --  All set with unit name parsed
@@ -1532,7 +1564,12 @@ package body Ch6 is
               ("(style) IN should be omitted");
          end if;
 
-         if Token = Tok_Access then
+         --  Since Ada 2005, formal objects can have an anonymous access type,
+         --  and of course carry a mode indicator.
+
+         if Token = Tok_Access
+           and then Nkind (Node) /= N_Formal_Object_Declaration
+         then
             Error_Msg_SP ("IN not allowed together with ACCESS");
             Scan; -- past ACCESS
          end if;
@@ -1632,6 +1669,7 @@ package body Ch6 is
    begin
       Return_Obj := Token_Node;
       Change_Identifier_To_Defining_Identifier (Return_Obj);
+      Warn_If_Standard_Redefinition (Return_Obj);
       Decl_Node := New_Node (N_Object_Declaration, Token_Ptr);
       Set_Defining_Identifier (Decl_Node, Return_Obj);
 

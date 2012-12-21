@@ -92,7 +92,7 @@ namespace __debug
       set(const _Base& __x)
       : _Base(__x) { }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       set(set&& __x)
       noexcept(is_nothrow_copy_constructible<_Compare>::value)
       : _Base(std::move(__x))
@@ -114,7 +114,7 @@ namespace __debug
 	return *this;
       }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       set&
       operator=(set&& __x)
       {
@@ -170,7 +170,7 @@ namespace __debug
       rend() const _GLIBCXX_NOEXCEPT
       { return const_reverse_iterator(begin()); }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       const_iterator
       cbegin() const noexcept
       { return const_iterator(_Base::begin(), this); }
@@ -194,6 +194,27 @@ namespace __debug
       using _Base::max_size;
 
       // modifiers:
+#if __cplusplus >= 201103L
+      template<typename... _Args>
+	std::pair<iterator, bool>
+	emplace(_Args&&... __args)
+	{
+	  auto __res = _Base::emplace(std::forward<_Args>(__args)...);
+	  return std::pair<iterator, bool>(iterator(__res.first, this),
+					   __res.second);
+	}
+
+      template<typename... _Args>
+	iterator
+	emplace_hint(const_iterator __pos, _Args&&... __args)
+	{
+	  __glibcxx_check_insert(__pos);
+	  return iterator(_Base::emplace_hint(__pos.base(),
+					      std::forward<_Args>(__args)...),
+			  this);
+	}
+#endif
+
       std::pair<iterator, bool>
       insert(const value_type& __x)
       {
@@ -202,7 +223,7 @@ namespace __debug
 					 __res.second);
       }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       std::pair<iterator, bool>
       insert(value_type&& __x)
       {
@@ -220,7 +241,7 @@ namespace __debug
 	return iterator(_Base::insert(__position.base(), __x), this);
       }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       iterator
       insert(const_iterator __position, value_type&& __x)
       {
@@ -239,13 +260,13 @@ namespace __debug
 			__gnu_debug::__base(__last));
 	}
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       void
       insert(initializer_list<value_type> __l)
       { _Base::insert(__l); }
 #endif
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       iterator
       erase(const_iterator __position)
       {
@@ -277,7 +298,7 @@ namespace __debug
 	  }
       }
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus >= 201103L
       iterator
       erase(const_iterator __first, const_iterator __last)
       {

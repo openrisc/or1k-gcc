@@ -22,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "config.h"
 #include "system.h"
+#include "coretypes.h"
 #include "gfortran.h"
 #include "arith.h"
 #include "match.h"
@@ -1489,13 +1490,10 @@ find_array_section (gfc_expr *expr, gfc_ref *ref)
 
   /* Now clock through the array reference, calculating the index in
      the source constructor and transferring the elements to the new
-     constructor.  */  
+     constructor.  */
   for (idx = 0; idx < (int) mpz_get_si (nelts); idx++)
     {
-      if (ref->u.ar.offset)
-	mpz_set (ptr, ref->u.ar.offset->value.integer);
-      else
-	mpz_init_set_ui (ptr, 0);
+      mpz_init_set_ui (ptr, 0);
 
       incr_ctr = true;
       for (d = 0; d < rank; d++)
@@ -2061,6 +2059,8 @@ scalarize_intrinsic_call (gfc_expr *e)
 
   free_expr0 (e);
   *e = *expr;
+  /* Free "expr" but not the pointers it contains.  */
+  free (expr);
   gfc_free_expr (old);
   return SUCCESS;
 
@@ -2404,7 +2404,7 @@ check_elemental (gfc_expr *e)
 
   if (e->ts.type != BT_INTEGER
       && e->ts.type != BT_CHARACTER
-      && gfc_notify_std (GFC_STD_F2003, "Extension: Evaluation of "
+      && gfc_notify_std (GFC_STD_F2003, "Evaluation of "
 			"nonstandard initialization expression at %L",
 			&e->where) == FAILURE)
     return MATCH_ERROR;
@@ -2964,12 +2964,12 @@ gfc_specification_expr (gfc_expr *e)
       return FAILURE;
     }
 
+  comp = gfc_get_proc_ptr_comp (e);
   if (e->expr_type == EXPR_FUNCTION
-	  && !e->value.function.isym
-	  && !e->value.function.esym
-	  && !gfc_pure (e->symtree->n.sym)
-	  && (!gfc_is_proc_ptr_comp (e, &comp)
-	      || !comp->attr.pure))
+      && !e->value.function.isym
+      && !e->value.function.esym
+      && !gfc_pure (e->symtree->n.sym)
+      && (!comp || !comp->attr.pure))
     {
       gfc_error ("Function '%s' at %L must be PURE",
 		 e->symtree->n.sym->name, &e->where);
@@ -3163,13 +3163,13 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform)
 
   if (rvalue->is_boz && lvalue->ts.type != BT_INTEGER
       && lvalue->symtree->n.sym->attr.data
-      && gfc_notify_std (GFC_STD_GNU, "Extension: BOZ literal at %L used to "
+      && gfc_notify_std (GFC_STD_GNU, "BOZ literal at %L used to "
                          "initialize non-integer variable '%s'",
 			 &rvalue->where, lvalue->symtree->n.sym->name)
 	 == FAILURE)
     return FAILURE;
   else if (rvalue->is_boz && !lvalue->symtree->n.sym->attr.data
-      && gfc_notify_std (GFC_STD_GNU, "Extension: BOZ literal at %L outside "
+      && gfc_notify_std (GFC_STD_GNU, "BOZ literal at %L outside "
 			 "a DATA statement and outside INT/REAL/DBLE/CMPLX",
 			 &rvalue->where) == FAILURE)
     return FAILURE;
@@ -3337,7 +3337,7 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	      return FAILURE;
 	    }
 
-	  if (gfc_notify_std (GFC_STD_F2003,"Fortran 2003: Bounds "
+	  if (gfc_notify_std (GFC_STD_F2003,"Bounds "
 			      "specification for '%s' in pointer assignment "
 			      "at %L", lvalue->symtree->n.sym->name,
 			      &lvalue->where) == FAILURE)
@@ -3420,6 +3420,28 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 		     &rvalue->where);
 	  return FAILURE;
 	}
+      if (rvalue->expr_type == EXPR_VARIABLE && !attr.proc_pointer)
+	{
+      	  /* Check for intrinsics.  */
+	  gfc_symbol *sym = rvalue->symtree->n.sym;
+	  if (!sym->attr.intrinsic
+	      && (gfc_is_intrinsic (sym, 0, sym->declared_at)
+		  || gfc_is_intrinsic (sym, 1, sym->declared_at)))
+	    {
+	      sym->attr.intrinsic = 1;
+	      gfc_resolve_intrinsic (sym, &rvalue->where);
+	      attr = gfc_expr_attr (rvalue);
+	    }
+	  /* Check for result of embracing function.  */
+	  if (sym == gfc_current_ns->proc_name
+	      && sym->attr.function && sym->result == sym)
+	    {
+	      gfc_error ("Function result '%s' is invalid as proc-target "
+			 "in procedure pointer assignment at %L",
+			 sym->name, &rvalue->where);
+	      return FAILURE;
+	    }
+	}
       if (attr.abstract)
 	{
 	  gfc_error ("Abstract interface '%s' is invalid "
@@ -3438,16 +3460,24 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	      return FAILURE;
 	    }
 	  if (attr.proc == PROC_INTERNAL &&
-	      gfc_notify_std (GFC_STD_F2008, "Internal procedure '%s' is "
-			      "invalid in procedure pointer assignment at %L",
-			      rvalue->symtree->name, &rvalue->where) == FAILURE)
+	      gfc_notify_std (GFC_STD_F2008, "Internal procedure "
+			      "'%s' is invalid in procedure pointer assignment "
+			      "at %L", rvalue->symtree->name, &rvalue->where)
+			      == FAILURE)
 	    return FAILURE;
+	  if (attr.intrinsic && gfc_intrinsic_actual_ok (rvalue->symtree->name,
+							 attr.subroutine) == 0)
+	    {
+	      gfc_error ("Intrinsic '%s' at %L is invalid in procedure pointer "
+			 "assignment", rvalue->symtree->name, &rvalue->where);
+	      return FAILURE;
+	    }
 	}
       /* Check for F08:C730.  */
       if (attr.elemental && !attr.intrinsic)
 	{
 	  gfc_error ("Nonintrinsic elemental procedure '%s' is invalid "
-		     "in procedure pointer assigment at %L",
+		     "in procedure pointer assignment at %L",
 		     rvalue->symtree->name, &rvalue->where);
 	  return FAILURE;
 	}
@@ -3476,15 +3506,25 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	    }
 	}
 
-      if (gfc_is_proc_ptr_comp (lvalue, &comp))
+      comp = gfc_get_proc_ptr_comp (lvalue);
+      if (comp)
 	s1 = comp->ts.interface;
       else
 	s1 = lvalue->symtree->n.sym;
 
-      if (gfc_is_proc_ptr_comp (rvalue, &comp))
+      comp = gfc_get_proc_ptr_comp (rvalue);
+      if (comp)
 	{
-	  s2 = comp->ts.interface;
-	  name = comp->name;
+	  if (rvalue->expr_type == EXPR_FUNCTION)
+	    {
+	      s2 = comp->ts.interface->result;
+	      name = comp->ts.interface->result->name;
+	    }
+	  else
+	    {
+	      s2 = comp->ts.interface;
+	      name = comp->name;
+	    }
 	}
       else if (rvalue->expr_type == EXPR_FUNCTION)
 	{
@@ -3498,7 +3538,7 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	}
 
       if (s1 && s2 && !gfc_compare_interfaces (s1, s2, name, 0, 1,
-					       err, sizeof(err)))
+					       err, sizeof(err), NULL, NULL))
 	{
 	  gfc_error ("Interface mismatch in procedure pointer assignment "
 		     "at %L: %s", &rvalue->where, err);
@@ -3561,7 +3601,7 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 			 " simply contiguous at %L", &rvalue->where);
 	      return FAILURE;
 	    }
-	  if (gfc_notify_std (GFC_STD_F2008, "Fortran 2008: Rank remapping"
+	  if (gfc_notify_std (GFC_STD_F2008, "Rank remapping"
 			      " target is not rank 1 at %L", &rvalue->where)
 		== FAILURE)
 	    return FAILURE;
@@ -3636,6 +3676,41 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 		       &rvalue->where);
 	    return FAILURE;
 	  }
+    }
+
+  /* Warn if it is the LHS pointer may lives longer than the RHS target.  */
+  if (gfc_option.warn_target_lifetime
+      && rvalue->expr_type == EXPR_VARIABLE
+      && !rvalue->symtree->n.sym->attr.save
+      && !attr.pointer && !rvalue->symtree->n.sym->attr.host_assoc
+      && !rvalue->symtree->n.sym->attr.in_common
+      && !rvalue->symtree->n.sym->attr.use_assoc
+      && !rvalue->symtree->n.sym->attr.dummy)
+    {
+      bool warn;
+      gfc_namespace *ns;
+
+      warn = lvalue->symtree->n.sym->attr.dummy
+	     || lvalue->symtree->n.sym->attr.result
+	     || lvalue->symtree->n.sym->attr.function
+	     || (lvalue->symtree->n.sym->attr.host_assoc
+		 && lvalue->symtree->n.sym->ns
+		    != rvalue->symtree->n.sym->ns)
+	     || lvalue->symtree->n.sym->attr.use_assoc
+	     || lvalue->symtree->n.sym->attr.in_common;
+
+      if (rvalue->symtree->n.sym->ns->proc_name
+	  && rvalue->symtree->n.sym->ns->proc_name->attr.flavor != FL_PROCEDURE
+	  && rvalue->symtree->n.sym->ns->proc_name->attr.flavor != FL_PROGRAM)
+       for (ns = rvalue->symtree->n.sym->ns;
+	    ns->proc_name && ns->proc_name->attr.flavor != FL_PROCEDURE;
+	    ns = ns->parent)
+	if (ns->parent == lvalue->symtree->n.sym->ns)
+	  warn = true;
+
+      if (warn)
+	gfc_warning ("Pointer at %L in pointer assignment might outlive the "
+		     "pointer target", &lvalue->where);
     }
 
   return SUCCESS;
@@ -4056,31 +4131,35 @@ gfc_expr_set_symbols_referenced (gfc_expr *expr)
 }
 
 
-/* Determine if an expression is a procedure pointer component. If yes, the
-   argument 'comp' will point to the component (provided that 'comp' was
-   provided).  */
+/* Determine if an expression is a procedure pointer component and return
+   the component in that case.  Otherwise return NULL.  */
 
-bool
-gfc_is_proc_ptr_comp (gfc_expr *expr, gfc_component **comp)
+gfc_component *
+gfc_get_proc_ptr_comp (gfc_expr *expr)
 {
   gfc_ref *ref;
-  bool ppc = false;
 
   if (!expr || !expr->ref)
-    return false;
+    return NULL;
 
   ref = expr->ref;
   while (ref->next)
     ref = ref->next;
 
-  if (ref->type == REF_COMPONENT)
-    {
-      ppc = ref->u.c.component->attr.proc_pointer;
-      if (ppc && comp)
-	*comp = ref->u.c.component;
-    }
+  if (ref->type == REF_COMPONENT
+      && ref->u.c.component->attr.proc_pointer)
+    return ref->u.c.component;
 
-  return ppc;
+  return NULL;
+}
+
+
+/* Determine if an expression is a procedure pointer component.  */
+
+bool
+gfc_is_proc_ptr_comp (gfc_expr *expr)
+{
+  return (gfc_get_proc_ptr_comp (expr) != NULL);
 }
 
 
@@ -4441,7 +4520,8 @@ gfc_is_simply_contiguous (gfc_expr *expr, bool strict)
 	    || (!part_ref
 		&& !sym->attr.contiguous
 		&& (sym->attr.pointer
-		      || sym->as->type == AS_ASSUMED_SHAPE))))
+		    || sym->as->type == AS_ASSUMED_RANK
+		    || sym->as->type == AS_ASSUMED_SHAPE))))
     return false;
 
   if (!ar || ar->type == AR_FULL)
@@ -4556,13 +4636,15 @@ gfc_build_intrinsic_call (const char* name, locus where, unsigned numarg, ...)
    (F2008, 16.6.7) or pointer association context (F2008, 16.6.8).
    This is called from the various places when resolving
    the pieces that make up such a context.
+   If own_scope is true (applies to, e.g., ac-implied-do/data-implied-do
+   variables), some checks are not performed.
 
    Optionally, a possible error message can be suppressed if context is NULL
    and just the return status (SUCCESS / FAILURE) be requested.  */
 
 gfc_try
 gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
-			  const char* context)
+			  bool own_scope, const char* context)
 {
   gfc_symbol* sym = NULL;
   bool is_pointer;
@@ -4647,7 +4729,7 @@ gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
      assignment to a pointer component from pointer-assignment to a pointer
      component.  Note that (normal) assignment to procedure pointers is not
      possible.  */
-  check_intentin = true;
+  check_intentin = !own_scope;
   ptr_component = (sym->ts.type == BT_CLASS && CLASS_DATA (sym))
 		  ? CLASS_DATA (sym)->attr.class_pointer : sym->attr.pointer;
   for (ref = e->ref; ref && check_intentin; ref = ref->next)
@@ -4682,7 +4764,7 @@ gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
     }
 
   /* PROTECTED and use-associated.  */
-  if (sym->attr.is_protected && sym->attr.use_assoc  && check_intentin)
+  if (sym->attr.is_protected && sym->attr.use_assoc && check_intentin)
     {
       if (pointer && is_pointer)
 	{
@@ -4704,7 +4786,7 @@ gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
 
   /* Variable not assignable from a PURE procedure but appears in
      variable definition context.  */
-  if (!pointer && gfc_pure (NULL) && gfc_impure_variable (sym))
+  if (!pointer && !own_scope && gfc_pure (NULL) && gfc_impure_variable (sym))
     {
       if (context)
 	gfc_error ("Variable '%s' can not appear in a variable definition"
@@ -4778,7 +4860,7 @@ gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
 	}
 
       /* Target must be allowed to appear in a variable definition context.  */
-      if (gfc_check_vardef_context (assoc->target, pointer, false, NULL)
+      if (gfc_check_vardef_context (assoc->target, pointer, false, false, NULL)
 	  == FAILURE)
 	{
 	  if (context)

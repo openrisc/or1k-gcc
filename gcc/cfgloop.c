@@ -23,8 +23,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "coretypes.h"
 #include "tm.h"
 #include "rtl.h"
-#include "hard-reg-set.h"
-#include "obstack.h"
 #include "function.h"
 #include "basic-block.h"
 #include "cfgloop.h"
@@ -34,6 +32,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-flow.h"
 #include "pointer-set.h"
 #include "ggc.h"
+#include "dumpfile.h"
 
 static void flow_loops_cfg_dump (FILE *);
 
@@ -67,7 +66,7 @@ flow_loop_nested_p (const struct loop *outer, const struct loop *loop)
   unsigned odepth = loop_depth (outer);
 
   return (loop_depth (loop) > odepth
-	  && VEC_index (loop_p, loop->superloops, odepth) == outer);
+	  && (*loop->superloops)[odepth] == outer);
 }
 
 /* Returns the loop such that LOOP is nested DEPTH (indexed from zero)
@@ -83,22 +82,22 @@ superloop_at_depth (struct loop *loop, unsigned depth)
   if (depth == ldepth)
     return loop;
 
-  return VEC_index (loop_p, loop->superloops, depth);
+  return (*loop->superloops)[depth];
 }
 
 /* Returns the list of the latch edges of LOOP.  */
 
-static VEC (edge, heap) *
+static vec<edge> 
 get_loop_latch_edges (const struct loop *loop)
 {
   edge_iterator ei;
   edge e;
-  VEC (edge, heap) *ret = NULL;
+  vec<edge> ret = vNULL;
 
   FOR_EACH_EDGE (e, ei, loop->header->preds)
     {
       if (dominated_by_p (CDI_DOMINATORS, e->src, loop->header))
-	VEC_safe_push (edge, heap, ret, e);
+	ret.safe_push (e);
     }
 
   return ret;
@@ -114,7 +113,7 @@ flow_loop_dump (const struct loop *loop, FILE *file,
 {
   basic_block *bbs;
   unsigned i;
-  VEC (edge, heap) *latches;
+  vec<edge> latches;
   edge e;
 
   if (! loop || ! loop->header)
@@ -129,9 +128,9 @@ flow_loop_dump (const struct loop *loop, FILE *file,
     {
       fprintf (file, "multiple latches:");
       latches = get_loop_latch_edges (loop);
-      FOR_EACH_VEC_ELT (edge, latches, i, e)
+      FOR_EACH_VEC_ELT (latches, i, e)
 	fprintf (file, " %d", e->src->index);
-      VEC_free (edge, heap, latches);
+      latches.release ();
       fprintf (file, "\n");
     }
 
@@ -180,7 +179,7 @@ flow_loop_free (struct loop *loop)
 {
   struct loop_exit *exit, *next;
 
-  VEC_free (loop_p, gc, loop->superloops);
+  vec_free (loop->superloops);
 
   /* Break the list of the loop exit records.  They will be freed when the
      corresponding edge is rescanned or removed, and this avoids
@@ -208,7 +207,7 @@ flow_loops_free (struct loops *loops)
       loop_p loop;
 
       /* Free the loop descriptors.  */
-      FOR_EACH_VEC_ELT (loop_p, loops->larray, i, loop)
+      FOR_EACH_VEC_SAFE_ELT (loops->larray, i, loop)
 	{
 	  if (!loop)
 	    continue;
@@ -216,7 +215,7 @@ flow_loops_free (struct loops *loops)
 	  flow_loop_free (loop);
 	}
 
-      VEC_free (loop_p, gc, loops->larray);
+      vec_free (loops->larray);
     }
 }
 
@@ -226,14 +225,12 @@ flow_loops_free (struct loops *loops)
 int
 flow_loop_nodes_find (basic_block header, struct loop *loop)
 {
-  VEC (basic_block, heap) *stack = NULL;
+  vec<basic_block> stack = vNULL;
   int num_nodes = 1;
   edge latch;
   edge_iterator latch_ei;
-  unsigned depth = loop_depth (loop);
 
   header->loop_father = loop;
-  header->loop_depth = depth;
 
   FOR_EACH_EDGE (latch, latch_ei, loop->header->preds)
     {
@@ -242,17 +239,16 @@ flow_loop_nodes_find (basic_block header, struct loop *loop)
 	continue;
 
       num_nodes++;
-      VEC_safe_push (basic_block, heap, stack, latch->src);
+      stack.safe_push (latch->src);
       latch->src->loop_father = loop;
-      latch->src->loop_depth = depth;
 
-      while (!VEC_empty (basic_block, stack))
+      while (!stack.is_empty ())
 	{
 	  basic_block node;
 	  edge e;
 	  edge_iterator ei;
 
-	  node = VEC_pop (basic_block, stack);
+	  node = stack.pop ();
 
 	  FOR_EACH_EDGE (e, ei, node->preds)
 	    {
@@ -261,14 +257,13 @@ flow_loop_nodes_find (basic_block header, struct loop *loop)
 	      if (ancestor->loop_father != loop)
 		{
 		  ancestor->loop_father = loop;
-		  ancestor->loop_depth = depth;
 		  num_nodes++;
-		  VEC_safe_push (basic_block, heap, stack, ancestor);
+		  stack.safe_push (ancestor);
 		}
 	    }
 	}
     }
-  VEC_free (basic_block, heap, stack);
+  stack.release ();
 
   return num_nodes;
 }
@@ -283,11 +278,11 @@ establish_preds (struct loop *loop, struct loop *father)
   unsigned depth = loop_depth (father) + 1;
   unsigned i;
 
-  VEC_truncate (loop_p, loop->superloops, 0);
-  VEC_reserve (loop_p, gc, loop->superloops, depth);
-  FOR_EACH_VEC_ELT (loop_p, father->superloops, i, ploop)
-    VEC_quick_push (loop_p, loop->superloops, ploop);
-  VEC_quick_push (loop_p, loop->superloops, father);
+  loop->superloops = 0;
+  vec_alloc (loop->superloops, depth);
+  FOR_EACH_VEC_SAFE_ELT (father->superloops, i, ploop)
+    loop->superloops->quick_push (ploop);
+  loop->superloops->quick_push (father);
 
   for (ploop = loop->inner; ploop; ploop = ploop->next)
     establish_preds (ploop, loop);
@@ -325,7 +320,7 @@ flow_loop_tree_node_remove (struct loop *loop)
       prev->next = loop->next;
     }
 
-  VEC_truncate (loop_p, loop->superloops, 0);
+  loop->superloops = NULL;
 }
 
 /* Allocates and returns new loop structure.  */
@@ -351,7 +346,7 @@ init_loops_structure (struct loops *loops, unsigned num_loops)
   struct loop *root;
 
   memset (loops, 0, sizeof *loops);
-  loops->larray = VEC_alloc (loop_p, gc, num_loops);
+  vec_alloc (loops->larray, num_loops);
 
   /* Dummy loop containing whole function.  */
   root = alloc_loop ();
@@ -361,12 +356,12 @@ init_loops_structure (struct loops *loops, unsigned num_loops)
   ENTRY_BLOCK_PTR->loop_father = root;
   EXIT_BLOCK_PTR->loop_father = root;
 
-  VEC_quick_push (loop_p, loops->larray, root);
+  loops->larray->quick_push (root);
   loops->tree_root = root;
 }
 
 /* Find all the natural loops in the function and save in LOOPS structure and
-   recalculate loop_depth information in basic block structures.
+   recalculate loop_father information in basic block structures.
    Return the number of natural loops found.  */
 
 int
@@ -398,14 +393,12 @@ flow_loops_find (struct loops *loops)
   /* Count the number of loop headers.  This should be the
      same as the number of natural loops.  */
   headers = sbitmap_alloc (last_basic_block);
-  sbitmap_zero (headers);
+  bitmap_clear (headers);
 
   num_loops = 0;
   FOR_EACH_BB (header)
     {
       edge_iterator ei;
-
-      header->loop_depth = 0;
 
       /* If we have an abnormal predecessor, do not consider the
 	 loop (not worth the problems).  */
@@ -427,7 +420,7 @@ flow_loops_find (struct loops *loops)
 	      && dominated_by_p (CDI_DOMINATORS, latch, header))
 	    {
 	      /* Shared headers should be eliminated by now.  */
-	      SET_BIT (headers, header->index);
+	      bitmap_set_bit (headers, header->index);
 	      num_loops++;
 	    }
 	}
@@ -458,13 +451,13 @@ flow_loops_find (struct loops *loops)
 
 	  /* Search the nodes of the CFG in reverse completion order
 	     so that we can find outer loops first.  */
-	  if (!TEST_BIT (headers, rc_order[b]))
+	  if (!bitmap_bit_p (headers, rc_order[b]))
 	    continue;
 
 	  header = BASIC_BLOCK (rc_order[b]);
 
 	  loop = alloc_loop ();
-	  VEC_quick_push (loop_p, loops->larray, loop);
+	  loops->larray->quick_push (loop);
 
 	  loop->header = header;
 	  loop->num = num_loops;
@@ -499,7 +492,7 @@ flow_loops_find (struct loops *loops)
   sbitmap_free (headers);
 
   loops->exits = NULL;
-  return VEC_length (loop_p, loops->larray);
+  return loops->larray->length ();
 }
 
 /* Ratio of frequencies of edges so that one of more latch edges is
@@ -520,13 +513,13 @@ flow_loops_find (struct loops *loops)
    derive the loop structure from it).  */
 
 static edge
-find_subloop_latch_edge_by_profile (VEC (edge, heap) *latches)
+find_subloop_latch_edge_by_profile (vec<edge> latches)
 {
   unsigned i;
   edge e, me = NULL;
   gcov_type mcount = 0, tcount = 0;
 
-  FOR_EACH_VEC_ELT (edge, latches, i, e)
+  FOR_EACH_VEC_ELT (latches, i, e)
     {
       if (e->count > mcount)
 	{
@@ -560,9 +553,9 @@ find_subloop_latch_edge_by_profile (VEC (edge, heap) *latches)
    another edge.  */
 
 static edge
-find_subloop_latch_edge_by_ivs (struct loop *loop ATTRIBUTE_UNUSED, VEC (edge, heap) *latches)
+find_subloop_latch_edge_by_ivs (struct loop *loop ATTRIBUTE_UNUSED, vec<edge> latches)
 {
-  edge e, latch = VEC_index (edge, latches, 0);
+  edge e, latch = latches[0];
   unsigned i;
   gimple phi;
   gimple_stmt_iterator psi;
@@ -570,12 +563,12 @@ find_subloop_latch_edge_by_ivs (struct loop *loop ATTRIBUTE_UNUSED, VEC (edge, h
   basic_block bb;
 
   /* Find the candidate for the latch edge.  */
-  for (i = 1; VEC_iterate (edge, latches, i, e); i++)
+  for (i = 1; latches.iterate (i, &e); i++)
     if (dominated_by_p (CDI_DOMINATORS, latch->src, e->src))
       latch = e;
 
   /* Verify that it dominates all the latch edges.  */
-  FOR_EACH_VEC_ELT (edge, latches, i, e)
+  FOR_EACH_VEC_ELT (latches, i, e)
     if (!dominated_by_p (CDI_DOMINATORS, e->src, latch->src))
       return NULL;
 
@@ -594,7 +587,7 @@ find_subloop_latch_edge_by_ivs (struct loop *loop ATTRIBUTE_UNUSED, VEC (edge, h
       if (!bb || !flow_bb_inside_loop_p (loop, bb))
 	continue;
 
-      FOR_EACH_VEC_ELT (edge, latches, i, e)
+      FOR_EACH_VEC_ELT (latches, i, e)
 	if (e != latch
 	    && PHI_ARG_DEF_FROM_EDGE (phi, e) == lop)
 	  return NULL;
@@ -614,10 +607,10 @@ find_subloop_latch_edge_by_ivs (struct loop *loop ATTRIBUTE_UNUSED, VEC (edge, h
 static edge
 find_subloop_latch_edge (struct loop *loop)
 {
-  VEC (edge, heap) *latches = get_loop_latch_edges (loop);
+  vec<edge> latches = get_loop_latch_edges (loop);
   edge latch = NULL;
 
-  if (VEC_length (edge, latches) > 1)
+  if (latches.length () > 1)
     {
       latch = find_subloop_latch_edge_by_profile (latches);
 
@@ -629,7 +622,7 @@ find_subloop_latch_edge (struct loop *loop)
 	latch = find_subloop_latch_edge_by_ivs (loop, latches);
     }
 
-  VEC_free (edge, heap, latches);
+  latches.release ();
   return latch;
 }
 
@@ -678,21 +671,21 @@ form_subloop (struct loop *loop, edge latch)
 static void
 merge_latch_edges (struct loop *loop)
 {
-  VEC (edge, heap) *latches = get_loop_latch_edges (loop);
+  vec<edge> latches = get_loop_latch_edges (loop);
   edge latch, e;
   unsigned i;
 
-  gcc_assert (VEC_length (edge, latches) > 0);
+  gcc_assert (latches.length () > 0);
 
-  if (VEC_length (edge, latches) == 1)
-    loop->latch = VEC_index (edge, latches, 0)->src;
+  if (latches.length () == 1)
+    loop->latch = latches[0]->src;
   else
     {
       if (dump_file)
 	fprintf (dump_file, "Merged latch edges of loop %d\n", loop->num);
 
       mfb_reis_set = pointer_set_create ();
-      FOR_EACH_VEC_ELT (edge, latches, i, e)
+      FOR_EACH_VEC_ELT (latches, i, e)
 	pointer_set_insert (mfb_reis_set, e);
       latch = make_forwarder_block (loop->header, mfb_redirect_edges_in_set,
 				    NULL);
@@ -702,7 +695,7 @@ merge_latch_edges (struct loop *loop)
       loop->latch = latch->src;
     }
 
-  VEC_free (edge, heap, latches);
+  latches.release ();
 }
 
 /* LOOP may have several latch edges.  Transform it into (possibly several)
@@ -812,7 +805,7 @@ get_loop_body (const struct loop *loop)
 
   gcc_assert (loop->num_nodes);
 
-  body = XCNEWVEC (basic_block, loop->num_nodes);
+  body = XNEWVEC (basic_block, loop->num_nodes);
 
   if (loop->latch == EXIT_BLOCK_PTR)
     {
@@ -872,7 +865,7 @@ get_loop_body_in_dom_order (const struct loop *loop)
 
   gcc_assert (loop->num_nodes);
 
-  tovisit = XCNEWVEC (basic_block, loop->num_nodes);
+  tovisit = XNEWVEC (basic_block, loop->num_nodes);
 
   gcc_assert (loop->latch != EXIT_BLOCK_PTR);
 
@@ -911,7 +904,7 @@ get_loop_body_in_bfs_order (const struct loop *loop)
   gcc_assert (loop->num_nodes);
   gcc_assert (loop->latch != EXIT_BLOCK_PTR);
 
-  blocks = XCNEWVEC (basic_block, loop->num_nodes);
+  blocks = XNEWVEC (basic_block, loop->num_nodes);
   visited = BITMAP_ALLOC (NULL);
 
   bb = loop->header;
@@ -1121,10 +1114,10 @@ release_recorded_exits (void)
 
 /* Returns the list of the exit edges of a LOOP.  */
 
-VEC (edge, heap) *
+vec<edge> 
 get_loop_exit_edges (const struct loop *loop)
 {
-  VEC (edge, heap) *edges = NULL;
+  vec<edge> edges = vNULL;
   edge e;
   unsigned i;
   basic_block *body;
@@ -1138,7 +1131,7 @@ get_loop_exit_edges (const struct loop *loop)
   if (loops_state_satisfies_p (LOOPS_HAVE_RECORDED_EXITS))
     {
       for (exit = loop->exits->next; exit->e; exit = exit->next)
-	VEC_safe_push (edge, heap, edges, exit->e);
+	edges.safe_push (exit->e);
     }
   else
     {
@@ -1147,7 +1140,7 @@ get_loop_exit_edges (const struct loop *loop)
 	FOR_EACH_EDGE (e, ei, body[i]->succs)
 	  {
 	    if (!flow_bb_inside_loop_p (loop, e->dest))
-	      VEC_safe_push (edge, heap, edges, e);
+	      edges.safe_push (e);
 	  }
       free (body);
     }
@@ -1186,9 +1179,8 @@ add_bb_to_loop (basic_block bb, struct loop *loop)
 
   gcc_assert (bb->loop_father == NULL);
   bb->loop_father = loop;
-  bb->loop_depth = loop_depth (loop);
   loop->num_nodes++;
-  FOR_EACH_VEC_ELT (loop_p, loop->superloops, i, ploop)
+  FOR_EACH_VEC_SAFE_ELT (loop->superloops, i, ploop)
     ploop->num_nodes++;
 
   FOR_EACH_EDGE (e, ei, bb->succs)
@@ -1205,7 +1197,7 @@ add_bb_to_loop (basic_block bb, struct loop *loop)
 void
 remove_bb_from_loops (basic_block bb)
 {
-  int i;
+  unsigned i;
   struct loop *loop = bb->loop_father;
   loop_p ploop;
   edge_iterator ei;
@@ -1213,10 +1205,9 @@ remove_bb_from_loops (basic_block bb)
 
   gcc_assert (loop != NULL);
   loop->num_nodes--;
-  FOR_EACH_VEC_ELT (loop_p, loop->superloops, i, ploop)
+  FOR_EACH_VEC_SAFE_ELT (loop->superloops, i, ploop)
     ploop->num_nodes--;
   bb->loop_father = NULL;
-  bb->loop_depth = 0;
 
   FOR_EACH_EDGE (e, ei, bb->succs)
     {
@@ -1241,9 +1232,9 @@ find_common_loop (struct loop *loop_s, struct loop *loop_d)
   ddepth = loop_depth (loop_d);
 
   if (sdepth < ddepth)
-    loop_d = VEC_index (loop_p, loop_d->superloops, sdepth);
+    loop_d = (*loop_d->superloops)[sdepth];
   else if (sdepth > ddepth)
-    loop_s = VEC_index (loop_p, loop_s->superloops, ddepth);
+    loop_s = (*loop_s->superloops)[ddepth];
 
   while (loop_s != loop_d)
     {
@@ -1262,7 +1253,7 @@ delete_loop (struct loop *loop)
   flow_loop_tree_node_remove (loop);
 
   /* Remove loop from loops array.  */
-  VEC_replace (loop_p, current_loops->larray, loop->num, NULL);
+  (*current_loops->larray)[loop->num] = NULL;
 
   /* Free loop data.  */
   flow_loop_free (loop);
@@ -1303,6 +1294,7 @@ cancel_loop_tree (struct loop *loop)
      -- loop header have just single entry edge and single latch edge
      -- loop latches have only single successor that is header of their loop
      -- irreducible loops are correctly marked
+     -- the cached loop depth and loop father of each bb is correct
   */
 DEBUG_FUNCTION void
 verify_loop_structure (void)
@@ -1317,6 +1309,7 @@ verify_loop_structure (void)
   loop_iterator li;
   struct loop_exit *exit, *mexit;
   bool dom_available = dom_info_available_p (CDI_DOMINATORS);
+  sbitmap visited = sbitmap_alloc (last_basic_block);
 
   /* We need up-to-date dominators, compute or verify them.  */
   if (!dom_available)
@@ -1353,9 +1346,32 @@ verify_loop_structure (void)
 	if (!flow_bb_inside_loop_p (loop, bbs[j]))
 	  {
 	    error ("bb %d do not belong to loop %d",
-		    bbs[j]->index, loop->num);
+		   bbs[j]->index, loop->num);
 	    err = 1;
 	  }
+      free (bbs);
+    }
+  bitmap_clear (visited);
+  FOR_EACH_LOOP (li, loop, LI_FROM_INNERMOST)
+    {
+      bbs = get_loop_body (loop);
+
+      for (j = 0; j < loop->num_nodes; j++)
+	{
+	  bb = bbs[j];
+
+	  /* Ignore this block if it is in an inner loop.  */
+	  if (bitmap_bit_p (visited, bb->index))
+	    continue;
+	  bitmap_set_bit (visited, bb->index);
+
+	  if (bb->loop_father != loop)
+	    {
+	      error ("bb %d has father loop %d, should be loop %d",
+		     bb->index, bb->loop_father->num, loop->num);
+	      err = 1;
+	    }
+	}
       free (bbs);
     }
 
@@ -1410,9 +1426,9 @@ verify_loop_structure (void)
 	{
 	  edge_iterator ei;
 	  if (bb->flags & BB_IRREDUCIBLE_LOOP)
-	    SET_BIT (irreds, bb->index);
+	    bitmap_set_bit (irreds, bb->index);
 	  else
-	    RESET_BIT (irreds, bb->index);
+	    bitmap_clear_bit (irreds, bb->index);
 	  FOR_EACH_EDGE (e, ei, bb->succs)
 	    if (e->flags & EDGE_IRREDUCIBLE_LOOP)
 	      e->flags |= EDGE_ALL_FLAGS + 1;
@@ -1427,13 +1443,13 @@ verify_loop_structure (void)
 	  edge_iterator ei;
 
 	  if ((bb->flags & BB_IRREDUCIBLE_LOOP)
-	      && !TEST_BIT (irreds, bb->index))
+	      && !bitmap_bit_p (irreds, bb->index))
 	    {
 	      error ("basic block %d should be marked irreducible", bb->index);
 	      err = 1;
 	    }
 	  else if (!(bb->flags & BB_IRREDUCIBLE_LOOP)
-	      && TEST_BIT (irreds, bb->index))
+	      && bitmap_bit_p (irreds, bb->index))
 	    {
 	      error ("basic block %d should not be marked irreducible", bb->index);
 	      err = 1;
@@ -1565,6 +1581,7 @@ verify_loop_structure (void)
 
   gcc_assert (!err);
 
+  sbitmap_free (visited);
   free (sizes);
   if (!dom_available)
     free_dominance_info (CDI_DOMINATORS);

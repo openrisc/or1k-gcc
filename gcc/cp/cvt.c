@@ -149,11 +149,13 @@ cp_convert_to_pointer (tree type, tree expr, tsubst_flags_t complain)
 	  binfo = NULL_TREE;
 	  /* Try derived to base conversion.  */
 	  if (!same_p)
-	    binfo = lookup_base (intype_class, type_class, ba_check, NULL);
+	    binfo = lookup_base (intype_class, type_class, ba_check,
+				 NULL, complain);
 	  if (!same_p && !binfo)
 	    {
 	      /* Try base to derived conversion.  */
-	      binfo = lookup_base (type_class, intype_class, ba_check, NULL);
+	      binfo = lookup_base (type_class, intype_class, ba_check,
+				   NULL, complain);
 	      code = MINUS_EXPR;
 	    }
 	  if (binfo == error_mark_node)
@@ -279,11 +281,11 @@ convert_to_pointer_force (tree type, tree expr, tsubst_flags_t complain)
 	  tree binfo;
 
 	  binfo = lookup_base (TREE_TYPE (intype), TREE_TYPE (type),
-			       ba_unique, NULL);
+			       ba_unique, NULL, complain);
 	  if (!binfo)
 	    {
 	      binfo = lookup_base (TREE_TYPE (type), TREE_TYPE (intype),
-				   ba_unique, NULL);
+				   ba_unique, NULL, complain);
 	      code = MINUS_EXPR;
 	    }
 	  if (binfo == error_mark_node)
@@ -337,12 +339,12 @@ build_up_reference (tree type, tree arg, int flags, tree decl,
 		      LOOKUP_ONLYCONVERTING|DIRECT_BIND);
     }
   else if (!(flags & DIRECT_BIND) && ! lvalue_p (arg))
-    return get_target_expr (arg);
+    return get_target_expr_sfinae (arg, complain);
 
   /* If we had a way to wrap this up, and say, if we ever needed its
      address, transform all occurrences of the register, into a memory
      reference we could win better.  */
-  rval = cp_build_addr_expr (arg, tf_warning_or_error);
+  rval = cp_build_addr_expr (arg, complain);
   if (rval == error_mark_node)
     return error_mark_node;
 
@@ -352,7 +354,8 @@ build_up_reference (tree type, tree arg, int flags, tree decl,
       && MAYBE_CLASS_TYPE_P (target_type))
     {
       /* We go through lookup_base for the access control.  */
-      tree binfo = lookup_base (argtype, target_type, ba_check, NULL);
+      tree binfo = lookup_base (argtype, target_type, ba_check,
+				NULL, complain);
       if (binfo == error_mark_node)
 	return error_mark_node;
       if (binfo == NULL_TREE)
@@ -558,7 +561,7 @@ force_rvalue (tree expr, tsubst_flags_t complain)
   tree type = TREE_TYPE (expr);
   if (MAYBE_CLASS_TYPE_P (type) && TREE_CODE (expr) != TARGET_EXPR)
     {
-      VEC(tree,gc) *args = make_tree_vector_single (expr);
+      vec<tree, va_gc> *args = make_tree_vector_single (expr);
       expr = build_special_member_call (NULL_TREE, complete_ctor_identifier,
 					&args, type, LOOKUP_NORMAL, complain);
       release_tree_vector (args);
@@ -741,8 +744,8 @@ ocp_convert (tree type, tree expr, int convtype, int flags,
 	     values. Otherwise, the resulting enumeration value is
 	     unspecified.  */
 	  if ((complain & tf_warning)
-	      && TREE_CODE (expr) == INTEGER_CST
-	      && !int_fits_type_p (expr, ENUM_UNDERLYING_TYPE (type)))
+	      && TREE_CODE (e) == INTEGER_CST
+	      && !int_fits_type_p (e, ENUM_UNDERLYING_TYPE (type)))
 	    warning_at (loc, OPT_Wconversion, 
 			"the result of the conversion is unspecified because "
 			"%qE is outside the range of type %qT",
@@ -839,7 +842,7 @@ ocp_convert (tree type, tree expr, int convtype, int flags,
 
       ctor = e;
 
-      if (abstract_virtuals_error (NULL_TREE, type))
+      if (abstract_virtuals_error_sfinae (NULL_TREE, type, complain))
 	return error_mark_node;
 
       if (BRACE_ENCLOSED_INITIALIZER_P (ctor))
@@ -852,7 +855,7 @@ ocp_convert (tree type, tree expr, int convtype, int flags,
 	ctor = build_user_type_conversion (type, ctor, flags, complain);
       else
 	{
-	  VEC(tree,gc) *ctor_vec = make_tree_vector_single (ctor);
+	  vec<tree, va_gc> *ctor_vec = make_tree_vector_single (ctor);
 	  ctor = build_special_member_call (NULL_TREE,
 					    complete_ctor_identifier,
 					    &ctor_vec,
@@ -1510,8 +1513,6 @@ build_expr_type_conversion (int desires, tree expr, bool complain)
       warning_at (loc, OPT_Wconversion_null,
 		  "converting NULL to non-pointer type");
     }
-
-  basetype = TREE_TYPE (expr);
 
   if (basetype == error_mark_node)
     return error_mark_node;

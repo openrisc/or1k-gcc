@@ -348,7 +348,7 @@
 )
 
 (define_insn "simple_return"
-  [(return)]
+  [(simple_return)]
   ""
   "rts"
   [(set_attr "length" "1")
@@ -1651,7 +1651,7 @@
 (define_expand "subdi3"
   [(set (match_operand:DI           0 "register_operand")
 	(minus:DI (match_operand:DI 1 "register_operand")
-		  (match_operand:DI 2 "rx_compare_operand")))]
+		  (match_operand:DI 2 "register_operand")))]
   ""
 {
   rtx op0l, op0h, op1l, op1h, op2l, op2h;
@@ -1868,7 +1868,7 @@
 
 (define_insn "comparesi3_<extend_types:code><small_int_modes:mode>"
   [(set (reg:CC CC_REG)
-	(compare:CC (match_operand:SI                               0 "register_operand" "=r")
+	(compare:CC (match_operand:SI                               0 "register_operand" "r")
 		    (extend_types:SI (match_operand:small_int_modes 1 "rx_restricted_mem_operand" "Q"))))]
   "(optimize < 3 || optimize_size)"
   "cmp\t%<extend_types:letter>1, %0"

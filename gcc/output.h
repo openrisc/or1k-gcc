@@ -1,5 +1,5 @@
-/* Declarations for insn-output.c.  These functions are defined in recog.c,
-   final.c, and varasm.c.
+/* Declarations for insn-output.c and other code to write to asm_out_file.
+   These functions are defined in final.c, and varasm.c.
    Copyright (C) 1987, 1991, 1994, 1997, 1998, 1999, 2000, 2001, 2002,
    2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
@@ -76,7 +76,7 @@ extern rtx final_scan_insn (rtx, FILE *, int, int, int *);
 
 /* Replace a SUBREG with a REG or a MEM, based on the thing it is a
    subreg of.  */
-extern rtx alter_subreg (rtx *);
+extern rtx alter_subreg (rtx *, bool);
 
 /* Print an operand using machine-dependent assembler syntax.  */
 extern void output_operand (rtx, int);
@@ -131,10 +131,6 @@ extern int sprint_ul (char *, unsigned long);
 
 extern void asm_fprintf (FILE *file, const char *p, ...)
      ATTRIBUTE_ASM_FPRINTF(2, 3);
-
-/* Split up a CONST_DOUBLE or integer constant rtx into two rtx's for single
-   words.  */
-extern void split_double (rtx, rtx *, rtx *);
 
 /* Return nonzero if this function has no function calls.  */
 extern int leaf_function_p (void);
@@ -292,13 +288,6 @@ extern void output_object_blocks (void);
 
 extern void output_quoted_string (FILE *, const char *);
 
-/* Whether a constructor CTOR is a valid static constant initializer if all
-   its elements are.  This used to be internal to initializer_constant_valid_p
-   and has been exposed to let other functions like categorize_ctor_elements
-   evaluate the property while walking a constructor for other purposes.  */
-
-extern bool constructor_static_from_elts_p (const_tree);
-
 /* Output assembler code for constant EXP to FILE, with no label.
    This includes the pseudo-op such as ".int" or ".byte", and a newline.
    Assumes output_addressed_constants has been done on EXP already.
@@ -335,25 +324,6 @@ extern const char *first_global_object_name;
 
 /* The first weak object in the file.  */
 extern const char *weak_global_object_name;
-
-/* Nonzero if function being compiled doesn't contain any calls
-   (ignoring the prologue and epilogue).  This is set prior to
-   local register allocation and is valid for the remaining
-   compiler passes.  */
-
-extern int current_function_is_leaf;
-
-/* Nonzero if function being compiled doesn't modify the stack pointer
-   (ignoring the prologue and epilogue).  This is only valid after
-   pass_stack_ptr_mod has run.  */
-
-extern int current_function_sp_is_unchanging;
-
-/* Nonzero if the function being compiled is a leaf function which only
-   uses leaf registers.  This is valid after reload (specifically after
-   sched2) and is useful only if the port defines LEAF_REGISTERS.  */
-
-extern int current_function_uses_only_leaf_regs;
 
 /* Nonnull if the insn currently being emitted was a COND_EXEC pattern.  */
 extern rtx current_insn_predicate;
@@ -636,7 +606,7 @@ extern void default_elf_init_array_asm_out_constructor (rtx, int);
 extern void default_elf_fini_array_asm_out_destructor (rtx, int);
 extern int maybe_assemble_visibility (tree);
 
-extern int default_address_cost (rtx, bool);
+extern int default_address_cost (rtx, enum machine_mode, addr_space_t, bool);
 
 /* Output stack usage information.  */
 extern void output_stack_usage (void);

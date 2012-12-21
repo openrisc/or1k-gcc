@@ -16,9 +16,10 @@ import (
 const (
 	maxCodeLen = 16    // max length of Huffman code
 	maxHist    = 32768 // max history required
-	maxLit     = 286
-	maxDist    = 32
-	numCodes   = 19 // number of codes in Huffman meta-code
+	// The next three numbers come from the RFC, section 3.2.7.
+	maxLit   = 286
+	maxDist  = 32
+	numCodes = 19 // number of codes in Huffman meta-code
 )
 
 // A CorruptInputError reports the presence of corrupt input at a given offset.
@@ -207,11 +208,11 @@ type decompressor struct {
 	h1, h2 huffmanDecoder
 
 	// Length arrays used to define Huffman codes.
-	bits     [maxLit + maxDist]int
-	codebits [numCodes]int
+	bits     *[maxLit + maxDist]int
+	codebits *[numCodes]int
 
 	// Output history, buffer.
-	hist  [maxHist]byte
+	hist  *[maxHist]byte
 	hp    int  // current output position in buffer
 	hw    int  // have written hist[0:hw] already
 	hfull bool // buffer has filled at least once
@@ -306,10 +307,15 @@ func (f *decompressor) readHuffman() error {
 		}
 	}
 	nlit := int(f.b&0x1F) + 257
+	if nlit > maxLit {
+		return CorruptInputError(f.roffset)
+	}
 	f.b >>= 5
 	ndist := int(f.b&0x1F) + 1
+	// maxDist is 32, so ndist is always valid.
 	f.b >>= 5
 	nclen := int(f.b&0xF) + 4
+	// numCodes is 19, so nclen is always valid.
 	f.b >>= 4
 	f.nb -= 5 + 5 + 4
 
@@ -505,51 +511,49 @@ func (f *decompressor) huffmanBlock() {
 			return
 		}
 
-		p := f.hp - dist
-		if p < 0 {
-			p += len(f.hist)
-		}
-		for i := 0; i < length; i++ {
-			f.hist[f.hp] = f.hist[p]
-			f.hp++
-			p++
-			if f.hp == len(f.hist) {
-				// After flush continue copying out of history.
-				f.copyLen = length - (i + 1)
-				f.copyDist = dist
-				f.flush((*decompressor).copyHuff)
-				return
-			}
-			if p == len(f.hist) {
-				p = 0
-			}
+		f.copyLen, f.copyDist = length, dist
+		if f.copyHist() {
+			return
 		}
 	}
 	panic("unreached")
 }
 
-func (f *decompressor) copyHuff() {
-	length := f.copyLen
-	dist := f.copyDist
-	p := f.hp - dist
+// copyHist copies f.copyLen bytes from f.hist (f.copyDist bytes ago) to itself.
+// It reports whether the f.hist buffer is full.
+func (f *decompressor) copyHist() bool {
+	p := f.hp - f.copyDist
 	if p < 0 {
 		p += len(f.hist)
 	}
-	for i := 0; i < length; i++ {
-		f.hist[f.hp] = f.hist[p]
-		f.hp++
-		p++
+	for f.copyLen > 0 {
+		n := f.copyLen
+		if x := len(f.hist) - f.hp; n > x {
+			n = x
+		}
+		if x := len(f.hist) - p; n > x {
+			n = x
+		}
+		forwardCopy(f.hist[f.hp:f.hp+n], f.hist[p:p+n])
+		p += n
+		f.hp += n
+		f.copyLen -= n
 		if f.hp == len(f.hist) {
-			f.copyLen = length - (i + 1)
+			// After flush continue copying out of history.
 			f.flush((*decompressor).copyHuff)
-			return
+			return true
 		}
 		if p == len(f.hist) {
 			p = 0
 		}
 	}
+	return false
+}
 
-	// Continue processing Huffman block.
+func (f *decompressor) copyHuff() {
+	if f.copyHist() {
+		return
+	}
 	f.huffmanBlock()
 }
 
@@ -584,9 +588,9 @@ func (f *decompressor) dataBlock() {
 	f.copyData()
 }
 
+// copyData copies f.copyLen bytes from the underlying reader into f.hist.
+// It pauses for reads when f.hist is full.
 func (f *decompressor) copyData() {
-	// Read f.dataLen bytes into history,
-	// pausing for reads as history fills.
 	n := f.copyLen
 	for n > 0 {
 		m := len(f.hist) - f.hp
@@ -688,7 +692,10 @@ func makeReader(r io.Reader) Reader {
 // finished reading.
 func NewReader(r io.Reader) io.ReadCloser {
 	var f decompressor
+	f.bits = new([maxLit + maxDist]int)
+	f.codebits = new([numCodes]int)
 	f.r = makeReader(r)
+	f.hist = new([maxHist]byte)
 	f.step = (*decompressor).nextBlock
 	return &f
 }
@@ -700,8 +707,11 @@ func NewReader(r io.Reader) io.ReadCloser {
 // to read data compressed by NewWriterDict.
 func NewReaderDict(r io.Reader, dict []byte) io.ReadCloser {
 	var f decompressor
-	f.setDict(dict)
 	f.r = makeReader(r)
+	f.hist = new([maxHist]byte)
+	f.bits = new([maxLit + maxDist]int)
+	f.codebits = new([numCodes]int)
 	f.step = (*decompressor).nextBlock
+	f.setDict(dict)
 	return &f
 }

@@ -41,7 +41,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "hashtab.h"
 #include "params.h"
 #include "target.h"
-#include "timevar.h"
 #include "tree-pass.h"
 #include "dbgcnt.h"
 
@@ -520,10 +519,7 @@ oprs_unchanged_p (rtx x, rtx insn, bool after_insn)
     case PC:
     case CC0: /*FIXME*/
     case CONST:
-    case CONST_INT:
-    case CONST_DOUBLE:
-    case CONST_FIXED:
-    case CONST_VECTOR:
+    CASE_CONST_ANY:
     case SYMBOL_REF:
     case LABEL_REF:
     case ADDR_VEC:
@@ -740,10 +736,9 @@ record_opr_changes (rtx insn)
     {
       unsigned int regno;
       rtx link, x;
-
-      for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-	if (TEST_HARD_REG_BIT (regs_invalidated_by_call, regno))
-	  record_last_reg_set_info_regno (insn, regno);
+      hard_reg_set_iterator hrsi;
+      EXECUTE_IF_SET_IN_HARD_REG_SET (regs_invalidated_by_call, 0, regno, hrsi)
+	record_last_reg_set_info_regno (insn, regno);
 
       for (link = CALL_INSN_FUNCTION_USAGE (insn); link; link = XEXP (link, 1))
 	if (GET_CODE (XEXP (link, 0)) == CLOBBER)
@@ -1333,6 +1328,7 @@ struct rtl_opt_pass pass_gcse2 =
  {
   RTL_PASS,
   "gcse2",                              /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   gate_handle_gcse2,                    /* gate */
   rest_of_handle_gcse2,                 /* execute */
   NULL,                                 /* sub */

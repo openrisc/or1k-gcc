@@ -39,19 +39,6 @@ with System;
 
 package Errout is
 
-   Serious_Errors_Detected : Nat renames Err_Vars.Serious_Errors_Detected;
-   --  This is a count of errors that are serious enough to stop expansion,
-   --  and hence to prevent generation of an object file even if the switch
-   --  -gnatQ is set.
-
-   Total_Errors_Detected : Nat renames Err_Vars.Total_Errors_Detected;
-   --  Number of errors detected so far. Includes count of serious errors and
-   --  non-serious errors, so this value is always greater than or equal to
-   --  the Serious_Errors_Detected value.
-
-   Warnings_Detected : Nat renames Err_Vars.Warnings_Detected;
-   --  Number of warnings detected
-
    Configurable_Run_Time_Violations : Nat := 0;
    --  Count of configurable run time violations so far. This is used to
    --  suppress certain cascaded error messages when we know that we may not
@@ -230,7 +217,7 @@ package Errout is
    --      one (the plus one is because the number is stored 0-origin and
    --      displayed 1-origin).
 
-   --    Insertion character ^ (Carret: insert integer value)
+   --    Insertion character ^ (Caret: insert integer value)
    --      The character ^ is replaced by the decimal conversion of the Uint
    --      value stored in Error_Msg_Uint_1, with a possible leading minus.
    --      A second ^ may occur in the message, in which case it is replaced

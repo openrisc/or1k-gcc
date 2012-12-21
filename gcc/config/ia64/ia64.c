@@ -51,7 +51,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm_p.h"
 #include "hashtab.h"
 #include "langhooks.h"
-#include "cfglayout.h"
 #include "gimple.h"
 #include "intl.h"
 #include "df.h"
@@ -61,8 +60,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm-constrs.h"
 #include "sel-sched.h"
 #include "reload.h"
-#include "dwarf2out.h"
 #include "opts.h"
+#include "dumpfile.h"
 
 /* This is used for communication between ASM_OUTPUT_LABEL and
    ASM_OUTPUT_LABELREF.  */
@@ -320,6 +319,7 @@ static const char *ia64_invalid_binary_op (int, const_tree, const_tree);
 static enum machine_mode ia64_c_mode_for_suffix (char);
 static void ia64_trampoline_init (rtx, tree, rtx);
 static void ia64_override_options_after_change (void);
+static bool ia64_member_type_forces_blk (const_tree, enum machine_mode);
 
 static tree ia64_builtin_decl (unsigned, bool);
 
@@ -524,7 +524,7 @@ static const struct attribute_spec ia64_attribute_table[] =
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS ia64_rtx_costs
 #undef TARGET_ADDRESS_COST
-#define TARGET_ADDRESS_COST hook_int_rtx_bool_0
+#define TARGET_ADDRESS_COST hook_int_rtx_mode_as_bool_0
 
 #undef TARGET_UNSPEC_MAY_TRAP_P
 #define TARGET_UNSPEC_MAY_TRAP_P ia64_unspec_may_trap_p
@@ -570,6 +570,9 @@ static const struct attribute_spec ia64_attribute_table[] =
 #define TARGET_GET_RAW_RESULT_MODE ia64_get_reg_raw_mode
 #undef TARGET_GET_RAW_ARG_MODE
 #define TARGET_GET_RAW_ARG_MODE ia64_get_reg_raw_mode
+
+#undef TARGET_MEMBER_TYPE_FORCES_BLK
+#define TARGET_MEMBER_TYPE_FORCES_BLK ia64_member_type_forces_blk
 
 #undef TARGET_GIMPLIFY_VA_ARG_EXPR
 #define TARGET_GIMPLIFY_VA_ARG_EXPR ia64_gimplify_va_arg
@@ -2097,46 +2100,6 @@ ia64_expand_widen_sum (rtx operands[3], bool unsignedp)
     emit_move_insn (operands[0], t);
 }
 
-/* Emit a signed or unsigned V8QI dot product operation.  */
-
-void
-ia64_expand_dot_prod_v8qi (rtx operands[4], bool unsignedp)
-{
-  rtx op1, op2, sn1, sn2, l1, l2, h1, h2;
-  rtx p1, p2, p3, p4, s1, s2, s3;
-
-  op1 = operands[1];
-  op2 = operands[2];
-  sn1 = ia64_unpack_sign (op1, unsignedp);
-  sn2 = ia64_unpack_sign (op2, unsignedp);
-
-  l1 = gen_reg_rtx (V4HImode);
-  l2 = gen_reg_rtx (V4HImode);
-  h1 = gen_reg_rtx (V4HImode);
-  h2 = gen_reg_rtx (V4HImode);
-  ia64_unpack_assemble (l1, op1, sn1, false);
-  ia64_unpack_assemble (l2, op2, sn2, false);
-  ia64_unpack_assemble (h1, op1, sn1, true);
-  ia64_unpack_assemble (h2, op2, sn2, true);
-
-  p1 = gen_reg_rtx (V2SImode);
-  p2 = gen_reg_rtx (V2SImode);
-  p3 = gen_reg_rtx (V2SImode);
-  p4 = gen_reg_rtx (V2SImode);
-  emit_insn (gen_pmpy2_even (p1, l1, l2));
-  emit_insn (gen_pmpy2_even (p2, h1, h2));
-  emit_insn (gen_pmpy2_odd (p3, l1, l2));
-  emit_insn (gen_pmpy2_odd (p4, h1, h2));
-
-  s1 = gen_reg_rtx (V2SImode);
-  s2 = gen_reg_rtx (V2SImode);
-  s3 = gen_reg_rtx (V2SImode);
-  emit_insn (gen_addv2si3 (s1, p1, p2));
-  emit_insn (gen_addv2si3 (s2, p3, p4));
-  emit_insn (gen_addv2si3 (s3, s1, operands[3]));
-  emit_insn (gen_addv2si3 (operands[0], s2, s3));
-}
-
 /* Emit the appropriate sequence for a call.  */
 
 void
@@ -2548,7 +2511,7 @@ find_gr_spill (enum ia64_frame_regs r, int try_locals)
       if (regno >= LOC_REG (0) && regno < LOC_REG (80 - frame_pointer_needed)
 	  && current_frame_info.n_local_regs < regno - LOC_REG (0) + 1)
         current_frame_info.n_local_regs = regno - LOC_REG (0) + 1;
-      else if (current_function_is_leaf 
+      else if (crtl->is_leaf
                && regno >= GR_REG (1) && regno <= GR_REG (31))
         current_frame_info.gr_used_mask |= 1 << regno;
 
@@ -2557,7 +2520,7 @@ find_gr_spill (enum ia64_frame_regs r, int try_locals)
 
   /* If this is a leaf function, first try an otherwise unused
      call-clobbered register.  */
-  if (current_function_is_leaf)
+  if (crtl->is_leaf)
     {
       for (regno = GR_REG (1); regno <= GR_REG (31); regno++)
 	if (! df_regs_ever_live_p (regno)
@@ -2771,7 +2734,7 @@ ia64_compute_frame_size (HOST_WIDE_INT size)
 	}
     }
 
-  if (! current_function_is_leaf)
+  if (! crtl->is_leaf)
     {
       /* Emit a save of BR0 if we call other functions.  Do this even
 	 if this function doesn't return, as EH depends on this to be
@@ -2923,7 +2886,7 @@ ia64_compute_frame_size (HOST_WIDE_INT size)
   /* We always use the 16-byte scratch area provided by the caller, but
      if we are a leaf function, there's no one to which we need to provide
      a scratch area.  */
-  if (current_function_is_leaf)
+  if (crtl->is_leaf)
     total_size = MAX (0, total_size - 16);
 
   current_frame_info.total_size = total_size;
@@ -2940,7 +2903,7 @@ ia64_compute_frame_size (HOST_WIDE_INT size)
 bool
 ia64_can_eliminate (const int from ATTRIBUTE_UNUSED, const int to)
 {
-  return (to == BR_REG (0) ? current_function_is_leaf : true);
+  return (to == BR_REG (0) ? crtl->is_leaf : true);
 }
 
 /* Compute the initial difference between the specified pair of registers.  */
@@ -2957,7 +2920,7 @@ ia64_initial_elimination_offset (int from, int to)
       switch (to)
 	{
 	case HARD_FRAME_POINTER_REGNUM:
-	  if (current_function_is_leaf)
+	  if (crtl->is_leaf)
 	    offset = -current_frame_info.total_size;
 	  else
 	    offset = -(current_frame_info.total_size
@@ -2965,7 +2928,7 @@ ia64_initial_elimination_offset (int from, int to)
 	  break;
 
 	case STACK_POINTER_REGNUM:
-	  if (current_function_is_leaf)
+	  if (crtl->is_leaf)
 	    offset = 0;
 	  else
 	    offset = 16 + crtl->outgoing_args_size;
@@ -5974,21 +5937,22 @@ ia64_option_override (void)
 {
   unsigned int i;
   cl_deferred_option *opt;
-  VEC(cl_deferred_option,heap) *vec
-    = (VEC(cl_deferred_option,heap) *) ia64_deferred_options;
+  vec<cl_deferred_option> *v
+    = (vec<cl_deferred_option> *) ia64_deferred_options;
 
-  FOR_EACH_VEC_ELT (cl_deferred_option, vec, i, opt)
-    {
-      switch (opt->opt_index)
-	{
-	case OPT_mfixed_range_:
-	  fix_range (opt->arg);
-	  break;
+  if (v)
+    FOR_EACH_VEC_ELT (*v, i, opt)
+      {
+	switch (opt->opt_index)
+	  {
+	  case OPT_mfixed_range_:
+	    fix_range (opt->arg);
+	    break;
 
-	default:
-	  gcc_unreachable ();
-	}
-    }
+	  default:
+	    gcc_unreachable ();
+	  }
+      }
 
   if (TARGET_AUTO_PIC)
     target_flags |= MASK_CONST_GP;
@@ -10889,7 +10853,6 @@ ia64_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
      instruction scheduling worth while.  Note that use_thunk calls
      assemble_start_function and assemble_end_function.  */
 
-  insn_locators_alloc ();
   emit_all_insn_group_barriers (NULL);
   insn = get_insns ();
   shorten_branches (insn);
@@ -11192,6 +11155,15 @@ ia64_get_reg_raw_mode (int regno)
   if (FR_REGNO_P (regno))
     return XFmode;
   return default_get_reg_raw_mode(regno);
+}
+
+/* Implement TARGET_MEMBER_TYPE_FORCES_BLK.  ??? Might not be needed
+   anymore.  */
+
+bool
+ia64_member_type_forces_blk (const_tree, enum machine_mode mode)
+{
+  return TARGET_HPUX && mode == TFmode;
 }
 
 /* Always default to .text section until HP-UX linker is fixed.  */

@@ -202,7 +202,7 @@ Target RejectNegative Condition(SUPPORT_SH5_32MEDIA_NOFPU)
 Generate FPU-less SHcompact code
 
 maccumulate-outgoing-args
-Target Report Mask(ACCUMULATE_OUTGOING_ARGS)
+Target Report Var(TARGET_ACCUMULATE_OUTGOING_ARGS) Init(1)
 Reserve space for outgoing arguments in the function prologue
 
 madjust-unroll
@@ -224,6 +224,10 @@ Generate bit instructions
 mbranch-cost=
 Target RejectNegative Joined UInteger Var(sh_branch_cost) Init(-1)
 Cost to assume for a branch insn
+
+mzdcbranch
+Target Var(TARGET_ZDCBRANCH)
+Assume that zero displacement conditional branches are fast
 
 mcbranchdi
 Target Var(TARGET_CBRANCHDI4)
@@ -266,8 +270,8 @@ Target Report RejectNegative Mask(HITACHI)
 Follow Renesas (formerly Hitachi) / SuperH calling conventions
 
 mieee
-Target Report Mask(IEEE)
-Increase the IEEE compliance for floating-point code
+Target Var(TARGET_IEEE)
+Increase the IEEE compliance for floating-point comparisons
 
 mindexed-addressing
 Target Report Mask(ALLOW_INDEXED_ADDRESS) Condition(SUPPORT_ANY_SH5_32MEDIA)
@@ -316,14 +320,14 @@ Target Mask(HITACHI)
 Follow Renesas (formerly Hitachi) / SuperH calling conventions
 
 msoft-atomic
-Target Report Var(TARGET_SOFT_ATOMIC)
-Use gUSA software atomic sequences
+Target Undocumented Alias(matomic-model=, soft-gusa, none)
+Deprecated.  Use -matomic= instead to select the atomic model
 
-mhard-atomic
-Target Report Var(TARGET_HARD_ATOMIC)
-Use hardware atomic sequences
+matomic-model=
+Target Report RejectNegative Joined Var(sh_atomic_model_str)
+Specify the model for atomic operations
 
-menable-tas
+mtas
 Target Report RejectNegative Var(TARGET_ENABLE_TAS)
 Use tas.b instruction for __atomic_test_and_set
 

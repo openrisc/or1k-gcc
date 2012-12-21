@@ -165,6 +165,7 @@ package body Prj.Nmsc is
    type Lib_Data is record
       Name : Name_Id;
       Proj : Project_Id;
+      Tree : Project_Tree_Ref;
    end record;
 
    package Lib_Data_Table is new GNAT.Table
@@ -3639,7 +3640,9 @@ package body Prj.Nmsc is
          --  Check if the same library name is used in an other library project
 
          for J in 1 .. Lib_Data_Table.Last loop
-            if Lib_Data_Table.Table (J).Name = Project.Library_Name then
+            if Lib_Data_Table.Table (J).Name = Project.Library_Name
+              and then Lib_Data_Table.Table (J).Tree = Data.Tree
+            then
                Error_Msg_Name_1 := Lib_Data_Table.Table (J).Proj.Name;
                Error_Msg
                  (Data.Flags,
@@ -3656,7 +3659,9 @@ package body Prj.Nmsc is
          --  Record the library name
 
          Lib_Data_Table.Append
-           ((Name => Project.Library_Name, Proj => Project));
+           ((Name => Project.Library_Name,
+             Proj => Project,
+             Tree => Data.Tree));
       end if;
    end Check_Library_Attributes;
 
@@ -4204,22 +4209,25 @@ package body Prj.Nmsc is
             Lang_Id := Lang_Id.Next;
          end loop;
 
-         --  Get the naming exceptions for all languages
+         --  Get the naming exceptions for all languages, but not for virtual
+         --  projects.
 
-         for Kind in Spec_Or_Body loop
-            Lang_Id := Project.Languages;
-            while Lang_Id /= No_Language_Index loop
-               case Lang_Id.Config.Kind is
+         if not Project.Virtual then
+            for Kind in Spec_Or_Body loop
+               Lang_Id := Project.Languages;
+               while Lang_Id /= No_Language_Index loop
+                  case Lang_Id.Config.Kind is
                   when File_Based =>
                      Process_Exceptions_File_Based (Lang_Id, Kind);
 
                   when Unit_Based =>
                      Process_Exceptions_Unit_Based (Lang_Id, Kind);
-               end case;
+                  end case;
 
-               Lang_Id := Lang_Id.Next;
+                  Lang_Id := Lang_Id.Next;
+               end loop;
             end loop;
-         end loop;
+         end if;
       end Check_Naming;
 
       ----------------------------

@@ -29,13 +29,14 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This package contains atomic primitives defined from gcc built-in functions
-
---  For now, these operations are only used by the compiler to generate the
---  lock-free implementation of protected objects.
+--  This package contains both atomic primitives defined from gcc built-in
+--  functions and operations used by the compiler to generate the lock-free
+--  implementation of protected objects.
 
 package System.Atomic_Primitives is
    pragma Preelaborate;
+
+   type uint is mod 2 ** Long_Integer'Size;
 
    type uint8  is mod 2**8
      with Size => 8;
@@ -59,69 +60,121 @@ package System.Atomic_Primitives is
 
    subtype Mem_Model is Integer range Relaxed .. Last;
 
-   function Atomic_Compare_Exchange_8
-     (X             : Address;
-      X_Old         : uint8;
-      X_Copy        : uint8) return Boolean;
-   pragma Import (Intrinsic,
-                  Atomic_Compare_Exchange_8,
-                  "__sync_bool_compare_and_swap_1");
-
-   --  ??? Should use __atomic_compare_exchange_1 (doesn't work yet):
-   --  function Atomic_Compare_Exchange_8
-   --    (X             : Address;
-   --     X_Old         : Address;
-   --     X_Copy        : uint8;
-   --     Success_Model : Mem_Model := Seq_Cst;
-   --     Failure_Model : Mem_Model := Seq_Cst) return Boolean;
-   --  pragma Import (Intrinsic,
-   --                 Atomic_Compare_Exchange_8,
-   --                 "__atomic_compare_exchange_1");
-
-   function Atomic_Compare_Exchange_16
-     (X             : Address;
-      X_Old         : uint16;
-      X_Copy        : uint16) return Boolean;
-   pragma Import (Intrinsic,
-                  Atomic_Compare_Exchange_16,
-                  "__sync_bool_compare_and_swap_2");
-
-   function Atomic_Compare_Exchange_32
-     (X             : Address;
-      X_Old         : uint32;
-      X_Copy        : uint32) return Boolean;
-   pragma Import (Intrinsic,
-                  Atomic_Compare_Exchange_32,
-                  "__sync_bool_compare_and_swap_4");
-
-   function Atomic_Compare_Exchange_64
-     (X             : Address;
-      X_Old         : uint64;
-      X_Copy        : uint64) return Boolean;
-   pragma Import (Intrinsic,
-                  Atomic_Compare_Exchange_64,
-                  "__sync_bool_compare_and_swap_8");
+   ------------------------------------
+   -- GCC built-in atomic primitives --
+   ------------------------------------
 
    function Atomic_Load_8
-     (X     : Address;
+     (Ptr   : Address;
       Model : Mem_Model := Seq_Cst) return uint8;
    pragma Import (Intrinsic, Atomic_Load_8, "__atomic_load_1");
 
    function Atomic_Load_16
-     (X     : Address;
+     (Ptr   : Address;
       Model : Mem_Model := Seq_Cst) return uint16;
    pragma Import (Intrinsic, Atomic_Load_16, "__atomic_load_2");
 
    function Atomic_Load_32
-     (X     : Address;
+     (Ptr   : Address;
       Model : Mem_Model := Seq_Cst) return uint32;
    pragma Import (Intrinsic, Atomic_Load_32, "__atomic_load_4");
 
    function Atomic_Load_64
-     (X     : Address;
+     (Ptr   : Address;
       Model : Mem_Model := Seq_Cst) return uint64;
    pragma Import (Intrinsic, Atomic_Load_64, "__atomic_load_8");
 
-   procedure Atomic_Synchronize;
-   pragma Import (Intrinsic, Atomic_Synchronize, "__sync_synchronize");
+   function Sync_Compare_And_Swap_8
+     (Ptr      : Address;
+      Expected : uint8;
+      Desired  : uint8) return uint8;
+   pragma Import (Intrinsic,
+                  Sync_Compare_And_Swap_8,
+                  "__sync_val_compare_and_swap_1");
+
+   --  ??? Should use __atomic_compare_exchange_1 (doesn't work yet):
+   --  function Sync_Compare_And_Swap_8
+   --    (Ptr           : Address;
+   --     Expected      : Address;
+   --     Desired       : uint8;
+   --     Weak          : Boolean   := False;
+   --     Success_Model : Mem_Model := Seq_Cst;
+   --     Failure_Model : Mem_Model := Seq_Cst) return Boolean;
+   --  pragma Import (Intrinsic,
+   --                 Sync_Compare_And_Swap_8,
+   --                 "__atomic_compare_exchange_1");
+
+   function Sync_Compare_And_Swap_16
+     (Ptr      : Address;
+      Expected : uint16;
+      Desired  : uint16) return uint16;
+   pragma Import (Intrinsic,
+                  Sync_Compare_And_Swap_16,
+                  "__sync_val_compare_and_swap_2");
+
+   function Sync_Compare_And_Swap_32
+     (Ptr      : Address;
+      Expected : uint32;
+      Desired  : uint32) return uint32;
+   pragma Import (Intrinsic,
+                  Sync_Compare_And_Swap_32,
+                  "__sync_val_compare_and_swap_4");
+
+   function Sync_Compare_And_Swap_64
+     (Ptr      : Address;
+      Expected : uint64;
+      Desired  : uint64) return uint64;
+   pragma Import (Intrinsic,
+                  Sync_Compare_And_Swap_64,
+                  "__sync_val_compare_and_swap_8");
+
+   --------------------------
+   -- Lock-free operations --
+   --------------------------
+
+   --  The lock-free implementation uses two atomic instructions for the
+   --  expansion of protected operations:
+
+   --  * Lock_Free_Read_N atomically loads the value of the protected component
+   --    accessed by the current protected operation.
+
+   --  * Lock_Free_Try_Write_N tries to write the Desired value into Ptr only
+   --    if Expected and Desired mismatch.
+
+   function Lock_Free_Read_8 (Ptr : Address) return uint8;
+
+   function Lock_Free_Read_16 (Ptr : Address) return uint16;
+
+   function Lock_Free_Read_32 (Ptr : Address) return uint32;
+
+   function Lock_Free_Read_64 (Ptr : Address) return uint64;
+
+   function Lock_Free_Try_Write_8
+      (Ptr      : Address;
+       Expected : in out uint8;
+       Desired  : uint8) return Boolean;
+
+   function Lock_Free_Try_Write_16
+      (Ptr      : Address;
+       Expected : in out uint16;
+       Desired  : uint16) return Boolean;
+
+   function Lock_Free_Try_Write_32
+      (Ptr      : Address;
+       Expected : in out uint32;
+       Desired  : uint32) return Boolean;
+
+   function Lock_Free_Try_Write_64
+      (Ptr      : Address;
+       Expected : in out uint64;
+       Desired  : uint64) return Boolean;
+
+   pragma Inline (Lock_Free_Read_8);
+   pragma Inline (Lock_Free_Read_16);
+   pragma Inline (Lock_Free_Read_32);
+   pragma Inline (Lock_Free_Read_64);
+   pragma Inline (Lock_Free_Try_Write_8);
+   pragma Inline (Lock_Free_Try_Write_16);
+   pragma Inline (Lock_Free_Try_Write_32);
+   pragma Inline (Lock_Free_Try_Write_64);
 end System.Atomic_Primitives;

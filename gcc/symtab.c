@@ -104,6 +104,8 @@ eq_assembler_name (const void *p1, const void *p2)
 static void
 insert_to_assembler_name_hash (symtab_node node)
 {
+  if (is_a <varpool_node> (node) && DECL_HARD_REGISTER (node->symbol.decl))
+    return;
   gcc_checking_assert (!node->symbol.previous_sharing_asm_name
 		       && !node->symbol.next_sharing_asm_name);
   if (assembler_name_hash)
@@ -151,7 +153,18 @@ unlink_from_assembler_name_hash (symtab_node node)
 	  else
 	    *slot = node->symbol.next_sharing_asm_name;
 	}
+      node->symbol.next_sharing_asm_name = NULL;
+      node->symbol.previous_sharing_asm_name = NULL;
     }
+}
+
+/* Arrange node to be first in its entry of assembler_name_hash.  */
+
+void
+symtab_prevail_in_asm_name_hash (symtab_node node)
+{
+  unlink_from_assembler_name_hash (node);
+  insert_to_assembler_name_hash (node);
 }
 
 
@@ -239,8 +252,8 @@ symtab_unregister_node (symtab_node node)
   if (*slot == node)
     {
       symtab_node replacement_node = NULL;
-      if (symtab_function_p (node))
-	replacement_node = (symtab_node)cgraph_find_replacement_node (cgraph (node));
+      if (cgraph_node *cnode = dyn_cast <cgraph_node> (node))
+	replacement_node = (symtab_node)cgraph_find_replacement_node (cnode);
       if (!replacement_node)
 	htab_clear_slot (symtab_hash, slot);
       else
@@ -281,10 +294,26 @@ symtab_get_node (const_tree decl)
 void
 symtab_remove_node (symtab_node node)
 {
-  if (symtab_function_p (node))
-    cgraph_remove_node (cgraph (node));
-  else if (symtab_variable_p (node))
-    varpool_remove_node (varpool (node));
+  if (cgraph_node *cnode = dyn_cast <cgraph_node> (node))
+    cgraph_remove_node (cnode);
+  else if (varpool_node *vnode = dyn_cast <varpool_node> (node))
+    varpool_remove_node (vnode);
+}
+
+/* Initalize asm name hash unless.  */
+
+void
+symtab_initialize_asm_name_hash (void)
+{
+  symtab_node node;
+  if (!assembler_name_hash)
+    {
+      assembler_name_hash =
+	htab_create_ggc (10, hash_node_by_assembler_name, eq_assembler_name,
+			 NULL);
+      FOR_EACH_SYMBOL (node)
+	insert_to_assembler_name_hash (node);
+    }
 }
 
 /* Return the cgraph node that has ASMNAME for its DECL_ASSEMBLER_NAME.
@@ -296,15 +325,7 @@ symtab_node_for_asm (const_tree asmname)
   symtab_node node;
   void **slot;
 
-  if (!assembler_name_hash)
-    {
-      assembler_name_hash =
-	htab_create_ggc (10, hash_node_by_assembler_name, eq_assembler_name,
-			 NULL);
-      FOR_EACH_SYMBOL (node)
-	insert_to_assembler_name_hash (node);
-    }
-
+  symtab_initialize_asm_name_hash ();
   slot = htab_find_slot_with_hash (assembler_name_hash, asmname,
 				   decl_assembler_name_hash (asmname),
 				   NO_INSERT);
@@ -507,6 +528,9 @@ dump_symtab_base (FILE *f, symtab_node node)
   ipa_dump_references (f, &node->symbol.ref_list);
   fprintf (f, "  Referring: ");
   ipa_dump_referring (f, &node->symbol.ref_list);
+  if (node->symbol.lto_file_data)
+    fprintf (f, "  Read from file: %s\n",
+	     node->symbol.lto_file_data->file_name);
 }
 
 /* Dump symtab node.  */
@@ -514,10 +538,10 @@ dump_symtab_base (FILE *f, symtab_node node)
 void
 dump_symtab_node (FILE *f, symtab_node node)
 {
-  if (symtab_function_p (node))
-    dump_cgraph_node (f, cgraph (node));
-  else if (symtab_variable_p (node))
-    dump_varpool_node (f, varpool (node));
+  if (cgraph_node *cnode = dyn_cast <cgraph_node> (node))
+    dump_cgraph_node (f, cnode);
+  else if (varpool_node *vnode = dyn_cast <varpool_node> (node))
+    dump_varpool_node (f, vnode);
 }
 
 /* Dump symbol table.  */
@@ -555,7 +579,7 @@ verify_symtab_base (symtab_node node)
   bool error_found = false;
   symtab_node hashed_node;
 
-  if (symtab_function_p (node))
+  if (is_a <cgraph_node> (node))
     {
       if (TREE_CODE (node->symbol.decl) != FUNCTION_DECL)
 	{
@@ -563,7 +587,7 @@ verify_symtab_base (symtab_node node)
           error_found = true;
 	}
     }
-  else if (symtab_variable_p (node))
+  else if (is_a <varpool_node> (node))
     {
       if (TREE_CODE (node->symbol.decl) != VAR_DECL)
 	{
@@ -597,7 +621,9 @@ verify_symtab_base (symtab_node node)
 	    break;
 	  hashed_node = hashed_node->symbol.next_sharing_asm_name;
 	}
-      if (!hashed_node)
+      if (!hashed_node
+          && !(is_a <varpool_node> (node)
+	       || DECL_HARD_REGISTER (node->symbol.decl)))
 	{
           error ("node not found in symtab assembler name hash");
           error_found = true;
@@ -651,8 +677,8 @@ verify_symtab_node (symtab_node node)
     return;
 
   timevar_push (TV_CGRAPH_VERIFY);
-  if (symtab_function_p (node))
-    verify_cgraph_node (cgraph (node));
+  if (cgraph_node *cnode = dyn_cast <cgraph_node> (node))
+    verify_cgraph_node (cnode);
   else
     if (verify_symtab_base (node))
       {
@@ -733,7 +759,11 @@ symtab_make_decl_local (tree decl)
   DECL_COMDAT_GROUP (decl) = 0;
   DECL_WEAK (decl) = 0;
   DECL_EXTERNAL (decl) = 0;
+  DECL_VISIBILITY_SPECIFIED (decl) = 0;
+  DECL_VISIBILITY (decl) = VISIBILITY_DEFAULT;
   TREE_PUBLIC (decl) = 0;
+  DECL_VISIBILITY_SPECIFIED (decl) = 0;
+  DECL_VISIBILITY (decl) = VISIBILITY_DEFAULT;
   if (!DECL_RTL_SET_P (decl))
     return;
 

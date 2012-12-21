@@ -28,7 +28,6 @@
 with Einfo;   use Einfo;
 with Exp_Tss; use Exp_Tss;
 with Namet;   use Namet;
-with Nmake;   use Nmake;
 with Snames;  use Snames;
 with Types;   use Types;
 with Uintp;   use Uintp;
@@ -63,6 +62,12 @@ package Sem_Util is
    --  compiler, then this function returns the alignment value in bits.
    --  Otherwise Uint_0 is returned, indicating that the alignment of the
    --  entity is not yet known to the compiler.
+
+   procedure Append_Inherited_Subprogram (S : Entity_Id);
+   --  If the parent of the operation is declared in the visible part of
+   --  the current scope, the inherited operation is visible even though the
+   --  derived type that inherits the operation may be completed in the private
+   --  part of the current package.
 
    procedure Apply_Compile_Time_Constraint_Error
      (N      : Node_Id;
@@ -102,6 +107,14 @@ package Sem_Util is
    --  operations become avaiable. This can happen if the scopes of both types
    --  are open, and the scope of the array is not outside the scope of the
    --  component.
+
+   procedure Bad_Attribute
+     (N    : Node_Id;
+      Nam  : Name_Id;
+      Warn : Boolean := False);
+   --  Called when node N is expected to contain a valid attribute name, and
+   --  Nam is found instead. If Warn is set True this is a warning, else this
+   --  is an error.
 
    procedure Bad_Predicated_Subtype_Use
      (Msg : String;
@@ -169,6 +182,12 @@ package Sem_Util is
    --  AI05-139-2: Accessors and iterators for containers. This procedure
    --  checks whether T is a reference type, and if so it adds an interprettion
    --  to Expr whose type is the designated type of the reference_discriminant.
+
+   procedure Check_Internal_Protected_Use (N : Node_Id; Nam : Entity_Id);
+   --  Within a protected function, the current object is a constant, and
+   --  internal calls to a procedure or entry are illegal. Similarly, other
+   --  uses of a protected procedure in a renaming or a generic instantiation
+   --  in the context of a protected function are illegal (AI05-0225).
 
    procedure Check_Later_Vs_Basic_Declarations
      (Decls          : List_Id;
@@ -287,6 +306,12 @@ package Sem_Util is
    --  Copy components from record type R_Typ that come from source. Used to
    --  create a new compatible record type. Loc is the source location assigned
    --  to the created nodes.
+
+   function Corresponding_Generic_Type (T : Entity_Id) return Entity_Id;
+   --  If a type is a generic actual type, return the corresponding formal in
+   --  the generic parent unit. There is no direct link in the tree for this
+   --  attribute, except in the case of formal private and derived types.
+   --  Possible optimization???
 
    function Current_Entity (N : Node_Id) return Entity_Id;
    pragma Inline (Current_Entity);
@@ -649,6 +674,10 @@ package Sem_Util is
    function Has_Declarations (N : Node_Id) return Boolean;
    --  Determines if the node can have declarations
 
+   function Has_Denormals (E : Entity_Id) return Boolean;
+   --  Determines if the floating-point type E supports denormal numbers.
+   --  Returns False if E is not a floating-point type.
+
    function Has_Discriminant_Dependent_Constraint
      (Comp : Entity_Id) return Boolean;
    --  Returns True if and only if Comp has a constrained subtype that depends
@@ -682,6 +711,10 @@ package Sem_Util is
    function Has_Private_Component (Type_Id : Entity_Id) return Boolean;
    --  Check if a type has a (sub)component of a private type that has not
    --  yet received a full declaration.
+
+   function Has_Signed_Zeros (E : Entity_Id) return Boolean;
+   --  Determines if the floating-point type E supports signed zeros.
+   --  Returns False if E is not a floating-point type.
 
    function Has_Static_Array_Bounds (Typ : Node_Id) return Boolean;
    --  Return whether an array type has static bounds
@@ -742,9 +775,9 @@ package Sem_Util is
    function In_Parameter_Specification (N : Node_Id) return Boolean;
    --  Returns True if node N belongs to a parameter specification
 
-   function In_Reverse_Storage_Order_Record (N : Node_Id) return Boolean;
-   --  Returns True if N denotes a component or subcomponent in a record object
-   --  that has Reverse_Storage_Order.
+   function In_Reverse_Storage_Order_Object (N : Node_Id) return Boolean;
+   --  Returns True if N denotes a component or subcomponent in a record or
+   --  array that has Reverse_Storage_Order.
 
    function In_Subprogram_Or_Concurrent_Unit return Boolean;
    --  Determines if the current scope is within a subprogram compilation unit
@@ -1087,28 +1120,12 @@ package Sem_Util is
    --  statement in Statements (HSS) that has Comes_From_Source set. If no
    --  such statement exists, Empty is returned.
 
-   function Make_Simple_Return_Statement
-     (Sloc       : Source_Ptr;
-      Expression : Node_Id := Empty) return Node_Id
-     renames Make_Return_Statement;
-   --  See Sinfo. We rename Make_Return_Statement to the correct Ada 2005
-   --  terminology here. Clients should use Make_Simple_Return_Statement.
-
    function Matching_Static_Array_Bounds
      (L_Typ : Node_Id;
       R_Typ : Node_Id) return Boolean;
    --  L_Typ and R_Typ are two array types. Returns True when they have the
    --  same number of dimensions, and the same static bounds for each index
    --  position.
-
-   Make_Return_Statement : constant := -2 ** 33;
-   --  Attempt to prevent accidental uses of Make_Return_Statement. If this
-   --  and the one in Nmake are both potentially use-visible, it will cause
-   --  a compilation error. Note that type and value are irrelevant.
-
-   N_Return_Statement : constant := -2 ** 33;
-   --  Attempt to prevent accidental uses of N_Return_Statement; similar to
-   --  Make_Return_Statement above.
 
    procedure Mark_Coextensions (Context_Nod : Node_Id; Root_Nod : Node_Id);
    --  Given a node which designates the context of analysis and an origin in
@@ -1476,6 +1493,10 @@ package Sem_Util is
 
    function Subprogram_Access_Level (Subp : Entity_Id) return Uint;
    --  Return the accessibility level of the view denoted by Subp
+
+   function Support_Atomic_Primitives (Typ : Entity_Id) return Boolean;
+   --  Return True if Typ supports the GCC built-in atomic operations (i.e. if
+   --  Typ is properly sized and aligned).
 
    procedure Trace_Scope (N : Node_Id; E : Entity_Id; Msg : String);
    --  Print debugging information on entry to each unit being analyzed

@@ -1,7 +1,7 @@
 /* Control flow optimization code for GNU compiler.
    Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010, 2011
-   Free Software Foundation, Inc.
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010, 2011,
+   2012 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -38,7 +38,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "rtl.h"
 #include "hard-reg-set.h"
 #include "regs.h"
-#include "timevar.h"
 #include "insn-config.h"
 #include "flags.h"
 #include "recog.h"
@@ -47,7 +46,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "params.h"
 #include "tm_p.h"
 #include "target.h"
-#include "cfglayout.h"
+#include "function.h" /* For inline functions in emit-rtl.h they need crtl.  */
 #include "emit-rtl.h"
 #include "tree-pass.h"
 #include "cfgloop.h"
@@ -482,13 +481,15 @@ try_forward_edges (int mode, basic_block b)
 		  int new_locus = single_succ_edge (target)->goto_locus;
 		  int locus = goto_locus;
 
-		  if (new_locus && locus && !locator_eq (new_locus, locus))
+		  if (new_locus != UNKNOWN_LOCATION
+		      && locus != UNKNOWN_LOCATION
+		      && new_locus != locus)
 		    new_target = NULL;
 		  else
 		    {
 		      rtx last;
 
-		      if (new_locus)
+		      if (new_locus != UNKNOWN_LOCATION)
 			locus = new_locus;
 
 		      last = BB_END (target);
@@ -496,13 +497,15 @@ try_forward_edges (int mode, basic_block b)
 			last = prev_nondebug_insn (last);
 
 		      new_locus = last && INSN_P (last)
-				  ? INSN_LOCATOR (last) : 0;
+				  ? INSN_LOCATION (last) : 0;
 
-		      if (new_locus && locus && !locator_eq (new_locus, locus))
+		      if (new_locus != UNKNOWN_LOCATION
+			  && locus != UNKNOWN_LOCATION
+			  && new_locus != locus)
 			new_target = NULL;
 		      else
 			{
-			  if (new_locus)
+			  if (new_locus != UNKNOWN_LOCATION)
 			    locus = new_locus;
 
 			  goto_locus = locus;
@@ -1699,9 +1702,15 @@ outgoing_edges_match (int mode, basic_block bb1, basic_block bb2)
 	}
     }
 
+  rtx last1 = BB_END (bb1);
+  rtx last2 = BB_END (bb2);
+  if (DEBUG_INSN_P (last1))
+    last1 = prev_nondebug_insn (last1);
+  if (DEBUG_INSN_P (last2))
+    last2 = prev_nondebug_insn (last2);
   /* First ensure that the instructions match.  There may be many outgoing
      edges so this test is generally cheaper.  */
-  if (old_insns_match_p (mode, BB_END (bb1), BB_END (bb2)) != dir_both)
+  if (old_insns_match_p (mode, last1, last2) != dir_both)
     return false;
 
   /* Search the outgoing edges, ensure that the counts do match, find possible
@@ -1710,9 +1719,13 @@ outgoing_edges_match (int mode, basic_block bb1, basic_block bb2)
   if (EDGE_COUNT (bb1->succs) != EDGE_COUNT (bb2->succs))
     return false;
 
+  bool nonfakeedges = false;
   FOR_EACH_EDGE (e1, ei, bb1->succs)
     {
       e2 = EDGE_SUCC (bb2, ei.index);
+
+      if ((e1->flags & EDGE_FAKE) == 0)
+	nonfakeedges = true;
 
       if (e1->flags & EDGE_EH)
 	nehedges1++;
@@ -1729,6 +1742,18 @@ outgoing_edges_match (int mode, basic_block bb1, basic_block bb2)
   /* If number of edges of various types does not match, fail.  */
   if (nehedges1 != nehedges2
       || (fallthru1 != 0) != (fallthru2 != 0))
+    return false;
+
+  /* If !ACCUMULATE_OUTGOING_ARGS, bb1 (and bb2) have no successors
+     and the last real insn doesn't have REG_ARGS_SIZE note, don't
+     attempt to optimize, as the two basic blocks might have different
+     REG_ARGS_SIZE depths.  For noreturn calls and unconditional
+     traps there should be REG_ARG_SIZE notes, they could be missing
+     for __builtin_unreachable () uses though.  */
+  if (!nonfakeedges
+      && !ACCUMULATE_OUTGOING_ARGS
+      && (!INSN_P (last1)
+          || !find_reg_note (last1, REG_ARGS_SIZE, NULL)))
     return false;
 
   /* fallthru edges must be forwarded to the same destination.  */
@@ -2797,7 +2822,7 @@ delete_unreachable_blocks (void)
      have dominators information, walking blocks backward gets us a
      better chance of retaining most debug information than
      otherwise.  */
-  if (MAY_HAVE_DEBUG_STMTS && current_ir_type () == IR_GIMPLE
+  if (MAY_HAVE_DEBUG_INSNS && current_ir_type () == IR_GIMPLE
       && dom_info_available_p (CDI_DOMINATORS))
     {
       for (b = EXIT_BLOCK_PTR->prev_bb; b != ENTRY_BLOCK_PTR; b = prev_bb)
@@ -2813,12 +2838,12 @@ delete_unreachable_blocks (void)
 		delete_basic_block (b);
 	      else
 		{
-		  VEC (basic_block, heap) *h
+		  vec<basic_block> h
 		    = get_all_dominated_blocks (CDI_DOMINATORS, b);
 
-		  while (VEC_length (basic_block, h))
+		  while (h.length ())
 		    {
-		      b = VEC_pop (basic_block, h);
+		      b = h.pop ();
 
 		      prev_bb = b->prev_bb;
 
@@ -2827,7 +2852,7 @@ delete_unreachable_blocks (void)
 		      delete_basic_block (b);
 		    }
 
-		  VEC_free (basic_block, heap, h);
+		  h.release ();
 		}
 
 	      changed = true;
@@ -3005,6 +3030,7 @@ struct rtl_opt_pass pass_jump =
  {
   RTL_PASS,
   "jump",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,					/* gate */
   execute_jump,				/* execute */
   NULL,					/* sub */
@@ -3031,6 +3057,7 @@ struct rtl_opt_pass pass_jump2 =
  {
   RTL_PASS,
   "jump2",				/* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,					/* gate */
   execute_jump2,			/* execute */
   NULL,					/* sub */

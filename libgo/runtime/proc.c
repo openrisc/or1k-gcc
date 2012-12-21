@@ -17,6 +17,8 @@
 #include "arch.h"
 #include "defs.h"
 #include "malloc.h"
+#include "race.h"
+#include "go-type.h"
 #include "go-defer.h"
 
 #ifdef USING_SPLIT_STACK
@@ -81,7 +83,7 @@ fixcontext(ucontext_t *c __attribute__ ((unused)))
 {
 }
 
-# else
+#else
 
 # if defined(__x86_64__) && defined(__sun__)
 
@@ -107,6 +109,28 @@ static inline void
 fixcontext(ucontext_t* c)
 {
 	c->uc_mcontext.gregs[REG_FSBASE] = fs;
+}
+
+# elif defined(__NetBSD__)
+
+// NetBSD has a bug: setcontext clobbers tlsbase, we need to save
+// and restore it ourselves.
+
+static __thread __greg_t tlsbase;
+
+static inline void
+initcontext(void)
+{
+	ucontext_t c;
+
+	getcontext(&c);
+	tlsbase = c.uc_mcontext._mc_tlsbase;
+}
+
+static inline void
+fixcontext(ucontext_t* c)
+{
+	c->uc_mcontext._mc_tlsbase = tlsbase;
 }
 
 # else
@@ -214,7 +238,7 @@ struct Sched {
 	Lock;
 
 	G *gfree;	// available g's (status == Gdead)
-	int32 goidgen;
+	int64 goidgen;
 
 	G *ghead;	// g's waiting to run
 	G *gtail;
@@ -329,6 +353,9 @@ static void
 kickoff(void)
 {
 	void (*fn)(void*);
+
+	if(g->traceback != nil)
+		gtraceback(g);
 
 	fn = (void (*)(void*))(g->entry);
 	fn(g->param);
@@ -471,6 +498,9 @@ runtime_schedinit(void)
 	// Can not enable GC until all roots are registered.
 	// mstats.enablegc = 1;
 	m->nomemprof--;
+
+	if(raceenabled)
+		runtime_raceinit();
 }
 
 extern void main_init(void) __asm__ ("__go_init_main");
@@ -507,6 +537,8 @@ runtime_main(void)
 	runtime_gosched();
 
 	main_main();
+	if(raceenabled)
+		runtime_racefini();
 	runtime_exit(0);
 	for(;;)
 		*(int32*)0 = 0;
@@ -540,11 +572,11 @@ runtime_goexit(void)
 }
 
 void
-runtime_goroutineheader(G *g)
+runtime_goroutineheader(G *gp)
 {
 	const char *status;
 
-	switch(g->status) {
+	switch(gp->status) {
 	case Gidle:
 		status = "idle";
 		break;
@@ -558,8 +590,8 @@ runtime_goroutineheader(G *g)
 		status = "syscall";
 		break;
 	case Gwaiting:
-		if(g->waitreason)
-			status = g->waitreason;
+		if(gp->waitreason)
+			status = gp->waitreason;
 		else
 			status = "waiting";
 		break;
@@ -570,20 +602,20 @@ runtime_goroutineheader(G *g)
 		status = "???";
 		break;
 	}
-	runtime_printf("goroutine %d [%s]:\n", g->goid, status);
+	runtime_printf("goroutine %D [%s]:\n", gp->goid, status);
 }
 
 void
 runtime_goroutinetrailer(G *g)
 {
 	if(g != nil && g->gopc != 0 && g->goid != 1) {
-		struct __go_string fn;
-		struct __go_string file;
-		int line;
+		String fn;
+		String file;
+		intgo line;
 
 		if(__go_file_line(g->gopc - 1, &fn, &file, &line)) {
-			runtime_printf("created by %s\n", fn.__data);
-			runtime_printf("\t%s:%d\n", file.__data, line);
+			runtime_printf("created by %S\n", fn);
+			runtime_printf("\t%S:%D\n", file, (int64) line);
 		}
 	}
 }
@@ -598,15 +630,15 @@ struct Traceback
 void
 runtime_tracebackothers(G * volatile me)
 {
-	G * volatile g;
+	G * volatile gp;
 	Traceback traceback;
 
 	traceback.gp = me;
-	for(g = runtime_allg; g != nil; g = g->alllink) {
-		if(g == me || g->status == Gdead)
+	for(gp = runtime_allg; gp != nil; gp = gp->alllink) {
+		if(gp == me || gp->status == Gdead)
 			continue;
 		runtime_printf("\n");
-		runtime_goroutineheader(g);
+		runtime_goroutineheader(gp);
 
 		// Our only mechanism for doing a stack trace is
 		// _Unwind_Backtrace.  And that only works for the
@@ -616,25 +648,25 @@ runtime_tracebackothers(G * volatile me)
 
 		// This means that if g is running or in a syscall, we
 		// can't reliably print a stack trace.  FIXME.
-		if(g->status == Gsyscall || g->status == Grunning) {
+		if(gp->status == Gsyscall || gp->status == Grunning) {
 			runtime_printf("no stack trace available\n");
-			runtime_goroutinetrailer(g);
+			runtime_goroutinetrailer(gp);
 			continue;
 		}
 
-		g->traceback = &traceback;
+		gp->traceback = &traceback;
 
 #ifdef USING_SPLIT_STACK
 		__splitstack_getcontext(&me->stack_context[0]);
 #endif
 		getcontext(&me->context);
 
-		if(g->traceback != nil) {
-			runtime_gogo(g);
+		if(gp->traceback != nil) {
+			runtime_gogo(gp);
 		}
 
 		runtime_printtrace(traceback.pcbuf, traceback.c);
-		runtime_goroutinetrailer(g);
+		runtime_goroutinetrailer(gp);
 	}
 }
 
@@ -666,22 +698,22 @@ runtime_idlegoroutine(void)
 }
 
 static void
-mcommoninit(M *m)
+mcommoninit(M *mp)
 {
-	m->id = runtime_sched.mcount++;
-	m->fastrand = 0x49f6428aUL + m->id + runtime_cputicks();
+	mp->id = runtime_sched.mcount++;
+	mp->fastrand = 0x49f6428aUL + mp->id + runtime_cputicks();
 
-	if(m->mcache == nil)
-		m->mcache = runtime_allocmcache();
+	if(mp->mcache == nil)
+		mp->mcache = runtime_allocmcache();
 
-	runtime_callers(1, m->createstack, nelem(m->createstack));
+	runtime_callers(1, mp->createstack, nelem(mp->createstack));
 
 	// Add to runtime_allm so garbage collector doesn't free m
 	// when it is just in a register or thread-local storage.
-	m->alllink = runtime_allm;
+	mp->alllink = runtime_allm;
 	// runtime_NumCgoCall() iterates over allm w/o schedlock,
 	// so we need to publish it safely.
-	runtime_atomicstorep(&runtime_allm, m);
+	runtime_atomicstorep(&runtime_allm, mp);
 }
 
 // Try to increment mcpu.  Report whether succeeded.
@@ -701,34 +733,34 @@ canaddmcpu(void)
 
 // Put on `g' queue.  Sched must be locked.
 static void
-gput(G *g)
+gput(G *gp)
 {
-	M *m;
+	M *mp;
 
 	// If g is wired, hand it off directly.
-	if((m = g->lockedm) != nil && canaddmcpu()) {
-		mnextg(m, g);
+	if((mp = gp->lockedm) != nil && canaddmcpu()) {
+		mnextg(mp, gp);
 		return;
 	}
 
 	// If g is the idle goroutine for an m, hand it off.
-	if(g->idlem != nil) {
-		if(g->idlem->idleg != nil) {
-			runtime_printf("m%d idle out of sync: g%d g%d\n",
-				g->idlem->id,
-				g->idlem->idleg->goid, g->goid);
+	if(gp->idlem != nil) {
+		if(gp->idlem->idleg != nil) {
+			runtime_printf("m%d idle out of sync: g%D g%D\n",
+				gp->idlem->id,
+				gp->idlem->idleg->goid, gp->goid);
 			runtime_throw("runtime: double idle");
 		}
-		g->idlem->idleg = g;
+		gp->idlem->idleg = gp;
 		return;
 	}
 
-	g->schedlink = nil;
+	gp->schedlink = nil;
 	if(runtime_sched.ghead == nil)
-		runtime_sched.ghead = g;
+		runtime_sched.ghead = gp;
 	else
-		runtime_sched.gtail->schedlink = g;
-	runtime_sched.gtail = g;
+		runtime_sched.gtail->schedlink = gp;
+	runtime_sched.gtail = gp;
 
 	// increment gwait.
 	// if it transitions to nonzero, set atomic gwaiting bit.
@@ -747,11 +779,11 @@ haveg(void)
 static G*
 gget(void)
 {
-	G *g;
+	G *gp;
 
-	g = runtime_sched.ghead;
-	if(g){
-		runtime_sched.ghead = g->schedlink;
+	gp = runtime_sched.ghead;
+	if(gp) {
+		runtime_sched.ghead = gp->schedlink;
 		if(runtime_sched.ghead == nil)
 			runtime_sched.gtail = nil;
 		// decrement gwait.
@@ -759,45 +791,45 @@ gget(void)
 		if(--runtime_sched.gwait == 0)
 			runtime_xadd(&runtime_sched.atomic, -1<<gwaitingShift);
 	} else if(m->idleg != nil) {
-		g = m->idleg;
+		gp = m->idleg;
 		m->idleg = nil;
 	}
-	return g;
+	return gp;
 }
 
 // Put on `m' list.  Sched must be locked.
 static void
-mput(M *m)
+mput(M *mp)
 {
-	m->schedlink = runtime_sched.mhead;
-	runtime_sched.mhead = m;
+	mp->schedlink = runtime_sched.mhead;
+	runtime_sched.mhead = mp;
 	runtime_sched.mwait++;
 }
 
 // Get an `m' to run `g'.  Sched must be locked.
 static M*
-mget(G *g)
+mget(G *gp)
 {
-	M *m;
+	M *mp;
 
 	// if g has its own m, use it.
-	if(g && (m = g->lockedm) != nil)
-		return m;
+	if(gp && (mp = gp->lockedm) != nil)
+		return mp;
 
 	// otherwise use general m pool.
-	if((m = runtime_sched.mhead) != nil){
-		runtime_sched.mhead = m->schedlink;
+	if((mp = runtime_sched.mhead) != nil) {
+		runtime_sched.mhead = mp->schedlink;
 		runtime_sched.mwait--;
 	}
-	return m;
+	return mp;
 }
 
 // Mark g ready to run.
 void
-runtime_ready(G *g)
+runtime_ready(G *gp)
 {
 	schedlock();
-	readylocked(g);
+	readylocked(gp);
 	schedunlock();
 }
 
@@ -805,23 +837,23 @@ runtime_ready(G *g)
 // G might be running already and about to stop.
 // The sched lock protects g->status from changing underfoot.
 static void
-readylocked(G *g)
+readylocked(G *gp)
 {
-	if(g->m){
+	if(gp->m) {
 		// Running on another machine.
 		// Ready it when it stops.
-		g->readyonstop = 1;
+		gp->readyonstop = 1;
 		return;
 	}
 
 	// Mark runnable.
-	if(g->status == Grunnable || g->status == Grunning) {
-		runtime_printf("goroutine %d has status %d\n", g->goid, g->status);
+	if(gp->status == Grunnable || gp->status == Grunning) {
+		runtime_printf("goroutine %D has status %d\n", gp->goid, gp->status);
 		runtime_throw("bad g->status in ready");
 	}
-	g->status = Grunnable;
+	gp->status = Grunnable;
 
-	gput(g);
+	gput(gp);
 	matchmg();
 }
 
@@ -829,23 +861,23 @@ readylocked(G *g)
 // debuggers can set a breakpoint here and catch all
 // new goroutines.
 static void
-newprocreadylocked(G *g)
+newprocreadylocked(G *gp)
 {
-	readylocked(g);
+	readylocked(gp);
 }
 
 // Pass g to m for running.
 // Caller has already incremented mcpu.
 static void
-mnextg(M *m, G *g)
+mnextg(M *mp, G *gp)
 {
 	runtime_sched.grunning++;
-	m->nextg = g;
-	if(m->waitnextg) {
-		m->waitnextg = 0;
+	mp->nextg = gp;
+	if(mp->waitnextg) {
+		mp->waitnextg = 0;
 		if(mwakeup != nil)
 			runtime_notewakeup(&mwakeup->havenextg);
-		mwakeup = m;
+		mwakeup = mp;
 	}
 }
 
@@ -969,35 +1001,38 @@ top:
 }
 
 int32
-runtime_helpgc(bool *extra)
+runtime_gcprocs(void)
+{
+	int32 n;
+	
+	// Figure out how many CPUs to use during GC.
+	// Limited by gomaxprocs, number of actual CPUs, and MaxGcproc.
+	n = runtime_gomaxprocs;
+	if(n > runtime_ncpu)
+		n = runtime_ncpu > 0 ? runtime_ncpu : 1;
+	if(n > MaxGcproc)
+		n = MaxGcproc;
+	if(n > runtime_sched.mwait+1) // one M is currently running
+		n = runtime_sched.mwait+1;
+	return n;
+}
+
+void
+runtime_helpgc(int32 nproc)
 {
 	M *mp;
-	int32 n, max;
-
-	// Figure out how many CPUs to use.
-	// Limited by gomaxprocs, number of actual CPUs, and MaxGcproc.
-	max = runtime_gomaxprocs;
-	if(max > runtime_ncpu)
-		max = runtime_ncpu > 0 ? runtime_ncpu : 1;
-	if(max > MaxGcproc)
-		max = MaxGcproc;
-
-	// We're going to use one CPU no matter what.
-	// Figure out the max number of additional CPUs.
-	max--;
+	int32 n;
 
 	runtime_lock(&runtime_sched);
-	n = 0;
-	while(n < max && (mp = mget(nil)) != nil) {
-		n++;
+	for(n = 1; n < nproc; n++) { // one M is currently running
+		mp = mget(nil);
+		if(mp == nil)
+			runtime_throw("runtime_gcprocs inconsistency");
 		mp->helpgc = 1;
 		mp->waitnextg = 0;
 		runtime_notewakeup(&mp->havenextg);
 	}
 	runtime_unlock(&runtime_sched);
-	if(extra)
-		*extra = n != max;
-	return n;
 }
 
 void
@@ -1037,26 +1072,38 @@ runtime_stoptheworld(void)
 }
 
 void
-runtime_starttheworld(bool extra)
+runtime_starttheworld(void)
 {
-	M *m;
+	M *mp;
+	int32 max;
+	
+	// Figure out how many CPUs GC could possibly use.
+	max = runtime_gomaxprocs;
+	if(max > runtime_ncpu)
+		max = runtime_ncpu > 0 ? runtime_ncpu : 1;
+	if(max > MaxGcproc)
+		max = MaxGcproc;
 
 	schedlock();
 	runtime_gcwaiting = 0;
 	setmcpumax(runtime_gomaxprocs);
 	matchmg();
-	if(extra && canaddmcpu()) {
-		// Start a new m that will (we hope) be idle
-		// and so available to help when the next
-		// garbage collection happens.
+	if(runtime_gcprocs() < max && canaddmcpu()) {
+		// If GC could have used another helper proc, start one now,
+		// in the hope that it will be available next time.
+		// It would have been even better to start it before the collection,
+		// but doing so requires allocating memory, so it's tricky to
+		// coordinate.  This lazy approach works out in practice:
+		// we don't mind if the first couple gc rounds don't have quite
+		// the maximum number of procs.
 		// canaddmcpu above did mcpu++
 		// (necessary, because m will be doing various
 		// initialization work so is definitely running),
 		// but m is not running a specific goroutine,
 		// so set the helpgc flag as a signal to m's
 		// first schedule(nil) to mcpu-- and grunning--.
-		m = runtime_newm();
-		m->helpgc = 1;
+		mp = runtime_newm();
+		mp->helpgc = 1;
 		runtime_sched.grunning++;
 	}
 	schedunlock();
@@ -1110,6 +1157,11 @@ runtime_mstart(void* mp)
 		runtime_initsig();
 
 	schedule(nil);
+
+	// TODO(brainman): This point is never reached, because scheduler
+	// does not release os threads at the moment. But once this path
+	// is enabled, we must remove our seh here.
+
 	return nil;
 }
 
@@ -1148,14 +1200,23 @@ matchmg(void)
 M*
 runtime_newm(void)
 {
-	M *m;
+	M *mp;
 	pthread_attr_t attr;
 	pthread_t tid;
 	size_t stacksize;
 
-	m = runtime_malloc(sizeof(M));
-	mcommoninit(m);
-	m->g0 = runtime_malg(-1, nil, nil);
+#if 0
+	static const Type *mtype;  // The Go type M
+	if(mtype == nil) {
+		Eface e;
+		runtime_gc_m_ptr(&e);
+		mtype = ((const PtrType*)e.__type_descriptor)->__element_type;
+	}
+#endif
+
+	mp = runtime_mal(sizeof *mp);
+	mcommoninit(mp);
+	mp->g0 = runtime_malg(-1, nil, nil);
 
 	if(pthread_attr_init(&attr) != 0)
 		runtime_throw("pthread_attr_init");
@@ -1175,10 +1236,10 @@ runtime_newm(void)
 	if(pthread_attr_setstacksize(&attr, stacksize) != 0)
 		runtime_throw("pthread_attr_setstacksize");
 
-	if(pthread_create(&tid, &attr, runtime_mstart, m) != 0)
+	if(pthread_create(&tid, &attr, runtime_mstart, mp) != 0)
 		runtime_throw("pthread_create");
 
-	return m;
+	return mp;
 }
 
 // One round of scheduler: find a goroutine and run it.
@@ -1202,7 +1263,7 @@ schedule(G *gp)
 		if(atomic_mcpu(v) > maxgomaxprocs)
 			runtime_throw("negative mcpu in scheduler");
 
-		switch(gp->status){
+		switch(gp->status) {
 		case Grunnable:
 		case Gdead:
 			// Shouldn't have been running!
@@ -1212,6 +1273,8 @@ schedule(G *gp)
 			gput(gp);
 			break;
 		case Gmoribund:
+			if(raceenabled)
+				runtime_racegoend(gp->goid);
 			gp->status = Gdead;
 			if(gp->lockedm) {
 				gp->lockedm = nil;
@@ -1224,7 +1287,7 @@ schedule(G *gp)
 				runtime_exit(0);
 			break;
 		}
-		if(gp->readyonstop){
+		if(gp->readyonstop) {
 			gp->readyonstop = 0;
 			readylocked(gp);
 		}
@@ -1270,6 +1333,18 @@ runtime_gosched(void)
 	if(g == m->g0)
 		runtime_throw("gosched of g0");
 	runtime_mcall(schedule);
+}
+
+// Puts the current goroutine into a waiting state and unlocks the lock.
+// The goroutine can be made runnable again by calling runtime_ready(gp).
+void
+runtime_park(void (*unlockf)(Lock*), Lock *lock, const char *reason)
+{
+	g->status = Gwaiting;
+	g->waitreason = reason;
+	if(unlockf)
+		unlockf(lock);
+	runtime_gosched();
 }
 
 // The goroutine g is about to enter a system call.
@@ -1448,10 +1523,15 @@ __go_go(void (*fn)(void*), void* arg)
 	byte *sp;
 	size_t spsize;
 	G *newg;
+	int64 goid;
+
+	goid = runtime_xadd64((uint64*)&runtime_sched.goidgen, 1);
+	if(raceenabled)
+		runtime_racegostart(goid, runtime_getcallerpc(&fn));
 
 	schedlock();
 
-	if((newg = gfget()) != nil){
+	if((newg = gfget()) != nil) {
 #ifdef USING_SPLIT_STACK
 		int dont_block_signals = 0;
 
@@ -1482,8 +1562,7 @@ __go_go(void (*fn)(void*), void* arg)
 	newg->gopc = (uintptr)__builtin_return_address(0);
 
 	runtime_sched.gcount++;
-	runtime_sched.goidgen++;
-	newg->goid = runtime_sched.goidgen;
+	newg->goid = goid;
 
 	if(sp == nil)
 		runtime_throw("nil g->stack0");
@@ -1512,49 +1591,22 @@ __go_go(void (*fn)(void*), void* arg)
 
 // Put on gfree list.  Sched must be locked.
 static void
-gfput(G *g)
+gfput(G *gp)
 {
-	g->schedlink = runtime_sched.gfree;
-	runtime_sched.gfree = g;
+	gp->schedlink = runtime_sched.gfree;
+	runtime_sched.gfree = gp;
 }
 
 // Get from gfree list.  Sched must be locked.
 static G*
 gfget(void)
 {
-	G *g;
+	G *gp;
 
-	g = runtime_sched.gfree;
-	if(g)
-		runtime_sched.gfree = g->schedlink;
-	return g;
-}
-
-// Run all deferred functions for the current goroutine.
-static void
-rundefer(void)
-{
-	Defer *d;
-
-	while((d = g->defer) != nil) {
-		void (*pfn)(void*);
-
-		pfn = d->__pfn;
-		d->__pfn = nil;
-		if (pfn != nil)
-			(*pfn)(d->__arg);
-		g->defer = d->__next;
-		runtime_free(d);
-	}
-}
-
-void runtime_Goexit (void) asm ("runtime.Goexit");
-
-void
-runtime_Goexit(void)
-{
-	rundefer();
-	runtime_goexit();
+	gp = runtime_sched.gfree;
+	if(gp)
+		runtime_sched.gfree = gp->schedlink;
+	return gp;
 }
 
 void runtime_Gosched (void) asm ("runtime.Gosched");
@@ -1651,10 +1703,10 @@ runtime_mid()
 	return m->id;
 }
 
-int32 runtime_NumGoroutine (void)
+intgo runtime_NumGoroutine (void)
   __asm__ ("runtime.NumGoroutine");
 
-int32
+intgo
 runtime_NumGoroutine()
 {
 	return runtime_sched.gcount;
@@ -1681,10 +1733,7 @@ static struct {
 
 // Called if we receive a SIGPROF signal.
 void
-runtime_sigprof(uint8 *pc __attribute__ ((unused)),
-		uint8 *sp __attribute__ ((unused)),
-		uint8 *lr __attribute__ ((unused)),
-		G *gp __attribute__ ((unused)))
+runtime_sigprof()
 {
 	int32 n;
 

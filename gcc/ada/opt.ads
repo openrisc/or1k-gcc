@@ -230,11 +230,12 @@ package Opt is
    Back_End_Handles_Limited_Types : Boolean;
    --  This flag is set true if the back end can properly handle limited or
    --  other by reference types, and avoid copies. If this flag is False, then
-   --  the front end does special expansion for conditional expressions to make
+   --  the front end does special expansion for if/case expressions to make
    --  sure that no copy occurs. If the flag is True, then the expansion for
-   --  conditional expressions relies on the back end properly handling things.
+   --  if and case expressions relies on the back end properly handling things.
    --  Currently the default is False for all cases (set in gnat1drv). The
-   --  default can be modified using -gnatd.L (sets the flag True).
+   --  default can be modified using -gnatd.L (sets the flag True). This is
+   --  used to test the possibility of having the backend handle this.
 
    Bind_Alternate_Main_Name : Boolean := False;
    --  GNATBIND
@@ -269,6 +270,11 @@ package Opt is
    --  GNATMAKE
    --  Set to True to build, bind and link all the sources of a project file
    --  (switch -B)
+
+   Check_Aliasing_Of_Parameters : Boolean := False;
+   --  GNAT
+   --  Set to True to detect whether subprogram parameters and function results
+   --  alias the same object(s).
 
    Check_Object_Consistency : Boolean := False;
    --  GNATBIND, GNATMAKE
@@ -315,8 +321,13 @@ package Opt is
 
    Check_Unreferenced_Formals : Boolean := False;
    --  GNAT
-   --  Set True to check for unreferenced formals. This is turned on by
+   --  Set to True to check for unreferenced formals. This is turned on by
    --  -gnatwa/wf/wu and turned off by -gnatwA/wF/wU.
+
+   Check_Validity_Of_Parameters : Boolean := False;
+   --  GNAT
+   --  Set to True to check for proper scalar initialization of subprogram
+   --  parameters on both entry and exit. Turned on by??? turned off by???
 
    Check_Withs : Boolean := False;
    --  GNAT
@@ -486,11 +497,6 @@ package Opt is
    --  GNAT
    --  Set to True to generate full elaboration warnings (-gnatwl)
 
-   Enable_Overflow_Checks : Boolean := False;
-   --  GNAT
-   --  Set to True if -gnato (enable overflow checks) switch is set,
-   --  but not -gnatp.
-
    Error_Msg_Line_Length : Nat := 0;
    --  GNAT
    --  Records the error message line length limit. If this is set to zero,
@@ -643,9 +649,14 @@ package Opt is
 
    Generate_SCO : Boolean := False;
    --  GNAT
-   --  True when switch -gnateS is used. When True, Source Coverage Obligation
-   --  (SCO) information is generated and output in the ALI file. See unit
-   --  Par_SCO for full details.
+   --  True when switch -fdump-scos (or -gnateS) is used. When True, Source
+   --  Coverage Obligation (SCO) information is generated and output in the ALI
+   --  file. See unit Par_SCO for full details.
+
+   Generate_SCO_Instance_Table : Boolean := False;
+   --  GNAT
+   --  True when switch -fdebug-instances is used. When True, a table of
+   --  instances is included in SCOs.
 
    Generating_Code : Boolean := False;
    --  GNAT
@@ -732,6 +743,13 @@ package Opt is
    --  GNAT
    --  Set True to activate pragma Inline processing across modules. Default
    --  for now is not to inline across module boundaries.
+
+   Inline_Level : Nat := 0;
+   --  GNAT
+   --  Set to indicate the inlining level: 0 means that an appropriate value is
+   --  to be computed by the compiler based on the optimization level (-gnatn),
+   --  1 is for moderate inlining across modules (-gnatn1) and 2 for full
+   --  inlining across modules (-gnatn2).
 
    Interface_Library_Unit : Boolean := False;
    --  GNATBIND
@@ -950,6 +968,12 @@ package Opt is
    --  in this variable (e.g. 2 = select second unit in file). A value of
    --  zero indicates that we are in normal (one unit per file) mode.
 
+   No_Deletion : Boolean := False;
+   --  GNATPREP
+   --  Set by preprocessor switch -a. Do not eliminate any source text. Implies
+   --  Undefined_Symbols_Are_False. Useful to perform a syntax check on all
+   --  branches of #if constructs.
+
    No_Main_Subprogram : Boolean := False;
    --  GNATMAKE, GNATBIND
    --  Set to True if compilation/binding of a program without main
@@ -1061,10 +1085,17 @@ package Opt is
    --  True if output of list of objects is requested (-O switch set). List is
    --  output under the given filename, or standard output if not specified.
 
-   Overflow_Checks_Unsuppressed : Boolean := False;
-   --  GNAT
-   --  Set to True if at least one occurrence of pragma Unsuppress
-   --  (All_Checks|Overflow_Checks) has been processed.
+   Partition_Elaboration_Policy : Character := ' ';
+   --  GNAT, GNATBIND
+   --  Set to ' ' for the default case (no elaboration policy specified). Reset
+   --  to first character (uppercase) of locking policy name if a valid pragma
+   --  Partition_Elaboration_Policy is encountered.
+
+   Partition_Elaboration_Policy_Sloc : Source_Ptr := No_Location;
+   --  GNAT, GNATBIND
+   --  Remember location of previous Partition_Elaboration_Policy pragma. This
+   --  is used for inconsistency error messages. A value of System_Location is
+   --  used if the policy is set in package System.
 
    Persistent_BSS_Mode : Boolean := False;
    --  GNAT
@@ -1242,12 +1273,12 @@ package Opt is
    --  GNAT
    --  Set to True if -gnatp (suppress all checks) switch present.
 
-   Suppress_Options : Suppress_Array;
+   Suppress_Options : Suppress_Record;
    --  GNAT
-   --  Flags set True to suppress corresponding check, i.e. add an implicit
-   --  pragma Suppress at the outer level of each unit compiled. Note that
-   --  these suppress actions can be overridden by the use of the Unsuppress
-   --  pragma. This variable is initialized by Osint.Initialize.
+   --  Indicates outer level setting of check suppression. This initializes
+   --  the settings of the outer scope level in any unit compiled. This is
+   --  initialized by Osint.Initialize, and further initialized by the
+   --  Adjust_Global_Switches flag in Gnat1drv.
 
    Suppress_Back_Annotation : Boolean := False;
    --  GNAT
@@ -1904,6 +1935,11 @@ package Opt is
    --  Interpret compiler permissions as strictly as possible. E.g. base ranges
    --  for integers are limited to the strict minimum with this option. Set by
    --  debug flag -gnatd.D.
+
+   Formal_Extensions : Boolean := False;
+   --  When this flag is set, new aspects/pragmas/attributes are accepted,
+   --  whose main purpose is to facilitate formal verification. Set by debug
+   --  flag -gnatd.V.
 
    function Full_Expander_Active return Boolean;
    pragma Inline (Full_Expander_Active);

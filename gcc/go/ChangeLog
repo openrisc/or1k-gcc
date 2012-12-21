@@ -1,3 +1,45 @@
+2012-11-17  Diego Novillo  <dnovillo@google.com>
+
+	Adjust for new vec API (http://gcc.gnu.org/wiki/cxx-conversion/cxx-vec)
+
+	* go-lang.c: Use new vec API in vec.h.
+
+2012-11-16  Ian Lance Taylor  <iant@google.com>
+
+	* Make-lang.in (gccgo$(exeext)): Add + at start of command.
+	(go1$(exeext)): Likewise.
+
+2012-10-30  Ian Lance Taylor  <iant@google.com>
+
+	* lang.opt (-fgo-relative-import-path): New option.
+	* go-lang.c (go_relative_import_path): New static variable.
+	(go_langhook_init): Pass go_relative_import_path to
+	go_create_gogo.
+	(go_langhook_handle_option): Handle -fgo-relative-import-path.
+	* go-c.h (go_create_gogo): Update declaration.
+	* gccgo.texi (Invoking gccgo): Document
+	-fgo-relative-import-path.
+
+2012-09-17  Ian Lance Taylor  <iant@google.com>
+
+	* config-lang.in (target_libs): Add target-libbacktrace.
+
+2012-09-16  Ian Lance Taylor  <iant@google.com>
+
+	* Make-lang.in (go/gogo.o): Depend on filenames.h.
+
+2012-08-14   Diego Novillo  <dnovillo@google.com>
+
+	Merge from cxx-conversion branch.  Configury.
+
+	* go-c.h: Remove all handlers of ENABLE_BUILD_WITH_CXX.
+	* go-gcc.cc: Likewise.
+	* go-system.h: Likewise.
+
+2012-07-24  Uros Bizjak  <ubizjak@gmail.com>
+
+	* go-lang.c (lang_decl): Add variable_size GTY option.
+
 2012-05-09  Ian Lance Taylor  <iant@google.com>
 
 	* lang.opt: Add -fgo-pkgpath.

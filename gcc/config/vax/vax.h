@@ -35,8 +35,6 @@ along with GCC; see the file COPYING3.  If not see
     }						\
   while (0)
 
-#define VMS_TARGET 0
-
 /* Use -J option for long branch support with Unix assembler.  */
 
 #define ASM_SPEC "-J"
@@ -434,11 +432,6 @@ enum reg_class { NO_REGS, ALL_REGS, LIM_REG_CLASSES };
 #define REG_OK_FOR_BASE_P(X) REGNO_OK_FOR_BASE_P (REGNO (X))
 
 #endif
-
-/* Go to LABEL if ADDR (a legitimate address expression)
-   has an effect that depends on the machine mode it is used for.  */
-#define GO_IF_MODE_DEPENDENT_ADDRESS(ADDR, LABEL) \
-  { if (vax_mode_dependent_address_p (ADDR)) goto LABEL; }
 
 /* Specify the machine mode that this machine uses
    for the index in the tablejump instruction.  */
@@ -456,10 +449,6 @@ enum reg_class { NO_REGS, ALL_REGS, LIM_REG_CLASSES };
 
 /* Define this as 1 if `char' should by default be signed; else as 0.  */
 #define DEFAULT_SIGNED_CHAR 1
-
-/* This flag, if defined, says the same insns that convert to a signed fixnum
-   also convert validly to an unsigned one.  */
-#define FIXUNS_TRUNC_LIKE_FIX_TRUNC
 
 /* Max number of bytes we can move from memory to memory
    in one reasonably fast instruction.  */

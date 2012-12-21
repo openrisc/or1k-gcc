@@ -211,10 +211,30 @@ if ! grep '^const O_CLOEXEC' ${OUT} >/dev/null 2>&1; then
   echo "const O_CLOEXEC = 0" >> ${OUT}
 fi
 
+# These flags can be lost on i386 GNU/Linux when using
+# -D_FILE_OFFSET_BITS=64, because we see "#define F_SETLK F_SETLK64"
+# before we see the definition of F_SETLK64.
+for flag in F_GETLK F_SETLK F_SETLKW; do
+  if ! grep "^const ${flag} " ${OUT} >/dev/null 2>&1 \
+      && grep "^const ${flag}64 " ${OUT} >/dev/null 2>&1; then
+    echo "const ${flag} = ${flag}64" >> ${OUT}
+  fi
+done
+
 # The signal numbers.
 grep '^const _SIG[^_]' gen-sysinfo.go | \
   grep -v '^const _SIGEV_' | \
   sed -e 's/^\(const \)_\(SIG[^= ]*\)\(.*\)$/\1\2 = Signal(_\2)/' >> ${OUT}
+if ! grep '^const SIGPOLL ' ${OUT} >/dev/null 2>&1; then
+  if grep '^const SIGIO ' ${OUT} > /dev/null 2>&1; then
+    echo "const SIGPOLL = SIGIO" >> ${OUT}
+  fi
+fi
+if ! grep '^const SIGCLD ' ${OUT} >/dev/null 2>&1; then
+  if grep '^const SIGCHLD ' ${OUT} >/dev/null 2>&1; then
+    echo "const SIGCLD = SIGCHLD" >> ${OUT}
+  fi
+fi
 
 # The syscall numbers.  We force the names to upper case.
 grep '^const _SYS_' gen-sysinfo.go | \
@@ -394,7 +414,18 @@ echo "type Uid_t _uid_t" >> ${OUT}
 echo "type Gid_t _gid_t" >> ${OUT}
 echo "type Socklen_t _socklen_t" >> ${OUT}
 
-# The long type, needed because that is the type that ptrace returns.
+# The C int type.
+sizeof_int=`grep '^const ___SIZEOF_INT__ = ' gen-sysinfo.go | sed -e 's/.*= //'`
+if test "$sizeof_int" = "4"; then
+  echo "type _C_int int32" >> ${OUT}
+elif test "$sizeof_int" = "8"; then
+  echo "type _C_int int64" >> ${OUT}
+else
+  echo 1>&2 "mksysinfo.sh: could not determine size of int (got $sizeof_int)"
+  exit 1
+fi
+
+# The C long type, needed because that is the type that ptrace returns.
 sizeof_long=`grep '^const ___SIZEOF_LONG__ = ' gen-sysinfo.go | sed -e 's/.*= //'`
 if test "$sizeof_long" = "4"; then
   echo "type _C_long int32" >> ${OUT}
@@ -522,10 +553,10 @@ grep '^const _DT_' gen-sysinfo.go |
 # The rusage struct.
 rusage=`grep '^type _rusage struct' gen-sysinfo.go`
 if test "$rusage" != ""; then
-  rusage=`echo $rusage | sed -e 's/type _rusage struct //' -e 's/[{}]//g'`
-  rusage=`echo $rusage | sed -e 's/^ *//'`
   # Remove anonymous unions from GNU/Linux <bits/resource.h>.
   rusage=`echo $rusage | sed -e 's/Godump_[0-9]* struct {\([^}]*\)};/\1/g'`
+  rusage=`echo $rusage | sed -e 's/type _rusage struct //' -e 's/[{}]//g'`
+  rusage=`echo $rusage | sed -e 's/^ *//'`
   nrusage=
   while test -n "$rusage"; do
     field=`echo $rusage | sed -e 's/^\([^;]*\);.*$/\1/'`

@@ -6,6 +6,13 @@
 
 package net
 
+import (
+	"errors"
+	"time"
+)
+
+var ErrWriteToConnected = errors.New("use of WriteTo with pre-connected UDP")
+
 // UDPAddr represents the address of a UDP end point.
 type UDPAddr struct {
 	IP   IP
@@ -28,7 +35,11 @@ func (a *UDPAddr) String() string {
 // "udp4" or "udp6".  A literal IPv6 host address must be
 // enclosed in square brackets, as in "[::]:80".
 func ResolveUDPAddr(net, addr string) (*UDPAddr, error) {
-	ip, port, err := hostPortToIP(net, addr)
+	return resolveUDPAddr(net, addr, noDeadline)
+}
+
+func resolveUDPAddr(net, addr string, deadline time.Time) (*UDPAddr, error) {
+	ip, port, err := hostPortToIP(net, addr, deadline)
 	if err != nil {
 		return nil, err
 	}

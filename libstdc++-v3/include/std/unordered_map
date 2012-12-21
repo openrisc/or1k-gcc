@@ -31,13 +31,14 @@
 
 #pragma GCC system_header
 
-#ifndef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus < 201103L
 # include <bits/c++0x_warning.h>
 #else
 
 #include <utility>
 #include <type_traits>
 #include <initializer_list>
+#include <tuple>
 #include <bits/stl_algobase.h>
 #include <bits/allocator.h>
 #include <bits/stl_function.h> // equal_to, _Identity, _Select1st
@@ -54,6 +55,6 @@
 # include <profile/unordered_map>
 #endif
 
-#endif // __GXX_EXPERIMENTAL_CXX0X__
+#endif // C++11
 
 #endif // _GLIBCXX_UNORDERED_MAP

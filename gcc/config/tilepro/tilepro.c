@@ -3377,7 +3377,7 @@ emit_sp_adjust (int offset, int *next_scratch_regno, bool frame_related,
 static bool
 tilepro_current_function_is_leaf (void)
 {
-  return current_function_is_leaf && !cfun->machine->calls_tls_get_addr;
+  return crtl->is_leaf && !cfun->machine->calls_tls_get_addr;
 }
 
 
@@ -4407,7 +4407,6 @@ tilepro_asm_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
      serial except for the tail call, so we're only wasting one cycle.
    */
   insn = get_insns ();
-  insn_locators_alloc ();
   shorten_branches (insn);
   final_start_function (insn, file, 1);
   final (insn, file, 1);
@@ -4914,7 +4913,7 @@ tilepro_function_profiler (FILE *file, int labelno ATTRIBUTE_UNUSED)
       fprintf (file,
 	       "\t{\n"
 	       "\tmove\tr10, lr\n"
-	       "\tjal\t%s@plt\n"
+	       "\tjal\tplt(%s)\n"
 	       "\t}\n", MCOUNT_NAME);
     }
   else

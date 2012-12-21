@@ -8,17 +8,6 @@
 #include "go-alloc.h"
 #include "interface.h"
 #include "go-panic.h"
-#include "go-string.h"
-
-/* Go memory allocated by code not written in Go.  We keep a linked
-   list of these allocations so that the garbage collector can see
-   them.  */
-
-struct cgoalloc
-{
-  struct cgoalloc *next;
-  void *alloc;
-};
 
 /* Prepare to call from code written in Go to code written in C or
    C++.  This takes the current goroutine out of the Go scheduler, as
@@ -68,7 +57,7 @@ syscall_cgocalldone ()
       /* We are going back to Go, and we are not in a recursive call.
 	 Let the garbage collector clean up any unreferenced
 	 memory.  */
-      g->cgoalloc = NULL;
+      g->cgomal = NULL;
     }
 
   /* If we are invoked because the C function called _cgo_panic, then
@@ -101,15 +90,15 @@ alloc_saved (size_t n)
 {
   void *ret;
   G *g;
-  struct cgoalloc *c;
+  CgoMal *c;
 
   ret = __go_alloc (n);
 
   g = runtime_g ();
-  c = (struct cgoalloc *) __go_alloc (sizeof (struct cgoalloc));
-  c->next = g->cgoalloc;
+  c = (CgoMal *) __go_alloc (sizeof (CgoMal));
+  c->next = g->cgomal;
   c->alloc = ret;
-  g->cgoalloc = c;
+  g->cgomal = c;
 
   return ret;
 }
@@ -135,9 +124,9 @@ extern const struct __go_type_descriptor string_type_descriptor
 void
 _cgo_panic (const char *p)
 {
-  int len;
+  intgo len;
   unsigned char *data;
-  struct __go_string *ps;
+  String *ps;
   struct __go_empty_interface e;
 
   runtime_exitsyscall ();
@@ -145,8 +134,8 @@ _cgo_panic (const char *p)
   data = alloc_saved (len);
   __builtin_memcpy (data, p, len);
   ps = alloc_saved (sizeof *ps);
-  ps->__data = data;
-  ps->__length = len;
+  ps->str = data;
+  ps->len = len;
   e.__type_descriptor = &string_type_descriptor;
   e.__object = ps;
 

@@ -639,6 +639,10 @@ DEFTREECODE (MULT_EXPR, "mult_expr", tcc_binary, 2)
    second operand is an integer of type sizetype.  */
 DEFTREECODE (POINTER_PLUS_EXPR, "pointer_plus_expr", tcc_binary, 2)
 
+/* Highpart multiplication.  For an integral type with precision B,
+   returns bits [2B-1, B] of the full 2*B product.  */
+DEFTREECODE (MULT_HIGHPART_EXPR, "mult_highpart_expr", tcc_binary, 2)
+
 /* Division for integer result that rounds the quotient toward zero.  */
 DEFTREECODE (TRUNC_DIV_EXPR, "trunc_div_expr", tcc_binary, 2)
 
@@ -1089,8 +1093,11 @@ DEFTREECODE (TRANSACTION_EXPR, "transaction_expr", tcc_expression, 1)
    Operations that take a vector of elements and "reduce" it to a scalar
    result (e.g. summing the elements of the vector, finding the minimum over
    the vector elements, etc).
-   Operand 0 is a vector; the first element in the vector has the result.
-   Operand 1 is a vector.  */
+   Operand 0 is a vector.
+   The expression returns a vector of the same type, with the first
+   element in the vector holding the result of the reduction of all elements
+   of the operand.  The content of the other elements in the returned vector
+   is undefined.  */
 DEFTREECODE (REDUC_MAX_EXPR, "reduc_max_expr", tcc_unary, 1)
 DEFTREECODE (REDUC_MIN_EXPR, "reduc_min_expr", tcc_unary, 1)
 DEFTREECODE (REDUC_PLUS_EXPR, "reduc_plus_expr", tcc_unary, 1)
@@ -1166,6 +1173,10 @@ DEFTREECODE (VEC_RSHIFT_EXPR, "vec_rshift_expr", tcc_binary, 2)
    VEC_WIDEN_MULT_LO_EXPR computes the N/2 low products.  */
 DEFTREECODE (VEC_WIDEN_MULT_HI_EXPR, "widen_mult_hi_expr", tcc_binary, 2)
 DEFTREECODE (VEC_WIDEN_MULT_LO_EXPR, "widen_mult_lo_expr", tcc_binary, 2)
+
+/* Similarly, but return the even or odd N/2 products.  */
+DEFTREECODE (VEC_WIDEN_MULT_EVEN_EXPR, "widen_mult_even_expr", tcc_binary, 2)
+DEFTREECODE (VEC_WIDEN_MULT_ODD_EXPR, "widen_mult_odd_expr", tcc_binary, 2)
 
 /* Unpack (extract and promote/widen) the high/low elements of the input
    vector into the output vector.  The input vector has twice as many

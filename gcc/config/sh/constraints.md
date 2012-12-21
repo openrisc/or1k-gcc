@@ -31,6 +31,9 @@
 ;; IJKLMNOP: CONT_INT constants
 ;;  Ixx: signed xx bit
 ;;  J16: 0xffffffff00000000 | 0x00000000ffffffff
+;;  Jmb: 0x000000FF
+;;  Jmw: 0x0000FFFF
+;;  Jhb: 0x80000000
 ;;  Kxx: unsigned xx bit
 ;;  M: 1
 ;;  N: 0
@@ -47,6 +50,7 @@
 ;;  Sbw: QImode address with 12 bit displacement
 ;;  Snd: address without displacement
 ;;  Sdd: address with displacement
+;;  Sra: simple register address
 ;; W: vector
 ;; Z: zero in any mode
 ;;
@@ -134,6 +138,21 @@
   "0xffffffff00000000 or 0x00000000ffffffff."
   (and (match_code "const_int")
        (match_test "CONST_OK_FOR_J16 (ival)")))
+
+(define_constraint "Jmb"
+  "Low byte mask constant 0x000000FF"
+  (and (match_code "const_int")
+       (match_test "ival == 0xFF")))
+
+(define_constraint "Jmw"
+  "Low word mask constant 0x0000FFFF"
+  (and (match_code "const_int")
+       (match_test "ival == 0xFFFF")))
+
+(define_constraint "Jhb"
+  "Highest bit constant"
+  (and (match_code "const_int")
+       (match_test "(ival & 0xFFFFFFFF) == 0x80000000")))
 
 (define_constraint "K03"
   "An unsigned 3-bit constant, as used in SH2A bclr, bset, etc."
@@ -294,4 +313,9 @@
   (and (match_test "satisfies_constraint_Sdd (op)")
        (match_test "GET_MODE (op) == QImode")
        (match_test "satisfies_constraint_K12 (XEXP (XEXP (op, 0), 1))")))
+
+(define_memory_constraint "Sra"
+  "A memory reference that uses a simple register addressing."
+  (and (match_test "MEM_P (op)")
+       (match_test "REG_P (XEXP (op, 0))")))
 

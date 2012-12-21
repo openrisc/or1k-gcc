@@ -37,6 +37,59 @@ enum sh_function_kind {
   SFUNC_STATIC
 };
 
+/* Atomic model.  */
+struct sh_atomic_model
+{
+  enum enum_type
+  {
+    none = 0,
+    soft_gusa,
+    hard_llcs,
+    soft_tcb,
+    soft_imask,
+
+    num_models
+  };
+
+  /*  If strict is set, disallow mixing of different models, as it would
+      happen on SH4A.  */
+  bool strict;
+  enum_type type;
+
+  /* Name string as it was specified on the command line.  */
+  const char* name;
+
+  /* Name string as it is used in C/C++ defines.  */
+  const char* cdef_name;
+
+  /* GBR offset variable for TCB model.  */
+  int tcb_gbr_offset;
+};
+
+extern const sh_atomic_model& selected_atomic_model (void);
+
+/* Shortcuts to check the currently selected atomic model.  */
+#define TARGET_ATOMIC_ANY \
+  selected_atomic_model ().type != sh_atomic_model::none
+
+#define TARGET_ATOMIC_STRICT \
+  selected_atomic_model ().strict
+
+#define TARGET_ATOMIC_SOFT_GUSA \
+  selected_atomic_model ().type == sh_atomic_model::soft_gusa
+
+#define TARGET_ATOMIC_HARD_LLCS \
+  selected_atomic_model ().type == sh_atomic_model::hard_llcs
+
+#define TARGET_ATOMIC_SOFT_TCB \
+  selected_atomic_model ().type == sh_atomic_model::soft_tcb
+
+#define TARGET_ATOMIC_SOFT_TCB_GBR_OFFSET_RTX \
+  GEN_INT (selected_atomic_model ().tcb_gbr_offset)
+
+#define TARGET_ATOMIC_SOFT_IMASK \
+  selected_atomic_model ().type == sh_atomic_model::soft_imask
+
 #ifdef RTX_CODE
 extern rtx sh_fsca_sf2int (void);
 extern rtx sh_fsca_int2sf (void);
@@ -73,9 +126,8 @@ extern void sh_emit_scc_to_t (enum rtx_code, rtx, rtx);
 extern rtx sh_emit_cheap_store_flag (enum machine_mode, enum rtx_code, rtx, rtx);
 extern void sh_emit_compare_and_branch (rtx *, enum machine_mode);
 extern void sh_emit_compare_and_set (rtx *, enum machine_mode);
-extern int shift_insns_rtx (rtx);
-extern void gen_ashift (int, int, rtx);
-extern void gen_ashift_hi (int, int, rtx);
+extern bool sh_ashlsi_clobbers_t_reg_p (rtx);
+extern bool sh_lshrsi_clobbers_t_reg_p (rtx);
 extern void gen_shifty_op (int, rtx *);
 extern void gen_shifty_hi_op (int, rtx *);
 extern bool expand_ashiftrt (rtx *);
@@ -106,14 +158,40 @@ extern void sh_expand_binop_v2sf (enum rtx_code, rtx, rtx, rtx);
 extern bool sh_expand_t_scc (rtx *);
 extern rtx sh_gen_truncate (enum machine_mode, rtx, int);
 extern bool sh_vector_mode_supported_p (enum machine_mode);
+extern bool sh_cfun_trap_exit_p (void);
+extern void sh_canonicalize_comparison (enum rtx_code&, rtx&, rtx&,
+					enum machine_mode mode = VOIDmode);
+extern rtx sh_find_equiv_gbr_addr (rtx cur_insn, rtx mem);
+extern int sh_eval_treg_value (rtx op);
+
+/* Result value of sh_find_set_of_reg.  */
+struct set_of_reg
+{
+  /* The insn where sh_find_set_of_reg stopped looking.
+     Can be NULL_RTX if the end of the insn list was reached.  */
+  rtx insn;
+
+  /* The set rtx of the specified reg if found, NULL_RTX otherwise.  */
+  const_rtx set_rtx;
+
+  /* The set source rtx of the specified reg if found, NULL_RTX otherwise.
+     Usually, this is the most interesting return value.  */
+  rtx set_src;
+};
+
+extern set_of_reg sh_find_set_of_reg (rtx reg, rtx insn, rtx(*stepfunc)(rtx));
+extern bool sh_is_logical_t_store_expr (rtx op, rtx insn);
+extern rtx sh_try_omit_signzero_extend (rtx extended_op, rtx insn);
 #endif /* RTX_CODE */
 
+extern void sh_cpu_cpp_builtins (cpp_reader* pfile);
+
 extern const char *output_jump_label_table (void);
+extern rtx get_t_reg_rtx (void);
 extern rtx get_fpscr_rtx (void);
 extern int sh_media_register_for_return (void);
 extern void sh_expand_prologue (void);
 extern void sh_expand_epilogue (bool);
-extern bool sh_need_epilogue (void);
 extern void sh_set_return_address (rtx, rtx);
 extern int initial_elimination_offset (int, int);
 extern bool fldi_ok (void);
@@ -151,4 +229,5 @@ extern int sh2a_get_function_vector_number (rtx);
 extern bool sh2a_is_function_vector_call (rtx);
 extern void sh_fix_range (const char *);
 extern bool sh_hard_regno_mode_ok (unsigned int, enum machine_mode);
+extern bool sh_can_use_simple_return_p (void);
 #endif /* ! GCC_SH_PROTOS_H */

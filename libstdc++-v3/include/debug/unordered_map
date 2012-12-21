@@ -30,7 +30,7 @@
 #ifndef _GLIBCXX_DEBUG_UNORDERED_MAP
 #define _GLIBCXX_DEBUG_UNORDERED_MAP 1
 
-#ifndef __GXX_EXPERIMENTAL_CXX0X__
+#if __cplusplus < 201103L
 # include <bits/c++0x_warning.h>
 #else
 # include <unordered_map>
@@ -183,27 +183,63 @@ namespace __debug
       // local versions
       local_iterator
       begin(size_type __b)
-      { return local_iterator(_Base::begin(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return local_iterator(_Base::begin(__b), __b, this);
+      }
 
       local_iterator
       end(size_type __b)
-      { return local_iterator(_Base::end(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return local_iterator(_Base::end(__b), __b, this);
+      }
 
       const_local_iterator
       begin(size_type __b) const
-      { return const_local_iterator(_Base::begin(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::begin(__b), __b, this);
+      }
 
       const_local_iterator
       end(size_type __b) const
-      { return const_local_iterator(_Base::end(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::end(__b), __b, this);
+      }
 
       const_local_iterator
       cbegin(size_type __b) const
-      { return const_local_iterator(_Base::cbegin(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::cbegin(__b), __b, this);
+      }
 
       const_local_iterator
       cend(size_type __b) const
-      { return const_local_iterator(_Base::cend(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::cend(__b), __b, this);
+      }
+
+      size_type
+      bucket_size(size_type __b) const
+      {
+	__glibcxx_check_bucket_index(__b);
+	return _Base::bucket_size(__b);
+      }
+
+      float
+      max_load_factor() const noexcept
+      { return _Base::max_load_factor(); }
+
+      void
+      max_load_factor(float __f)
+      {
+	__glibcxx_check_max_load_factor(__f);
+	_Base::max_load_factor(__f);
+      }
 
       template<typename... _Args>
 	std::pair<iterator, bool>
@@ -248,8 +284,8 @@ namespace __debug
       }
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
 	std::pair<iterator, bool>
 	insert(_Pair&& __obj)
 	{
@@ -261,8 +297,8 @@ namespace __debug
 	}
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
 	iterator
 	insert(const_iterator __hint, _Pair&& __obj)
 	{
@@ -446,7 +482,7 @@ namespace __debug
     inline bool
     operator==(const unordered_map<_Key, _Tp, _Hash, _Pred, _Alloc>& __x,
 	       const unordered_map<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
-    { return __x._M_equal(__y); }
+    { return __x._M_base() == __y._M_base(); }
 
   template<typename _Key, typename _Tp, typename _Hash,
 	   typename _Pred, typename _Alloc>
@@ -598,27 +634,63 @@ namespace __debug
       // local versions
       local_iterator
       begin(size_type __b)
-      { return local_iterator(_Base::begin(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return local_iterator(_Base::begin(__b), __b, this);
+      }
 
       local_iterator
       end(size_type __b)
-      { return local_iterator(_Base::end(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return local_iterator(_Base::end(__b), __b, this);
+      }
 
       const_local_iterator
       begin(size_type __b) const
-      { return const_local_iterator(_Base::begin(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::begin(__b), __b, this);
+      }
 
       const_local_iterator
       end(size_type __b) const
-      { return const_local_iterator(_Base::end(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::end(__b), __b, this);
+      }
 
       const_local_iterator
       cbegin(size_type __b) const
-      { return const_local_iterator(_Base::cbegin(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::cbegin(__b), __b, this);
+      }
 
       const_local_iterator
       cend(size_type __b) const
-      { return const_local_iterator(_Base::cend(__b), __b, this); }
+      {
+	__glibcxx_check_bucket_index(__b);
+	return const_local_iterator(_Base::cend(__b), __b, this);
+      }
+
+      size_type
+      bucket_size(size_type __b) const
+      {
+	__glibcxx_check_bucket_index(__b);
+	return _Base::bucket_size(__b);
+      }
+
+      float
+      max_load_factor() const noexcept
+      { return _Base::max_load_factor(); }
+
+      void
+      max_load_factor(float __f)
+      {
+	__glibcxx_check_max_load_factor(__f);
+	_Base::max_load_factor(__f);
+      }
 
       template<typename... _Args>
 	iterator
@@ -663,8 +735,8 @@ namespace __debug
       }
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
 	iterator
 	insert(_Pair&& __obj)
 	{
@@ -675,8 +747,8 @@ namespace __debug
 	}
 
       template<typename _Pair, typename = typename
-	       std::enable_if<std::is_convertible<_Pair,
-						  value_type>::value>::type>
+	       std::enable_if<std::is_constructible<value_type,
+						    _Pair&&>::value>::type>
 	iterator
 	insert(const_iterator __hint, _Pair&& __obj)
 	{
@@ -857,7 +929,7 @@ namespace __debug
     inline bool
     operator==(const unordered_multimap<_Key, _Tp, _Hash, _Pred, _Alloc>& __x,
 	       const unordered_multimap<_Key, _Tp, _Hash, _Pred, _Alloc>& __y)
-    { return __x._M_equal(__y); }
+    { return __x._M_base() == __y._M_base(); }
 
   template<typename _Key, typename _Tp, typename _Hash,
 	   typename _Pred, typename _Alloc>
@@ -869,6 +941,6 @@ namespace __debug
 } // namespace __debug
 } // namespace std
 
-#endif // __GXX_EXPERIMENTAL_CXX0X__
+#endif // C++11
 
 #endif

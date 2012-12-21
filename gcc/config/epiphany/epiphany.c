@@ -1,6 +1,6 @@
 /* Subroutines used for code generation on the EPIPHANY cpu.
    Copyright (C) 1994, 1995, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
-   2004, 2005, 2006, 2007, 2009, 2010, 2011 Free Software Foundation, Inc.
+   2004, 2005, 2006, 2007, 2009-2012 Free Software Foundation, Inc.
    Contributed by Embecosm on behalf of Adapteva, Inc.
 
 This file is part of GCC.
@@ -45,7 +45,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "insn-codes.h"
 #include "ggc.h"
 #include "tm-constrs.h"
-#include "tree-pass.h"
+#include "tree-pass.h"	/* for current_pass */
 
 /* Which cpu we're compiling for.  */
 int epiphany_cpu_type;
@@ -729,7 +729,8 @@ epiphany_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
    If ADDR is not a valid address, its cost is irrelevant.  */
 
 static int
-epiphany_address_cost (rtx addr, bool speed)
+epiphany_address_cost (rtx addr, enum machine_mode mode,
+		       addr_space_t as ATTRIBUTE_UNUSED, bool speed)
 {
   rtx reg;
   rtx off = const0_rtx;
@@ -760,19 +761,28 @@ epiphany_address_cost (rtx addr, bool speed)
     }
   if (!satisfies_constraint_Rgs (reg))
     return 1;
-  /* ??? We don't know the mode of the memory access.  We are going to assume
-     SImode, unless lack of offset alignment indicates a smaller access.  */
+  /* The offset range available for short instructions depends on the mode
+     of the memory access.  */
   /* First, make sure we have a valid integer.  */
   if (!satisfies_constraint_L (off))
     return 1;
   i = INTVAL (off);
-  if ((i & 1) == 0)
-    i >>= 1;
-  if ((i & 1) == 0)
-    i >>= 1;
-  if (i < -7 || i > 7)
-    return 1;
-  return 0;
+  switch (GET_MODE_SIZE (mode))
+    {
+      default:
+      case 4:
+	if (i & 1)
+	  return 1;
+	i >>= 1;
+	/* Fall through.  */
+      case 2:
+	if (i & 1)
+	  return 1;
+	i >>= 1;
+	/* Fall through.  */
+      case 1:
+	return i < -7 || i > 7;
+    }
 }
 
 /* Compute the cost of moving data between registers and memory.
@@ -932,7 +942,7 @@ epiphany_compute_function_type (tree decl)
    Don't consider them here.  */
 #define MUST_SAVE_REGISTER(regno, interrupt_p) \
   ((df_regs_ever_live_p (regno) \
-    || (interrupt_p && !current_function_is_leaf \
+    || (interrupt_p && !crtl->is_leaf \
 	&& call_used_regs[regno] && !fixed_regs[regno])) \
    && (!call_used_regs[regno] || regno == GPR_LR \
        || (interrupt_p && regno != GPR_SP)))
@@ -1035,7 +1045,7 @@ epiphany_compute_frame_size (int size /* # of var. bytes allocated.  */)
     reg_size = EPIPHANY_STACK_ALIGN (reg_size);
   if (total_size + reg_size <= (unsigned) epiphany_stack_offset
       && !interrupt_p
-      && current_function_is_leaf && !frame_pointer_needed)
+      && crtl->is_leaf && !frame_pointer_needed)
     {
       first_slot = -1;
       last_slot = -1;
@@ -1869,6 +1879,19 @@ epiphany_initial_elimination_offset (int from, int to)
   gcc_unreachable ();
 }
 
+bool
+epiphany_regno_rename_ok (unsigned, unsigned dst)
+{
+  enum epiphany_function_type fn_type;
+
+  fn_type = epiphany_compute_function_type (current_function_decl);
+  if (!EPIPHANY_INTERRUPT_P (fn_type))
+    return true;
+  if (df_regs_ever_live_p (dst))
+    return true;
+  return false;
+}
+
 static int
 epiphany_issue_rate (void)
 {
@@ -1903,10 +1926,10 @@ epiphany_adjust_cost (rtx insn, rtx link, rtx dep_insn, int cost)
 	  rtx set = single_set (insn);
 
 	  if (set
-	      && !reg_mentioned_p (SET_DEST (dep_set), SET_SRC (set))
+	      && !reg_overlap_mentioned_p (SET_DEST (dep_set), SET_SRC (set))
 	      && (!MEM_P (SET_DEST (set))
-		  || !reg_mentioned_p (SET_DEST (dep_set),
-				       XEXP (SET_DEST (set), 0))))
+		  || !reg_overlap_mentioned_p (SET_DEST (dep_set),
+					       XEXP (SET_DEST (set), 0))))
 	    cost = 1;
 	}
     }
@@ -1939,6 +1962,14 @@ epiphany_legitimate_address_p (enum machine_mode mode, rtx x, bool strict)
   if (RTX_FRAME_OFFSET_P (x))
     return true;
   if (LEGITIMATE_OFFSET_ADDRESS_P (mode, x))
+    return true;
+  /* If this is a misaligned stack access, don't force it to reg+index.  */
+  if (GET_MODE_SIZE (mode) == 8
+      && GET_CODE (x) == PLUS && XEXP (x, 0) == stack_pointer_rtx
+      /* Decomposed to SImode; GET_MODE_SIZE (SImode) == 4 */
+      && !(INTVAL (XEXP (x, 1)) & 3)
+      && INTVAL (XEXP (x, 1)) >= -2047 * 4
+      && INTVAL (XEXP (x, 1)) <=  2046 * 4)
     return true;
   if (TARGET_POST_INC
       && (GET_CODE (x) == POST_DEC || GET_CODE (x) == POST_INC)

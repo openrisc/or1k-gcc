@@ -240,15 +240,20 @@ ALL_COMPILERFLAGS = $(ALL_CFLAGS)
 # This is where we get libiberty.a from.
 LIBIBERTY = ../../libiberty/libiberty.a
 
+# We need to link against libbacktrace because diagnostic.c in
+# libcommon.a uses it.
+LIBBACKTRACE = ../../libbacktrace/.libs/libbacktrace.a
+
 # How to link with both our special library facilities
 # and the system's installed libraries.
-LIBS = $(LIBINTL) $(LIBICONV) $(LIBIBERTY) $(SYSLIBS)
-LIBDEPS = $(LIBINTL_DEP) $(LIBICONV_DEP) $(LIBIBERTY)
+LIBS = $(LIBINTL) $(LIBICONV) $(LIBBACKTRACE) $(LIBIBERTY) $(SYSLIBS)
+LIBDEPS = $(LIBINTL_DEP) $(LIBICONV_DEP) $(LIBBACKTRACE) $(LIBIBERTY)
 # Default is no TGT_LIB; one might be passed down or something
 TGT_LIB =
 TOOLS_LIBS = targext.o link.o ../../ggc-none.o ../../libcommon-target.a \
   ../../libcommon.a ../../../libcpp/libcpp.a $(LIBGNAT) $(LIBINTL) $(LIBICONV) \
-  ../../../libiberty/libiberty.a $(SYSLIBS) $(TGT_LIB)
+  ../../../libbacktrace/.libs/libbacktrace.a ../../../libiberty/libiberty.a \
+  $(SYSLIBS) $(TGT_LIB)
 
 # Convert the target variable into a space separated list of architecture,
 # manufacturer, and operating system and assign each of those to its own
@@ -784,15 +789,31 @@ ifeq ($(strip $(filter-out sparc% wrs vx%,$(targ))),)
   s-tasinf.ads<s-tasinf-vxworks.ads \
   s-taspri.ads<s-taspri-vxworks.ads \
   s-tpopsp.adb<s-tpopsp-vxworks.adb \
-  s-vxwork.ads<s-vxwork-sparcv9.ads \
   g-socthi.ads<g-socthi-vxworks.ads \
   g-socthi.adb<g-socthi-vxworks.adb \
-  g-stsifd.adb<g-stsifd-sockets.adb \
-  system.ads<system-vxworks-sparcv9.ads   \
+  g-stsifd.adb<g-stsifd-sockets.adb
 
   TOOLS_TARGET_PAIRS=\
   mlib-tgt-specific.adb<mlib-tgt-specific-vxworks.adb \
   indepsw.adb<indepsw-gnu.adb
+
+  ifeq ($(arch),sparc)
+    # 32-bits
+    LIBGNAT_TARGET_PAIRS += \
+    s-vxwork.ads<s-vxwork-sparc.ads \
+    system.ads<system-vxworks-sparc-kernel.ads
+  else
+    # 64-bits
+    LIBGNAT_TARGET_PAIRS += \
+    s-vxwork.ads<s-vxwork-sparcv9.ads \
+    system.ads<system-vxworks-sparcv9.ads
+  endif
+
+  ifeq ($(strip $(filter-out kernel,$(THREAD_KIND))),)
+    LIBGNAT_TARGET_PAIRS += \
+    s-vxwext.ads<s-vxwext-kernel.ads \
+    s-vxwext.adb<s-vxwext-kernel.adb
+  endif
 
   EXTRA_GNATRTL_NONTASKING_OBJS=i-vxwork.o i-vxwoio.o
   EXTRA_GNATRTL_TASKING_OBJS=s-vxwork.o s-vxwext.o
@@ -961,6 +982,33 @@ ifeq ($(strip $(filter-out mips% wrs vx%,$(targ))),)
   EXTRA_GNATRTL_TASKING_OBJS=s-vxwork.o s-vxwext.o
 
   EXTRA_LIBGNAT_OBJS+=vx_stack_info.o
+endif
+
+ifeq ($(strip $(filter-out arm% linux-androideabi,$(arch) $(osys)-$(word 4,$(targ)))),)
+  LIBGNAT_TARGET_PAIRS = \
+  a-intnam.ads<a-intnam-linux.ads \
+  s-inmaop.adb<s-inmaop-posix.adb \
+  s-intman.adb<s-intman-posix.adb \
+  s-linux.ads<s-linux.ads \
+  s-osinte.adb<s-osinte-android.adb \
+  s-osinte.ads<s-osinte-android.ads \
+  s-osprim.adb<s-osprim-posix.adb \
+  s-taprop.adb<s-taprop-posix.adb \
+  s-taspri.ads<s-taspri-posix-noaltstack.ads \
+  s-tpopsp.adb<s-tpopsp-posix-foreign.adb \
+  system.ads<system-linux-armel.ads \
+  $(DUMMY_SOCKETS_TARGET_PAIRS)
+
+  TOOLS_TARGET_PAIRS =  \
+    mlib-tgt-specific.adb<mlib-tgt-specific-linux.adb \
+    indepsw.adb<indepsw-gnu.adb
+
+  GNATRTL_SOCKETS_OBJS =
+  EXTRA_GNATRTL_TASKING_OBJS=s-linux.o
+  EH_MECHANISM=
+  THREADSLIB =
+  GNATLIB_SHARED = gnatlib-shared-dual
+  LIBRARY_VERSION := $(LIB_VERSION)
 endif
 
 # Sparc Solaris
@@ -1257,7 +1305,6 @@ ifeq ($(strip $(filter-out %86_64 freebsd%,$(arch) $(osys))),)
   s-taprop.adb<s-taprop-posix.adb \
   s-taspri.ads<s-taspri-posix.ads \
   s-tpopsp.adb<s-tpopsp-posix.adb \
-  g-trasym.adb<g-trasym-dwarf.adb \
   $(ATOMICS_TARGET_PAIRS) \
   $(X86_64_TARGET_PAIRS) \
   system.ads<system-freebsd-x86_64.ads
@@ -1829,7 +1876,7 @@ ifeq ($(strip $(filter-out powerpc% e500% linux%,$(arch) $(osys))),)
   LIBRARY_VERSION := $(LIB_VERSION)
 endif
 
-ifeq ($(strip $(filter-out arm% linux-gnueabi,$(arch) $(osys)-$(word 4,$(targ)))),)
+ifeq ($(strip $(filter-out arm%-linux,$(arch)-$(osys)) $(if $(findstring eabi,$(word 4,$(targ))),,$(word 4,$(targ)))),)
   LIBGNAT_TARGET_PAIRS = \
   a-intnam.ads<a-intnam-linux.ads \
   s-inmaop.adb<s-inmaop-posix.adb \
@@ -2014,7 +2061,7 @@ ifeq ($(strip $(filter-out ia64% hp hpux%,$(targ))),)
   s-osinte.ads<s-osinte-hpux.ads \
   s-osprim.adb<s-osprim-posix.adb \
   s-taprop.adb<s-taprop-posix.adb \
-  s-taspri.ads<s-taspri-posix-noaltstack.ads \
+  s-taspri.ads<s-taspri-posix.ads \
   s-tpopsp.adb<s-tpopsp-posix-foreign.adb \
   system.ads<system-hpux-ia64.ads \
   $(ATOMICS_TARGET_PAIRS) \
@@ -2024,10 +2071,11 @@ ifeq ($(strip $(filter-out ia64% hp hpux%,$(targ))),)
   mlib-tgt-specific.adb<mlib-tgt-specific-ia64-hpux.adb
 
   MISCLIB=
+  EH_MECHANISM=-gcc
   THREADSLIB=-lpthread
   GNATLIB_SHARED=gnatlib-shared-dual
   GMEM_LIB = gmemlib
-  soext = .sl
+  soext = .so
   SO_OPTS = -Wl,+h,
   LIBRARY_VERSION := $(LIB_VERSION)
 endif
@@ -2559,8 +2607,6 @@ install-gnatlib: ../stamp-gnatlib-$(RTSDIR)
 	$(RM) ../stamp-gnatlib-$(RTSDIR)
 	touch ../stamp-gnatlib1-$(RTSDIR)
 
-# GNULLI End #############################################################
-
 ifeq ($(strip $(filter-out alpha64 ia64 dec hp vms% openvms% alphavms%,$(subst -, ,$(host)))),)
 OSCONS_CPP=../../$(DECC) -E /comment=as_is -DNATIVE \
              -DTARGET='""$(target)""' $(fsrcpfx)ada/s-oscons-tmplt.c
@@ -2591,7 +2637,7 @@ $(RTSDIR)/s-oscons.ads: ../stamp-gnatlib1-$(RTSDIR) s-oscons-tmplt.c gsocket.h .
 	(cd $(RTSDIR) ; \
 	    $(OSCONS_CPP) ; \
 	    $(OSCONS_EXTRACT) ; \
-	    ../bldtools/oscons/xoscons)
+	    ../bldtools/oscons/xoscons s-oscons)
 
 # Don't use semicolon separated shell commands that involve list expansions.
 # The semicolon triggers a call to DCL on VMS and DCL can't handle command
@@ -2799,15 +2845,18 @@ gnatlib-shared:
              $(GNATLIB_SHARED)
 
 # When building a SJLJ runtime for VxWorks, in addition to forcing
-# ZCX_By_default to True, we need to ensure that -crtbe linker options
-# is not passed. Otherwise we will end with weak symbols on 
-# __register_frame_info and __deregister_frame_info. The VxWorks 5.x
-# will issue an error on weak symbols.
+# ZCX_By_default to False, we need to ensure that extra linker options
+# are not passed to prevent the inclusion of useless objects and
+# potential troubles from the presence of extra symbols and references
+# in some configurations.  The inhibition is performed by commenting
+# the pragma instead of deleting the line, as the latter might result
+# in getting multiple blank lines, hence a style check error, as a
+# result.
 gnatlib-sjlj:
 	$(MAKE) $(FLAGS_TO_PASS) EH_MECHANISM="" \
 	THREAD_KIND="$(THREAD_KIND)" ../stamp-gnatlib1-$(RTSDIR)
 	sed -e 's/ZCX_By_Default.*/ZCX_By_Default            : constant Boolean := False;/' $(RTSDIR)/system.ads > $(RTSDIR)/s.ads
-	cat $(RTSDIR)/s.ads | grep -v "Linker_Options.*-crtbe" > $(RTSDIR)/s2.ads
+	sed -e 's/\(pragma Linker.*crtbe.*\)/--  \1/' $(RTSDIR)/s.ads > $(RTSDIR)/s2.ads
 	$(RM) $(RTSDIR)/s.ads
 	$(MV) $(RTSDIR)/s2.ads $(RTSDIR)/system.ads
 	$(MAKE) $(FLAGS_TO_PASS) \

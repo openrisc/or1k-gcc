@@ -23,7 +23,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "coretypes.h"
 #include "tm.h"
 #include "tree.h"
-#include "rtl.h"	/* FIXME: Only for ceil_log2, of all things...  */
 #include "ggc.h"
 #include "basic-block.h"
 #include "tree-flow.h"
@@ -73,26 +72,22 @@ along with GCC; see the file COPYING3.  If not see
    the -2 on all the calculations below.  */
 
 #define NUM_BUCKETS 10
-static GTY ((deletable (""))) VEC(gimple,gc) *free_phinodes[NUM_BUCKETS - 2];
+static GTY ((deletable (""))) vec<gimple, va_gc> *free_phinodes[NUM_BUCKETS - 2];
 static unsigned long free_phinode_count;
 
 static int ideal_phi_node_len (int);
 
-#ifdef GATHER_STATISTICS
 unsigned int phi_nodes_reused;
 unsigned int phi_nodes_created;
-#endif
 
 /* Dump some simple statistics regarding the re-use of PHI nodes.  */
 
-#ifdef GATHER_STATISTICS
 void
 phinodes_print_statistics (void)
 {
   fprintf (stderr, "PHI nodes allocated: %u\n", phi_nodes_created);
   fprintf (stderr, "PHI nodes reused: %u\n", phi_nodes_reused);
 }
-#endif
 
 /* Allocate a PHI node with at least LEN arguments.  If the free list
    happens to contain a PHI node with LEN arguments or more, return
@@ -113,28 +108,25 @@ allocate_phi_node (size_t len)
 
   /* If our free list has an element, then use it.  */
   if (bucket < NUM_BUCKETS - 2
-      && gimple_phi_capacity (VEC_index (gimple, free_phinodes[bucket], 0))
-	 >= len)
+      && gimple_phi_capacity ((*free_phinodes[bucket])[0]) >= len)
     {
       free_phinode_count--;
-      phi = VEC_pop (gimple, free_phinodes[bucket]);
-      if (VEC_empty (gimple, free_phinodes[bucket]))
-	VEC_free (gimple, gc, free_phinodes[bucket]);
-#ifdef GATHER_STATISTICS
-      phi_nodes_reused++;
-#endif
+      phi = free_phinodes[bucket]->pop ();
+      if (free_phinodes[bucket]->is_empty ())
+	vec_free (free_phinodes[bucket]);
+      if (GATHER_STATISTICS)
+	phi_nodes_reused++;
     }
   else
     {
       phi = ggc_alloc_gimple_statement_d (size);
-#ifdef GATHER_STATISTICS
-      phi_nodes_created++;
+      if (GATHER_STATISTICS)
 	{
 	  enum gimple_alloc_kind kind = gimple_alloc_kind (GIMPLE_PHI);
-          gimple_alloc_counts[(int) kind]++;
-          gimple_alloc_sizes[(int) kind] += size;
+	  phi_nodes_created++;
+	  gimple_alloc_counts[(int) kind]++;
+	  gimple_alloc_sizes[(int) kind] += size;
 	}
-#endif
     }
 
   return phi;
@@ -196,7 +188,9 @@ make_phi_node (tree var, int len)
   gimple_init_singleton (phi);
   phi->gimple_phi.nargs = len;
   phi->gimple_phi.capacity = capacity;
-  if (TREE_CODE (var) == SSA_NAME)
+  if (!var)
+    ;
+  else if (TREE_CODE (var) == SSA_NAME)
     gimple_phi_set_result (phi, var);
   else
     gimple_phi_set_result (phi, make_ssa_name (var, phi));
@@ -234,7 +228,7 @@ release_phi_node (gimple phi)
 
   bucket = len > NUM_BUCKETS - 1 ? NUM_BUCKETS - 1 : len;
   bucket -= 2;
-  VEC_safe_push (gimple, gc, free_phinodes[bucket], phi);
+  vec_safe_push (free_phinodes[bucket], phi);
   free_phinode_count++;
 }
 

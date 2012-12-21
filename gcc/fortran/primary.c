@@ -22,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "config.h"
 #include "system.h"
+#include "coretypes.h"
 #include "flags.h"
 #include "gfortran.h"
 #include "arith.h"
@@ -268,7 +269,7 @@ match_hollerith_constant (gfc_expr **result)
   if (match_integer_constant (&e, 0) == MATCH_YES
       && gfc_match_char ('h') == MATCH_YES)
     {
-      if (gfc_notify_std (GFC_STD_LEGACY, "Extension: Hollerith constant "
+      if (gfc_notify_std (GFC_STD_LEGACY, "Hollerith constant "
 			  "at %C") == FAILURE)
 	goto cleanup;
 
@@ -392,7 +393,7 @@ match_boz_constant (gfc_expr **result)
     goto backup;
 
   if (x_hex
-      && (gfc_notify_std (GFC_STD_GNU, "Extension: Hexadecimal "
+      && (gfc_notify_std (GFC_STD_GNU, "Hexadecimal "
 			  "constant at %C uses non-standard syntax")
 	  == FAILURE))
       return MATCH_ERROR;
@@ -431,7 +432,7 @@ match_boz_constant (gfc_expr **result)
 	  goto backup;
 	}
 
-      if (gfc_notify_std (GFC_STD_GNU, "Extension: BOZ constant "
+      if (gfc_notify_std (GFC_STD_GNU, "BOZ constant "
 			  "at %C uses non-standard postfix syntax")
 	  == FAILURE)
 	return MATCH_ERROR;
@@ -468,7 +469,7 @@ match_boz_constant (gfc_expr **result)
     }
 
   if (!gfc_in_match_data ()
-      && (gfc_notify_std (GFC_STD_F2003, "Fortran 2003: BOZ used outside a DATA "
+      && (gfc_notify_std (GFC_STD_F2003, "BOZ used outside a DATA "
 			  "statement at %C")
 	  == FAILURE))
       return MATCH_ERROR;
@@ -559,7 +560,7 @@ match_real_constant (gfc_expr **result, int signflag)
 
   if (c == 'q')
     {
-      if (gfc_notify_std (GFC_STD_GNU, "Extension: exponent-letter 'q' in "
+      if (gfc_notify_std (GFC_STD_GNU, "exponent-letter 'q' in "
 			 "real-literal-constant at %C") == FAILURE)
 	return MATCH_ERROR;
       else if (gfc_option.warn_real_q_constant)
@@ -1086,6 +1087,7 @@ got_delim:
 
       if (!gfc_check_character_range (c, kind))
 	{
+	  gfc_free_expr (e);
 	  gfc_error ("Character '%s' in string at %C is not representable "
 		     "in character kind %d", gfc_print_wide_char (c), kind);
 	  return MATCH_ERROR;
@@ -1217,7 +1219,7 @@ match_sym_complex_part (gfc_expr **result)
       return MATCH_ERROR;
     }
 
-  if (gfc_notify_std (GFC_STD_F2003, "Fortran 2003: PARAMETER symbol in "
+  if (gfc_notify_std (GFC_STD_F2003, "PARAMETER symbol in "
 		      "complex constant at %C") == FAILURE)
     return MATCH_ERROR;
 
@@ -1506,8 +1508,9 @@ match_actual_arg (gfc_expr **result)
 
 	  if (sym->attr.in_common && !sym->attr.proc_pointer)
 	    {
-	      gfc_add_flavor (&sym->attr, FL_VARIABLE, sym->name,
-			      &sym->declared_at);
+	      if (gfc_add_flavor (&sym->attr, FL_VARIABLE, sym->name,
+				  &sym->declared_at) == FAILURE)
+		return MATCH_ERROR;
 	      break;
 	    }
 
@@ -1645,7 +1648,7 @@ match_arg_list_function (gfc_actual_arglist *result)
 	}
     }
 
-  if (gfc_notify_std (GFC_STD_GNU, "Extension: argument list "
+  if (gfc_notify_std (GFC_STD_GNU, "argument list "
 		      "function at %C") == FAILURE)
     {
       m = MATCH_ERROR;
@@ -1861,7 +1864,7 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
   if ((equiv_flag && gfc_peek_ascii_char () == '(')
       || gfc_peek_ascii_char () == '[' || sym->attr.codimension
       || (sym->attr.dimension && sym->ts.type != BT_CLASS
-	  && !sym->attr.proc_pointer && !gfc_is_proc_ptr_comp (primary, NULL)
+	  && !sym->attr.proc_pointer && !gfc_is_proc_ptr_comp (primary)
 	  && !(gfc_matching_procptr_assignment
 	       && sym->attr.flavor == FL_PROCEDURE))
       || (sym->ts.type == BT_CLASS && sym->attr.class_ok
@@ -1972,6 +1975,8 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
 	  gcc_assert (primary->symtree->n.sym->attr.referenced);
 	  if (tbp_sym)
 	    primary->ts = tbp_sym->ts;
+	  else
+	    gfc_clear_ts (&primary->ts);
 
 	  m = gfc_match_actual_arglist (tbp->n.tb->subroutine,
 					&primary->value.compcall.actual);
@@ -2003,8 +2008,7 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
 
       primary->ts = component->ts;
 
-      if (component->attr.proc_pointer && ppc_arg
-	  && !gfc_matching_procptr_assignment)
+      if (component->attr.proc_pointer && ppc_arg)
 	{
 	  /* Procedure pointer component call: Look for argument list.  */
 	  m = gfc_match_actual_arglist (sub_flag,
@@ -2013,7 +2017,7 @@ gfc_match_varspec (gfc_expr *primary, int equiv_flag, bool sub_flag,
 	    return MATCH_ERROR;
 
 	  if (m == MATCH_NO && !gfc_matching_ptr_assignment
-	      && !matching_actual_arglist)
+	      && !gfc_matching_procptr_assignment && !matching_actual_arglist)
 	    {
 	      gfc_error ("Procedure pointer component '%s' requires an "
 			 "argument list at %C", component->name);
@@ -2352,7 +2356,7 @@ build_actual_constructor (gfc_structure_ctor_component **comp_head,
 	{
 	  if (comp->initializer)
 	    {
-	      if (gfc_notify_std (GFC_STD_F2003, "Fortran 2003: Structure"
+	      if (gfc_notify_std (GFC_STD_F2003, "Structure"
 				  " constructor with missing optional arguments"
 				  " at %C") == FAILURE)
 		return FAILURE;
@@ -2428,7 +2432,7 @@ gfc_convert_to_structure_constructor (gfc_expr *e, gfc_symbol *sym, gfc_expr **c
        	}
       if (actual->name)
 	{
-	  if (gfc_notify_std (GFC_STD_F2003, "Fortran 2003: Structure"
+	  if (gfc_notify_std (GFC_STD_F2003, "Structure"
 			      " constructor with named arguments at %C")
 	      == FAILURE)
 	    goto cleanup;
@@ -2842,13 +2846,18 @@ gfc_match_rvalue (gfc_expr **result)
 	    /* Parse functions returning a procptr.  */
 	    goto function0;
 
-	  if (gfc_is_intrinsic (sym, 0, gfc_current_locus)
-	      || gfc_is_intrinsic (sym, 1, gfc_current_locus))
-	    sym->attr.intrinsic = 1;
 	  e = gfc_get_expr ();
 	  e->expr_type = EXPR_VARIABLE;
 	  e->symtree = symtree;
 	  m = gfc_match_varspec (e, 0, false, true);
+	  if (!e->ref && sym->attr.flavor == FL_UNKNOWN
+	      && sym->ts.type == BT_UNKNOWN
+	      && gfc_add_flavor (&sym->attr, FL_PROCEDURE,
+				 sym->name, NULL) == FAILURE)
+	    {
+	      m = MATCH_ERROR;
+	      break;
+	    }
 	  break;
 	}
 

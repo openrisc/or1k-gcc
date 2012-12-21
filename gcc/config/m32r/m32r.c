@@ -62,7 +62,7 @@ static void  block_move_call (rtx, rtx, rtx);
 static int   m32r_is_insn (rtx);
 static bool  m32r_legitimate_address_p (enum machine_mode, rtx, bool);
 static rtx   m32r_legitimize_address (rtx, rtx, enum machine_mode);
-static bool  m32r_mode_dependent_address_p (const_rtx);
+static bool  m32r_mode_dependent_address_p (const_rtx, addr_space_t);
 static tree  m32r_handle_model_attribute (tree *, tree, tree, int, bool *);
 static void  m32r_print_operand (FILE *, rtx, int);
 static void  m32r_print_operand_address (FILE *, rtx);
@@ -161,7 +161,7 @@ static const struct attribute_spec m32r_attribute_table[] =
 #undef  TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS m32r_rtx_costs
 #undef  TARGET_ADDRESS_COST
-#define TARGET_ADDRESS_COST hook_int_rtx_bool_0
+#define TARGET_ADDRESS_COST hook_int_rtx_mode_as_bool_0
 
 #undef  TARGET_PROMOTE_PROTOTYPES
 #define TARGET_PROMOTE_PROTOTYPES hook_bool_const_tree_true
@@ -1030,9 +1030,9 @@ gen_split_move_double (rtx operands[])
      subregs to make this code simpler.  It is safe to call
      alter_subreg any time after reload.  */
   if (GET_CODE (dest) == SUBREG)
-    alter_subreg (&dest);
+    alter_subreg (&dest, true);
   if (GET_CODE (src) == SUBREG)
-    alter_subreg (&src);
+    alter_subreg (&src, true);
 
   start_sequence ();
   if (REG_P (dest))
@@ -2011,7 +2011,7 @@ m32r_legitimize_address (rtx x, rtx orig_x ATTRIBUTE_UNUSED,
 /* Worker function for TARGET_MODE_DEPENDENT_ADDRESS_P.  */
 
 static bool
-m32r_mode_dependent_address_p (const_rtx addr)
+m32r_mode_dependent_address_p (const_rtx addr, addr_space_t as ATTRIBUTE_UNUSED)
 {
   if (GET_CODE (addr) == LO_SUM)
     return true;

@@ -1,6 +1,7 @@
 /* C++-specific tree lowering bits; see also c-gimplify.c and tree-gimple.c.
 
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
+   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
+   2012
    Free Software Foundation, Inc.
    Contributed by Jason Merrill <jason@redhat.com>
 
@@ -823,7 +824,7 @@ omp_cxx_notice_variable (struct cp_genericize_omp_taskreg *omp_ctx, tree decl)
 struct cp_genericize_data
 {
   struct pointer_set_t *p_set;
-  VEC (tree, heap) *bind_expr_stack;
+  vec<tree> bind_expr_stack;
   struct cp_genericize_omp_taskreg *omp_ctx;
 };
 
@@ -947,11 +948,12 @@ cp_genericize_r (tree *stmt_p, int *walk_subtrees, void *data)
      to lower this construct before scanning it, so we need to lower these
      before doing anything else.  */
   else if (TREE_CODE (stmt) == CLEANUP_STMT)
-    *stmt_p = build2 (CLEANUP_EH_ONLY (stmt) ? TRY_CATCH_EXPR
-					     : TRY_FINALLY_EXPR,
-		      void_type_node,
-		      CLEANUP_BODY (stmt),
-		      CLEANUP_EXPR (stmt));
+    *stmt_p = build2_loc (EXPR_LOCATION (stmt),
+			  CLEANUP_EH_ONLY (stmt) ? TRY_CATCH_EXPR
+						 : TRY_FINALLY_EXPR,
+			  void_type_node,
+			  CLEANUP_BODY (stmt),
+			  CLEANUP_EXPR (stmt));
 
   else if (TREE_CODE (stmt) == IF_STMT)
     {
@@ -1013,10 +1015,10 @@ cp_genericize_r (tree *stmt_p, int *walk_subtrees, void *data)
 				     : OMP_CLAUSE_DEFAULT_PRIVATE);
 	      }
 	}
-      VEC_safe_push (tree, heap, wtd->bind_expr_stack, stmt);
+      wtd->bind_expr_stack.safe_push (stmt);
       cp_walk_tree (&BIND_EXPR_BODY (stmt),
 		    cp_genericize_r, data, NULL);
-      VEC_pop (tree, wtd->bind_expr_stack);
+      wtd->bind_expr_stack.pop ();
     }
 
   else if (TREE_CODE (stmt) == USING_STMT)
@@ -1026,12 +1028,11 @@ cp_genericize_r (tree *stmt_p, int *walk_subtrees, void *data)
       /* Get the innermost inclosing GIMPLE_BIND that has a non NULL
          BLOCK, and append an IMPORTED_DECL to its
 	 BLOCK_VARS chained list.  */
-      if (wtd->bind_expr_stack)
+      if (wtd->bind_expr_stack.exists ())
 	{
 	  int i;
-	  for (i = VEC_length (tree, wtd->bind_expr_stack) - 1; i >= 0; i--)
-	    if ((block = BIND_EXPR_BLOCK (VEC_index (tree,
-						     wtd->bind_expr_stack, i))))
+	  for (i = wtd->bind_expr_stack.length () - 1; i >= 0; i--)
+	    if ((block = BIND_EXPR_BLOCK (wtd->bind_expr_stack[i])))
 	      break;
 	}
       if (block)
@@ -1119,6 +1120,22 @@ cp_genericize_r (tree *stmt_p, int *walk_subtrees, void *data)
     genericize_break_stmt (stmt_p);
   else if (TREE_CODE (stmt) == OMP_FOR)
     genericize_omp_for_stmt (stmt_p, walk_subtrees, data);
+  else if (TREE_CODE (stmt) == SIZEOF_EXPR)
+    {
+      if (SIZEOF_EXPR_TYPE_P (stmt))
+	*stmt_p
+	  = cxx_sizeof_or_alignof_type (TREE_TYPE (TREE_OPERAND (stmt, 0)),
+					SIZEOF_EXPR, false);
+      else if (TYPE_P (TREE_OPERAND (stmt, 0)))
+	*stmt_p = cxx_sizeof_or_alignof_type (TREE_OPERAND (stmt, 0),
+					      SIZEOF_EXPR, false);
+      else
+	*stmt_p = cxx_sizeof_or_alignof_expr (TREE_OPERAND (stmt, 0),
+					      SIZEOF_EXPR, false);
+      if (*stmt_p == error_mark_node)
+	*stmt_p = size_one_node;
+      return NULL;
+    }    
 
   pointer_set_insert (p_set, *stmt_p);
 
@@ -1133,11 +1150,11 @@ cp_genericize_tree (tree* t_p)
   struct cp_genericize_data wtd;
 
   wtd.p_set = pointer_set_create ();
-  wtd.bind_expr_stack = NULL;
+  wtd.bind_expr_stack.create (0);
   wtd.omp_ctx = NULL;
   cp_walk_tree (t_p, cp_genericize_r, &wtd, NULL);
   pointer_set_destroy (wtd.p_set);
-  VEC_free (tree, heap, wtd.bind_expr_stack);
+  wtd.bind_expr_stack.release ();
 }
 
 void
@@ -1318,8 +1335,7 @@ cxx_omp_clause_apply_fn (tree fn, tree arg1, tree arg2)
    NULL if there's nothing to do.  */
 
 tree
-cxx_omp_clause_default_ctor (tree clause, tree decl,
-			     tree outer ATTRIBUTE_UNUSED)
+cxx_omp_clause_default_ctor (tree clause, tree decl, tree /*outer*/)
 {
   tree info = CP_OMP_CLAUSE_INFO (clause);
   tree ret = NULL;

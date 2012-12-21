@@ -4,10 +4,10 @@
    Use of this source code is governed by a BSD-style
    license that can be found in the LICENSE file.  */
 
-#include "go-type.h"
-#include "go-panic.h"
-#include "array.h"
 #include "runtime.h"
+#include "go-panic.h"
+#include "go-type.h"
+#include "array.h"
 #include "arch.h"
 #include "malloc.h"
 
@@ -53,6 +53,9 @@ __go_append (struct __go_open_array a, void *bvalues, uintptr_t bcount,
 	    }
 	  while (m < count);
 	}
+
+      if ((uintptr) m > MaxMem / element_size)
+	runtime_panicstring ("growslice: cap out of range");
 
       n = __go_alloc (m * element_size);
       __builtin_memcpy (n, a.__values, a.__count * element_size);

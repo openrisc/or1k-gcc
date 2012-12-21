@@ -602,7 +602,6 @@ ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
-PIC_CXXFLAGS
 WARN_FLAGS
 OPTIMIZE_CXXFLAGS
 TOPLEVEL_INCLUDES
@@ -611,6 +610,8 @@ glibcxx_toolexeclibdir
 glibcxx_toolexecdir
 gxx_include_dir
 glibcxx_prefixdir
+CPU_OPT_BITS_RANDOM
+CPU_OPT_EXT_RANDOM
 ERROR_CONSTANTS_SRCDIR
 OS_INC_SRCDIR
 ABI_TWEAKS_SRCDIR
@@ -639,6 +640,7 @@ BUILD_INFO_FALSE
 BUILD_INFO_TRUE
 baseline_subdir_switch
 baseline_dir
+HWCAP_FLAGS
 GLIBCXX_LDBL_COMPAT_FALSE
 GLIBCXX_LDBL_COMPAT_TRUE
 ENABLE_VISIBILITY_FALSE
@@ -670,8 +672,6 @@ python_mod_dir
 ENABLE_EXTERN_TEMPLATE_FALSE
 ENABLE_EXTERN_TEMPLATE_TRUE
 EXTRA_CXX_FLAGS
-ENABLE_PARALLEL_FALSE
-ENABLE_PARALLEL_TRUE
 GLIBCXX_BUILD_DEBUG_FALSE
 GLIBCXX_BUILD_DEBUG_TRUE
 DEBUG_FLAGS
@@ -708,11 +708,15 @@ BASIC_FILE_H
 CSTDIO_H
 SECTION_FLAGS
 WERROR
+thread_header
 glibcxx_PCHFLAGS
 GLIBCXX_BUILD_PCH_FALSE
 GLIBCXX_BUILD_PCH_TRUE
 GLIBCXX_HOSTED_FALSE
 GLIBCXX_HOSTED_TRUE
+glibcxx_compiler_shared_flag
+glibcxx_compiler_pic_flag
+glibcxx_lt_pic_flag
 enable_static
 enable_shared
 lt_host_flags
@@ -843,6 +847,7 @@ enable_fast_install
 with_gnu_ld
 enable_libtool_lock
 enable_hosted_libstdcxx
+enable_libstdcxx_verbose
 enable_sjlj_exceptions
 enable_libstdcxx_pch
 enable_cstdio
@@ -1517,6 +1522,8 @@ Optional Features:
   --disable-libtool-lock  avoid locking (might break parallel builds)
   --disable-hosted-libstdcxx
                           only build freestanding C++ runtime support
+  --disable-libstdcxx-verbose
+                          disable termination messages to standard error
   --enable-sjlj-exceptions
                           force use of builtin_setjmp for exceptions
                           [default=auto]
@@ -5280,6 +5287,7 @@ $as_echo "$as_me: OS config directory is $os_include_dir" >&6;}
 
 
 
+# Libtool setup.
 if test "x${with_newlib}" != "xyes"; then
   enable_dlopen=yes
 
@@ -8531,6 +8539,7 @@ $as_echo_n "checking for $compiler option to produce PIC... " >&6; }
 	# AIX 5 now supports IA64 processor
 	lt_prog_compiler_static='-Bstatic'
       fi
+      lt_prog_compiler_pic='-fPIC'
       ;;
 
     amigaos*)
@@ -11504,7 +11513,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 11507 "configure"
+#line 11516 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -11610,7 +11619,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 11613 "configure"
+#line 11622 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -13413,6 +13422,7 @@ $as_echo_n "checking for $compiler option to produce PIC... " >&6; }
 	# AIX 5 now supports IA64 processor
 	lt_prog_compiler_static_CXX='-Bstatic'
       fi
+      lt_prog_compiler_pic_CXX='-fPIC'
       ;;
 
     amigaos*)
@@ -14896,6 +14906,38 @@ esac
 
 
 
+# libtool variables for C++ shared and position-independent compiles.
+#
+# Use glibcxx_lt_pic_flag to designate the automake variable
+# used to encapsulate the default libtool approach to creating objects
+# with position-independent code. Default: -prefer-pic.
+#
+# Use glibcxx_compiler_shared_flag to designate a compile-time flags for
+# creating shared objects. Default: -D_GLIBCXX_SHARED.
+#
+# Use glibcxx_compiler_pic_flag to designate a compile-time flags for
+# creating position-independent objects. This varies with the target
+# hardware and operating system, but is often: -DPIC -fPIC.
+if test "$enable_shared" = yes; then
+  glibcxx_lt_pic_flag="-prefer-pic"
+  glibcxx_compiler_pic_flag="$lt_prog_compiler_pic_CXX"
+  glibcxx_compiler_shared_flag="-D_GLIBCXX_SHARED"
+
+else
+  glibcxx_lt_pic_flag=
+  glibcxx_compiler_pic_flag=
+  glibcxx_compiler_shared_flag=
+fi
+
+
+
+
+# Override the libtool's pic_flag and pic_mode.
+# Do this step after AM_PROG_LIBTOOL, but before AC_OUTPUT.
+# NB: this impacts --with-pic and --without-pic.
+lt_prog_compiler_pic_CXX="$glibcxx_compiler_pic_flag $glibcxx_compiler_shared_flag"
+pic_mode='default'
+
 # Eliminate -lstdc++ addition to postdeps for cross compiles.
 postdeps_CXX=`echo " $postdeps_CXX " | sed 's, -lstdc++ ,,g'`
 
@@ -14936,6 +14978,29 @@ _ACEOF
 
 
 
+# Enable descriptive messages to standard output on termination.
+
+  # Check whether --enable-libstdcxx-verbose was given.
+if test "${enable_libstdcxx_verbose+set}" = set; then :
+  enableval=$enable_libstdcxx_verbose;
+else
+  enable_libstdcxx_verbose=yes
+fi
+
+  if test x"$enable_libstdcxx_verbose" = xyes; then
+    verbose_define=1
+  else
+    { $as_echo "$as_me:${as_lineno-$LINENO}: verbose termination messages are disabled" >&5
+$as_echo "$as_me: verbose termination messages are disabled" >&6;}
+    verbose_define=0
+  fi
+
+cat >>confdefs.h <<_ACEOF
+#define _GLIBCXX_VERBOSE $verbose_define
+_ACEOF
+
+
+
 # Enable compiler support that doesn't require linking.
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for exception model to use" >&5
@@ -14968,7 +15033,7 @@ fi
     #
     # Fake what AC_TRY_COMPILE does.  XXX Look at redoing this new-style.
     cat > conftest.$ac_ext << EOF
-#line 14971 "configure"
+#line 15036 "configure"
 struct S { ~S(); };
 void bar();
 void foo()
@@ -15095,6 +15160,21 @@ $as_echo_n "checking for thread model used by GCC... " >&6; }
   target_thread_file=`$CXX -v 2>&1 | sed -n 's/^Thread model: //p'`
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $target_thread_file" >&5
 $as_echo "$target_thread_file" >&6; }
+
+case $target_thread_file in
+    aix)	thread_header=config/rs6000/gthr-aix.h ;;
+    dce)	thread_header=config/pa/gthr-dce.h ;;
+    lynx)	thread_header=config/gthr-lynx.h ;;
+    mipssde)	thread_header=config/mips/gthr-mipssde.h ;;
+    posix)	thread_header=gthr-posix.h ;;
+    rtems)	thread_header=config/gthr-rtems.h ;;
+    single)	thread_header=gthr-single.h ;;
+    tpf)	thread_header=config/s390/gthr-tpf.h ;;
+    vxworks)	thread_header=config/gthr-vxworks.h ;;
+    win32)	thread_header=config/i386/gthr-win32.h ;;
+esac
+
+
 
 
 
@@ -15303,7 +15383,7 @@ $as_echo "$glibcxx_cv_atomic_long_long" >&6; }
   # Fake what AC_TRY_COMPILE does.
 
     cat > conftest.$ac_ext << EOF
-#line 15306 "configure"
+#line 15386 "configure"
 int main()
 {
   typedef bool atomic_type;
@@ -15338,7 +15418,7 @@ $as_echo "$glibcxx_cv_atomic_bool" >&6; }
     rm -f conftest*
 
     cat > conftest.$ac_ext << EOF
-#line 15341 "configure"
+#line 15421 "configure"
 int main()
 {
   typedef short atomic_type;
@@ -15373,7 +15453,7 @@ $as_echo "$glibcxx_cv_atomic_short" >&6; }
     rm -f conftest*
 
     cat > conftest.$ac_ext << EOF
-#line 15376 "configure"
+#line 15456 "configure"
 int main()
 {
   // NB: _Atomic_word not necessarily int.
@@ -15409,7 +15489,7 @@ $as_echo "$glibcxx_cv_atomic_int" >&6; }
     rm -f conftest*
 
     cat > conftest.$ac_ext << EOF
-#line 15412 "configure"
+#line 15492 "configure"
 int main()
 {
   typedef long long atomic_type;
@@ -15488,7 +15568,7 @@ $as_echo "$as_me: WARNING: Performance of certain classes will degrade as a resu
   # unnecessary for this test.
 
     cat > conftest.$ac_ext << EOF
-#line 15491 "configure"
+#line 15571 "configure"
 int main()
 {
   _Decimal32 d1;
@@ -15530,7 +15610,7 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
   # unnecessary for this test.
 
     cat > conftest.$ac_ext << EOF
-#line 15533 "configure"
+#line 15613 "configure"
 template<typename T1, typename T2>
   struct same
   { typedef T2 type; };
@@ -15564,7 +15644,7 @@ $as_echo "$enable_int128" >&6; }
     rm -f conftest*
 
     cat > conftest.$ac_ext << EOF
-#line 15567 "configure"
+#line 15647 "configure"
 template<typename T1, typename T2>
   struct same
   { typedef T2 type; };
@@ -15747,6 +15827,9 @@ fi
 	;;
       darwin* | freebsd*)
 	enable_clocale_flag=darwin
+	;;
+      openbsd*)
+	enable_clocale_flag=newlib
 	;;
       *)
 	if test x"$with_newlib" = x"yes"; then
@@ -17173,7 +17256,6 @@ $as_echo "$as_me: target-libgomp not built" >&6;}
 $as_echo_n "checking for parallel mode support... " >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_parallel" >&5
 $as_echo "$enable_parallel" >&6; }
-
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for extra compiler flags for building" >&5
 $as_echo_n "checking for extra compiler flags for building... " >&6; }
@@ -19762,6 +19844,60 @@ $as_echo "#define _GLIBCXX_USE_CLOCK_REALTIME 1" >>confdefs.h
 
 $as_echo "#define _GLIBCXX_USE_NANOSLEEP 1" >>confdefs.h
 
+  else
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for sleep" >&5
+$as_echo_n "checking for sleep... " >&6; }
+      cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <unistd.h>
+int
+main ()
+{
+sleep(1)
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_cxx_try_compile "$LINENO"; then :
+  ac_has_sleep=yes
+else
+  ac_has_sleep=no
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+      if test x"$ac_has_sleep" = x"yes"; then
+
+$as_echo "#define HAVE_SLEEP 1" >>confdefs.h
+
+      fi
+      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_has_sleep" >&5
+$as_echo "$ac_has_sleep" >&6; }
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for usleep" >&5
+$as_echo_n "checking for usleep... " >&6; }
+      cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <unistd.h>
+int
+main ()
+{
+sleep(1);
+                      usleep(100);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_cxx_try_compile "$LINENO"; then :
+  ac_has_usleep=yes
+else
+  ac_has_usleep=no
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+      if test x"$ac_has_usleep" = x"yes"; then
+
+$as_echo "#define HAVE_USLEEP 1" >>confdefs.h
+
+      fi
+      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_has_usleep" >&5
+$as_echo "$ac_has_usleep" >&6; }
   fi
 
 
@@ -70367,7 +70503,7 @@ $as_echo "$as_me: WARNING: === Symbol versioning will be disabled." >&2;}
 fi
 
 # For libtool versioning info, format is CURRENT:REVISION:AGE
-libtool_VERSION=6:17:0
+libtool_VERSION=6:18:0
 
 # Everything parsed; figure out what files and settings to use.
 case $enable_symvers in
@@ -70619,6 +70755,85 @@ $as_echo "#define _GLIBCXX_LONG_DOUBLE_COMPAT 1" >>confdefs.h
     port_specific_symbol_files="\$(top_srcdir)/config/os/gnu-linux/ldbl-extra.ver"
   fi
 esac
+
+
+# Check if assembler supports disabling hardware capability support.
+
+  test -z "$HWCAP_FLAGS" && HWCAP_FLAGS=''
+
+  ac_save_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS -Wa,-nH"
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for as that supports -Wa,-nH" >&5
+$as_echo_n "checking for as that supports -Wa,-nH... " >&6; }
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+int
+main ()
+{
+return 0;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  ac_hwcap_flags=yes
+else
+  ac_hwcap_flags=no
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+  if test "$ac_hwcap_flags" = "yes"; then
+    HWCAP_FLAGS="-Wa,-nH $HWCAP_FLAGS"
+  fi
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_hwcap_flags" >&5
+$as_echo "$ac_hwcap_flags" >&6; }
+
+  CFLAGS="$ac_save_CFLAGS"
+
+
+
+
+# Check if assembler supports rdrand opcode.
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for rdrand support in assembler" >&5
+$as_echo_n "checking for rdrand support in assembler... " >&6; }
+  if test "${ac_cv_x86_rdrand+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+
+  ac_cv_x86_rdrand=no
+  case "$target" in
+    i?86-*-* | \
+    x86_64-*-*)
+    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+int
+main ()
+{
+asm("rdrand %eax");
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  ac_cv_x86_rdrand=yes
+else
+  ac_cv_x86_rdrand=no
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+  esac
+
+fi
+
+  if test $ac_cv_x86_rdrand = yes; then
+
+$as_echo "#define _GLIBCXX_X86_RDRAND 1" >>confdefs.h
+
+  fi
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_x86_rdrand" >&5
+$as_echo "$ac_cv_x86_rdrand" >&6; }
 
 
 # This depends on GLIBCXX_ENABLE_SYMVERS and GLIBCXX_IS_NATIVE.
@@ -71330,6 +71545,10 @@ if test x"$glibcxx_stylesheets" = x"yes"; then
     glibcxx_local_stylesheets=yes
     XSL_STYLE_DIR=/usr/share/xml/docbook/stylesheet/docbook-xsl-ns
   fi
+  if test -d /usr/share/xml/docbook/stylesheet/nwalsh5/current; then
+    glibcxx_local_stylesheets=yes
+    XSL_STYLE_DIR=/usr/share/xml/docbook/stylesheet/nwalsh5/current
+  fi
 fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $glibcxx_local_stylesheets" >&5
 $as_echo "$glibcxx_local_stylesheets" >&6; }
@@ -71498,6 +71717,10 @@ CPU_DEFINES_SRCDIR=config/${cpu_defines_dir}
 OS_INC_SRCDIR=config/${os_include_dir}
 ERROR_CONSTANTS_SRCDIR=config/${error_constants_dir}
 ABI_TWEAKS_SRCDIR=config/${abi_tweaks_dir}
+CPU_OPT_EXT_RANDOM=config/${cpu_opt_ext_random}
+CPU_OPT_BITS_RANDOM=config/${cpu_opt_bits_random}
+
+
 
 
 
@@ -71570,15 +71793,6 @@ fi
 else
   GLIBCXX_BUILD_DEBUG_TRUE='#'
   GLIBCXX_BUILD_DEBUG_FALSE=
-fi
-
-
-    if test $enable_parallel = yes; then
-  ENABLE_PARALLEL_TRUE=
-  ENABLE_PARALLEL_FALSE='#'
-else
-  ENABLE_PARALLEL_TRUE='#'
-  ENABLE_PARALLEL_FALSE=
 fi
 
 
@@ -71880,18 +72094,13 @@ $as_echo "$gxx_include_dir" >&6; }
 
 
 
-if test "$enable_shared" = yes; then
-  PIC_CXXFLAGS="-prefer-pic"
-else
-  PIC_CXXFLAGS=
-fi
-
-
 ac_config_files="$ac_config_files Makefile"
 
 ac_config_files="$ac_config_files scripts/testsuite_flags"
 
 ac_config_files="$ac_config_files scripts/extract_symvers"
+
+ac_config_files="$ac_config_files doc/xsl/customization.xsl"
 
 
 # Multilibs need MULTISUBDIR defined correctly in certain makefiles so
@@ -72043,10 +72252,6 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${GLIBCXX_BUILD_DEBUG_TRUE}" && test -z "${GLIBCXX_BUILD_DEBUG_FALSE}"; then
   as_fn_error "conditional \"GLIBCXX_BUILD_DEBUG\" was never defined.
-Usually this means the macro was only invoked conditionally." "$LINENO" 5
-fi
-if test -z "${ENABLE_PARALLEL_TRUE}" && test -z "${ENABLE_PARALLEL_FALSE}"; then
-  as_fn_error "conditional \"ENABLE_PARALLEL\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${ENABLE_EXTERN_TEMPLATE_TRUE}" && test -z "${ENABLE_EXTERN_TEMPLATE_FALSE}"; then
@@ -73104,6 +73309,7 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "scripts/testsuite_flags") CONFIG_FILES="$CONFIG_FILES scripts/testsuite_flags" ;;
     "scripts/extract_symvers") CONFIG_FILES="$CONFIG_FILES scripts/extract_symvers" ;;
+    "doc/xsl/customization.xsl") CONFIG_FILES="$CONFIG_FILES doc/xsl/customization.xsl" ;;
     "include/Makefile") CONFIG_FILES="$CONFIG_FILES include/Makefile" ;;
     "libsupc++/Makefile") CONFIG_FILES="$CONFIG_FILES libsupc++/Makefile" ;;
     "python/Makefile") CONFIG_FILES="$CONFIG_FILES python/Makefile" ;;

@@ -22,7 +22,8 @@ func readGopackHeader(r *bufio.Reader) (name string, size int, err error) {
 	if err != nil {
 		return
 	}
-	if trace {
+	// leave for debugging
+	if false {
 		fmt.Printf("header: %s", hdr)
 	}
 	s := strings.TrimSpace(string(hdr[16+12+6+6+8:][:10]))
@@ -52,13 +53,14 @@ func FindGcExportData(r *bufio.Reader) (err error) {
 		var name string
 		var size int
 
-		// First entry should be __.SYMDEF.
+		// First entry should be __.GOSYMDEF.
+		// Older archives used __.SYMDEF, so allow that too.
 		// Read and discard.
 		if name, size, err = readGopackHeader(r); err != nil {
 			return
 		}
-		if name != "__.SYMDEF" {
-			err = errors.New("go archive does not begin with __.SYMDEF")
+		if name != "__.SYMDEF" && name != "__.GOSYMDEF" {
+			err = errors.New("go archive does not begin with __.SYMDEF or __.GOSYMDEF")
 			return
 		}
 		const block = 4096

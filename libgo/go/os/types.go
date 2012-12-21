@@ -12,7 +12,7 @@ import (
 // Getpagesize returns the underlying system's memory page size.
 func Getpagesize() int { return syscall.Getpagesize() }
 
-// A FileInfo describes a file and is returned by Stat and Lstat
+// A FileInfo describes a file and is returned by Stat and Lstat.
 type FileInfo interface {
 	Name() string       // base name of the file
 	Size() int64        // length in bytes for regular files; system-dependent for others
@@ -86,6 +86,12 @@ func (m FileMode) String() string {
 // That is, it tests for the ModeDir bit being set in m.
 func (m FileMode) IsDir() bool {
 	return m&ModeDir != 0
+}
+
+// IsRegular reports whether m describes a regular file.
+// That is, it tests that no mode type bits are set.
+func (m FileMode) IsRegular() bool {
+	return m&ModeType == 0
 }
 
 // Perm returns the Unix permission bits in m.

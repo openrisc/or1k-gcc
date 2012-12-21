@@ -34,7 +34,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "flags.h"
 #include "langhooks.h"
 #include "diagnostic-core.h"
-#include "tree-dump.h"
+#include "dumpfile.h"
 #include "gimple.h"
 #include "tree-iterator.h"
 #include "cgraph.h"
@@ -128,7 +128,8 @@ build_delete_destructor_body (tree delete_dtor, tree complete_dtor)
 
   /* Call the corresponding complete destructor.  */
   gcc_assert (complete_dtor);
-  call_dtor = build_cxx_call (complete_dtor, 1, &parm);
+  call_dtor = build_cxx_call (complete_dtor, 1, &parm,
+			      tf_warning_or_error);
   add_stmt (call_dtor);
 
   add_stmt (build_stmt (0, LABEL_EXPR, cdtor_label));

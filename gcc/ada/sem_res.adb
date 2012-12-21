@@ -178,11 +178,11 @@ package body Sem_Res is
    procedure Resolve_Case_Expression           (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Character_Literal         (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Comparison_Op             (N : Node_Id; Typ : Entity_Id);
-   procedure Resolve_Conditional_Expression    (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Entity_Name               (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Equality_Op               (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Explicit_Dereference      (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Expression_With_Actions   (N : Node_Id; Typ : Entity_Id);
+   procedure Resolve_If_Expression             (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Indexed_Component         (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Integer_Literal           (N : Node_Id; Typ : Entity_Id);
    procedure Resolve_Logical_Op                (N : Node_Id; Typ : Entity_Id);
@@ -322,7 +322,7 @@ package body Sem_Res is
       Resolve (N, Typ);
    end Analyze_And_Resolve;
 
-   --  Version withs check(s) suppressed
+   --  Versions with check(s) suppressed
 
    procedure Analyze_And_Resolve
      (N        : Node_Id;
@@ -334,21 +334,20 @@ package body Sem_Res is
    begin
       if Suppress = All_Checks then
          declare
-            Svg : constant Suppress_Array := Scope_Suppress;
+            Sva : constant Suppress_Array := Scope_Suppress.Suppress;
          begin
-            Scope_Suppress := (others => True);
+            Scope_Suppress.Suppress := (others => True);
             Analyze_And_Resolve (N, Typ);
-            Scope_Suppress := Svg;
+            Scope_Suppress.Suppress := Sva;
          end;
 
       else
          declare
-            Svg : constant Boolean := Scope_Suppress (Suppress);
-
+            Svg : constant Boolean := Scope_Suppress.Suppress (Suppress);
          begin
-            Scope_Suppress (Suppress) := True;
+            Scope_Suppress.Suppress (Suppress) := True;
             Analyze_And_Resolve (N, Typ);
-            Scope_Suppress (Suppress) := Svg;
+            Scope_Suppress.Suppress (Suppress) := Svg;
          end;
       end if;
 
@@ -375,27 +374,24 @@ package body Sem_Res is
    begin
       if Suppress = All_Checks then
          declare
-            Svg : constant Suppress_Array := Scope_Suppress;
+            Sva : constant Suppress_Array := Scope_Suppress.Suppress;
          begin
-            Scope_Suppress := (others => True);
+            Scope_Suppress.Suppress := (others => True);
             Analyze_And_Resolve (N);
-            Scope_Suppress := Svg;
+            Scope_Suppress.Suppress := Sva;
          end;
 
       else
          declare
-            Svg : constant Boolean := Scope_Suppress (Suppress);
-
+            Svg : constant Boolean := Scope_Suppress.Suppress (Suppress);
          begin
-            Scope_Suppress (Suppress) := True;
+            Scope_Suppress.Suppress (Suppress) := True;
             Analyze_And_Resolve (N);
-            Scope_Suppress (Suppress) := Svg;
+            Scope_Suppress.Suppress (Suppress) := Svg;
          end;
       end if;
 
-      if Current_Scope /= Scop
-        and then Scope_Is_Transient
-      then
+      if Current_Scope /= Scop and then Scope_Is_Transient then
          Scope_Stack.Table (Scope_Stack.Last).Save_Scope_Suppress :=
            Scope_Suppress;
       end if;
@@ -810,7 +806,7 @@ package body Sem_Res is
                          N_And_Then,
                          N_Case_Expression,
                          N_Case_Statement,
-                         N_Conditional_Expression,
+                         N_If_Expression,
                          N_If_Statement)
          then
             return False;
@@ -853,9 +849,11 @@ package body Sem_Res is
                      Prev (Nod);
                   end loop;
 
-                  --  If no raise statement, give warning
+                  --  If no raise statement, give warning. We look at the
+                  --  original node, because in the case of "raise ... with
+                  --  ...", the node has been transformed into a call.
 
-                  exit when Nkind (Nod) /= N_Raise_Statement
+                  exit when Nkind (Original_Node (Nod)) /= N_Raise_Statement
                     and then
                       (Nkind (Nod) not in N_Raise_xxx_Error
                         or else Present (Condition (Nod)));
@@ -1353,6 +1351,13 @@ package body Sem_Res is
       if Nkind (Name (N)) = N_Expanded_Name then
          Pack := Entity (Prefix (Name (N)));
 
+         --  If this is a package renaming, get renamed entity, which will be
+         --  the scope of the operands if operaton is type-correct.
+
+         if Present (Renamed_Entity (Pack)) then
+            Pack := Renamed_Entity (Pack);
+         end if;
+
          --  If the entity being called is defined in the given package, it is
          --  a renaming of a predefined operator, and known to be legal.
 
@@ -1657,11 +1662,26 @@ package body Sem_Res is
       Full_Analysis := False;
       Expander_Mode_Save_And_Set (False);
 
-      --  We suppress all checks for this analysis, since the checks will
-      --  be applied properly, and in the right location, when the default
-      --  expression is reanalyzed and reexpanded later on.
+      --  Normally, we suppress all checks for this preanalysis. There is no
+      --  point in processing them now, since they will be applied properly
+      --  and in the proper location when the default expressions reanalyzed
+      --  and reexpanded later on. We will also have more information at that
+      --  point for possible suppression of individual checks.
 
-      Analyze_And_Resolve (N, T, Suppress => All_Checks);
+      --  However, in Alfa mode, most expansion is suppressed, and this
+      --  later reanalysis and reexpansion may not occur. Alfa mode does
+      --  require the setting of checking flags for proof purposes, so we
+      --  do the Alfa preanalysis without suppressing checks.
+
+      --  This special handling for Alfa mode is required for example in the
+      --  case of Ada 2012 constructs such as quantified expressions, which are
+      --  expanded in two separate steps.
+
+      if Alfa_Mode then
+         Analyze_And_Resolve (N, T);
+      else
+         Analyze_And_Resolve (N, T, Suppress => All_Checks);
+      end if;
 
       Expander_Mode_Restore;
       Full_Analysis := Save_Full_Analysis;
@@ -2142,9 +2162,7 @@ package body Sem_Res is
                      --  of the arguments is Any_Type, and if so, suppress
                      --  the message, since it is a cascaded error.
 
-                     if Nkind_In (N, N_Function_Call,
-                                     N_Procedure_Call_Statement)
-                     then
+                     if Nkind (N) in N_Subprogram_Call then
                         declare
                            A : Node_Id;
                            E : Node_Id;
@@ -2210,8 +2228,7 @@ package body Sem_Res is
                              ("\\possible interpretation#!", N);
                         end if;
 
-                        if Nkind_In
-                             (N, N_Procedure_Call_Statement, N_Function_Call)
+                        if Nkind (N) in N_Subprogram_Call
                           and then Present (Parameter_Associations (N))
                         then
                            Report_Ambiguous_Argument;
@@ -2319,7 +2336,7 @@ package body Sem_Res is
                elsif Nkind (N) = N_Character_Literal then
                   Set_Etype (N, Expr_Type);
 
-               elsif Nkind (N) = N_Conditional_Expression then
+               elsif Nkind (N) = N_If_Expression then
                   Set_Etype (N, Expr_Type);
 
                --  AI05-0139-2: Expression is overloaded because type has
@@ -2358,7 +2375,7 @@ package body Sem_Res is
                --  For procedure or function calls, set the type of the name,
                --  and also the entity pointer for the prefix.
 
-               elsif Nkind_In (N, N_Procedure_Call_Statement, N_Function_Call)
+               elsif Nkind (N) in N_Subprogram_Call
                  and then Is_Entity_Name (Name (N))
                then
                   Set_Etype  (Name (N), Expr_Type);
@@ -2721,9 +2738,6 @@ package body Sem_Res is
             when N_Character_Literal
                              => Resolve_Character_Literal        (N, Ctx_Type);
 
-            when N_Conditional_Expression
-                             => Resolve_Conditional_Expression   (N, Ctx_Type);
-
             when N_Expanded_Name
                              => Resolve_Entity_Name              (N, Ctx_Type);
 
@@ -2741,6 +2755,9 @@ package body Sem_Res is
 
             when N_Identifier
                              => Resolve_Entity_Name              (N, Ctx_Type);
+
+            when N_If_Expression
+                             => Resolve_If_Expression            (N, Ctx_Type);
 
             when N_Indexed_Component
                              => Resolve_Indexed_Component        (N, Ctx_Type);
@@ -2905,20 +2922,20 @@ package body Sem_Res is
    begin
       if Suppress = All_Checks then
          declare
-            Svg : constant Suppress_Array := Scope_Suppress;
+            Sva : constant Suppress_Array := Scope_Suppress.Suppress;
          begin
-            Scope_Suppress := (others => True);
+            Scope_Suppress.Suppress := (others => True);
             Resolve (N, Typ);
-            Scope_Suppress := Svg;
+            Scope_Suppress.Suppress := Sva;
          end;
 
       else
          declare
-            Svg : constant Boolean := Scope_Suppress (Suppress);
+            Svg : constant Boolean := Scope_Suppress.Suppress (Suppress);
          begin
-            Scope_Suppress (Suppress) := True;
+            Scope_Suppress.Suppress (Suppress) := True;
             Resolve (N, Typ);
-            Scope_Suppress (Suppress) := Svg;
+            Scope_Suppress.Suppress (Suppress) := Svg;
          end;
       end if;
    end Resolve;
@@ -2988,8 +3005,7 @@ package body Sem_Res is
 
          if not Warn_On_Parameter_Order
            or else No (Parameter_Associations (N))
-           or else not Nkind_In (Original_Node (N), N_Procedure_Call_Statement,
-                                                    N_Function_Call)
+           or else Nkind (Original_Node (N)) not in N_Subprogram_Call
            or else not Comes_From_Source (N)
          then
             return;
@@ -4221,11 +4237,9 @@ package body Sem_Res is
          Par : constant Node_Id := Parent (N);
 
       begin
-         return
-           Nkind_In (Par, N_Function_Call,
-                          N_Procedure_Call_Statement)
-             and then Is_Entity_Name (Name (Par))
-             and then Is_Dispatching_Operation (Entity (Name (Par)));
+         return Nkind (Par) in N_Subprogram_Call
+           and then Is_Entity_Name (Name (Par))
+           and then Is_Dispatching_Operation (Entity (Name (Par)));
       end In_Dispatching_Context;
 
    --  Start of processing for Resolve_Allocator
@@ -4973,10 +4987,7 @@ package body Sem_Res is
            ("operation should be qualified or explicitly converted", N);
       end if;
 
-      --  Set overflow and division checking bit. Much cleverer code needed
-      --  here eventually and perhaps the Resolve routines should be separated
-      --  for the various arithmetic operations, since they will need
-      --  different processing. ???
+      --  Set overflow and division checking bit
 
       if Nkind (N) in N_Op then
          if not Overflow_Checks_Suppressed (Etype (N)) then
@@ -5322,15 +5333,7 @@ package body Sem_Res is
       --  Check that this is not a call to a protected procedure or entry from
       --  within a protected function.
 
-      if Ekind (Current_Scope) = E_Function
-        and then Ekind (Scope (Current_Scope)) = E_Protected_Type
-        and then Ekind (Nam) /= E_Function
-        and then Scope (Nam) = Scope (Current_Scope)
-      then
-         Error_Msg_N ("within protected function, protected " &
-           "object is constant", N);
-         Error_Msg_N ("\cannot call operation that may modify it", N);
-      end if;
+      Check_Internal_Protected_Use (N, Nam);
 
       --  Freeze the subprogram name if not in a spec-expression. Note that we
       --  freeze procedure calls as well as function calls. Procedure calls are
@@ -5843,14 +5846,11 @@ package body Sem_Res is
          Check_Restriction (No_Relative_Delay, N);
       end if;
 
-      --  Issue an error for a call to an eliminated subprogram. We skip this
-      --  in a spec expression, e.g. a call in a default parameter value, since
-      --  we are not really doing a call at this time. That's important because
-      --  the spec expression may itself belong to an eliminated subprogram.
+      --  Issue an error for a call to an eliminated subprogram. This routine
+      --  will not perform the check if the call appears within a default
+      --  expression.
 
-      if not In_Spec_Expression then
-         Check_For_Eliminated_Subprogram (Subp, Nam);
-      end if;
+      Check_For_Eliminated_Subprogram (Subp, Nam);
 
       --  In formal mode, the primitive operations of a tagged type or type
       --  extension do not include functions that return the tagged type.
@@ -5907,7 +5907,10 @@ package body Sem_Res is
          end;
       end if;
 
-      Analyze_Dimension (N);
+      --  Check the dimensions of the actuals in the call. For function calls,
+      --  propagate the dimensions from the returned type to N.
+
+      Analyze_Dimension_Call (N, Nam);
 
       --  All done, evaluate call and deal with elaboration issues
 
@@ -6096,9 +6099,7 @@ package body Sem_Res is
 
       --  Check comparison on unordered enumeration
 
-      if Comes_From_Source (N)
-        and then Bad_Unordered_Enumeration_Reference (N, Etype (L))
-      then
+      if Bad_Unordered_Enumeration_Reference (N, Etype (L)) then
          Error_Msg_N ("comparison on unordered enumeration type?", N);
       end if;
 
@@ -6108,64 +6109,6 @@ package body Sem_Res is
       Analyze_Dimension (N);
       Eval_Relational_Op (N);
    end Resolve_Comparison_Op;
-
-   ------------------------------------
-   -- Resolve_Conditional_Expression --
-   ------------------------------------
-
-   procedure Resolve_Conditional_Expression (N : Node_Id; Typ : Entity_Id) is
-      Condition : constant Node_Id := First (Expressions (N));
-      Then_Expr : constant Node_Id := Next (Condition);
-      Else_Expr : Node_Id          := Next (Then_Expr);
-      Else_Typ  : Entity_Id;
-      Then_Typ  : Entity_Id;
-
-   begin
-      Resolve (Condition, Any_Boolean);
-      Resolve (Then_Expr, Typ);
-      Then_Typ := Etype (Then_Expr);
-
-      --  When the "then" and "else" expressions are of a scalar type, insert
-      --  a conversion to ensure the generation of a constraint check.
-
-      if Is_Scalar_Type (Then_Typ)
-        and then Then_Typ /= Typ
-      then
-         Rewrite (Then_Expr, Convert_To (Typ, Then_Expr));
-         Analyze_And_Resolve (Then_Expr, Typ);
-      end if;
-
-      --  If ELSE expression present, just resolve using the determined type
-
-      if Present (Else_Expr) then
-         Resolve (Else_Expr, Typ);
-         Else_Typ := Etype (Else_Expr);
-
-         if Is_Scalar_Type (Else_Typ)
-           and then Else_Typ /= Typ
-         then
-            Rewrite (Else_Expr, Convert_To (Typ, Else_Expr));
-            Analyze_And_Resolve (Else_Expr, Typ);
-         end if;
-
-      --  If no ELSE expression is present, root type must be Standard.Boolean
-      --  and we provide a Standard.True result converted to the appropriate
-      --  Boolean type (in case it is a derived boolean type).
-
-      elsif Root_Type (Typ) = Standard_Boolean then
-         Else_Expr :=
-           Convert_To (Typ, New_Occurrence_Of (Standard_True, Sloc (N)));
-         Analyze_And_Resolve (Else_Expr, Typ);
-         Append_To (Expressions (N), Else_Expr);
-
-      else
-         Error_Msg_N ("can only omit ELSE expression in Boolean case", N);
-         Append_To (Expressions (N), Error);
-      end if;
-
-      Set_Etype (N, Typ);
-      Eval_Conditional_Expression (N);
-   end Resolve_Conditional_Expression;
 
    -----------------------------------------
    -- Resolve_Discrete_Subtype_Indication --
@@ -6743,6 +6686,7 @@ package body Sem_Res is
       end if;
 
       Resolve_Actuals (N, Nam);
+      Check_Internal_Protected_Use (N, Nam);
 
       --  Create a call reference to the entry
 
@@ -6832,12 +6776,12 @@ package body Sem_Res is
       R : constant Node_Id   := Right_Opnd (N);
       T : Entity_Id := Find_Unique_Type (L, R);
 
-      procedure Check_Conditional_Expression (Cond : Node_Id);
-      --  The resolution rule for conditional expressions requires that each
-      --  such must have a unique type. This means that if several dependent
-      --  expressions are of a non-null anonymous access type, and the context
-      --  does not impose an expected type (as can be the case in an equality
-      --  operation) the expression must be rejected.
+      procedure Check_If_Expression (Cond : Node_Id);
+      --  The resolution rule for if expressions requires that each such must
+      --  have a unique type. This means that if several dependent expressions
+      --  are of a non-null anonymous access type, and the context does not
+      --  impose an expected type (as can be the case in an equality operation)
+      --  the expression must be rejected.
 
       function Find_Unique_Access_Type return Entity_Id;
       --  In the case of allocators, make a last-ditch attempt to find a single
@@ -6845,27 +6789,26 @@ package body Sem_Res is
       --  dubious, and of no interest to any real code, but c48008a makes it
       --  all worthwhile.
 
-      ----------------------------------
-      -- Check_Conditional_Expression --
-      ----------------------------------
+      -------------------------
+      -- Check_If_Expression --
+      -------------------------
 
-      procedure Check_Conditional_Expression (Cond : Node_Id) is
+      procedure Check_If_Expression (Cond : Node_Id) is
          Then_Expr : Node_Id;
          Else_Expr : Node_Id;
 
       begin
-         if Nkind (Cond) = N_Conditional_Expression then
+         if Nkind (Cond) = N_If_Expression then
             Then_Expr := Next (First (Expressions (Cond)));
             Else_Expr := Next (Then_Expr);
 
             if Nkind (Then_Expr) /= N_Null
               and then Nkind (Else_Expr) /= N_Null
             then
-               Error_Msg_N
-                 ("cannot determine type of conditional expression", Cond);
+               Error_Msg_N ("cannot determine type of if expression", Cond);
             end if;
          end if;
-      end Check_Conditional_Expression;
+      end Check_If_Expression;
 
       -----------------------------
       -- Find_Unique_Access_Type --
@@ -6941,9 +6884,11 @@ package body Sem_Res is
                return;
             end if;
 
-         --  Conditional expressions must have a single type, and if the
-         --  context does not impose one the dependent expressions cannot
-         --  be anonymous access types.
+         --  If expressions must have a single type, and if the context does
+         --  not impose one the dependent expressions cannot be anonymous
+         --  access types.
+
+         --  Why no similar processing for case expressions???
 
          elsif Ada_Version >= Ada_2012
            and then Ekind_In (Etype (L), E_Anonymous_Access_Type,
@@ -6951,8 +6896,8 @@ package body Sem_Res is
            and then Ekind_In (Etype (R), E_Anonymous_Access_Type,
                                          E_Anonymous_Access_Subprogram_Type)
          then
-            Check_Conditional_Expression (L);
-            Check_Conditional_Expression (R);
+            Check_If_Expression (L);
+            Check_If_Expression (R);
          end if;
 
          Resolve (L, T);
@@ -6963,6 +6908,7 @@ package body Sem_Res is
          --  operands have equal static bounds.
 
          if Is_Array_Type (T) then
+
             --  Protect call to Matching_Static_Array_Bounds to avoid costly
             --  operation if not needed.
 
@@ -7064,26 +7010,48 @@ package body Sem_Res is
       Loc   : constant Source_Ptr := Sloc (N);
       New_N : Node_Id;
       P     : constant Node_Id := Prefix (N);
+
+      P_Typ : Entity_Id;
+      --  The candidate prefix type, if overloaded
+
       I     : Interp_Index;
       It    : Interp;
 
    begin
       Check_Fully_Declared_Prefix (Typ, P);
+      P_Typ := Empty;
 
       if Is_Overloaded (P) then
 
          --  Use the context type to select the prefix that has the correct
-         --  designated type.
+         --  designated type. Keep the first match, which will be the inner-
+         --  most.
 
          Get_First_Interp (P, I, It);
+
          while Present (It.Typ) loop
-            exit when Is_Access_Type (It.Typ)
-              and then Covers (Typ, Designated_Type (It.Typ));
+            if Is_Access_Type (It.Typ)
+              and then Covers (Typ, Designated_Type (It.Typ))
+            then
+               if No (P_Typ) then
+                  P_Typ := It.Typ;
+               end if;
+
+            --  Remove access types that do not match, but preserve access
+            --  to subprogram interpretations, in case a further dereference
+            --  is needed (see below).
+
+            elsif Ekind (It.Typ) /= E_Access_Subprogram_Type then
+               Remove_Interp (I);
+            end if;
+
             Get_Next_Interp (I, It);
          end loop;
 
-         if Present (It.Typ) then
-            Resolve (P, It.Typ);
+         if Present (P_Typ) then
+            Resolve (P, P_Typ);
+            Set_Etype (N, Designated_Type (P_Typ));
+
          else
             --  If no interpretation covers the designated type of the prefix,
             --  this is the pathological case where not all implementations of
@@ -7114,7 +7082,7 @@ package body Sem_Res is
             return;
          end if;
 
-         Set_Etype (N, Designated_Type (It.Typ));
+      --  If not overloaded, resolve P with its own type
 
       else
          Resolve (P);
@@ -7154,6 +7122,66 @@ package body Sem_Res is
    begin
       Set_Etype (N, Typ);
    end Resolve_Expression_With_Actions;
+
+   ---------------------------
+   -- Resolve_If_Expression --
+   ---------------------------
+
+   procedure Resolve_If_Expression (N : Node_Id; Typ : Entity_Id) is
+      Condition : constant Node_Id := First (Expressions (N));
+      Then_Expr : constant Node_Id := Next (Condition);
+      Else_Expr : Node_Id          := Next (Then_Expr);
+      Else_Typ  : Entity_Id;
+      Then_Typ  : Entity_Id;
+
+   begin
+      Resolve (Condition, Any_Boolean);
+      Resolve (Then_Expr, Typ);
+      Then_Typ := Etype (Then_Expr);
+
+      --  When the "then" expression is of a scalar subtype different from the
+      --  result subtype, then insert a conversion to ensure the generation of
+      --  a constraint check. The same is done for the else part below, again
+      --  comparing subtypes rather than base types.
+
+      if Is_Scalar_Type (Then_Typ)
+        and then Then_Typ /= Typ
+      then
+         Rewrite (Then_Expr, Convert_To (Typ, Then_Expr));
+         Analyze_And_Resolve (Then_Expr, Typ);
+      end if;
+
+      --  If ELSE expression present, just resolve using the determined type
+
+      if Present (Else_Expr) then
+         Resolve (Else_Expr, Typ);
+         Else_Typ := Etype (Else_Expr);
+
+         if Is_Scalar_Type (Else_Typ)
+           and then Else_Typ /= Typ
+         then
+            Rewrite (Else_Expr, Convert_To (Typ, Else_Expr));
+            Analyze_And_Resolve (Else_Expr, Typ);
+         end if;
+
+      --  If no ELSE expression is present, root type must be Standard.Boolean
+      --  and we provide a Standard.True result converted to the appropriate
+      --  Boolean type (in case it is a derived boolean type).
+
+      elsif Root_Type (Typ) = Standard_Boolean then
+         Else_Expr :=
+           Convert_To (Typ, New_Occurrence_Of (Standard_True, Sloc (N)));
+         Analyze_And_Resolve (Else_Expr, Typ);
+         Append_To (Expressions (N), Else_Expr);
+
+      else
+         Error_Msg_N ("can only omit ELSE expression in Boolean case", N);
+         Append_To (Expressions (N), Error);
+      end if;
+
+      Set_Etype (N, Typ);
+      Eval_If_Expression (N);
+   end Resolve_If_Expression;
 
    -------------------------------
    -- Resolve_Indexed_Component --
@@ -7630,10 +7658,11 @@ package body Sem_Res is
       ----------------------------
 
       procedure Resolve_Set_Membership is
-         Alt : Node_Id;
+         Alt  : Node_Id;
+         Ltyp : constant Entity_Id := Etype (L);
 
       begin
-         Resolve (L, Etype (L));
+         Resolve (L, Ltyp);
 
          Alt := First (Alternatives (N));
          while Present (Alt) loop
@@ -7644,11 +7673,51 @@ package body Sem_Res is
             if not Is_Entity_Name (Alt)
               or else not Is_Type (Entity (Alt))
             then
-               Resolve (Alt, Etype (L));
+               Resolve (Alt, Ltyp);
             end if;
 
             Next (Alt);
          end loop;
+
+         --  Check for duplicates for discrete case
+
+         if Is_Discrete_Type (Ltyp) then
+            declare
+               type Ent is record
+                  Alt : Node_Id;
+                  Val : Uint;
+               end record;
+
+               Alts  : array (0 .. List_Length (Alternatives (N))) of Ent;
+               Nalts : Nat;
+
+            begin
+               --  Loop checking duplicates. This is quadratic, but giant sets
+               --  are unlikely in this context so it's a reasonable choice.
+
+               Nalts := 0;
+               Alt := First (Alternatives (N));
+               while Present (Alt) loop
+                  if Is_Static_Expression (Alt)
+                    and then (Nkind_In (Alt, N_Integer_Literal,
+                                         N_Character_Literal)
+                               or else Nkind (Alt) in N_Has_Entity)
+                  then
+                     Nalts := Nalts + 1;
+                     Alts (Nalts) := (Alt, Expr_Value (Alt));
+
+                     for J in 1 .. Nalts - 1 loop
+                        if Alts (J).Val = Alts (Nalts).Val then
+                           Error_Msg_Sloc := Sloc (Alts (J).Alt);
+                           Error_Msg_N ("duplicate of value given#?", Alt);
+                        end if;
+                     end loop;
+                  end if;
+
+                  Alt := Next (Alt);
+               end loop;
+            end;
+         end if;
       end Resolve_Set_Membership;
 
    --  Start of processing for Resolve_Membership_Op
@@ -7747,9 +7816,7 @@ package body Sem_Res is
          --  In the common case of a call which uses an explicitly null value
          --  for an access parameter, give specialized error message.
 
-         if Nkind_In (Parent (N), N_Procedure_Call_Statement,
-                                  N_Function_Call)
-         then
+         if Nkind (Parent (N)) in N_Subprogram_Call then
             Error_Msg_N
               ("null is not allowed as argument for an access parameter", N);
 
@@ -9571,6 +9638,13 @@ package body Sem_Res is
             then
                null;
 
+            --  Never warn on conversion to Long_Long_Integer'Base since
+            --  that is most likely an artifact of the extended overflow
+            --  checking and comes from complex expanded code.
+
+            elsif Orig_T = Base_Type (Standard_Long_Long_Integer) then
+               null;
+
             --  Here we give the redundant conversion warning. If it is an
             --  entity, give the name of the entity in the message. If not,
             --  just mention the expression.
@@ -9682,6 +9756,22 @@ package body Sem_Res is
                end if;
             end if;
          end;
+      end if;
+
+      --  Ada 2012: if target type has predicates, the result requires a
+      --  predicate check. If the context is a call to another predicate
+      --  check we must prevent infinite recursion.
+
+      if Has_Predicates (Target_Typ) then
+         if Nkind (Parent (N)) = N_Function_Call
+           and then Present (Name (Parent (N)))
+           and then Has_Predicates (Entity (Name (Parent (N))))
+         then
+            null;
+
+         else
+            Apply_Predicate_Check (N, Target_Typ);
+         end if;
       end if;
    end Resolve_Type_Conversion;
 

@@ -5,6 +5,9 @@
 package xml
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"reflect"
 	"strconv"
 	"strings"
@@ -108,7 +111,7 @@ type EmbedA struct {
 
 type EmbedB struct {
 	FieldB string
-	EmbedC
+	*EmbedC
 }
 
 type EmbedC struct {
@@ -493,7 +496,7 @@ var marshalTests = []struct {
 			},
 			EmbedB: EmbedB{
 				FieldB: "A.B.B",
-				EmbedC: EmbedC{
+				EmbedC: &EmbedC{
 					FieldA1: "A.B.C.A1",
 					FieldA2: "A.B.C.A2",
 					FieldB:  "", // Shadowed by A.B.B
@@ -684,6 +687,27 @@ var marshalTests = []struct {
 		Value:         &IgnoreTest{},
 		UnmarshalOnly: true,
 	},
+
+	// Test escaping.
+	{
+		ExpectXML: `<a><nested><value>dquote: &#34;; squote: &#39;; ampersand: &amp;; less: &lt;; greater: &gt;;</value></nested></a>`,
+		Value: &AnyTest{
+			Nested: `dquote: "; squote: '; ampersand: &; less: <; greater: >;`,
+		},
+	},
+	{
+		ExpectXML: `<a><nested><value>newline: &#xA;; cr: &#xD;; tab: &#x9;;</value></nested></a>`,
+		Value: &AnyTest{
+			Nested: "newline: \n; cr: \r; tab: \t;",
+		},
+	},
+	{
+		ExpectXML: "<a><nested><value>1\r2\r\n3\n\r4\n5</value></nested></a>",
+		Value: &AnyTest{
+			Nested: "1\n2\n3\n\n4\n5",
+		},
+		UnmarshalOnly: true,
+	},
 }
 
 func TestMarshal(t *testing.T) {
@@ -726,7 +750,7 @@ var marshalErrorTests = []struct {
 	},
 	{
 		Value: map[*Ship]bool{nil: false},
-		Err:   "xml: unsupported type: map[*encoding/xml.Ship]bool",
+		Err:   "xml: unsupported type: map[*xml.Ship]bool",
 		Kind:  reflect.Map,
 	},
 	{
@@ -776,6 +800,55 @@ func TestUnmarshal(t *testing.T) {
 		} else if got, want := dest, test.Value; !reflect.DeepEqual(got, want) {
 			t.Errorf("#%d: unmarshal(%q):\nhave %#v\nwant %#v", i, test.ExpectXML, got, want)
 		}
+	}
+}
+
+type limitedBytesWriter struct {
+	w      io.Writer
+	remain int // until writes fail
+}
+
+func (lw *limitedBytesWriter) Write(p []byte) (n int, err error) {
+	if lw.remain <= 0 {
+		println("error")
+		return 0, errors.New("write limit hit")
+	}
+	if len(p) > lw.remain {
+		p = p[:lw.remain]
+		n, _ = lw.w.Write(p)
+		lw.remain = 0
+		return n, errors.New("write limit hit")
+	}
+	n, err = lw.w.Write(p)
+	lw.remain -= n
+	return n, err
+}
+
+func TestMarshalWriteErrors(t *testing.T) {
+	var buf bytes.Buffer
+	const writeCap = 1024
+	w := &limitedBytesWriter{&buf, writeCap}
+	enc := NewEncoder(w)
+	var err error
+	var i int
+	const n = 4000
+	for i = 1; i <= n; i++ {
+		err = enc.Encode(&Passenger{
+			Name:   []string{"Alice", "Bob"},
+			Weight: 5,
+		})
+		if err != nil {
+			break
+		}
+	}
+	if err == nil {
+		t.Error("expected an error")
+	}
+	if i == n {
+		t.Errorf("expected to fail before the end")
+	}
+	if buf.Len() != writeCap {
+		t.Errorf("buf.Len() = %d; want %d", buf.Len(), writeCap)
 	}
 }
 

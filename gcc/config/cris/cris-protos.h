@@ -40,6 +40,7 @@ extern bool cris_base_p (const_rtx, bool);
 extern bool cris_base_or_autoincr_p (const_rtx, bool);
 extern bool cris_bdap_index_p (const_rtx, bool);
 extern bool cris_biap_index_p (const_rtx, bool);
+extern bool cris_legitimate_address_p (enum machine_mode, rtx, bool);
 extern bool cris_store_multiple_op_p (rtx);
 extern bool cris_movem_load_rest_p (rtx, int);
 extern void cris_asm_output_symbol_ref (FILE *, rtx);
@@ -52,7 +53,7 @@ extern void cris_order_for_addsi3 (rtx *, int);
 extern void cris_emit_trap_for_misalignment (rtx);
 #endif /* RTX_CODE */
 extern void cris_asm_output_label_ref (FILE *, char *);
-extern void cris_target_asm_named_section (const char *, unsigned int, tree);
+extern void cris_asm_output_ident (const char *);
 extern void cris_expand_prologue (void);
 extern void cris_expand_epilogue (void);
 extern void cris_expand_return (bool);

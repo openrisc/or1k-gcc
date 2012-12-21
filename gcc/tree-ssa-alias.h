@@ -21,9 +21,6 @@
 #ifndef TREE_SSA_ALIAS_H
 #define TREE_SSA_ALIAS_H
 
-#include "coretypes.h"
-
-
 /* The points-to solution.
 
    The points-to solution is a union of pt_vars and the abstract
@@ -110,9 +107,11 @@ extern bool stmt_may_clobber_ref_p (gimple, tree);
 extern bool stmt_may_clobber_ref_p_1 (gimple, ao_ref *);
 extern bool call_may_clobber_ref_p (gimple, tree);
 extern bool stmt_kills_ref_p (gimple, tree);
-extern tree get_continuation_for_phi (gimple, ao_ref *, bitmap *);
+extern tree get_continuation_for_phi (gimple, ao_ref *,
+				      unsigned int *, bitmap *, bool);
 extern void *walk_non_aliased_vuses (ao_ref *, tree,
-				     void *(*)(ao_ref *, tree, void *),
+				     void *(*)(ao_ref *, tree,
+					       unsigned int, void *),
 				     void *(*)(ao_ref *, tree, void *), void *);
 extern unsigned int walk_aliased_vdefs (ao_ref *, tree,
 					bool (*)(ao_ref *, tree, void *),

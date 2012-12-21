@@ -54,7 +54,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic-core.h"
 #include "reload.h"
 #include "predict.h"
-#include "timevar.h"
 #include "tree-pass.h"
 #include "target.h"
 
@@ -147,6 +146,7 @@ struct rtl_opt_pass pass_cleanup_barriers =
  {
   RTL_PASS,
   "barriers",                           /* name */
+  OPTGROUP_NONE,                        /* optinfo_flags */
   NULL,                                 /* gate */
   cleanup_barriers,                     /* execute */
   NULL,                                 /* sub */
@@ -1079,8 +1079,6 @@ mark_jump_label_1 (rtx x, rtx insn, bool in_mem, bool is_target)
     case PC:
     case CC0:
     case REG:
-    case CONST_INT:
-    case CONST_DOUBLE:
     case CLOBBER:
     case CALL:
       return;
@@ -1260,9 +1258,9 @@ delete_related_insns (rtx insn)
 	  && GET_CODE (PATTERN (insn)) == SEQUENCE
 	  && CALL_P (XVECEXP (PATTERN (insn), 0, 0))))
     {
-      rtx p = insn;
+      rtx p;
 
-      for (p = NEXT_INSN (p);
+      for (p = next && INSN_DELETED_P (next) ? NEXT_INSN (next) : next;
 	   p && NOTE_P (p);
 	   p = NEXT_INSN (p))
 	if (NOTE_KIND (p) == NOTE_INSN_CALL_ARG_LOCATION)
@@ -1754,8 +1752,7 @@ rtx_renumbered_equal_p (const_rtx x, const_rtx y)
     case CC0:
     case ADDR_VEC:
     case ADDR_DIFF_VEC:
-    case CONST_INT:
-    case CONST_DOUBLE:
+    CASE_CONST_UNIQUE:
       return 0;
 
     case LABEL_REF:
@@ -1819,8 +1816,7 @@ rtx_renumbered_equal_p (const_rtx x, const_rtx y)
 	  if (XINT (x, i) != XINT (y, i))
 	    {
 	      if (((code == ASM_OPERANDS && i == 6)
-		   || (code == ASM_INPUT && i == 1))
-		  && locator_eq (XINT (x, i), XINT (y, i)))
+		   || (code == ASM_INPUT && i == 1)))
 		break;
 	      return 0;
 	    }
@@ -1873,7 +1869,8 @@ true_regnum (const_rtx x)
 {
   if (REG_P (x))
     {
-      if (REGNO (x) >= FIRST_PSEUDO_REGISTER && reg_renumber[REGNO (x)] >= 0)
+      if (REGNO (x) >= FIRST_PSEUDO_REGISTER
+	  && (lra_in_progress || reg_renumber[REGNO (x)] >= 0))
 	return reg_renumber[REGNO (x)];
       return REGNO (x);
     }
@@ -1885,7 +1882,8 @@ true_regnum (const_rtx x)
 	{
 	  struct subreg_info info;
 
-	  subreg_get_info (REGNO (SUBREG_REG (x)),
+	  subreg_get_info (lra_in_progress
+			   ? (unsigned) base : REGNO (SUBREG_REG (x)),
 			   GET_MODE (SUBREG_REG (x)),
 			   SUBREG_BYTE (x), GET_MODE (x), &info);
 

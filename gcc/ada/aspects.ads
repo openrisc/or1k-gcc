@@ -95,7 +95,7 @@ package Aspects is
       Aspect_Implicit_Dereference,
       Aspect_Input,
       Aspect_Interrupt_Priority,
-      Aspect_Invariant,
+      Aspect_Invariant,                     -- GNAT
       Aspect_Iterator_Element,
       Aspect_Link_Name,
       Aspect_Machine_Radix,
@@ -184,14 +184,19 @@ package Aspects is
 
       Aspect_Lock_Free);
 
+   subtype Aspect_Id_Exclude_No_Aspect is
+     Aspect_Id range Aspect_Id'Succ (No_Aspect) .. Aspect_Id'Last;
+   --  Aspect_Id's excluding No_Aspect
+
    --  The following array indicates aspects that accept 'Class
 
    Class_Aspect_OK : constant array (Aspect_Id) of Boolean :=
-                       (Aspect_Invariant     => True,
-                        Aspect_Pre           => True,
-                        Aspect_Predicate     => True,
-                        Aspect_Post          => True,
-                        others               => False);
+                       (Aspect_Invariant      => True,
+                        Aspect_Pre            => True,
+                        Aspect_Predicate      => True,
+                        Aspect_Post           => True,
+                        Aspect_Type_Invariant => True,
+                        others                => False);
 
    --  The following array indicates aspects that a subtype inherits from
    --  its base type. True means that the subtype inherits the aspect from

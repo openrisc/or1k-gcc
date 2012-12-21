@@ -25,7 +25,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "tree-flow.h"
 #include "tree-inline.h"
-#include "tree-pass.h"
+#include "dumpfile.h"
 #include "langhooks.h"
 #include "pointer-set.h"
 #include "splay-tree.h"
@@ -35,7 +35,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple.h"
 #include "cgraph.h"
 #include "flags.h"
-#include "timevar.h"
 #include "diagnostic.h"
 #include "langhooks.h"
 
@@ -155,8 +154,11 @@ searchc (struct searchc_env* env, struct cgraph_node *v,
 
 /* Topsort the call graph by caller relation.  Put the result in ORDER.
 
-   The REDUCE flag is true if you want the cycles reduced to single nodes.  Set
-   ALLOW_OVERWRITABLE if nodes with such availability should be included.
+   The REDUCE flag is true if you want the cycles reduced to single nodes.
+   You can use ipa_get_nodes_in_cycle to obtain a vector containing all real
+   call graph nodes in a reduced node.
+
+   Set ALLOW_OVERWRITABLE if nodes with such availability should be included.
    IGNORE_EDGE, if non-NULL is a hook that may make some edges insignificant
    for the topological sort.   */
 
@@ -230,6 +232,23 @@ ipa_free_postorder_info (void)
 	  node->symbol.aux = NULL;
 	}
     }
+}
+
+/* Get the set of nodes for the cycle in the reduced call graph starting
+   from NODE.  */
+
+vec<cgraph_node_ptr> 
+ipa_get_nodes_in_cycle (struct cgraph_node *node)
+{
+  vec<cgraph_node_ptr> v = vNULL;
+  struct ipa_dfs_info *node_dfs_info;
+  while (node)
+    {
+      v.safe_push (node);
+      node_dfs_info = (struct ipa_dfs_info *) node->symbol.aux;
+      node = node_dfs_info->next_cycle;
+    }
+  return v;
 }
 
 struct postorder_stack
@@ -352,7 +371,7 @@ cgraph_node_set_new (void)
 
   new_node_set = XCNEW (struct cgraph_node_set_def);
   new_node_set->map = pointer_map_create ();
-  new_node_set->nodes = NULL;
+  new_node_set->nodes.create (0);
   return new_node_set;
 }
 
@@ -369,15 +388,15 @@ cgraph_node_set_add (cgraph_node_set set, struct cgraph_node *node)
   if (*slot)
     {
       int index = (size_t) *slot - 1;
-      gcc_checking_assert ((VEC_index (cgraph_node_ptr, set->nodes, index)
+      gcc_checking_assert ((set->nodes[index]
 		           == node));
       return;
     }
 
-  *slot = (void *)(size_t) (VEC_length (cgraph_node_ptr, set->nodes) + 1);
+  *slot = (void *)(size_t) (set->nodes.length () + 1);
 
   /* Insert into node vector.  */
-  VEC_safe_push (cgraph_node_ptr, heap, set->nodes, node);
+  set->nodes.safe_push (node);
 }
 
 
@@ -395,12 +414,12 @@ cgraph_node_set_remove (cgraph_node_set set, struct cgraph_node *node)
     return;
 
   index = (size_t) *slot - 1;
-  gcc_checking_assert (VEC_index (cgraph_node_ptr, set->nodes, index)
+  gcc_checking_assert (set->nodes[index]
 	      	       == node);
 
   /* Remove from vector. We do this by swapping node with the last element
      of the vector.  */
-  last_node = VEC_pop (cgraph_node_ptr, set->nodes);
+  last_node = set->nodes.pop ();
   if (last_node != node)
     {
       last_slot = pointer_map_contains (set->map, last_node);
@@ -408,7 +427,7 @@ cgraph_node_set_remove (cgraph_node_set set, struct cgraph_node *node)
       *last_slot = (void *)(size_t) (index + 1);
 
       /* Move the last element to the original spot of NODE.  */
-      VEC_replace (cgraph_node_ptr, set->nodes, index, last_node);
+      set->nodes[index] = last_node;
     }
 
   /* Remove element from hash table.  */
@@ -466,7 +485,7 @@ debug_cgraph_node_set (cgraph_node_set set)
 void
 free_cgraph_node_set (cgraph_node_set set)
 {
-  VEC_free (cgraph_node_ptr, heap, set->nodes);
+  set->nodes.release ();
   pointer_map_destroy (set->map);
   free (set);
 }
@@ -481,7 +500,7 @@ varpool_node_set_new (void)
 
   new_node_set = XCNEW (struct varpool_node_set_def);
   new_node_set->map = pointer_map_create ();
-  new_node_set->nodes = NULL;
+  new_node_set->nodes.create (0);
   return new_node_set;
 }
 
@@ -498,15 +517,15 @@ varpool_node_set_add (varpool_node_set set, struct varpool_node *node)
   if (*slot)
     {
       int index = (size_t) *slot - 1;
-      gcc_checking_assert ((VEC_index (varpool_node_ptr, set->nodes, index)
+      gcc_checking_assert ((set->nodes[index]
 		           == node));
       return;
     }
 
-  *slot = (void *)(size_t) (VEC_length (varpool_node_ptr, set->nodes) + 1);
+  *slot = (void *)(size_t) (set->nodes.length () + 1);
 
   /* Insert into node vector.  */
-  VEC_safe_push (varpool_node_ptr, heap, set->nodes, node);
+  set->nodes.safe_push (node);
 }
 
 
@@ -524,12 +543,12 @@ varpool_node_set_remove (varpool_node_set set, struct varpool_node *node)
     return;
 
   index = (size_t) *slot - 1;
-  gcc_checking_assert (VEC_index (varpool_node_ptr, set->nodes, index)
+  gcc_checking_assert (set->nodes[index]
 	      	       == node);
 
   /* Remove from vector. We do this by swapping node with the last element
      of the vector.  */
-  last_node = VEC_pop (varpool_node_ptr, set->nodes);
+  last_node = set->nodes.pop ();
   if (last_node != node)
     {
       last_slot = pointer_map_contains (set->map, last_node);
@@ -537,7 +556,7 @@ varpool_node_set_remove (varpool_node_set set, struct varpool_node *node)
       *last_slot = (void *)(size_t) (index + 1);
 
       /* Move the last element to the original spot of NODE.  */
-      VEC_replace (varpool_node_ptr, set->nodes, index, last_node);
+      set->nodes[index] = last_node;
     }
 
   /* Remove element from hash table.  */
@@ -586,7 +605,7 @@ dump_varpool_node_set (FILE *f, varpool_node_set set)
 void
 free_varpool_node_set (varpool_node_set set)
 {
-  VEC_free (varpool_node_ptr, heap, set->nodes);
+  set->nodes.release ();
   pointer_map_destroy (set->map);
   free (set);
 }

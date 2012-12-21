@@ -1,6 +1,6 @@
 /* Definitions for CPP library.
    Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
-   2004, 2005, 2007, 2008, 2009, 2010, 2011
+   2004, 2005, 2007, 2008, 2009, 2010, 2011, 2012
    Free Software Foundation, Inc.
    Written by Per Bothner, 1994-95.
 
@@ -431,6 +431,10 @@ struct cpp_options
      ud-suffix which does not beging with an underscore.  */
   unsigned char warn_literal_suffix;
 
+  /* Nonzero means interpret imaginary, fixed-point, or other gnu extension
+     literal number suffixes as user-defined literal number suffixes.  */
+  unsigned char ext_numeric_literals;
+
   /* Holds the name of the target (execution) character set.  */
   const char *narrow_charset;
 
@@ -489,6 +493,9 @@ struct cpp_options
 
   /* True disables tokenization outside of preprocessing directives. */
   bool directives_only;
+
+  /* True enables canonicalization of system header file paths. */
+  bool canonical_system_headers;
 };
 
 /* Callback for header lookup for HEADER, which is the name of a
@@ -854,10 +861,12 @@ extern unsigned cpp_classify_number (cpp_reader *, const cpp_token *,
 				     const char **, source_location);
 
 /* Return the classification flags for a float suffix.  */
-extern unsigned int cpp_interpret_float_suffix (const char *, size_t);
+extern unsigned int cpp_interpret_float_suffix (cpp_reader *, const char *,
+						size_t);
 
 /* Return the classification flags for an int suffix.  */
-extern unsigned int cpp_interpret_int_suffix (const char *, size_t);
+extern unsigned int cpp_interpret_int_suffix (cpp_reader *, const char *,
+					      size_t);
 
 /* Evaluate a token classified as category CPP_N_INTEGER.  */
 extern cpp_num cpp_interpret_integer (cpp_reader *, const cpp_token *,
@@ -1010,6 +1019,7 @@ extern bool cpp_included (cpp_reader *, const char *);
 extern bool cpp_included_before (cpp_reader *, const char *, source_location);
 extern void cpp_make_system_header (cpp_reader *, int, int);
 extern bool cpp_push_include (cpp_reader *, const char *);
+extern bool cpp_push_default_include (cpp_reader *, const char *);
 extern void cpp_change_file (cpp_reader *, enum lc_reason, const char *);
 extern const char *cpp_get_path (struct _cpp_file *);
 extern cpp_dir *cpp_get_dir (struct _cpp_file *);
