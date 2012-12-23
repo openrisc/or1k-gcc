@@ -21,6 +21,93 @@
 	* config/or1k/or1k.c:
 	(or1k_compute_frame_size) use crtl->is_leaf instead of current_function_is_leaf
 
+2012-10-28  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* common/config/or1k/or1k-common.c (or1k_handle_option): Remove.
+	(TARGET_HANDLE_OPTION): Likewise.
+	* gcc/config.gcc (or1k-*-elf*): Remove OR1K_LIBC_DEFAULT from tm_defines
+	(or1k-*-linux-*): Likewise.
+	(or1knd-*-elf*): Likewise.
+	(or1knd-*-linux-*): Likewise.
+	* config/or1k/linux-elf.h (DRIVER_SELF_SPECS): Define -muclibc when
+	-mglibc is not given.
+	(TARGET_OS_CPP_BUILTINS): Define "__UCLIBC__" on OPTION_UCLIBC.
+	* config/or1k/or1k.h: Remove custom libc handling
+	* config/or1k/or1k.opt: Likewise.
+
+2012-09-30  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.h (DWARF2_ASM_LINE_DEBUG_INFO): Define.
+
+2012-09-23  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.c (or1k_expand_prologue): Add asserts checking that
+	link reg and fp stack slots offsets are not equal to other offsets.
+
+2012-09-23  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.c (or1k_save_reg_p): Save link register when
+	crtl->uses_pic_offset_table is set.
+	(or1k_compute_frame_size): Reserve space for PIC reg and link register
+	when -fPIC is defined.
+	(or1k_print_operand_address): Remove UNSPEC_GOTOFF handling.
+	(or1k_legitimate_address_p): Likewise.
+	(or1k_legitimate_pic_operand_p): New function.
+	(expand_pic_symbol_ref): Rename to:
+	(or1k_expand_pic_symbol_ref): Emit appropriate GOT references.
+	I.e. labels, local symbols and weak symbols use relative referencing
+	to GOT and global symbol references use referencing through GOT.
+	(or1k_expand_move): Utilize the functionality from
+	(or1k_expand_pic_symbol_ref).
+	(or1k_expand_prologue): Use crtl->uses_pic_offset_tale and
+	frame_info.save_lr_p to determine if the got pointer should be acquired
+	instead of df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM).
+	(or1k_output_addr_const_extra): Remove.
+	(or1k_legitimize_address): Likewise.
+	(TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA): Likewise.
+	(TARGET_LEGITIMIZE_ADDRESS): Likewise.
+	* config/or1k/or1k.h (FIXED_REGISTERS): Add r16 (GOT pointer).
+	(CALL_USED_REGISTERS): Likewise.
+	(PIC_OFFSET_TABLE_REGNUM): Change from r10 to r16.
+	(LEGITIMATE_PIC_OPERAND_P): Define.
+	* config/or1k/or1k.md (UNSPEC_GOTOFF): Remove.
+	(UNSPEC_PCREL): Likewise.
+	(UNSPEC_PIC_LABEL): Likewise.
+	(UNSPEC_SYMBOL_OFFSET): Likewise.
+	(UNSPEC_GOTOFFHI): New constant.
+	(UNSPEC_GOTOFFLO): Likewise.
+	(movsi_gotofflo): New insn.
+	(movsi_gotoffhi): Likewise.
+	(movsi_got): Likewise.
+	(movsi_insn_big): Expand PIC symbol ref if necessary on -fpic
+	(call): Set r16 as used.
+	(call_indirect): Likewise.
+	(call_indirect_internal): Likewise.
+	(call_value): Likewise.
+	(call_value_indirect): Likewise.
+	(call_value_indirect_internal): Likewise.
+	(call_internal): Set r16 as used and emit call through plt on -fpic.
+	(call_value_internal): Likewise.
+	(set_got): Set r9 and r16 as clobbered, use gotpchi() and gotpclo()
+	assembler keywords.
+
+2012-09-18  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/picflag.m4 (or1k-*-*): Set picflag.
+
+2012-09-14  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* gcc/config/or1k/t-linux (MULTILIB_DIRNAMES): Remove 'be' multilib.
+
+2012-09-12  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/linux-elf.h (TARGET_VERSION): Remove.
+
+2012-09-11  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.c (or1k_output_cmov): Remove '\t' in front of l.cmov
+	in asm output.
+
 2012-06-23  Peter Gavin  <pgavin@gmail.com>
 
 	* config/or1k/or1k.c:
