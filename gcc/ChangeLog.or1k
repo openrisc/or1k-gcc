@@ -1,3 +1,10 @@
+2012-12-29  Christian Svensson  <blue@cmd.nu>
+
+	* config.gcc: Use GNU userspace link options when compiling for Linux.
+	* config/or1k/linux-elf.h:
+	(DRIVER_SELF_SPECS): Do not assume uclibc when -m glibc is absent, use
+	target configuration instead.
+
 2012-12-21  Christian Svensson  <blue@cmd.nu>
 
 	* config/or1k/linux-elf.h (GLIBC_DYNAMIC_LINKER): Define.

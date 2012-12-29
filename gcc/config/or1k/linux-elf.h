@@ -62,7 +62,7 @@ Boston, MA 02111-1307, USA.  */
 #define CPLUSPLUS_CPP_SPEC "-D_GNU_SOURCE %(cpp)"
 
 #undef DRIVER_SELF_SPECS
-#define DRIVER_SELF_SPECS "%{!mglibc:-muclibc}"
+#define DRIVER_SELF_SPECS ""
 
 #define GLIBC_DYNAMIC_LINKER "/lib/ld.so.1"
 
