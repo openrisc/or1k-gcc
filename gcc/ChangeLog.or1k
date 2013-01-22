@@ -1,3 +1,34 @@
+2013-01-22  Christian Svensson  <blue@cmd.nu>
+
+	* common/config/or1k/or1k-common.c:
+	(TARGET_EXCEPT_UNWIND_INFO) define.
+	(or1k_except_unwind_info) use DWARF2 unwind info as default
+	but support SJLJ if forced with --enable-sjlj-exceptions.
+	* config/or1k/or1k-protos.h: 
+	(or1k_expand_pic_symbol_ref) removed unneeded ATTRIBUTE_UNUSED.
+	(or1k_eh_return_handler_rtx) defined prototype (body in or1k.c).
+	(or1k_return_addr_rtx) defined prototype (body in or1k.c).
+	* config/or1k/or1k.c:
+	(or1k_save_reg_p) save stack pointer when frame pointer is not saved.
+	(or1k_save_reg_p) save registers used with eh_return.
+	(or1k_expand_epilogue) do not restore link register if we are 
+	returning from eh_return.
+	(or1k_expand_epilogue) apply EH stack adjustment to stack pointer.
+	(or1k_eh_return_handler_rtx) eh_return should write to the link register.
+	(or1k_return_addr_rtx) in the case of GOT the link register cannot be read
+	after the prologue. in this case, use the stored link register from the
+	stack frame.
+	(or1k_frame_pointer_required) require FP in eh_return and 
+	when alloca is used.
+	(TARGET_FRAME_POINTER_REQUIRED) define.
+	* config/or1k/or1k.h:
+	(INITIAL_FRAME_POINTER_OFFSET) not used, removed.
+	(RETURN_ADDR_RTX) define.
+	(EH_RETURN_REGNUM) define. use reg 23.
+	(EH_RETURN_DATA_REGNO) define. use reg 25, 27, 29 and 31.
+	(EH_RETURN_STACKADJ_RTX) define.
+	(EH_RETURN_HANDLER_RTX) define.
+
 2012-12-29  Christian Svensson  <blue@cmd.nu>
 
 	* config.gcc: Use GNU userspace link options when compiling for Linux.
