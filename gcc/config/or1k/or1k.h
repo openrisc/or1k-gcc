@@ -350,29 +350,6 @@ Boston, MA 02111-1307, USA.  */
 /* Link register. */
 #define LINK_REGNUM 9
 
-/* This function computes the initial size of the frame (difference between SP
-   and FP) after the function prologue. */
-#define INITIAL_FRAME_POINTER_OFFSET(depth)				\
-  {									\
-    int regno;								\
-    int offset = 0;							\
-  									\
-    for (regno=0; regno < FIRST_PSEUDO_REGISTER;  regno++)		\
-      {									\
-	if (df_regs_ever_live_p (regno) && !call_used_regs[regno])	\
-	  {								\
-	    offset += 4;						\
-	  }								\
-      }									\
-									\
-    (depth) = ((!current_function_is_leaf				\
-		|| df_regs_ever_live_p (LINK_REGNUM)) ? 4 : 0)		\
-      + (frame_pointer_needed ? 4 : 0)					\
-      + offset								\
-      + OR1K_ALIGN (crtl->outgoing_args_size, 4)			\
-      + OR1K_ALIGN (get_frame_size(), 4);				\
-  }
-
 /* Register in which static-chain is passed to a function.  */
 
 #define STATIC_CHAIN_REGNUM 11
@@ -708,8 +685,7 @@ enum reg_class
    the stack.  */
 #define INCOMING_RETURN_ADDR_RTX gen_rtx_REG (Pmode, LINK_REGNUM)
 
-#define RETURN_ADDR_RTX(COUNT, FP) \
-  ((COUNT) ? NULL_RTX : get_hard_reg_initial_val (Pmode, LINK_REGNUM))
+#define RETURN_ADDR_RTX or1k_return_addr_rtx
 
 /* Addressing modes, and classification of registers for them.  */
 
@@ -1205,5 +1181,12 @@ enum reg_class
 
    For the OR1K, there is no need for anything other than word alignment. */
 #define TRAMPOLINE_ALIGNMENT  32
+
+/* Describe how we implement __builtin_eh_return.  */
+#define EH_RETURN_REGNUM 23
+/* Use r25, r27, r29 and r31 (clobber regs) for exception data */
+#define EH_RETURN_DATA_REGNO(N) ((N) < 4 ? (25 + ((N)<<1)) : INVALID_REGNUM)
+#define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
+#define EH_RETURN_HANDLER_RTX   or1k_eh_return_handler_rtx ()
 
 #endif /* _OR1K_H_ */

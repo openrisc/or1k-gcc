@@ -41,7 +41,7 @@ extern const char *or1k_output_bf (rtx * operands);
 extern const char *or1k_output_cmov (rtx * operands);
 extern void        or1k_emit_set_const32 (rtx  op0,
 					  rtx  op1);
-extern bool        or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
+extern bool        or1k_expand_pic_symbol_ref (enum machine_mode mode,
                                                rtx operands[]);
 #endif
 
@@ -52,6 +52,8 @@ extern int or1k_data_alignment (tree, int);
 extern int or1k_initial_elimination_offset (int, int);
 extern bool or1k_save_reg_p_cached (int regno);
 extern void or1k_print_jump_restore (rtx jump_address);
+extern rtx or1k_eh_return_handler_rtx (void);
+extern rtx or1k_return_addr_rtx (int, rtx);
 
 extern int or1k_legitimate_pic_operand_p (rtx x);
 

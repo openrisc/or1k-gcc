@@ -125,11 +125,27 @@ or1k_save_reg_p (int regno)
   if (regno == HARD_FRAME_POINTER_REGNUM && frame_pointer_needed)
     return true;
 
+  /* Save the stack pointer for DWARF2 for now.
+   * AFAIK, DWARF should be able to unwind using only the current stack
+   * register and the CFA offset, but I never got that to work. */
+  if (regno == STACK_POINTER_REGNUM && !frame_pointer_needed)
+    return true;
+
   /* We need to save the incoming return address if it is ever clobbered
      within the function.  */
   if (regno == LINK_REGNUM
       && (df_regs_ever_live_p(regno) || crtl->uses_pic_offset_table))
     return true;
+
+  if(crtl->calls_eh_return)
+    {
+      unsigned int i;
+      for (i = 0; EH_RETURN_DATA_REGNO (i) != INVALID_REGNUM; i++)
+        {
+          if ((unsigned int)regno == EH_RETURN_DATA_REGNO (i))
+            return true;
+        }
+    }
 
   return false;
 
@@ -931,7 +947,8 @@ or1k_expand_epilogue (void)
 	emit_insn (gen_frame_dealloc_sp (value_rtx));
     }
 
-  if (frame_info.save_lr_p)
+  /* eh_return sets the LR, do not overwrite it */
+  if (frame_info.save_lr_p && !crtl->calls_eh_return)
     {
       emit_insn
         (gen_rtx_SET (Pmode, gen_rtx_REG (Pmode, LINK_REGNUM),
@@ -955,6 +972,9 @@ or1k_expand_epilogue (void)
 	  offset = offset + UNITS_PER_WORD;
 	}
     }
+
+  if (crtl->calls_eh_return)
+    emit_insn (gen_add2_insn (stack_pointer_rtx, EH_RETURN_STACKADJ_RTX));
 
   if (frame_info.gpr_frame)
     emit_insn (gen_add2_insn (stack_pointer_rtx,
@@ -2085,6 +2105,45 @@ or1k_asm_file_start(void)
     fprintf(asm_out_file, "\t.nodelay\n");
   }
 }
+
+/* Implement EH_RETURN_HANDLER_RTX. 
+ * Make eh_return use the link register. Epilogue LR restore
+ * is suppressed for eh_return. */
+rtx
+or1k_eh_return_handler_rtx (void)
+{
+  return INCOMING_RETURN_ADDR_RTX;
+}
+
+/* Implement RETURN_ADDR_RTX.
+ * We do not support moving back to a previous frame. */
+rtx
+or1k_return_addr_rtx (int count, rtx frame ATTRIBUTE_UNUSED)
+{
+  if (count != 0)
+    return const0_rtx;
+
+  or1k_compute_frame_size (get_frame_size ());
+
+  /* If we clobber the LR register, we should have saved it.
+   * If we didn't save it - assume it's still in LR */
+  if (frame_info.save_lr_p)
+    return gen_rtx_MEM (Pmode, plus_constant (Pmode, arg_pointer_rtx,
+                                              frame_info.lr_save_offset));
+  else
+    return get_hard_reg_initial_val (Pmode, LINK_REGNUM);
+}
+
+/* Implement TARGET_FRAME_POINTER_REQUIRED.
+ * We want frame pointer in eh_return and when alloca is used */
+static bool
+or1k_frame_pointer_required (void)
+{
+  return crtl->calls_eh_return || cfun->calls_alloca;
+}
+
+#undef  TARGET_FRAME_POINTER_REQUIRED
+#define TARGET_FRAME_POINTER_REQUIRED or1k_frame_pointer_required
 
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;

@@ -33,8 +33,24 @@ static const struct default_options or1k_option_optimization_table[] =
     { OPT_LEVELS_NONE, 0, NULL, 0 }
   };
 
-#undef TARGET_EXCEPT_UNWIND_INFO
-#define TARGET_EXCEPT_UNWIND_INFO sjlj_except_unwind_info
+/* Implement TARGET_EXCEPT_UNWIND_INFO.  */
+static enum unwind_info_type
+or1k_except_unwind_info (struct gcc_options *opts)
+{
+    /* Honor the --enable-sjlj-exceptions configure switch.  */
+#ifdef CONFIG_SJLJ_EXCEPTIONS
+    if (CONFIG_SJLJ_EXCEPTIONS)
+          return UI_SJLJ;
+#endif
+
+    if (DWARF2_UNWIND_INFO)
+      return UI_DWARF2;
+
+    return UI_SJLJ;
+}
+
+#undef  TARGET_EXCEPT_UNWIND_INFO
+#define TARGET_EXCEPT_UNWIND_INFO  or1k_except_unwind_info
 
 #undef TARGET_OPTION_OPTIMIZATION_TABLE
 #define TARGET_OPTION_OPTIMIZATION_TABLE or1k_option_optimization_table
