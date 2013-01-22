@@ -1,4 +1,4 @@
-2012-01-22  Christian Svensson  <blue@cmd.nu>
+2013-01-22  Christian Svensson  <blue@cmd.nu>
 
 	* common/config/or1k/or1k-common.c:
 	(TARGET_EXCEPT_UNWIND_INFO) define.
