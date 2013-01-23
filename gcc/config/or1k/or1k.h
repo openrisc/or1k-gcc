@@ -1189,4 +1189,14 @@ enum reg_class
 #define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
 #define EH_RETURN_HANDLER_RTX   or1k_eh_return_handler_rtx ()
 
+#define INIT_EXPANDERS or1k_init_expanders ()
+
+/* A C structure for machine-specific, per-function data.  This is
+ *    added to the cfun structure.  */
+typedef struct GTY(()) machine_function
+{
+  /* Force stack save of LR. Used in RETURN_ADDR_RTX. */
+  int force_lr_save;
+} machine_function;
+
 #endif /* _OR1K_H_ */

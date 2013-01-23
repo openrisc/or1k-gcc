@@ -134,7 +134,8 @@ or1k_save_reg_p (int regno)
   /* We need to save the incoming return address if it is ever clobbered
      within the function.  */
   if (regno == LINK_REGNUM
-      && (df_regs_ever_live_p(regno) || crtl->uses_pic_offset_table))
+      && (df_regs_ever_live_p(regno) || crtl->uses_pic_offset_table
+          || cfun->machine->force_lr_save))
     return true;
 
   if(crtl->calls_eh_return)
@@ -2123,15 +2124,14 @@ or1k_return_addr_rtx (int count, rtx frame ATTRIBUTE_UNUSED)
   if (count != 0)
     return const0_rtx;
 
-  or1k_compute_frame_size (get_frame_size ());
+  /* We don't know if LR is going to be saved or if we're going to
+   * be clobbering it with the GOT instruction.
+   * Therefore the safest bet is to force a save of LR and use that.
+   * Assume it's going to be first in the stack. */
 
-  /* If we clobber the LR register, we should have saved it.
-   * If we didn't save it - assume it's still in LR */
-  if (frame_info.save_lr_p)
-    return gen_rtx_MEM (Pmode, plus_constant (Pmode, arg_pointer_rtx,
-                                              frame_info.lr_save_offset));
-  else
-    return get_hard_reg_initial_val (Pmode, LINK_REGNUM);
+  cfun->machine->force_lr_save = true;
+  return gen_rtx_MEM (Pmode, plus_constant (Pmode, arg_pointer_rtx,
+                                            -UNITS_PER_WORD));
 }
 
 /* Implement TARGET_FRAME_POINTER_REQUIRED.
@@ -2140,6 +2140,26 @@ static bool
 or1k_frame_pointer_required (void)
 {
   return crtl->calls_eh_return || cfun->calls_alloca;
+}
+
+/* Functions to save and restore machine-specific function data.  */
+static struct machine_function *
+or1k_init_machine_status (void)
+{
+    return ggc_alloc_cleared_machine_function ();
+}
+
+void
+or1k_init_expanders (void)
+{
+  /* Arrange to initialize and mark the machine per-function
+   * status.  */
+  init_machine_status = or1k_init_machine_status;
+
+  if (cfun && cfun->machine)
+    {
+      cfun->machine->force_lr_save = false;
+    }
 }
 
 #undef  TARGET_FRAME_POINTER_REQUIRED
