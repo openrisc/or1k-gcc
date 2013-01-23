@@ -26,6 +26,7 @@ extern int         or1k_trampoline_code_size (void);
 
 /* The following are only needed when handling the machine definition. */
 #ifdef RTX_CODE
+extern void        or1k_init_expanders (void);
 extern void        or1k_expand_prologue (void);
 extern void        or1k_expand_epilogue (void);
 extern bool        or1k_expand_move (enum machine_mode mode, rtx operands[]);

@@ -11,15 +11,17 @@
 	* config/or1k/or1k.c:
 	(or1k_save_reg_p) save stack pointer when frame pointer is not saved.
 	(or1k_save_reg_p) save registers used with eh_return.
+	(or1k_save_reg_p) save LR to stack if used by RETURN_ADDR_RTX.
 	(or1k_expand_epilogue) do not restore link register if we are 
 	returning from eh_return.
 	(or1k_expand_epilogue) apply EH stack adjustment to stack pointer.
 	(or1k_eh_return_handler_rtx) eh_return should write to the link register.
 	(or1k_return_addr_rtx) in the case of GOT the link register cannot be read
-	after the prologue. in this case, use the stored link register from the
-	stack frame.
+	after the prologue. store LR on stack and read it back when needed.
 	(or1k_frame_pointer_required) require FP in eh_return and 
 	when alloca is used.
+	(or1k_init_machine_status) init cfun->machine.
+	(or1k_init_expanders) added LR forced save, default to false.
 	(TARGET_FRAME_POINTER_REQUIRED) define.
 	* config/or1k/or1k.h:
 	(INITIAL_FRAME_POINTER_OFFSET) not used, removed.
@@ -28,6 +30,8 @@
 	(EH_RETURN_DATA_REGNO) define. use reg 25, 27, 29 and 31.
 	(EH_RETURN_STACKADJ_RTX) define.
 	(EH_RETURN_HANDLER_RTX) define.
+	(INIT_EXPANDERS) define.
+	(struct GTY()) define.
 
 2012-12-29  Christian Svensson  <blue@cmd.nu>
 
