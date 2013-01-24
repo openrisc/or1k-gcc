@@ -832,6 +832,7 @@ moxie-*-rtems*)
 or1k*-*-*)
   tmake_file="$tmake_file or1k/t-or1k or1k/t-linux or1k/t-crtstuff t-softfp-sfdf t-softfp"
   extra_parts="crtbegin.o crtbeginS.o crtbeginT.o crtend.o crtendS.o crti.o crtn.o"
+  md_unwind_header=or1k/linux-unwind.h
   ;;
 pdp11-*-*)
 	tmake_file="pdp11/t-pdp11 t-fdpbit"
