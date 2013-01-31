@@ -1,3 +1,8 @@
+2013-02-01  Christian Svensson  <blue@cmd.nu>
+
+	* config/or1k/t-crtstuff: updated file.
+	- Set CRTSTUFF_T_CFLAGS_S as well. (*-*-elf needs this)
+
 2013-01-24  Christian Svensson  <blue@cmd.nu>
 
 	* config/or1k/linux-unwind.h: new file
