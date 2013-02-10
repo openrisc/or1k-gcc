@@ -66,7 +66,7 @@ Boston, MA 02111-1307, USA.  */
 #define ENDFILE_SPEC "%{shared|pie:crtendS.o%s;:crtend.o%s} crtn.o%s"
 
 #undef LINK_SPEC
-#define LINK_SPEC "%{mnewlib:-entry 0x100}%{static:-static}%{shared:-shared}"
+#define LINK_SPEC "%{mnewlib:-entry 0x100} %{static:-static} %{shared:-shared}"
 
 /* Override previous definitions (linux.h). Newlib doesn't have a profiling
    version of the library, but it does have a debugging version (libg.a) */
