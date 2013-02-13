@@ -1,3 +1,9 @@
+2013-02-13  Franck Jullien  <franck.jullien@gmail.com>
+
+	* config/or1k/or1k.h:
+	(LIB_SPEC): use -lboard-%* or -lboard-or1ksim even when
+	-static option is used.
+
 2013-02-13  Christian Svensson  <blue@cmd.nu>
 
 	* config/or1k/or1k-protos.h

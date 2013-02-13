@@ -74,8 +74,7 @@ Boston, MA 02111-1307, USA.  */
 #define LIB_SPEC "%{!mnewlib:%{pthread:-lpthread}	\
 		             %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"			\
                  "%{mnewlib:%{!g:-lc} %{g:-lg} -lor1k					\
-                            %{!static:%{mboard=*:-lboard-%*}				\
-			              %{!mboard=*:-lboard-or1ksim}}			\
+                            %{mboard=*:-lboard-%*} %{!mboard=*:-lboard-or1ksim}		\
                             %{!g:-lc} %{g:-lg}						\
                             }"
 
