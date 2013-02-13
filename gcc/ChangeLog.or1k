@@ -1,3 +1,33 @@
+2013-02-13  Christian Svensson  <blue@cmd.nu>
+
+	* config/or1k/or1k-protos.h
+	(or1k_expand_pic_symbol_ref): Removed declaration.
+	(or1k_expand_symbol_ref): Added declaration.
+	* config/or1k/or1k.c
+	(or1k_expand_pic_symbol_ref): Made static.
+	(or1k_tls_symbolic_operand): New, returns TLS model of operand.
+	(gen_tls_tga): New, static cache of __tls_get_addr reference.
+	(gen_tls_get_addr): New, returns reference to __tls_get_addr.
+	(or1k_tls_call): New, emits call to __tls_get_addr.
+	(or1k_expand_symbol_ref): New, handles TLS operands.
+	(or1k_expand_move): Call or1k_expand_symbol_ref instead which will
+	then call or1k_expand_pic_symbol_ref if needed.
+	(gt-or1k.h): Include. Needed for gen_tls_tga.
+	* config/or1k/or1k.h (TARGET_HAVE_TLS): Define if HAVE_AS_TLS is set.
+	* config/or1k/or1k.md
+	(UNSPECS): Added UNSPEC_TPOFFLO, UNSPEC_TPOFFHI, UNSPEC_GOTTPOFFLO,
+	UNSPEC_GOTTPOFFHI, UNSPEC_GOTTPOFFLD, UNSPEC_TLSGDLO, UNSPEC_TLSGDHI.
+	(movsi_tlsgdlo): Added.
+	(movsi_tlsgdhi): Added.
+	(movsi_gottpofflo): Added.
+	(movsi_gottpoffhi): Added.
+	(load_gottpoff): Added.
+	(movsi_tpofflo): Added.
+	(movsi_tpoffhi): Added.
+	(movsi_insn_big): Call or1k_expand_symbol_ref instead.
+	* configure.ac: (TLS test): Check for or1k TLS support in AS.
+	* configure: (TLS test): Manually added same as in .ac.
+
 2013-02-11  Franck Jullien  <franck.jullien@gmail.com>
 
 	* config/or1k/or1k.h:
@@ -5,38 +35,38 @@
 
 2013-01-22  Christian Svensson  <blue@cmd.nu>
 
-	* common/config/or1k/or1k-common.c:
-	(TARGET_EXCEPT_UNWIND_INFO) define.
-	(or1k_except_unwind_info) use DWARF2 unwind info as default
+	* common/config/or1k/or1k-common.c
+	(TARGET_EXCEPT_UNWIND_INFO): define.
+	(or1k_except_unwind_info): use DWARF2 unwind info as default
 	but support SJLJ if forced with --enable-sjlj-exceptions.
-	* config/or1k/or1k-protos.h: 
-	(or1k_expand_pic_symbol_ref) removed unneeded ATTRIBUTE_UNUSED.
-	(or1k_eh_return_handler_rtx) defined prototype (body in or1k.c).
-	(or1k_return_addr_rtx) defined prototype (body in or1k.c).
-	* config/or1k/or1k.c:
-	(or1k_save_reg_p) save stack pointer when frame pointer is not saved.
-	(or1k_save_reg_p) save registers used with eh_return.
-	(or1k_save_reg_p) save LR to stack if used by RETURN_ADDR_RTX.
-	(or1k_expand_epilogue) do not restore link register if we are 
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_pic_symbol_ref): removed unneeded ATTRIBUTE_UNUSED.
+	(or1k_eh_return_handler_rtx): defined prototype (body in or1k.c).
+	(or1k_return_addr_rtx): defined prototype (body in or1k.c).
+	* config/or1k/or1k.c
+	(or1k_save_reg_p): save stack pointer when frame pointer is not saved.
+	(or1k_save_reg_p): save registers used with eh_return.
+	(or1k_save_reg_p): save LR to stack if used by RETURN_ADDR_RTX.
+	(or1k_expand_epilogue): do not restore link register if we are 
 	returning from eh_return.
-	(or1k_expand_epilogue) apply EH stack adjustment to stack pointer.
-	(or1k_eh_return_handler_rtx) eh_return should write to the link register.
-	(or1k_return_addr_rtx) in the case of GOT the link register cannot be read
+	(or1k_expand_epilogue): apply EH stack adjustment to stack pointer.
+	(or1k_eh_return_handler_rtx): eh_return should write to the link register.
+	(or1k_return_addr_rtx): in the case of GOT the link register cannot be read
 	after the prologue. store LR on stack and read it back when needed.
-	(or1k_frame_pointer_required) require FP in eh_return and 
+	(or1k_frame_pointer_required): require FP in eh_return and 
 	when alloca is used.
-	(or1k_init_machine_status) init cfun->machine.
-	(or1k_init_expanders) added LR forced save, default to false.
-	(TARGET_FRAME_POINTER_REQUIRED) define.
-	* config/or1k/or1k.h:
-	(INITIAL_FRAME_POINTER_OFFSET) not used, removed.
-	(RETURN_ADDR_RTX) define.
-	(EH_RETURN_REGNUM) define. use reg 23.
-	(EH_RETURN_DATA_REGNO) define. use reg 25, 27, 29 and 31.
-	(EH_RETURN_STACKADJ_RTX) define.
-	(EH_RETURN_HANDLER_RTX) define.
-	(INIT_EXPANDERS) define.
-	(struct GTY()) define.
+	(or1k_init_machine_status): init cfun->machine.
+	(or1k_init_expanders): added LR forced save, default to false.
+	(TARGET_FRAME_POINTER_REQUIRED): define.
+	* config/or1k/or1k.h
+	(INITIAL_FRAME_POINTER_OFFSET): not used, removed.
+	(RETURN_ADDR_RTX): define.
+	(EH_RETURN_REGNUM): define. use reg 23.
+	(EH_RETURN_DATA_REGNO): define. use reg 25, 27, 29 and 31.
+	(EH_RETURN_STACKADJ_RTX): define.
+	(EH_RETURN_HANDLER_RTX): define.
+	(INIT_EXPANDERS): define.
+	(struct GTY()): define.
 
 2012-12-29  Christian Svensson  <blue@cmd.nu>
 

@@ -1,3 +1,9 @@
+2013-02-13  Christian Svensson  <blue@cmd.nu>
+
+	* config.host: If we are targeting or1k*-linux or or1k*-uclibc do not
+	build crtn.o or crti.o. Do not include linux unwinder for other
+	targets (e.g. or1k*-elf) 
+
 2013-02-01  Christian Svensson  <blue@cmd.nu>
 
 	* config/or1k/t-crtstuff: updated file.

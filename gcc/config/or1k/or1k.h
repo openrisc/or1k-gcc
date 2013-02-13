@@ -531,6 +531,9 @@ enum reg_class
 #define GP_ARG_RETURN  11 
 #define GP_ARG_RETURNH 12 
 
+/* TLS thread pointer register */
+#define THREAD_PTR_REGNUM 10
+
 /* Position Independent Code.  */
 
 #define PIC_OFFSET_TABLE_REGNUM 16
@@ -1181,6 +1184,12 @@ enum reg_class
 
    For the OR1K, there is no need for anything other than word alignment. */
 #define TRAMPOLINE_ALIGNMENT  32
+
+/* Assume that if the assembler supports thread local storage
+ * the system supports it. */
+#if !defined(TARGET_HAVE_TLS) && defined(HAVE_AS_TLS)
+#define TARGET_HAVE_TLS true
+#endif
 
 /* Describe how we implement __builtin_eh_return.  */
 #define EH_RETURN_REGNUM 23

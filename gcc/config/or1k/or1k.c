@@ -579,7 +579,7 @@ or1k_legitimate_pic_operand_p (rtx x)
   return 1;
 }
 
-bool
+static bool
 or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
 			    rtx operands[])
 {
@@ -643,6 +643,98 @@ or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
   return false;
 }
 
+/* Return the TLS type for TLS symbols, 0 otherwise.  */
+enum tls_model
+or1k_tls_symbolic_operand (rtx op)
+{
+  if (GET_CODE (op) == CONST)
+    {
+      rtx sym, addend;
+      split_const (op, &sym, &addend);
+      if (GET_CODE (sym) == SYMBOL_REF)
+	return SYMBOL_REF_TLS_MODEL (sym);
+    }
+  else if (GET_CODE (op) == SYMBOL_REF)
+    return SYMBOL_REF_TLS_MODEL (op);
+
+  return TLS_MODEL_NONE;
+}
+
+static GTY(()) rtx gen_tls_tga;
+
+/* Get reference to the '__tls_get_addr' symbol */
+static rtx
+gen_tls_get_addr (void)
+{
+  if (!gen_tls_tga)
+    gen_tls_tga = init_one_libfunc ("__tls_get_addr");
+  return gen_tls_tga;
+}
+
+/* Emit call to '__tls_get_addr' */
+static void
+or1k_tls_call (rtx arg)
+{
+  emit_library_call_value (gen_tls_get_addr(), arg,
+      LCT_CONST, Pmode, 1, arg, Pmode);
+}
+
+bool
+or1k_expand_symbol_ref(enum machine_mode mode, rtx operands[])
+{
+  if (mode == Pmode)
+  {
+    rtx op0, op1;
+    enum tls_model tls_kind;
+
+    op0 = operands[0];
+    op1 = operands[1];
+
+    if ((tls_kind = or1k_tls_symbolic_operand (op1)) != TLS_MODEL_NONE)
+    {
+      rtx tp;
+      tp = gen_rtx_REG(Pmode, THREAD_PTR_REGNUM);
+      switch (tls_kind)
+      {
+        case TLS_MODEL_GLOBAL_DYNAMIC:
+        case TLS_MODEL_LOCAL_DYNAMIC:
+          /* TODO: For now, treat LD as GD */
+          crtl->uses_pic_offset_table = 1;
+          emit_insn (gen_movsi_tlsgdhi (op0, op1));
+          emit_insn (gen_movsi_tlsgdlo (op0, op0, op1));
+          emit_insn (gen_add3_insn (op0, op0, pic_offset_table_rtx));
+          or1k_tls_call (op0);
+          break;
+
+        case TLS_MODEL_INITIAL_EXEC:
+          crtl->uses_pic_offset_table = 1;
+          emit_insn (gen_movsi_gottpoffhi (op0, op1));
+          emit_insn (gen_movsi_gottpofflo (op0, op0, op1));
+          emit_insn (gen_add3_insn (op0, op0, pic_offset_table_rtx));
+          emit_insn (gen_load_gottpoff (op0, op0));
+          emit_insn (gen_add3_insn (op0, op0, tp));
+          break;
+
+        case TLS_MODEL_LOCAL_EXEC:
+          emit_insn (gen_movsi_tpoffhi (op0, op1));
+          emit_insn (gen_movsi_tpofflo (op0, op0, op1));
+          emit_insn (gen_add3_insn (op0, op0, tp));
+          break;
+
+        default:
+          gcc_unreachable ();
+      }
+
+      return true;
+    }
+  }
+
+  if (flag_pic && or1k_expand_pic_symbol_ref(mode, operands))
+    return true;
+
+  return false;
+}
+
 bool
 or1k_expand_move (enum machine_mode mode, rtx operands[])
 {
@@ -657,7 +749,7 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
         }
     }
 
-  if (flag_pic && or1k_expand_pic_symbol_ref(mode, operands))
+  if (or1k_expand_symbol_ref (mode, operands))
     return true;
 
   /* Working with CONST_INTs is easier, so convert
@@ -2167,3 +2259,5 @@ or1k_init_expanders (void)
 
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;
+
+#include "gt-or1k.h"
