@@ -984,10 +984,10 @@
   split_di (operands, 3, lo_half, hi_half);
   if (!(*insn_data[icode].operand[2].predicate) (lo_half[2], SImode))
     lo_half[2] = force_reg (SImode, lo_half[2]);
-  emit_insn (GEN_FCN (icode) (lo_half[0], lo_half[1], lo_half[2]));
+  emit_insn (GEN_FCN3 (icode) (lo_half[0], lo_half[1], lo_half[2]));
   if (!(*insn_data[icode].operand[2].predicate) (hi_half[2], SImode))
     hi_half[2] = force_reg (SImode, hi_half[2]);
-  emit_insn (GEN_FCN (icode) (hi_half[0], hi_half[1], hi_half[2]));
+  emit_insn (GEN_FCN3 (icode) (hi_half[0], hi_half[1], hi_half[2]));
   DONE;
 })
 

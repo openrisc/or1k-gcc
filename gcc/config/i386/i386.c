@@ -29933,7 +29933,7 @@ ix86_expand_binop_builtin (enum insn_code icode, tree exp, rtx target)
   if (!insn_data[icode].operand[2].predicate (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (! pat)
     return 0;
 
@@ -30138,31 +30138,31 @@ ix86_expand_multi_arg_builtin (enum insn_code icode, tree exp, rtx target,
   switch (nargs)
     {
     case 1:
-      pat = GEN_FCN (icode) (target, args[0].op);
+      pat = GEN_FCN2 (icode) (target, args[0].op);
       break;
 
     case 2:
       if (tf_p)
-	pat = GEN_FCN (icode) (target, args[0].op, args[1].op,
+	pat = GEN_FCN4 (icode) (target, args[0].op, args[1].op,
 			       GEN_INT ((int)sub_code));
       else if (! comparison_p)
-	pat = GEN_FCN (icode) (target, args[0].op, args[1].op);
+	pat = GEN_FCN3 (icode) (target, args[0].op, args[1].op);
       else
 	{
 	  rtx cmp_op = gen_rtx_fmt_ee (sub_code, GET_MODE (target),
 				       args[0].op,
 				       args[1].op);
 
-	  pat = GEN_FCN (icode) (target, cmp_op, args[0].op, args[1].op);
+	  pat = GEN_FCN4 (icode) (target, cmp_op, args[0].op, args[1].op);
 	}
       break;
 
     case 3:
-      pat = GEN_FCN (icode) (target, args[0].op, args[1].op, args[2].op);
+      pat = GEN_FCN4 (icode) (target, args[0].op, args[1].op, args[2].op);
       break;
 
     case 4:
-      pat = GEN_FCN (icode) (target, args[0].op, args[1].op, args[2].op, args[3].op);
+      pat = GEN_FCN5 (icode) (target, args[0].op, args[1].op, args[2].op, args[3].op);
       break;
 
     default:
@@ -30205,7 +30205,7 @@ ix86_expand_unop_vec_merge_builtin (enum insn_code icode, tree exp,
   if (!insn_data[icode].operand[2].predicate (op1, mode0))
     op1 = copy_to_mode_reg (mode0, op1);
 
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -30257,7 +30257,7 @@ ix86_expand_sse_compare (const struct builtin_description *d,
     op1 = copy_to_mode_reg (mode1, op1);
 
   op2 = gen_rtx_fmt_ee (comparison, mode0, op0, op1);
-  pat = GEN_FCN (d->icode) (target, op0, op1, op2);
+  pat = GEN_FCN4 (d->icode) (target, op0, op1, op2);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -30304,7 +30304,7 @@ ix86_expand_sse_comi (const struct builtin_description *d, tree exp,
       || !insn_data[d->icode].operand[1].predicate (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
-  pat = GEN_FCN (d->icode) (op0, op1);
+  pat = GEN_FCN2 (d->icode) (op0, op1);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -30343,7 +30343,7 @@ ix86_expand_sse_round (const struct builtin_description *d, tree exp,
 
   op1 = GEN_INT (d->comparison);
 
-  pat = GEN_FCN (d->icode) (target, op0, op1);
+  pat = GEN_FCN3 (d->icode) (target, op0, op1);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -30381,7 +30381,7 @@ ix86_expand_sse_round_vec_pack_sfix (const struct builtin_description *d,
 
   op2 = GEN_INT (d->comparison);
 
-  pat = GEN_FCN (d->icode) (target, op0, op1, op2);
+  pat = GEN_FCN4 (d->icode) (target, op0, op1, op2);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -30419,7 +30419,7 @@ ix86_expand_sse_ptest (const struct builtin_description *d, tree exp,
       || !insn_data[d->icode].operand[1].predicate (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
-  pat = GEN_FCN (d->icode) (op0, op1);
+  pat = GEN_FCN2 (d->icode) (op0, op1);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -30490,7 +30490,7 @@ ix86_expand_sse_pcmpestr (const struct builtin_description *d,
 
       scratch1 = gen_reg_rtx (tmode1);
 
-      pat = GEN_FCN (d->icode) (target, scratch1, op0, op1, op2, op3, op4);
+      pat = GEN_FCN7 (d->icode) (target, scratch1, op0, op1, op2, op3, op4);
     }
   else if (d->code == IX86_BUILTIN_PCMPESTRM128)
     {
@@ -30501,7 +30501,7 @@ ix86_expand_sse_pcmpestr (const struct builtin_description *d,
 
       scratch0 = gen_reg_rtx (tmode0);
 
-      pat = GEN_FCN (d->icode) (scratch0, target, op0, op1, op2, op3, op4);
+      pat = GEN_FCN7 (d->icode) (scratch0, target, op0, op1, op2, op3, op4);
     }
   else
     {
@@ -30510,7 +30510,7 @@ ix86_expand_sse_pcmpestr (const struct builtin_description *d,
       scratch0 = gen_reg_rtx (tmode0);
       scratch1 = gen_reg_rtx (tmode1);
 
-      pat = GEN_FCN (d->icode) (scratch0, scratch1, op0, op1, op2, op3, op4);
+      pat = GEN_FCN7 (d->icode) (scratch0, scratch1, op0, op1, op2, op3, op4);
     }
 
   if (! pat)
@@ -30585,7 +30585,7 @@ ix86_expand_sse_pcmpistr (const struct builtin_description *d,
 
       scratch1 = gen_reg_rtx (tmode1);
 
-      pat = GEN_FCN (d->icode) (target, scratch1, op0, op1, op2);
+      pat = GEN_FCN5 (d->icode) (target, scratch1, op0, op1, op2);
     }
   else if (d->code == IX86_BUILTIN_PCMPISTRM128)
     {
@@ -30596,7 +30596,7 @@ ix86_expand_sse_pcmpistr (const struct builtin_description *d,
 
       scratch0 = gen_reg_rtx (tmode0);
 
-      pat = GEN_FCN (d->icode) (scratch0, target, op0, op1, op2);
+      pat = GEN_FCN5 (d->icode) (scratch0, target, op0, op1, op2);
     }
   else
     {
@@ -30605,7 +30605,7 @@ ix86_expand_sse_pcmpistr (const struct builtin_description *d,
       scratch0 = gen_reg_rtx (tmode0);
       scratch1 = gen_reg_rtx (tmode1);
 
-      pat = GEN_FCN (d->icode) (scratch0, scratch1, op0, op1, op2);
+      pat = GEN_FCN5 (d->icode) (scratch0, scratch1, op0, op1, op2);
     }
 
   if (! pat)
@@ -31082,17 +31082,17 @@ ix86_expand_args_builtin (const struct builtin_description *d,
   switch (nargs)
     {
     case 1:
-      pat = GEN_FCN (icode) (real_target, args[0].op);
+      pat = GEN_FCN2 (icode) (real_target, args[0].op);
       break;
     case 2:
-      pat = GEN_FCN (icode) (real_target, args[0].op, args[1].op);
+      pat = GEN_FCN3 (icode) (real_target, args[0].op, args[1].op);
       break;
     case 3:
-      pat = GEN_FCN (icode) (real_target, args[0].op, args[1].op,
+      pat = GEN_FCN4 (icode) (real_target, args[0].op, args[1].op,
 			     args[2].op);
       break;
     case 4:
-      pat = GEN_FCN (icode) (real_target, args[0].op, args[1].op,
+      pat = GEN_FCN5 (icode) (real_target, args[0].op, args[1].op,
 			     args[2].op, args[3].op);
       break;
     default:
@@ -31130,7 +31130,7 @@ ix86_expand_special_args_builtin (const struct builtin_description *d,
   switch ((enum ix86_builtin_func_type) d->flag)
     {
     case VOID_FTYPE_VOID:
-      emit_insn (GEN_FCN (icode) (target));
+      emit_insn (GEN_FCN1 (icode) (target));
       return 0;
     case VOID_FTYPE_UINT64:
     case VOID_FTYPE_UNSIGNED:
@@ -31303,16 +31303,16 @@ ix86_expand_special_args_builtin (const struct builtin_description *d,
   switch (nargs)
     {
     case 0:
-      pat = GEN_FCN (icode) (target);
+      pat = GEN_FCN1 (icode) (target);
       break;
     case 1:
-      pat = GEN_FCN (icode) (target, args[0].op);
+      pat = GEN_FCN2 (icode) (target, args[0].op);
       break;
     case 2:
-      pat = GEN_FCN (icode) (target, args[0].op, args[1].op);
+      pat = GEN_FCN3 (icode) (target, args[0].op, args[1].op);
       break;
     case 3:
-      pat = GEN_FCN (icode) (target, args[0].op, args[1].op, args[2].op);
+      pat = GEN_FCN4 (icode) (target, args[0].op, args[1].op, args[2].op);
       break;
     default:
       gcc_unreachable ();
@@ -31538,7 +31538,7 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 	op1 = copy_to_mode_reg (mode1, op1);
       if (!insn_data[icode].operand[2].predicate (op2, mode2))
 	op2 = copy_to_mode_reg (mode2, op2);
-      pat = GEN_FCN (icode) (op0, op1, op2);
+      pat = GEN_FCN3 (icode) (op0, op1, op2);
       if (! pat)
 	return 0;
       emit_insn (pat);
@@ -31734,7 +31734,7 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 	}
       op0 = gen_rtx_MEM (BLKmode, op0);
 
-      pat = GEN_FCN (icode) (op0);
+      pat = GEN_FCN1 (icode) (op0);
       if (pat)
 	emit_insn (pat);
       return 0;
@@ -31789,7 +31789,7 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 
 	  op2 = gen_lowpart (SImode, op2);
 	  op1 = gen_lowpart (SImode, op1);
-	  pat = GEN_FCN (icode) (op0, op1, op2);
+	  pat = GEN_FCN3 (icode) (op0, op1, op2);
 	}
       else
 	{
@@ -31807,7 +31807,7 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 	    default:
 	      gcc_unreachable ();
 	    }
-	  pat = GEN_FCN (icode) (op0, op1);
+	  pat = GEN_FCN2 (icode) (op0, op1);
 	}
 
       if (pat)
@@ -31855,7 +31855,7 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
           unsigned char lsb_index = INTVAL (op1) & 0xFF;
           op1 = GEN_INT (length);
           op2 = GEN_INT (lsb_index);
-          pat = GEN_FCN (icode) (target, op0, op1, op2);
+          pat = GEN_FCN4 (icode) (target, op0, op1, op2);
           if (pat)
             emit_insn (pat);
           return target;
@@ -31877,7 +31877,7 @@ ix86_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 
 rdrand_step:
       op0 = gen_reg_rtx (mode0);
-      emit_insn (GEN_FCN (icode) (op0));
+      emit_insn (GEN_FCN1 (icode) (op0));
 
       arg0 = CALL_EXPR_ARG (exp, 0);
       op1 = expand_normal (arg0);
@@ -31927,7 +31927,7 @@ rdrand_step:
 
 rdseed_step:
       op0 = gen_reg_rtx (mode0);
-      emit_insn (GEN_FCN (icode) (op0));
+      emit_insn (GEN_FCN1 (icode) (op0));
 
       arg0 = CALL_EXPR_ARG (exp, 0);
       op1 = expand_normal (arg0);
@@ -31987,7 +31987,7 @@ addcarryx:
 
       op4 = gen_rtx_REG (CCCmode, FLAGS_REG);
       pat = gen_rtx_LTU (VOIDmode, op4, const0_rtx);
-      emit_insn (GEN_FCN (icode) (op0, op2, op3, op4, pat));
+      emit_insn (GEN_FCN5 (icode) (op0, op2, op3, op4, pat));
 
       /* Store the result.  */
       op4 = expand_normal (arg3);
@@ -32201,7 +32201,7 @@ addcarryx:
 	    }
 	}
 
-      pat = GEN_FCN (icode) (subtarget, op0, op1, op2, op3, op4);
+      pat = GEN_FCN6 (icode) (subtarget, op0, op1, op2, op3, op4);
       if (! pat)
 	return const0_rtx;
       emit_insn (pat);

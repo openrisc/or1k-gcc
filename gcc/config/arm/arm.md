@@ -8850,8 +8850,8 @@
     if (!insn_data[(int) code].operand[1].predicate(operands[2], SImode))
       operands[2] = force_reg (SImode, operands[2]);
 
-    emit_jump_insn (GEN_FCN ((int) code) (operands[0], operands[2],
-					  operands[3], operands[4]));
+    emit_jump_insn (GEN_FCN4 ((int) code) (operands[0], operands[2],
+					   operands[3], operands[4]));
     DONE;
   }"
 )

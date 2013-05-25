@@ -6620,16 +6620,16 @@ alpha_expand_builtin (tree exp, rtx target,
   switch (arity)
     {
     case 0:
-      pat = GEN_FCN (icode) (target);
+      pat = GEN_FCN1 (icode) (target);
       break;
     case 1:
       if (nonvoid)
-        pat = GEN_FCN (icode) (target, op[0]);
+        pat = GEN_FCN2 (icode) (target, op[0]);
       else
-	pat = GEN_FCN (icode) (op[0]);
+	pat = GEN_FCN1 (icode) (op[0]);
       break;
     case 2:
-      pat = GEN_FCN (icode) (target, op[0], op[1]);
+      pat = GEN_FCN3 (icode) (target, op[0], op[1]);
       break;
     default:
       gcc_unreachable ();

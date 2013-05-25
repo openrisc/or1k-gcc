@@ -2613,30 +2613,30 @@ expand_one_builtin (enum insn_code icode, rtx target, tree exp,
   switch (argcount)
     {
     case 0:
-	pat = GEN_FCN (icode) (target);
+	pat = GEN_FCN1 (icode) (target);
     case 1:
       if (target)
-	pat = GEN_FCN (icode) (target, op[0]);
+	pat = GEN_FCN2 (icode) (target, op[0]);
       else
-	pat = GEN_FCN (icode) (op[0]);
+	pat = GEN_FCN1 (icode) (op[0]);
       break;
     case 2:
       if (target)
-	pat = GEN_FCN (icode) (target, op[0], op[1]);
+	pat = GEN_FCN3 (icode) (target, op[0], op[1]);
       else
-	pat = GEN_FCN (icode) (op[0], op[1]);
+	pat = GEN_FCN2 (icode) (op[0], op[1]);
       break;
     case 3:
       if (target)
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2]);
+	pat = GEN_FCN4 (icode) (target, op[0], op[1], op[2]);
       else
-	pat = GEN_FCN (icode) (op[0], op[1], op[2]);
+	pat = GEN_FCN3 (icode) (op[0], op[1], op[2]);
       break;
     case 4:
       if (target)
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2], op[3]);
+	pat = GEN_FCN5 (icode) (target, op[0], op[1], op[2], op[3]);
       else
-	pat = GEN_FCN (icode) (op[0], op[1], op[2], op[3]);
+	pat = GEN_FCN4 (icode) (op[0], op[1], op[2], op[3]);
       break;
     default:
       gcc_unreachable ();

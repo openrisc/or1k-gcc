@@ -976,7 +976,7 @@ check_and_process_move (bool *change_p, bool *sec_mem_p)
       scratch_reg = (lra_create_new_reg_with_unique_value
 		     (insn_data[sri.icode].operand[2].mode, NULL_RTX,
 		      scratch_class, "scratch"));
-      emit_insn (GEN_FCN (sri.icode) (new_reg != NULL_RTX ? new_reg : dest,
+      emit_insn (GEN_FCN3 (sri.icode) (new_reg != NULL_RTX ? new_reg : dest,
 				      sreg, scratch_reg));
     }
   before = get_insns ();

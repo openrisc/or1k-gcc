@@ -121,7 +121,7 @@ struct store_by_pieces_d
   int reverse;
 };
 
-static void move_by_pieces_1 (rtx (*) (rtx, ...), enum machine_mode,
+static void move_by_pieces_1 (rtx (*) (rtx, rtx), enum machine_mode,
 			      struct move_by_pieces_d *);
 static bool block_move_libcall_safe_for_call_parm (void);
 static bool emit_block_move_via_movmem (rtx, rtx, rtx, unsigned, unsigned, HOST_WIDE_INT);
@@ -130,7 +130,7 @@ static void emit_block_move_via_loop (rtx, rtx, rtx, unsigned);
 static rtx clear_by_pieces_1 (void *, HOST_WIDE_INT, enum machine_mode);
 static void clear_by_pieces (rtx, unsigned HOST_WIDE_INT, unsigned int);
 static void store_by_pieces_1 (struct store_by_pieces_d *, unsigned int);
-static void store_by_pieces_2 (rtx (*) (rtx, ...), enum machine_mode,
+static void store_by_pieces_2 (rtx (*) (rtx, rtx), enum machine_mode,
 			       struct store_by_pieces_d *);
 static tree clear_storage_libcall_fn (int);
 static rtx compress_float_constant (rtx, rtx);
@@ -968,7 +968,7 @@ move_by_pieces (rtx to, rtx from, unsigned HOST_WIDE_INT len,
 
       icode = optab_handler (mov_optab, mode);
       if (icode != CODE_FOR_nothing && align >= GET_MODE_ALIGNMENT (mode))
-	move_by_pieces_1 (GEN_FCN (icode), mode, &data);
+	move_by_pieces_1 (GEN_FCN2 (icode), mode, &data);
 
       max_size = GET_MODE_SIZE (mode);
     }
@@ -1045,7 +1045,7 @@ move_by_pieces_ninsns (unsigned HOST_WIDE_INT l, unsigned int align,
    to make a move insn for that mode.  DATA has all the other info.  */
 
 static void
-move_by_pieces_1 (rtx (*genfun) (rtx, ...), enum machine_mode mode,
+move_by_pieces_1 (rtx (*genfun) (rtx, rtx), enum machine_mode mode,
 		  struct move_by_pieces_d *data)
 {
   unsigned int size = GET_MODE_SIZE (mode);
@@ -2628,7 +2628,7 @@ store_by_pieces_1 (struct store_by_pieces_d *data ATTRIBUTE_UNUSED,
 
       icode = optab_handler (mov_optab, mode);
       if (icode != CODE_FOR_nothing && align >= GET_MODE_ALIGNMENT (mode))
-	store_by_pieces_2 (GEN_FCN (icode), mode, data);
+	store_by_pieces_2 (GEN_FCN2 (icode), mode, data);
 
       max_size = GET_MODE_SIZE (mode);
     }
@@ -2642,7 +2642,7 @@ store_by_pieces_1 (struct store_by_pieces_d *data ATTRIBUTE_UNUSED,
    to make a move insn for that mode.  DATA has all the other info.  */
 
 static void
-store_by_pieces_2 (rtx (*genfun) (rtx, ...), enum machine_mode mode,
+store_by_pieces_2 (rtx (*genfun) (rtx, rtx), enum machine_mode mode,
 		   struct store_by_pieces_d *data)
 {
   unsigned int size = GET_MODE_SIZE (mode);
@@ -3081,7 +3081,7 @@ emit_move_via_integer (enum machine_mode mode, rtx x, rtx y, bool force)
   y = emit_move_change_mode (imode, mode, y, force);
   if (y == NULL_RTX)
     return NULL_RTX;
-  return emit_insn (GEN_FCN (code) (x, y));
+  return emit_insn (GEN_FCN2 (code) (x, y));
 }
 
 /* A subroutine of emit_move_insn_1.  X is a push_operand in MODE.
@@ -3277,7 +3277,7 @@ emit_move_ccmode (enum machine_mode mode, rtx x, rtx y)
 	{
 	  x = emit_move_change_mode (CCmode, mode, x, true);
 	  y = emit_move_change_mode (CCmode, mode, y, true);
-	  return emit_insn (GEN_FCN (code) (x, y));
+	  return emit_insn (GEN_FCN2 (code) (x, y));
 	}
     }
 
@@ -3414,7 +3414,7 @@ emit_move_insn_1 (rtx x, rtx y)
 
   code = optab_handler (mov_optab, mode);
   if (code != CODE_FOR_nothing)
-    return emit_insn (GEN_FCN (code) (x, y));
+    return emit_insn (GEN_FCN2 (code) (x, y));
 
   /* Expand complex moves by moving real part and imag part.  */
   if (COMPLEX_MODE_P (mode))
@@ -6275,7 +6275,7 @@ store_constructor (tree exp, rtx target, int cleared, HOST_WIDE_INT size)
 	  }
 
 	if (vector)
-	  emit_insn (GEN_FCN (icode)
+	  emit_insn (GEN_FCN2 (icode)
 		     (target,
 		      gen_rtx_PARALLEL (GET_MODE (target), vector)));
 	break;
@@ -10260,7 +10260,7 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	      reg = gen_reg_rtx (mode);
 
 	      /* Nor can the insn generator.  */
-	      insn = GEN_FCN (icode) (reg, op0);
+	      insn = GEN_FCN2 (icode) (reg, op0);
 	      emit_insn (insn);
 	      return reg;
 	    }

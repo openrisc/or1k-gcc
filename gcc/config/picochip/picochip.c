@@ -55,7 +55,7 @@ along with GCC; see the file COPYING3.  If not, see
 #include "insn-attr.h"		/* For DFA state_t. */
 #include "insn-config.h"	/* Required by recog.h */
 #include "insn-codes.h"		/* For CODE_FOR_? */
-#include "optabs.h"		/* For GEN_FCN */
+#include "optabs.h"		/* For GEN_FCN? */
 #include "basic-block.h"	/* UPDATE_LIFE_GLOBAL* for picochip_reorg. */
 #include "timevar.h"		/* For TV_SCHED2, in picochip_reorg. */
 #include "libfuncs.h"		/* For memcpy_libfuncs, etc. */
@@ -3941,7 +3941,7 @@ picochip_expand_builtin_2op (enum insn_code icode, tree call, rtx target)
     target = gen_reg_rtx (tmode);
 
   /* Emit and return the new instruction. */
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (!pat)
     return 0;
   emit_insn (pat);
@@ -3986,7 +3986,7 @@ picochip_expand_builtin_3op (enum insn_code icode, tree call, rtx target)
     target = gen_reg_rtx (tmode);
 
   /* Emit and return the new instruction. */
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (!pat)
     return 0;
   emit_insn (pat);
@@ -4023,7 +4023,7 @@ picochip_expand_builtin_2opvoid (enum insn_code icode, tree call)
     op1 = copy_to_mode_reg (mode1, op1);
 
   /* Emit and return the new instruction. */
-  pat = GEN_FCN (icode) (op0, op1);
+  pat = GEN_FCN2 (icode) (op0, op1);
   if (!pat)
     return 0;
   emit_insn (pat);

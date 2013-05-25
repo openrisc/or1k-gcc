@@ -12044,16 +12044,16 @@ sh_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
   switch (nop)
     {
     case 1:
-      pat = (*insn_data[d->icode].genfun) (op[0]);
+      pat = GEN_FCN1 (d->icode) (op[0]);
       break;
     case 2:
-      pat = (*insn_data[d->icode].genfun) (op[0], op[1]);
+      pat = GEN_FCN2 (d->icode) (op[0], op[1]);
       break;
     case 3:
-      pat = (*insn_data[d->icode].genfun) (op[0], op[1], op[2]);
+      pat = GEN_FCN3 (d->icode) (op[0], op[1], op[2]);
       break;
     case 4:
-      pat = (*insn_data[d->icode].genfun) (op[0], op[1], op[2], op[3]);
+      pat = GEN_FCN4 (d->icode) (op[0], op[1], op[2], op[3]);
       break;
     default:
       gcc_unreachable ();

@@ -1896,7 +1896,7 @@ tilepro_expand_constant_multiply_given_sequence (rtx result, rtx src,
 	  gcc_assert (shift_count > 0 && shift_count < 32);
 
 	  /* Emit the actual instruction.  */
-	  emit_insn (GEN_FCN (opcode)
+	  emit_insn (GEN_FCN3 (opcode)
 		     (out, subexprs[entry->lhs],
 		      gen_rtx_CONST_INT (SImode, shift_count)));
 	}
@@ -1910,7 +1910,7 @@ tilepro_expand_constant_multiply_given_sequence (rtx result, rtx src,
 	  gcc_assert (entry->rhs < num_subexprs);
 
 	  /* Emit the actual instruction.  */
-	  emit_insn (GEN_FCN (opcode)
+	  emit_insn (GEN_FCN3 (opcode)
 		     (out, subexprs[entry->lhs], subexprs[entry->rhs]));
 	}
 
@@ -3093,7 +3093,6 @@ tilepro_expand_builtin (tree exp,
   rtx op[MAX_BUILTIN_ARGS + 1], pat;
   int opnum;
   bool nonvoid;
-  insn_gen_fn fn;
 
   if (fcode >= TILEPRO_BUILTIN_max)
     internal_error ("bad builtin fcode");
@@ -3142,26 +3141,25 @@ tilepro_expand_builtin (tree exp,
       op[0] = target;
     }
 
-  fn = GEN_FCN (icode);
   switch (opnum)
     {
     case 0:
-      pat = fn (NULL_RTX);
+      pat = GEN_FCN0 (idcode) ();
       break;
     case 1:
-      pat = fn (op[0]);
+      pat = GEN_FCN1 (idcode) (op[0]);
       break;
     case 2:
-      pat = fn (op[0], op[1]);
+      pat = GEN_FCN2 (idcode) (op[0], op[1]);
       break;
     case 3:
-      pat = fn (op[0], op[1], op[2]);
+      pat = GEN_FCN3 (idcode) (op[0], op[1], op[2]);
       break;
     case 4:
-      pat = fn (op[0], op[1], op[2], op[3]);
+      pat = GEN_FCN4 (idcode) (op[0], op[1], op[2], op[3]);
       break;
     case 5:
-      pat = fn (op[0], op[1], op[2], op[3], op[4]);
+      pat = GEN_FCN5 (idcode) (op[0], op[1], op[2], op[3], op[4]);
       break;
     default:
       gcc_unreachable ();

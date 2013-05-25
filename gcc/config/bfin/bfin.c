@@ -5360,9 +5360,9 @@ bfin_expand_binop_builtin (enum insn_code icode, tree exp, rtx target,
     op1 = copy_to_mode_reg (mode1, op1);
 
   if (macflag == -1)
-    pat = GEN_FCN (icode) (target, op0, op1);
+    pat = GEN_FCN3 (icode) (target, op0, op1);
   else
-    pat = GEN_FCN (icode) (target, op0, op1, GEN_INT (macflag));
+    pat = GEN_FCN4 (icode) (target, op0, op1, GEN_INT (macflag));
   if (! pat)
     return 0;
 
@@ -5401,7 +5401,7 @@ bfin_expand_unop_builtin (enum insn_code icode, tree exp,
   if (! (*insn_data[icode].operand[1].predicate) (op0, mode0))
     op0 = copy_to_mode_reg (mode0, op0);
 
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -5460,7 +5460,7 @@ bfin_expand_builtin (tree exp, rtx target ATTRIBUTE_UNUSED,
       if (! (*insn_data[icode].operand[1].predicate) (op0, mode0))
 	op0 = copy_to_mode_reg (mode0, op0);
 
-      pat = GEN_FCN (icode) (target, op0, op0);
+      pat = GEN_FCN3 (icode) (target, op0, op0);
       if (! pat)
 	return 0;
       emit_insn (pat);

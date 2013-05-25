@@ -20776,7 +20776,7 @@ arm_expand_binop_builtin (enum insn_code icode,
   if (! (*insn_data[icode].operand[2].predicate) (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -20810,7 +20810,7 @@ arm_expand_unop_builtin (enum insn_code icode,
 	op0 = copy_to_mode_reg (mode0, op0);
     }
 
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -20969,23 +20969,23 @@ arm_expand_neon_args (rtx target, int icode, int have_retval,
     switch (argc)
       {
       case 1:
-	pat = GEN_FCN (icode) (target, op[0]);
+	pat = GEN_FCN2 (icode) (target, op[0]);
 	break;
 
       case 2:
-	pat = GEN_FCN (icode) (target, op[0], op[1]);
+	pat = GEN_FCN3 (icode) (target, op[0], op[1]);
 	break;
 
       case 3:
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2]);
+	pat = GEN_FCN4 (icode) (target, op[0], op[1], op[2]);
 	break;
 
       case 4:
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2], op[3]);
+	pat = GEN_FCN5 (icode) (target, op[0], op[1], op[2], op[3]);
 	break;
 
       case 5:
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2], op[3], op[4]);
+	pat = GEN_FCN6 (icode) (target, op[0], op[1], op[2], op[3], op[4]);
 	break;
 
       default:
@@ -20995,23 +20995,23 @@ arm_expand_neon_args (rtx target, int icode, int have_retval,
     switch (argc)
       {
       case 1:
-	pat = GEN_FCN (icode) (op[0]);
+	pat = GEN_FCN1 (icode) (op[0]);
 	break;
 
       case 2:
-	pat = GEN_FCN (icode) (op[0], op[1]);
+	pat = GEN_FCN2 (icode) (op[0], op[1]);
 	break;
 
       case 3:
-	pat = GEN_FCN (icode) (op[0], op[1], op[2]);
+	pat = GEN_FCN3 (icode) (op[0], op[1], op[2]);
 	break;
 
       case 4:
-	pat = GEN_FCN (icode) (op[0], op[1], op[2], op[3]);
+	pat = GEN_FCN4 (icode) (op[0], op[1], op[2], op[3]);
 	break;
 
       case 5:
-	pat = GEN_FCN (icode) (op[0], op[1], op[2], op[3], op[4]);
+	pat = GEN_FCN5 (icode) (op[0], op[1], op[2], op[3], op[4]);
         break;
 
       default:
@@ -21337,7 +21337,7 @@ arm_expand_builtin (tree exp,
 	  || GET_MODE (target) != tmode
 	  || ! (*insn_data[icode].operand[0].predicate) (target, tmode))
 	target = gen_reg_rtx (tmode);
-      pat = GEN_FCN (icode) (target, op0, op1);
+      pat = GEN_FCN3 (icode) (target, op0, op1);
       if (! pat)
 	return 0;
       emit_insn (pat);
@@ -21385,7 +21385,7 @@ arm_expand_builtin (tree exp,
 	  || GET_MODE (target) != tmode
 	  || !(*insn_data[icode].operand[0].predicate) (target, tmode))
 	target = gen_reg_rtx (tmode);
-      pat = GEN_FCN (icode) (target, op0, op1, op2);
+      pat = GEN_FCN4 (icode) (target, op0, op1, op2);
       if (!pat)
 	return 0;
       emit_insn (pat);
@@ -21444,7 +21444,7 @@ arm_expand_builtin (tree exp,
 	  || GET_MODE (target) != tmode
 	  || ! (*insn_data[icode].operand[0].predicate) (target, tmode))
 	target = gen_reg_rtx (tmode);
-      pat = GEN_FCN (icode) (target, op0, op1, op2);
+      pat = GEN_FCN4 (icode) (target, op0, op1, op2);
       if (! pat)
 	return 0;
       emit_insn (pat);
@@ -21463,7 +21463,7 @@ arm_expand_builtin (tree exp,
       mode0 = insn_data[icode].operand[0].mode;
       if (!(*insn_data[icode].operand[0].predicate) (op0, mode0))
         op0 = copy_to_mode_reg (mode0, op0);
-      pat = GEN_FCN (icode) (op0);
+      pat = GEN_FCN1 (icode) (op0);
       if (!pat)
 	return 0;
       emit_insn (pat);
@@ -21482,7 +21482,7 @@ arm_expand_builtin (tree exp,
 	  || GET_MODE (target) != tmode
 	  || !(*insn_data[icode].operand[0].predicate) (target, tmode))
         target = gen_reg_rtx (tmode);
-      pat = GEN_FCN (icode) (target);
+      pat = GEN_FCN1 (icode) (target);
       if (!pat)
         return 0;
       emit_insn (pat);
@@ -21512,7 +21512,7 @@ arm_expand_builtin (tree exp,
 	  || GET_MODE (target) != tmode
 	  || ! (*insn_data[icode].operand[0].predicate) (target, tmode))
 	target = gen_reg_rtx (tmode);
-      pat = GEN_FCN (icode) (target, op0, op1);
+      pat = GEN_FCN3 (icode) (target, op0, op1);
       if (! pat)
 	return 0;
       emit_insn (pat);
@@ -21625,7 +21625,7 @@ arm_expand_builtin (tree exp,
 	  || GET_MODE (target) != tmode
 	  || ! (*insn_data[icode].operand[0].predicate) (target, tmode))
 	target = gen_reg_rtx (tmode);
-      pat = GEN_FCN (icode) (target, op0, op1, op2);
+      pat = GEN_FCN4 (icode) (target, op0, op1, op2);
       if (! pat)
 	return 0;
       emit_insn (pat);

@@ -2339,7 +2339,7 @@ ia64_expand_atomic_op (enum rtx_code code, rtx mem, rtx val,
 	  gcc_unreachable ();
 	}
 
-      emit_insn (GEN_FCN (icode) (old_dst, mem, val));
+      emit_insn (GEN_FCN3 (icode) (old_dst, mem, val));
 
       if (new_dst)
 	{
@@ -2430,7 +2430,7 @@ ia64_expand_atomic_op (enum rtx_code code, rtx mem, rtx val,
       gcc_unreachable ();
     }
 
-  emit_insn (GEN_FCN (icode) (cmp_reg, mem, ar_ccv, new_reg));
+  emit_insn (GEN_FCN4 (icode) (cmp_reg, mem, ar_ccv, new_reg));
 
   emit_cmp_and_jump_insns (cmp_reg, old_reg, NE, NULL, DImode, true, label);
 }

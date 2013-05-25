@@ -779,7 +779,7 @@ expand_vector_broadcast (enum machine_mode vmode, rtx op)
     return NULL;
 
   ret = gen_reg_rtx (vmode);
-  emit_insn (GEN_FCN (icode) (ret, gen_rtx_PARALLEL (vmode, vec)));
+  emit_insn (GEN_FCN2 (icode) (ret, gen_rtx_PARALLEL (vmode, vec)));
 
   return ret;
 }
@@ -4085,7 +4085,7 @@ prepare_cmp_insn (rtx x, rtx y, enum rtx_code comparison, rtx size,
 	  result_mode = insn_data[cmp_code].operand[0].mode;
 	  result = gen_reg_rtx (result_mode);
 	  size = convert_to_mode (cmp_mode, size, 1);
-	  emit_insn (GEN_FCN (cmp_code) (result, x, y, size, opalign));
+	  emit_insn (GEN_FCN5 (cmp_code) (result, x, y, size, opalign));
 
           *ptest = gen_rtx_fmt_ee (comparison, VOIDmode, result, const0_rtx);
           *pmode = result_mode;
@@ -4262,7 +4262,7 @@ emit_cmp_and_jump_insn_1 (rtx test, enum machine_mode mode, rtx label, int prob)
 
   gcc_assert (icode != CODE_FOR_nothing);
   gcc_assert (insn_operand_matches (icode, 0, test));
-  insn = emit_jump_insn (GEN_FCN (icode) (test, XEXP (test, 0),
+  insn = emit_jump_insn (GEN_FCN4 (icode) (test, XEXP (test, 0),
                                           XEXP (test, 1), label));
   if (prob != -1
       && profile_status != PROFILE_ABSENT
@@ -4691,7 +4691,7 @@ gen_add2_insn (rtx x, rtx y)
   gcc_assert (insn_operand_matches (icode, 1, x));
   gcc_assert (insn_operand_matches (icode, 2, y));
 
-  return GEN_FCN (icode) (x, x, y);
+  return GEN_FCN3 (icode) (x, x, y);
 }
 
 /* Generate and return an insn body to add r1 and c,
@@ -4708,7 +4708,7 @@ gen_add3_insn (rtx r0, rtx r1, rtx c)
       || !insn_operand_matches (icode, 2, c))
     return NULL_RTX;
 
-  return GEN_FCN (icode) (r0, r1, c);
+  return GEN_FCN3 (icode) (r0, r1, c);
 }
 
 int
@@ -4742,7 +4742,7 @@ gen_sub2_insn (rtx x, rtx y)
   gcc_assert (insn_operand_matches (icode, 1, x));
   gcc_assert (insn_operand_matches (icode, 2, y));
 
-  return GEN_FCN (icode) (x, x, y);
+  return GEN_FCN3 (icode) (x, x, y);
 }
 
 /* Generate and return an insn body to subtract r1 and c,
@@ -4759,7 +4759,7 @@ gen_sub3_insn (rtx r0, rtx r1, rtx c)
       || !insn_operand_matches (icode, 2, c))
     return NULL_RTX;
 
-  return GEN_FCN (icode) (r0, r1, c);
+  return GEN_FCN3 (icode) (r0, r1, c);
 }
 
 int
@@ -4823,7 +4823,7 @@ gen_extend_insn (rtx x, rtx y, enum machine_mode mto,
 		 enum machine_mode mfrom, int unsignedp)
 {
   enum insn_code icode = can_extend_p (mto, mfrom, unsignedp);
-  return GEN_FCN (icode) (x, y);
+  return GEN_FCN2 (icode) (x, y);
 }
 
 /* can_fix_p and can_float_p say whether the target machine
@@ -6321,7 +6321,7 @@ gen_cond_trap (enum rtx_code code, rtx op1, rtx op2, rtx tcode)
   if (!trap_rtx)
     insn = NULL_RTX;
   else
-    insn = GEN_FCN (icode) (trap_rtx, XEXP (trap_rtx, 0), XEXP (trap_rtx, 1),
+    insn = GEN_FCN4 (icode) (trap_rtx, XEXP (trap_rtx, 0), XEXP (trap_rtx, 1),
 			    tcode);
 
   /* If that failed, then give up.  */
@@ -8161,28 +8161,28 @@ maybe_gen_insn (enum insn_code icode, unsigned int nops,
   switch (nops)
     {
     case 1:
-      return GEN_FCN (icode) (ops[0].value);
+      return GEN_FCN1 (icode) (ops[0].value);
     case 2:
-      return GEN_FCN (icode) (ops[0].value, ops[1].value);
+      return GEN_FCN2 (icode) (ops[0].value, ops[1].value);
     case 3:
-      return GEN_FCN (icode) (ops[0].value, ops[1].value, ops[2].value);
+      return GEN_FCN3 (icode) (ops[0].value, ops[1].value, ops[2].value);
     case 4:
-      return GEN_FCN (icode) (ops[0].value, ops[1].value, ops[2].value,
-			      ops[3].value);
+      return GEN_FCN4 (icode) (ops[0].value, ops[1].value, ops[2].value,
+			       ops[3].value);
     case 5:
-      return GEN_FCN (icode) (ops[0].value, ops[1].value, ops[2].value,
-			      ops[3].value, ops[4].value);
+      return GEN_FCN5 (icode) (ops[0].value, ops[1].value, ops[2].value,
+			       ops[3].value, ops[4].value);
     case 6:
-      return GEN_FCN (icode) (ops[0].value, ops[1].value, ops[2].value,
-			      ops[3].value, ops[4].value, ops[5].value);
+      return GEN_FCN6 (icode) (ops[0].value, ops[1].value, ops[2].value,
+			       ops[3].value, ops[4].value, ops[5].value);
     case 7:
-      return GEN_FCN (icode) (ops[0].value, ops[1].value, ops[2].value,
-			      ops[3].value, ops[4].value, ops[5].value,
-			      ops[6].value);
+      return GEN_FCN7 (icode) (ops[0].value, ops[1].value, ops[2].value,
+			       ops[3].value, ops[4].value, ops[5].value,
+			       ops[6].value);
     case 8:
-      return GEN_FCN (icode) (ops[0].value, ops[1].value, ops[2].value,
-			      ops[3].value, ops[4].value, ops[5].value,
-			      ops[6].value, ops[7].value);
+      return GEN_FCN8 (icode) (ops[0].value, ops[1].value, ops[2].value,
+			       ops[3].value, ops[4].value, ops[5].value,
+			       ops[6].value, ops[7].value);
     }
   gcc_unreachable ();
 }

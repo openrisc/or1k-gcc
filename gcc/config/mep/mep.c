@@ -6313,8 +6313,8 @@ mep_expand_builtin (tree exp, rtx target ATTRIBUTE_UNUSED,
     }
 
   /* Emit the instruction.  */
-  pat = idata->genfun (op[0], op[1], op[2], op[3], op[4],
-		       op[5], op[6], op[7], op[8], op[9]);
+  pat = idata->genfun.argc10 (op[0], op[1], op[2], op[3], op[4],
+			      op[5], op[6], op[7], op[8], op[9]);
 
   if (GET_CODE (pat) == SET
       && GET_CODE (SET_DEST (pat)) == PC
@@ -7084,9 +7084,9 @@ mep_emit_intrinsic (int intrinsic, const rtx *operands)
 	return false;
     }
 
-  emit_insn (idata->genfun (newop[0], newop[1], newop[2],
-			    newop[3], newop[4], newop[5],
-			    newop[6], newop[7], newop[8]));
+  emit_insn (idata->genfun.argc9 (newop[0], newop[1], newop[2],
+				  newop[3], newop[4], newop[5],
+				  newop[6], newop[7], newop[8]));
 
   return true;
 }

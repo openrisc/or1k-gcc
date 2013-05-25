@@ -1047,23 +1047,23 @@ aarch64_simd_expand_args (rtx target, int icode, int have_retval,
     switch (argc)
       {
       case 1:
-	pat = GEN_FCN (icode) (target, op[0]);
+	pat = GEN_FCN2 (icode) (target, op[0]);
 	break;
 
       case 2:
-	pat = GEN_FCN (icode) (target, op[0], op[1]);
+	pat = GEN_FCN3 (icode) (target, op[0], op[1]);
 	break;
 
       case 3:
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2]);
+	pat = GEN_FCN4 (icode) (target, op[0], op[1], op[2]);
 	break;
 
       case 4:
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2], op[3]);
+	pat = GEN_FCN5 (icode) (target, op[0], op[1], op[2], op[3]);
 	break;
 
       case 5:
-	pat = GEN_FCN (icode) (target, op[0], op[1], op[2], op[3], op[4]);
+	pat = GEN_FCN6 (icode) (target, op[0], op[1], op[2], op[3], op[4]);
 	break;
 
       default:
@@ -1073,23 +1073,23 @@ aarch64_simd_expand_args (rtx target, int icode, int have_retval,
     switch (argc)
       {
       case 1:
-	pat = GEN_FCN (icode) (op[0]);
+	pat = GEN_FCN1 (icode) (op[0]);
 	break;
 
       case 2:
-	pat = GEN_FCN (icode) (op[0], op[1]);
+	pat = GEN_FCN2 (icode) (op[0], op[1]);
 	break;
 
       case 3:
-	pat = GEN_FCN (icode) (op[0], op[1], op[2]);
+	pat = GEN_FCN3 (icode) (op[0], op[1], op[2]);
 	break;
 
       case 4:
-	pat = GEN_FCN (icode) (op[0], op[1], op[2], op[3]);
+	pat = GEN_FCN4 (icode) (op[0], op[1], op[2], op[3]);
 	break;
 
       case 5:
-	pat = GEN_FCN (icode) (op[0], op[1], op[2], op[3], op[4]);
+	pat = GEN_FCN5 (icode) (op[0], op[1], op[2], op[3], op[4]);
 	break;
 
       default:

@@ -1770,7 +1770,7 @@ c6x_expand_movmem (rtx dst, rtx src, rtx count_exp, rtx align_exp,
 	{
 	  enum insn_code icode = (srcmode == SImode ? CODE_FOR_movmisalignsi
 				  : CODE_FOR_movmisaligndi);
-	  emit_insn (GEN_FCN (icode) (reg_lowpart, srcmem));
+	  emit_insn (GEN_FCN2 (icode) (reg_lowpart, srcmem));
 	}
       else
 	emit_move_insn (reg_lowpart, srcmem);
@@ -1804,7 +1804,7 @@ c6x_expand_movmem (rtx dst, rtx src, rtx count_exp, rtx align_exp,
 	    {
 	      enum insn_code icode = (dstmode == SImode ? CODE_FOR_movmisalignsi
 				      : CODE_FOR_movmisaligndi);
-	      emit_insn (GEN_FCN (icode) (dstmem, dstreg));
+	      emit_insn (GEN_FCN2 (icode) (dstmem, dstreg));
 	    }
 	  else
 	    emit_move_insn (dstmem, dstreg);
@@ -6585,9 +6585,9 @@ c6x_expand_binop_builtin (enum insn_code icode, tree exp, rtx target,
     op1 = copy_to_mode_reg (mode1, op1);
 
   if (match_op)
-    pat = GEN_FCN (icode) (target, target, op0, op1);
+    pat = GEN_FCN4 (icode) (target, target, op0, op1);
   else
-    pat = GEN_FCN (icode) (target, op0, op1);
+    pat = GEN_FCN3 (icode) (target, op0, op1);
 
   if (! pat)
     return 0;
@@ -6628,7 +6628,7 @@ c6x_expand_unop_builtin (enum insn_code icode, tree exp,
   if (! (*insn_data[icode].operand[1].predicate) (op0, mode0))
     op0 = copy_to_mode_reg (mode0, op0);
 
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return 0;
   emit_insn (pat);

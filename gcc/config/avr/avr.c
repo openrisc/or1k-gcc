@@ -11505,9 +11505,9 @@ avr_default_expand_builtin (enum insn_code icode, tree exp, rtx target)
 
   switch (n_args)
     {
-    case 1: pat = GEN_FCN (icode) (target, xop[0]); break;
-    case 2: pat = GEN_FCN (icode) (target, xop[0], xop[1]); break;
-    case 3: pat = GEN_FCN (icode) (target, xop[0], xop[1], xop[2]); break;
+    case 1: pat = GEN_FCN2 (icode) (target, xop[0]); break;
+    case 2: pat = GEN_FCN3 (icode) (target, xop[0], xop[1]); break;
+    case 3: pat = GEN_FCN4 (icode) (target, xop[0], xop[1], xop[2]); break;
 
     default:
       gcc_unreachable();
@@ -11583,7 +11583,7 @@ avr_expand_builtin (tree exp, rtx target,
 
   if (d->n_args == 0)
     {
-      emit_insn ((GEN_FCN (d->icode)) (target));
+      emit_insn ((GEN_FCN1 (d->icode)) (target));
       return NULL_RTX;
     }
 

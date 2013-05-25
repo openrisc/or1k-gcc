@@ -257,7 +257,6 @@ extern struct operand_alternative recog_op_alt[MAX_RECOG_OPERANDS][MAX_RECOG_ALT
 
 typedef int (*insn_operand_predicate_fn) (rtx, enum machine_mode);
 typedef const char * (*insn_output_fn) (rtx *, rtx);
-typedef rtx (*insn_gen_fn) (rtx, ...);
 
 struct insn_operand_data
 {
@@ -292,14 +291,41 @@ struct insn_data_d
     const char *const *multi;
     insn_output_fn function;
   } output;
+  union {
+    rtx (*argc0)	(void);
+    rtx (*argc1)	(rtx);
+    rtx (*argc2)	(rtx, rtx);
+    rtx (*argc3)	(rtx, rtx, rtx);
+    rtx (*argc4)	(rtx, rtx, rtx, rtx);
+    rtx (*argc5)	(rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc6)	(rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc7)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc8)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc9)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc10)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc11)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+  } genfun;
 #else
   struct {
     const char *single;
     const char *const *multi;
     insn_output_fn function;
   } output;
+  struct {
+    rtx (*argc0)	(void);
+    rtx (*argc1)	(rtx);
+    rtx (*argc2)	(rtx, rtx);
+    rtx (*argc3)	(rtx, rtx, rtx);
+    rtx (*argc4)	(rtx, rtx, rtx, rtx);
+    rtx (*argc5)	(rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc6)	(rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc7)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc8)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc9)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc10)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+    rtx (*argc11)	(rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx, rtx);
+  } genfun;
 #endif
-  const insn_gen_fn genfun;
   const struct insn_operand_data *const operand;
 
   const char n_generator_args;

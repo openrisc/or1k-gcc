@@ -8866,7 +8866,7 @@ frv_expand_set_builtin (enum insn_code icode, tree call, rtx target)
     return NULL_RTX;
 
   target = frv_legitimize_target (icode, target);
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return NULL_RTX;
 
@@ -8884,7 +8884,7 @@ frv_expand_unop_builtin (enum insn_code icode, tree call, rtx target)
 
   target = frv_legitimize_target (icode, target);
   op0 = frv_legitimize_argument (icode, 1, op0);
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return NULL_RTX;
 
@@ -8904,7 +8904,7 @@ frv_expand_binop_builtin (enum insn_code icode, tree call, rtx target)
   target = frv_legitimize_target (icode, target);
   op0 = frv_legitimize_argument (icode, 1, op0);
   op1 = frv_legitimize_argument (icode, 2, op1);
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (! pat)
     return NULL_RTX;
 
@@ -8937,7 +8937,7 @@ frv_expand_cut_builtin (enum insn_code icode, tree call, rtx target)
     op1 = frv_legitimize_argument (icode, 2, op1);
 
   op2 = frv_matching_accg_for_acc (op0);
-  pat = GEN_FCN (icode) (target, op0, op1, op2);
+  pat = GEN_FCN4 (icode) (target, op0, op1, op2);
   if (! pat)
     return NULL_RTX;
 
@@ -8959,7 +8959,7 @@ frv_expand_binopimm_builtin (enum insn_code icode, tree call, rtx target)
 
   target = frv_legitimize_target (icode, target);
   op0 = frv_legitimize_argument (icode, 1, op0);
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (! pat)
     return NULL_RTX;
 
@@ -8998,7 +8998,7 @@ frv_expand_voidbinop_builtin (enum insn_code icode, tree call)
 
   op0 = change_address (op0, V4SImode, addr);
   op1 = frv_legitimize_argument (icode, 1, op1);
-  pat = GEN_FCN (icode) (op0, op1);
+  pat = GEN_FCN2 (icode) (op0, op1);
   if (! pat)
     return 0;
 
@@ -9017,7 +9017,7 @@ frv_expand_int_void2arg (enum insn_code icode, tree call)
 
   op0 = frv_legitimize_argument (icode, 1, op0);
   op1 = frv_legitimize_argument (icode, 1, op1);
-  pat = GEN_FCN (icode) (op0, op1);
+  pat = GEN_FCN2 (icode) (op0, op1);
   if (! pat)
     return NULL_RTX;
 
@@ -9033,7 +9033,7 @@ frv_expand_prefetches (enum insn_code icode, tree call)
   rtx pat;
   rtx op0 = frv_read_argument (call, 0);
 
-  pat = GEN_FCN (icode) (force_reg (Pmode, op0));
+  pat = GEN_FCN1 (icode) (force_reg (Pmode, op0));
   if (! pat)
     return 0;
 
@@ -9062,7 +9062,7 @@ frv_expand_voidtriop_builtin (enum insn_code icode, tree call)
   op1 = frv_legitimize_argument (icode, 1, op1);
   op2 = frv_legitimize_argument (icode, 2, op2);
   op3 = frv_matching_accg_for_acc (op0);
-  pat = GEN_FCN (icode) (op0, op1, op2, op3);
+  pat = GEN_FCN4 (icode) (op0, op1, op2, op3);
   if (! pat)
     return NULL_RTX;
 
@@ -9093,7 +9093,7 @@ frv_expand_voidaccop_builtin (enum insn_code icode, tree call)
 
   op2 = frv_matching_accg_for_acc (op0);
   op3 = frv_matching_accg_for_acc (op1);
-  pat = GEN_FCN (icode) (op0, op1, op2, op3);
+  pat = GEN_FCN4 (icode) (op0, op1, op2, op3);
   if (! pat)
     return NULL_RTX;
 
@@ -9115,7 +9115,7 @@ frv_expand_load_builtin (enum insn_code icode, enum machine_mode target_mode,
     target = gen_reg_rtx (target_mode);
   op0 = frv_volatile_memref (insn_data[icode].operand[0].mode, op0);
   convert_move (target, op0, 1);
-  emit_insn (GEN_FCN (icode) (copy_rtx (op0), cookie, GEN_INT (FRV_IO_READ)));
+  emit_insn (GEN_FCN3 (icode) (copy_rtx (op0), cookie, GEN_INT (FRV_IO_READ)));
   cfun->machine->has_membar_p = 1;
   return target;
 }
@@ -9131,7 +9131,7 @@ frv_expand_store_builtin (enum insn_code icode, tree call)
 
   op0 = frv_volatile_memref (insn_data[icode].operand[0].mode, op0);
   convert_move (op0, force_reg (insn_data[icode].operand[0].mode, op1), 1);
-  emit_insn (GEN_FCN (icode) (copy_rtx (op0), cookie, GEN_INT (FRV_IO_WRITE)));
+  emit_insn (GEN_FCN3 (icode) (copy_rtx (op0), cookie, GEN_INT (FRV_IO_WRITE)));
   cfun->machine->has_membar_p = 1;
   return NULL_RTX;
 }
@@ -9166,7 +9166,7 @@ frv_expand_mdpackh_builtin (tree call, rtx target)
   emit_move_insn (simplify_gen_subreg (HImode, op1, DImode, 2), arg3);
   emit_move_insn (simplify_gen_subreg (HImode, op1, DImode, 6), arg4);
 
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (! pat)
     return NULL_RTX;
 
@@ -9188,7 +9188,7 @@ frv_expand_mclracc_builtin (tree call)
   if (! op0)
     return NULL_RTX;
 
-  pat = GEN_FCN (icode) (op0);
+  pat = GEN_FCN1 (icode) (op0);
   if (pat)
     emit_insn (pat);
 
@@ -9200,7 +9200,7 @@ frv_expand_mclracc_builtin (tree call)
 static rtx
 frv_expand_noargs_builtin (enum insn_code icode)
 {
-  rtx pat = GEN_FCN (icode) (const0_rtx);
+  rtx pat = GEN_FCN0 (icode) ();
   if (pat)
     emit_insn (pat);
 
@@ -9221,7 +9221,7 @@ frv_expand_mrdacc_builtin (enum insn_code icode, tree call)
   if (! op0)
     return NULL_RTX;
 
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return NULL_RTX;
 
@@ -9245,7 +9245,7 @@ frv_expand_mwtacc_builtin (enum insn_code icode, tree call)
     return NULL_RTX;
 
   op1 = frv_legitimize_argument (icode, 1, op1);
-  pat = GEN_FCN (icode) (op0, op1);
+  pat = GEN_FCN2 (icode) (op0, op1);
   if (pat)
     emit_insn (pat);
 

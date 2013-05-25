@@ -879,7 +879,7 @@ spu_emit_branch_or_set (int is_set, rtx cmp, rtx operands[])
       if (!(*insn_data[spu_comp_icode[index][scode]].operand[2].predicate)
 	  (op1, op_mode))
 	op1 = force_reg (op_mode, op1);
-      comp_rtx = GEN_FCN (spu_comp_icode[index][scode]) (compare_result,
+      comp_rtx = GEN_FCN3 (spu_comp_icode[index][scode]) (compare_result,
 							 op0, op1);
       if (comp_rtx == 0)
 	abort ();
@@ -888,14 +888,14 @@ spu_emit_branch_or_set (int is_set, rtx cmp, rtx operands[])
       if (eq_test)
         {
           eq_result = gen_reg_rtx (comp_mode);
-          eq_rtx = GEN_FCN (spu_comp_icode[index][eq_code]) (eq_result,
+          eq_rtx = GEN_FCN3 (spu_comp_icode[index][eq_code]) (eq_result,
 							     op0, op1);
           if (eq_rtx == 0)
 	    abort ();
           emit_insn (eq_rtx);
           ior_code = optab_handler (ior_optab, comp_mode);
           gcc_assert (ior_code != CODE_FOR_nothing);
-          emit_insn (GEN_FCN (ior_code)
+          emit_insn (GEN_FCN3 (ior_code)
 		     (compare_result, compare_result, eq_result));
         }
     }
@@ -4447,7 +4447,7 @@ spu_expand_mov (rtx * ops, enum machine_mode mode)
 	{
 	  enum insn_code icode = convert_optab_handler (trunc_optab,
 							mode, imode);
-	  emit_insn (GEN_FCN (icode) (ops[0], from));
+	  emit_insn (GEN_FCN2 (icode) (ops[0], from));
 	}
       else
 	emit_insn (gen_extend_insn (ops[0], from, mode, imode, 1));
@@ -6147,7 +6147,7 @@ spu_emit_vector_compare (enum rtx_code rcode,
 
             nor_code = optab_handler (one_cmpl_optab, dest_mode);
             gcc_assert (nor_code != CODE_FOR_nothing);
-            emit_insn (GEN_FCN (nor_code) (mask, rev_mask));
+            emit_insn (GEN_FCN2 (nor_code) (mask, rev_mask));
             if (dmode != dest_mode)
               {
                 rtx temp = gen_reg_rtx (dest_mode);
@@ -6182,7 +6182,7 @@ spu_emit_vector_compare (enum rtx_code rcode,
 
             ior_code = optab_handler (ior_optab, dest_mode);
             gcc_assert (ior_code != CODE_FOR_nothing);
-            emit_insn (GEN_FCN (ior_code) (mask, c_rtx, eq_rtx));
+            emit_insn (GEN_FCN3 (ior_code) (mask, c_rtx, eq_rtx));
             if (dmode != dest_mode)
               {
                 rtx temp = gen_reg_rtx (dest_mode);
@@ -6203,7 +6203,7 @@ spu_emit_vector_compare (enum rtx_code rcode,
 
             ior_code = optab_handler (ior_optab, dest_mode);
             gcc_assert (ior_code != CODE_FOR_nothing);
-            emit_insn (GEN_FCN (ior_code) (mask, lt_rtx, gt_rtx));
+            emit_insn (GEN_FCN3 (ior_code) (mask, lt_rtx, gt_rtx));
             if (dmode != dest_mode)
               {
                 rtx temp = gen_reg_rtx (dest_mode);
@@ -6224,7 +6224,7 @@ spu_emit_vector_compare (enum rtx_code rcode,
 
             and_code = optab_handler (and_optab, dest_mode);
             gcc_assert (and_code != CODE_FOR_nothing);
-            emit_insn (GEN_FCN (and_code) (mask, a_rtx, b_rtx));
+            emit_insn (GEN_FCN3 (and_code) (mask, a_rtx, b_rtx));
             if (dmode != dest_mode)
               {
                 rtx temp = gen_reg_rtx (dest_mode);
@@ -6253,7 +6253,7 @@ spu_emit_vector_compare (enum rtx_code rcode,
         }
     }
 
-  emit_insn (GEN_FCN (vec_cmp_insn) (mask, op0, op1));
+  emit_insn (GEN_FCN3 (vec_cmp_insn) (mask, op0, op1));
   if (dmode != dest_mode)
     {
       rtx temp = gen_reg_rtx (dest_mode);
@@ -6457,7 +6457,7 @@ spu_expand_builtin_1 (struct spu_builtin_description *d,
                  gen_rtx_NEG (GET_MODE (addr), addr)));
       op = gen_rtx_MEM (mode, op);
 
-      pat = GEN_FCN (icode) (target, op);
+      pat = GEN_FCN2 (icode) (target, op);
       if (!pat) 
         return 0;
       emit_insn (pat);
@@ -6513,25 +6513,25 @@ spu_expand_builtin_1 (struct spu_builtin_description *d,
   switch (n_operands)
     {
     case 0:
-      pat = GEN_FCN (icode) (0);
+      pat = GEN_FCN0 (icode) ();
       break;
     case 1:
-      pat = GEN_FCN (icode) (ops[0]);
+      pat = GEN_FCN1 (icode) (ops[0]);
       break;
     case 2:
-      pat = GEN_FCN (icode) (ops[0], ops[1]);
+      pat = GEN_FCN2 (icode) (ops[0], ops[1]);
       break;
     case 3:
-      pat = GEN_FCN (icode) (ops[0], ops[1], ops[2]);
+      pat = GEN_FCN3 (icode) (ops[0], ops[1], ops[2]);
       break;
     case 4:
-      pat = GEN_FCN (icode) (ops[0], ops[1], ops[2], ops[3]);
+      pat = GEN_FCN4 (icode) (ops[0], ops[1], ops[2], ops[3]);
       break;
     case 5:
-      pat = GEN_FCN (icode) (ops[0], ops[1], ops[2], ops[3], ops[4]);
+      pat = GEN_FCN5 (icode) (ops[0], ops[1], ops[2], ops[3], ops[4]);
       break;
     case 6:
-      pat = GEN_FCN (icode) (ops[0], ops[1], ops[2], ops[3], ops[4], ops[5]);
+      pat = GEN_FCN6 (icode) (ops[0], ops[1], ops[2], ops[3], ops[4], ops[5]);
       break;
     default:
       abort ();

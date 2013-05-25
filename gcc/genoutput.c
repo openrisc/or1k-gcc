@@ -406,9 +406,25 @@ output_insn_data (void)
 	}
 
       if (d->name && d->name[0] != '*')
-	printf ("    (insn_gen_fn) gen_%s,\n", d->name);
+	{
+	  int i;
+
+	  printf ("#if HAVE_DESIGNATED_UNION_INITIALIZERS\n");
+	  printf ("    { .argc%d = gen_%s },\n", d->n_generator_args, d->name);
+	  printf ("#else\n");
+	  printf ("    { ");
+	  for (i = 0; i < d->n_generator_args; i++)
+	    printf ("0, ");
+	  printf ("gen_%s, ", d->name);
+	  for (i = d->n_generator_args + 1; i <= 11; i++)
+	    printf ("0, ");
+	  printf ("},\n");
+	  printf ("#endif\n");
+	}
       else
-	printf ("    0,\n");
+	{
+	  printf ("    { 0 },\n");
+	}
 
       printf ("    &operand_data[%d],\n", d->operand_number);
       printf ("    %d,\n", d->n_generator_args);

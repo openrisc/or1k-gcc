@@ -9773,7 +9773,7 @@ rs6000_expand_zeroop_builtin (enum insn_code icode, rtx target)
       || ! (*insn_data[icode].operand[0].predicate) (target, tmode))
     target = gen_reg_rtx (tmode);
 
-  pat = GEN_FCN (icode) (target);
+  pat = GEN_FCN1 (icode) (target);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -9823,7 +9823,7 @@ rs6000_expand_unop_builtin (enum insn_code icode, tree exp, rtx target)
   if (! (*insn_data[icode].operand[1].predicate) (op0, mode0))
     op0 = copy_to_mode_reg (mode0, op0);
 
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -9855,7 +9855,7 @@ altivec_expand_abs_builtin (enum insn_code icode, tree exp, rtx target)
   scratch1 = gen_reg_rtx (mode0);
   scratch2 = gen_reg_rtx (mode0);
 
-  pat = GEN_FCN (icode) (target, op0, scratch1, scratch2);
+  pat = GEN_FCN4 (icode) (target, op0, scratch1, scratch2);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -9928,7 +9928,7 @@ rs6000_expand_binop_builtin (enum insn_code icode, tree exp, rtx target)
   if (! (*insn_data[icode].operand[2].predicate) (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
-  pat = GEN_FCN (icode) (target, op0, op1);
+  pat = GEN_FCN3 (icode) (target, op0, op1);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -9976,7 +9976,7 @@ altivec_expand_predicate_builtin (enum insn_code icode, tree exp, rtx target)
 
   scratch = gen_reg_rtx (mode0);
 
-  pat = GEN_FCN (icode) (scratch, op0, op1);
+  pat = GEN_FCN3 (icode) (scratch, op0, op1);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -10048,7 +10048,7 @@ paired_expand_lv_builtin (enum insn_code icode, tree exp, rtx target)
       addr = gen_rtx_MEM (tmode, gen_rtx_PLUS (Pmode, op0, op1));
     }
 
-  pat = GEN_FCN (icode) (target, addr);
+  pat = GEN_FCN2 (icode) (target, addr);
 
   if (! pat)
     return 0;
@@ -10094,7 +10094,7 @@ altivec_expand_lv_builtin (enum insn_code icode, tree exp, rtx target, bool blk)
       addr = gen_rtx_MEM (blk ? BLKmode : tmode, gen_rtx_PLUS (Pmode, op0, op1));
     }
 
-  pat = GEN_FCN (icode) (target, addr);
+  pat = GEN_FCN2 (icode) (target, addr);
 
   if (! pat)
     return 0;
@@ -10130,7 +10130,7 @@ spe_expand_stv_builtin (enum insn_code icode, tree exp)
   if (! (*insn_data[icode].operand[1].predicate) (op2, mode1))
     op2 = copy_to_mode_reg (mode1, op2);
 
-  pat = GEN_FCN (icode) (op1, op2, op0);
+  pat = GEN_FCN3 (icode) (op1, op2, op0);
   if (pat)
     emit_insn (pat);
   return NULL_RTX;
@@ -10171,7 +10171,7 @@ paired_expand_stv_builtin (enum insn_code icode, tree exp)
       addr = gen_rtx_MEM (tmode, gen_rtx_PLUS (Pmode, op1, op2));
     }
 
-  pat = GEN_FCN (icode) (addr, op0);
+  pat = GEN_FCN2 (icode) (addr, op0);
   if (pat)
     emit_insn (pat);
   return NULL_RTX;
@@ -10213,7 +10213,7 @@ altivec_expand_stv_builtin (enum insn_code icode, tree exp)
       addr = gen_rtx_MEM (tmode, gen_rtx_PLUS (Pmode, op1, op2));
     }
 
-  pat = GEN_FCN (icode) (addr, op0);
+  pat = GEN_FCN2 (icode) (addr, op0);
   if (pat)
     emit_insn (pat);
   return NULL_RTX;
@@ -10309,9 +10309,9 @@ rs6000_expand_ternop_builtin (enum insn_code icode, tree exp, rtx target)
     op2 = copy_to_mode_reg (mode2, op2);
 
   if (TARGET_PAIRED_FLOAT && icode == CODE_FOR_selv2sf4)
-    pat = GEN_FCN (icode) (target, op0, op1, op2, CONST0_RTX (SFmode));
+    pat = GEN_FCN5 (icode) (target, op0, op1, op2, CONST0_RTX (SFmode));
   else 
-    pat = GEN_FCN (icode) (target, op0, op1, op2);
+    pat = GEN_FCN4 (icode) (target, op0, op1, op2);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -10370,7 +10370,7 @@ altivec_expand_ld_builtin (tree exp, rtx target, bool *expandedp)
   if (! (*insn_data[icode].operand[1].predicate) (op0, mode0))
     op0 = gen_rtx_MEM (mode0, copy_to_mode_reg (Pmode, op0));
 
-  pat = GEN_FCN (icode) (target, op0);
+  pat = GEN_FCN2 (icode) (target, op0);
   if (! pat)
     return 0;
   emit_insn (pat);
@@ -10426,7 +10426,7 @@ altivec_expand_st_builtin (tree exp, rtx target ATTRIBUTE_UNUSED,
   if (! (*insn_data[icode].operand[1].predicate) (op1, mode1))
     op1 = copy_to_mode_reg (mode1, op1);
 
-  pat = GEN_FCN (icode) (op0, op1);
+  pat = GEN_FCN2 (icode) (op0, op1);
   if (pat)
     emit_insn (pat);
 
@@ -10483,7 +10483,7 @@ altivec_expand_dst_builtin (tree exp, rtx target ATTRIBUTE_UNUSED,
 	if (! (*insn_data[d->icode].operand[1].predicate) (op1, mode1))
 	  op1 = copy_to_mode_reg (mode1, op1);
 
-	pat = GEN_FCN (d->icode) (op0, op1, op2);
+	pat = GEN_FCN3 (d->icode) (op0, op1, op2);
 	if (pat != 0)
 	  emit_insn (pat);
 
@@ -10679,7 +10679,7 @@ altivec_expand_builtin (tree exp, rtx target, bool *expandedp)
 	  || ! (*insn_data[icode].operand[0].predicate) (target, tmode))
 	target = gen_reg_rtx (tmode);
 
-      pat = GEN_FCN (icode) (target);
+      pat = GEN_FCN1 (icode) (target);
       if (! pat)
 	return 0;
       emit_insn (pat);
@@ -10698,7 +10698,7 @@ altivec_expand_builtin (tree exp, rtx target, bool *expandedp)
       if (! (*insn_data[icode].operand[0].predicate) (op0, mode0))
 	op0 = copy_to_mode_reg (mode0, op0);
 
-      pat = GEN_FCN (icode) (op0);
+      pat = GEN_FCN1 (icode) (op0);
       if (pat)
 	emit_insn (pat);
       return NULL_RTX;
@@ -11005,7 +11005,7 @@ spe_expand_builtin (tree exp, rtx target, bool *expandedp)
 	  || ! (*insn_data[icode].operand[0].predicate) (target, tmode))
 	target = gen_reg_rtx (tmode);
 
-      pat = GEN_FCN (icode) (target);
+      pat = GEN_FCN1 (icode) (target);
       if (! pat)
 	return 0;
       emit_insn (pat);
@@ -11022,7 +11022,7 @@ spe_expand_builtin (tree exp, rtx target, bool *expandedp)
       if (! (*insn_data[icode].operand[0].predicate) (op0, mode0))
 	op0 = copy_to_mode_reg (mode0, op0);
 
-      pat = GEN_FCN (icode) (op0);
+      pat = GEN_FCN1 (icode) (op0);
       if (pat)
 	emit_insn (pat);
       return NULL_RTX;
@@ -11072,7 +11072,7 @@ paired_expand_predicate_builtin (enum insn_code icode, tree exp, rtx target)
 
   scratch = gen_reg_rtx (CCFPmode);
 
-  pat = GEN_FCN (icode) (scratch, op0, op1);
+  pat = GEN_FCN3 (icode) (scratch, op0, op1);
   if (!pat)
     return const0_rtx;
 
@@ -11145,7 +11145,7 @@ spe_expand_predicate_builtin (enum insn_code icode, tree exp, rtx target)
 
   scratch = gen_reg_rtx (CCmode);
 
-  pat = GEN_FCN (icode) (scratch, op0, op1);
+  pat = GEN_FCN3 (icode) (scratch, op0, op1);
   if (! pat)
     return const0_rtx;
   emit_insn (pat);
@@ -11251,7 +11251,7 @@ spe_expand_evsel_builtin (enum insn_code icode, tree exp, rtx target)
 
   /* Generate the compare.  */
   scratch = gen_reg_rtx (CCmode);
-  pat = GEN_FCN (icode) (scratch, op0, op1);
+  pat = GEN_FCN3 (icode) (scratch, op0, op1);
   if (! pat)
     return const0_rtx;
   emit_insn (pat);
@@ -11412,7 +11412,7 @@ rs6000_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
 	  target = gen_reg_rtx (tmode);
 
 	/*pat = gen_altivec_lvsr (target, op);*/
-	pat = GEN_FCN (icode) (target, op);
+	pat = GEN_FCN2 (icode) (target, op);
 	if (!pat)
 	  return 0;
 	emit_insn (pat);
@@ -16134,7 +16134,7 @@ rs6000_emit_vector_compare (enum rtx_code rcode,
 	  return NULL_RTX;
 
 	mask = gen_reg_rtx (dmode);
-	emit_insn (GEN_FCN (nor_code) (mask, mask2));
+	emit_insn (GEN_FCN2 (nor_code) (mask, mask2));
 	return mask;
       }
       break;
@@ -16183,7 +16183,7 @@ rs6000_emit_vector_compare (enum rtx_code rcode,
 	  return NULL_RTX;
 
 	mask = gen_reg_rtx (dmode);
-	emit_insn (GEN_FCN (ior_code) (mask, c_rtx, eq_rtx));
+	emit_insn (GEN_FCN3 (ior_code) (mask, c_rtx, eq_rtx));
 	return mask;
       }
       break;
@@ -26371,7 +26371,7 @@ rs6000_emit_swdiv_high_precision (rtx dst, rtx n, rtx d)
   enum machine_mode mode = GET_MODE (dst);
   rtx x0, e0, e1, y1, u0, v0;
   enum insn_code code = optab_handler (smul_optab, mode);
-  gen_2arg_fn_t gen_mul = (gen_2arg_fn_t) GEN_FCN (code);
+  gen_2arg_fn_t gen_mul = (gen_2arg_fn_t) GEN_FCN3 (code);
   rtx one = rs6000_load_constant_and_splat (mode, dconst1);
 
   gcc_assert (code != CODE_FOR_nothing);
@@ -26409,7 +26409,7 @@ rs6000_emit_swdiv_low_precision (rtx dst, rtx n, rtx d)
   enum machine_mode mode = GET_MODE (dst);
   rtx x0, e0, e1, e2, y1, y2, y3, u0, v0, one;
   enum insn_code code = optab_handler (smul_optab, mode);
-  gen_2arg_fn_t gen_mul = (gen_2arg_fn_t) GEN_FCN (code);
+  gen_2arg_fn_t gen_mul = (gen_2arg_fn_t) GEN_FCN3 (code);
 
   gcc_assert (code != CODE_FOR_nothing);
 
@@ -26480,7 +26480,7 @@ rs6000_emit_swrsqrt (rtx dst, rtx src)
   int i;
   rtx halfthree;
   enum insn_code code = optab_handler (smul_optab, mode);
-  gen_2arg_fn_t gen_mul = (gen_2arg_fn_t) GEN_FCN (code);
+  gen_2arg_fn_t gen_mul = (gen_2arg_fn_t) GEN_FCN3 (code);
 
   gcc_assert (code != CODE_FOR_nothing);
 
@@ -26797,7 +26797,7 @@ altivec_expand_vec_perm_const (rtx operands[4])
 	    x = target;
 	  else
 	    x = gen_reg_rtx (omode);
-	  emit_insn (GEN_FCN (icode) (x, op0, op1));
+	  emit_insn (GEN_FCN3 (icode) (x, op0, op1));
 	  if (omode != V16QImode)
 	    emit_move_insn (target, gen_lowpart (V16QImode, x));
 	  return true;

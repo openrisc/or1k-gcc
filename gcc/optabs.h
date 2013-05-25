@@ -45,7 +45,18 @@ struct convert_optab_libcall_d
 
 /* Given an enum insn_code, access the function to construct
    the body of that kind of insn.  */
-#define GEN_FCN(CODE) (insn_data[CODE].genfun)
+#define GEN_FCN0(CODE)	(insn_data[CODE].genfun.argc0)
+#define GEN_FCN1(CODE)	(insn_data[CODE].genfun.argc1)
+#define GEN_FCN2(CODE)	(insn_data[CODE].genfun.argc2)
+#define GEN_FCN3(CODE)	(insn_data[CODE].genfun.argc3)
+#define GEN_FCN4(CODE)	(insn_data[CODE].genfun.argc4)
+#define GEN_FCN5(CODE)	(insn_data[CODE].genfun.argc5)
+#define GEN_FCN6(CODE)	(insn_data[CODE].genfun.argc6)
+#define GEN_FCN7(CODE)	(insn_data[CODE].genfun.argc7)
+#define GEN_FCN8(CODE)	(insn_data[CODE].genfun.argc8)
+#define GEN_FCN9(CODE)	(insn_data[CODE].genfun.argc9)
+#define GEN_FCN10(CODE)	(insn_data[CODE].genfun.argc10)
+#define GEN_FCN11(CODE)	(insn_data[CODE].genfun.argc11)
 
 /* Contains the optab used for each rtx code, and vice-versa.  */
 extern const optab code_to_optab_[NUM_RTX_CODE];
