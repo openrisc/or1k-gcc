@@ -1,3 +1,7 @@
+2013-07-10  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/crti.S: Rename __init/__fini to _init/_fini
+
 2013-02-13  Christian Svensson  <blue@cmd.nu>
 
 	* config.host: If we are targeting or1k*-linux or or1k*-uclibc do not
