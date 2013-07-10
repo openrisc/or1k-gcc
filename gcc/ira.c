@@ -1,6 +1,5 @@
 /* Integrated Register Allocator (IRA) entry point.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -419,6 +418,11 @@ int ira_move_loops_num, ira_additional_jumps_num;
 /* All registers that can be eliminated.  */
 
 HARD_REG_SET eliminable_regset;
+
+/* Value of max_reg_num () before IRA work start.  This value helps
+   us to recognize a situation when new pseudos were created during
+   IRA work.  */
+static int max_regno_before_ira;
 
 /* Temporary hard reg set used for a different calculation.  */
 static HARD_REG_SET temp_hard_regset;
@@ -2265,11 +2269,11 @@ ira_update_equiv_info_by_shuffle_insn (int to_regno, int from_regno, rtx insns)
 static void
 fix_reg_equiv_init (void)
 {
-  unsigned int max_regno = max_reg_num ();
+  int max_regno = max_reg_num ();
   int i, new_regno, max;
   rtx x, prev, next, insn, set;
 
-  if (vec_safe_length (reg_equivs) < max_regno)
+  if (max_regno_before_ira < max_regno)
     {
       max = vec_safe_length (reg_equivs);
       grow_reg_equivs ();
@@ -2516,7 +2520,7 @@ validate_equiv_mem_from_store (rtx dest, const_rtx set ATTRIBUTE_UNUSED,
   if ((REG_P (dest)
        && reg_overlap_mentioned_p (dest, equiv_mem))
       || (MEM_P (dest)
-	  && true_dependence (dest, VOIDmode, equiv_mem)))
+	  && anti_dependence (equiv_mem, dest)))
     equiv_mem_modified = 1;
 }
 
@@ -3563,7 +3567,7 @@ build_insn_chain (void)
 	      c->insn = insn;
 	      c->block = bb->index;
 
-	      if (INSN_P (insn))
+	      if (NONDEBUG_INSN_P (insn))
 		for (def_rec = DF_INSN_UID_DEFS (uid); *def_rec; def_rec++)
 		  {
 		    df_ref def = *def_rec;
@@ -3654,7 +3658,7 @@ build_insn_chain (void)
 	      bitmap_and_compl_into (live_relevant_regs, elim_regset);
 	      bitmap_copy (&c->live_throughout, live_relevant_regs);
 
-	      if (INSN_P (insn))
+	      if (NONDEBUG_INSN_P (insn))
 		for (use_rec = DF_INSN_UID_USES (uid); *use_rec; use_rec++)
 		  {
 		    df_ref use = *use_rec;
@@ -4339,9 +4343,6 @@ allocate_initial_values (void)
    function.  */
 bool ira_use_lra_p;
 
-/* All natural loops.  */
-struct loops ira_loops;
-
 /* True if we have allocno conflicts.  It is false for non-optimized
    mode or when the conflict table is too big.  */
 bool ira_conflicts_p;
@@ -4354,7 +4355,7 @@ static void
 ira (FILE *f)
 {
   bool loops_p;
-  int max_regno_before_ira, ira_max_point_before_emit;
+  int ira_max_point_before_emit;
   int rebuild_p;
   bool saved_flag_caller_saves = flag_caller_saves;
   enum ira_region saved_flag_ira_region = flag_ira_region;
@@ -4465,11 +4466,7 @@ ira (FILE *f)
 
   ira_assert (current_loops == NULL);
   if (flag_ira_region == IRA_REGION_ALL || flag_ira_region == IRA_REGION_MIXED)
-    {
-      flow_loops_find (&ira_loops);
-      current_loops = &ira_loops;
-      record_loop_exits ();
-    }
+    loop_optimizer_init (AVOID_CFG_MODIFICATIONS | LOOPS_HAVE_RECORDED_EXITS);
 
   if (internal_flag_ira_verbose > 0 && ira_dump_file != NULL)
     fprintf (ira_dump_file, "Building IRA IR\n");
@@ -4527,11 +4524,10 @@ ira (FILE *f)
 	  /* ??? Rebuild the loop tree, but why?  Does the loop tree
 	     change if new insns were generated?  Can that be handled
 	     by updating the loop tree incrementally?  */
-	  release_recorded_exits ();
-	  flow_loops_free (&ira_loops);
-	  flow_loops_find (&ira_loops);
-	  current_loops = &ira_loops;
-	  record_loop_exits ();
+	  loop_optimizer_finalize ();
+	  free_dominance_info (CDI_DOMINATORS);
+	  loop_optimizer_init (AVOID_CFG_MODIFICATIONS
+			       | LOOPS_HAVE_RECORDED_EXITS);
 
 	  if (! ira_use_lra_p)
 	    {
@@ -4608,8 +4604,7 @@ do_reload (void)
     {
       if (current_loops != NULL)
 	{
-	  release_recorded_exits ();
-	  flow_loops_free (&ira_loops);
+	  loop_optimizer_finalize ();
 	  free_dominance_info (CDI_DOMINATORS);
 	}
       FOR_ALL_BB (bb)
@@ -4658,8 +4653,7 @@ do_reload (void)
       ira_destroy ();
       if (current_loops != NULL)
 	{
-	  release_recorded_exits ();
-	  flow_loops_free (&ira_loops);
+	  loop_optimizer_finalize ();
 	  free_dominance_info (CDI_DOMINATORS);
 	}
       FOR_ALL_BB (bb)

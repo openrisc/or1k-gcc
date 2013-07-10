@@ -1,5 +1,5 @@
 /* mmapio.c -- File views using mmap.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,10 @@ POSSIBILITY OF SUCH DAMAGE.  */
 
 #include "backtrace.h"
 #include "internal.h"
+
+#ifndef MAP_FAILED
+#define MAP_FAILED ((void *)-1)
+#endif
 
 /* This file implements file views and memory allocation when mmap is
    available.  */

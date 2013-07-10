@@ -1,7 +1,5 @@
 /* C-compiler utilities for types and variables storage layout
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1996, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -318,6 +316,8 @@ finalize_size_functions (void)
 
   for (i = 0; size_functions && size_functions->iterate (i, &fndecl); i++)
     {
+      allocate_struct_function (fndecl, false);
+      set_cfun (NULL);
       dump_function (TDI_original, fndecl);
       gimplify_function_tree (fndecl);
       dump_function (TDI_generic, fndecl);
@@ -2648,10 +2648,14 @@ bit_field_mode_iterator
 {
   if (!bitregion_end_)
     {
-      /* We can assume that any aligned chunk of UNITS bits that overlaps
-	 the bitfield is mapped and won't trap.  */
-      unsigned HOST_WIDE_INT units = MIN (align, MAX (BIGGEST_ALIGNMENT,
-						      BITS_PER_WORD));
+      /* We can assume that any aligned chunk of ALIGN bits that overlaps
+	 the bitfield is mapped and won't trap, provided that ALIGN isn't
+	 too large.  The cap is the biggest required alignment for data,
+	 or at least the word size.  And force one such chunk at least.  */
+      unsigned HOST_WIDE_INT units
+	= MIN (align, MAX (BIGGEST_ALIGNMENT, BITS_PER_WORD));
+      if (bitsize <= 0)
+	bitsize = 1;
       bitregion_end_ = bitpos + bitsize + units - 1;
       bitregion_end_ -= bitregion_end_ % units + 1;
     }

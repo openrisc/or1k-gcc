@@ -1,7 +1,6 @@
 ;;   Machine description for GNU compiler,
 ;;   for Atmel AVR micro controllers.
-;;   Copyright (C) 1998 - 2011
-;;   Free Software Foundation, Inc.
+;;   Copyright (C) 1998-2013 Free Software Foundation, Inc.
 ;;   Contributed by Georg Lay (avr@gjlay.de)
 ;;
 ;; This file is part of GCC.
@@ -32,7 +31,7 @@
 ;; The DImode insns are all straight forward -- except movdi.  The approach
 ;; of this implementation is to provide DImode insns without the burden of
 ;; introducing movdi.
-;; 
+;;
 ;; The caveat is that if there are insns for some mode, there must also be a
 ;; respective move insn that describes reloads.  Therefore, this
 ;; implementation uses an accumulator-based model with two hard-coded,
@@ -76,7 +75,7 @@
       {
         emit_move_insn (gen_rtx_REG (QImode, REG_X), operands[2]);
         emit_insn (gen_adddi3_const8_insn ());
-      }        
+      }
     else if (const_operand (operands[2], GET_MODE (operands[2])))
       {
         emit_insn (gen_add<mode>3_const_insn (operands[2]));
@@ -345,7 +344,7 @@
       {
         emit_move_insn (gen_rtx_REG (QImode, REG_X), operands[2]);
         emit_insn (gen_compare_const8_di2 ());
-      }        
+      }
     else if (const_operand (operands[2], GET_MODE (operands[2])))
       {
         emit_insn (gen_compare_const_<mode>2 (operands[2]));
@@ -445,5 +444,36 @@
                         (reg:QI 16)))]
   "avr_have_dimode"
   "%~call __<code_stdname>di3"
+  [(set_attr "adjust_len" "call")
+   (set_attr "cc" "clobber")])
+
+;; "umulsidi3"
+;; "mulsidi3"
+(define_expand "<extend_u>mulsidi3"
+  [(parallel [(match_operand:DI 0 "register_operand" "")
+              (match_operand:SI 1 "general_operand" "")
+              (match_operand:SI 2 "general_operand" "")
+              ;; Just to mention the iterator 
+              (clobber (any_extend:SI (match_dup 1)))])]
+  "avr_have_dimode"
+  {
+    emit_move_insn (gen_rtx_REG (SImode, 22), operands[1]);
+    emit_move_insn (gen_rtx_REG (SImode, 18), operands[2]);
+    emit_insn (gen_<extend_u>mulsidi3_insn());
+    // Use emit_move_insn and not open-coded expand because of missing movdi
+    emit_move_insn (operands[0], gen_rtx_REG (DImode, ACC_A));
+    DONE;
+  })
+
+;; "umulsidi3_insn"
+;; "mulsidi3_insn"
+(define_insn "<extend_u>mulsidi3_insn"
+  [(set (reg:DI ACC_A)
+        (mult:DI (any_extend:DI (reg:SI 18))
+                 (any_extend:DI (reg:SI 22))))
+   (clobber (reg:HI REG_X))
+   (clobber (reg:HI REG_Z))]
+  "avr_have_dimode"
+  "%~call __<extend_u>mulsidi3"
   [(set_attr "adjust_len" "call")
    (set_attr "cc" "clobber")])

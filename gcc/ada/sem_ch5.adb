@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -430,9 +430,9 @@ package body Sem_Ch5 is
 
                   if Locking_Policy /= 'C' then
                      Error_Msg_N ("assignment to the attribute PRIORITY has " &
-                                  "no effect?", Lhs);
+                                  "no effect??", Lhs);
                      Error_Msg_N ("\since no Locking_Policy has been " &
-                                  "specified", Lhs);
+                                  "specified??", Lhs);
                   end if;
 
                   return;
@@ -636,8 +636,9 @@ package body Sem_Ch5 is
 
          if Known_Null (Rhs) then
             Apply_Compile_Time_Constraint_Error
-              (N   => Rhs,
-               Msg => "(Ada 2005) null not allowed in null-excluding objects?",
+              (N      => Rhs,
+               Msg    =>
+                 "(Ada 2005) null not allowed in null-excluding objects??",
                Reason => CE_Null_Not_Allowed);
 
             --  We still mark this as a possible modification, that's necessary
@@ -691,7 +692,6 @@ package body Sem_Ch5 is
       --  checks have been applied.
 
       Note_Possible_Modification (Lhs, Sure => True);
-      Check_Order_Dependence;
 
       --  ??? a real accessibility check is needed when ???
 
@@ -717,10 +717,10 @@ package body Sem_Ch5 is
       then
          if Nkind (Lhs) in N_Has_Entity then
             Error_Msg_NE -- CODEFIX
-              ("?useless assignment of & to itself!", N, Entity (Lhs));
+              ("?r?useless assignment of & to itself!", N, Entity (Lhs));
          else
             Error_Msg_N -- CODEFIX
-              ("?useless assignment of object to itself!", N);
+              ("?r?useless assignment of object to itself!", N);
          end if;
       end if;
 
@@ -2405,7 +2405,7 @@ package body Sem_Ch5 is
                        (L, H, Assume_Valid => False) = GT
                   then
                      Error_Msg_N
-                       ("?loop range is null, loop will not execute", DS);
+                       ("??loop range is null, loop will not execute", DS);
 
                      --  Since we know the range of the loop is null, set the
                      --  appropriate flag to remove the loop entirely during
@@ -2420,9 +2420,11 @@ package body Sem_Ch5 is
 
                   else
                      Error_Msg_N
-                       ("?loop range may be null, loop may not execute", DS);
+                       ("??loop range may be null, loop may not execute",
+                        DS);
                      Error_Msg_N
-                       ("?can only execute if invalid values are present", DS);
+                       ("??can only execute if invalid values are present",
+                        DS);
                   end if;
                end if;
 
@@ -2449,8 +2451,8 @@ package body Sem_Ch5 is
                 (Intval (Original_Node (H)) = Uint_0
                   or else Intval (Original_Node (H)) = Uint_1)
             then
-               Error_Msg_N ("?loop range may be null", DS);
-               Error_Msg_N ("\?bounds may be wrong way round", DS);
+               Error_Msg_N ("??loop range may be null", DS);
+               Error_Msg_N ("\??bounds may be wrong way round", DS);
             end if;
          end;
       end if;
@@ -2666,7 +2668,7 @@ package body Sem_Ch5 is
                         then
                            Error_Msg_Sloc := Sloc (ODSD);
                            Error_Msg_N
-                             ("inner range same as outer range#?", DSD);
+                             ("inner range same as outer range#??", DSD);
                         end if;
                      end;
                   end if;
@@ -2918,7 +2920,7 @@ package body Sem_Ch5 is
                      Check_SPARK_Restriction
                        ("unreachable code is not allowed", Error_Node);
                   else
-                     Error_Msg ("?unreachable code!", Sloc (Error_Node));
+                     Error_Msg ("??unreachable code!", Sloc (Error_Node));
                   end if;
                end if;
 
@@ -2983,6 +2985,7 @@ package body Sem_Ch5 is
 
    procedure Preanalyze_Range (R_Copy : Node_Id) is
       Save_Analysis : constant Boolean := Full_Analysis;
+      Typ           : Entity_Id;
 
    begin
       Full_Analysis := False;
@@ -3043,6 +3046,40 @@ package body Sem_Ch5 is
 
       elsif Nkind (R_Copy) in N_Subexpr then
          Resolve (R_Copy);
+         Typ := Etype (R_Copy);
+
+         if Is_Discrete_Type (Typ) then
+            null;
+
+         --  Check that the resulting object is an iterable container
+
+         elsif Present (Find_Aspect (Typ, Aspect_Iterator_Element))
+           or else Present (Find_Aspect (Typ, Aspect_Constant_Indexing))
+           or else Present (Find_Aspect (Typ, Aspect_Variable_Indexing))
+         then
+            null;
+
+         --  The expression may yield an implicit reference to an iterable
+         --  container. Insert explicit dereference so that proper type is
+         --  visible in the loop.
+
+         elsif Has_Implicit_Dereference (Etype (R_Copy)) then
+            declare
+               Disc : Entity_Id;
+
+            begin
+               Disc := First_Discriminant (Typ);
+               while Present (Disc) loop
+                  if Has_Implicit_Dereference (Disc) then
+                     Build_Explicit_Dereference (R_Copy, Disc);
+                     exit;
+                  end if;
+
+                  Next_Discriminant (Disc);
+               end loop;
+            end;
+
+         end if;
       end if;
 
       Expander_Mode_Restore;

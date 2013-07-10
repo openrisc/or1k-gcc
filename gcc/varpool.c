@@ -1,6 +1,5 @@
 /* Callgraph handling code.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Jan Hubicka
 
 This file is part of GCC.
@@ -63,9 +62,8 @@ varpool_remove_node (struct varpool_node *node)
       && !DECL_IN_CONSTANT_POOL (node->symbol.decl)
       /* Keep vtables for BINFO folding.  */
       && !DECL_VIRTUAL_P (node->symbol.decl)
-      /* dbxout output constant initializers for readonly vars.  */
-      && (!host_integerp (DECL_INITIAL (node->symbol.decl), 0)
-	  || !TREE_READONLY (node->symbol.decl)))
+      /* FIXME: http://gcc.gnu.org/PR55395 */
+      && debug_info_level == DINFO_LEVEL_NONE)
     DECL_INITIAL (node->symbol.decl) = error_mark_node;
   ggc_free (node);
 }
@@ -359,8 +357,7 @@ varpool_remove_unreferenced_decls (void)
 	  && (!varpool_can_remove_if_no_refs (node)
 	      /* We just expanded all function bodies.  See if any of
 		 them needed the variable.  */
-	      || (!DECL_EXTERNAL (node->symbol.decl)
-		  && DECL_RTL_SET_P (node->symbol.decl))))
+	      || DECL_RTL_SET_P (node->symbol.decl)))
 	{
 	  enqueue_node (node, &first);
           if (cgraph_dump_file)

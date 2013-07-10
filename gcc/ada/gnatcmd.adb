@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1996-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1996-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1999,7 +1999,19 @@ begin
                           In_Arrays => Element.Decl.Arrays,
                           Shared    => Project_Tree.Shared);
                      Name_Len := 0;
-                     Add_Str_To_Name_Buffer (Main.all);
+
+                     --  If the single main has been specified as an absolute
+                     --  path, use only the simple file name. If the absolute
+                     --  path is incorrect, an error will be reported by the
+                     --  underlying tool and it does not make a difference
+                     --  what switches are used.
+
+                     if Is_Absolute_Path (Main.all) then
+                        Add_Str_To_Name_Buffer (File_Name (Main.all));
+                     else
+                        Add_Str_To_Name_Buffer (Main.all);
+                     end if;
+
                      The_Switches := Prj.Util.Value_Of
                        (Index     => Name_Find,
                         Src_Index => 0,
@@ -2354,8 +2366,9 @@ begin
                      then
                         declare
                            Path : constant String :=
-                             Absolute_Path
-                               (Path_Name_Type (Variable.Value), Project);
+                                    Absolute_Path
+                                      (Path_Name_Type (Variable.Value),
+                                       Variable.Project);
                         begin
                            Add_To_Carg_Switches
                              (new String'("-gnatec=" & Path));
@@ -2399,8 +2412,9 @@ begin
                         then
                            declare
                               Path : constant String :=
-                                Absolute_Path
-                                  (Path_Name_Type (Variable.Value), Project);
+                                       Absolute_Path
+                                         (Path_Name_Type (Variable.Value),
+                                          Variable.Project);
                            begin
                               Add_To_Carg_Switches
                                 (new String'("-gnatec=" & Path));
@@ -2463,7 +2477,9 @@ begin
                --  the file name ends with the spec suffix, then indicate to
                --  gnatstub the name of the body file with a -o switch.
 
-               if not Is_Standard_GNAT_Naming (Lang.Config.Naming_Data) then
+               if Lang /= No_Language_Index
+                 and then not Is_Standard_GNAT_Naming (Lang.Config.Naming_Data)
+               then
                   if File_Index /= 0 then
                      declare
                         Spec : constant String :=

@@ -6,8 +6,6 @@
 
 #include "go-system.h"
 
-#include <gmp.h>
-
 #include "toplev.h"
 #include "intl.h"
 #include "tree.h"
@@ -45,8 +43,7 @@ get_backend_interface_fields(Gogo* gogo, Interface_type* type,
 // Class Type.
 
 Type::Type(Type_classification classification)
-  : classification_(classification), btype_is_placeholder_(false),
-    btype_(NULL), type_descriptor_var_(NULL)
+  : classification_(classification), btype_(NULL), type_descriptor_var_(NULL)
 {
 }
 
@@ -910,11 +907,7 @@ Btype*
 Type::get_backend(Gogo* gogo)
 {
   if (this->btype_ != NULL)
-    {
-      if (this->btype_is_placeholder_ && gogo->named_types_are_converted())
-	this->finish_backend(gogo);
-      return this->btype_;
-    }
+    return this->btype_;
 
   if (this->forward_declaration_type() != NULL
       || this->named_type() != NULL)
@@ -928,20 +921,36 @@ Type::get_backend(Gogo* gogo)
   // that.  There is no need to use the hash table for named types, as
   // named types are only identical to themselves.
 
-  std::pair<Type*, Btype*> val(this, NULL);
+  std::pair<Type*, Type_btype_entry> val;
+  val.first = this;
+  val.second.btype = NULL;
+  val.second.is_placeholder = false;
   std::pair<Type_btypes::iterator, bool> ins =
     Type::type_btypes.insert(val);
-  if (!ins.second && ins.first->second != NULL)
+  if (!ins.second && ins.first->second.btype != NULL)
     {
-      if (gogo != NULL && gogo->named_types_are_converted())
-	this->btype_ = ins.first->second;
-      return ins.first->second;
+      // Note that GOGO can be NULL here, but only when the GCC
+      // middle-end is asking for a frontend type.  That will only
+      // happen for simple types, which should never require
+      // placeholders.
+      if (!ins.first->second.is_placeholder)
+	this->btype_ = ins.first->second.btype;
+      else if (gogo->named_types_are_converted())
+	{
+	  this->finish_backend(gogo, ins.first->second.btype);
+	  ins.first->second.is_placeholder = false;
+	}
+
+      return ins.first->second.btype;
     }
 
   Btype* bt = this->get_btype_without_hash(gogo);
 
-  if (ins.first->second == NULL)
-    ins.first->second = bt;
+  if (ins.first->second.btype == NULL)
+    {
+      ins.first->second.btype = bt;
+      ins.first->second.is_placeholder = false;
+    }
   else
     {
       // We have already created a backend representation for this
@@ -949,10 +958,9 @@ Type::get_backend(Gogo* gogo)
       // a named type which in turns uses an identical unnamed type.
       // Use the tree we created earlier and ignore the one we just
       // built.
-      bt = ins.first->second;
-      if (gogo == NULL || !gogo->named_types_are_converted())
-	return bt;
-      this->btype_ = bt;
+      if (this->btype_ == bt)
+	this->btype_ = ins.first->second.btype;
+      bt = ins.first->second.btype;
     }
 
   return bt;
@@ -1019,6 +1027,37 @@ Type::get_backend_placeholder(Gogo* gogo)
       // These are simple types that can just be created directly.
       return this->get_backend(gogo);
 
+    case TYPE_MAP:
+    case TYPE_CHANNEL:
+      // All maps and channels have the same backend representation.
+      return this->get_backend(gogo);
+
+    case TYPE_NAMED:
+    case TYPE_FORWARD:
+      // Named types keep track of their own dependencies and manage
+      // their own placeholders.
+      return this->get_backend(gogo);
+
+    case TYPE_INTERFACE:
+      if (this->interface_type()->is_empty())
+	return Interface_type::get_backend_empty_interface_type(gogo);
+      break;
+
+    default:
+      break;
+    }
+
+  std::pair<Type*, Type_btype_entry> val;
+  val.first = this;
+  val.second.btype = NULL;
+  val.second.is_placeholder = false;
+  std::pair<Type_btypes::iterator, bool> ins =
+    Type::type_btypes.insert(val);
+  if (!ins.second && ins.first->second.btype != NULL)
+    return ins.first->second.btype;
+
+  switch (this->classification_)
+    {
     case TYPE_FUNCTION:
       {
 	Location loc = this->function_type()->location();
@@ -1061,37 +1100,36 @@ Type::get_backend_placeholder(Gogo* gogo)
 	}
       break;
 	
-    case TYPE_MAP:
-    case TYPE_CHANNEL:
-      // All maps and channels have the same backend representation.
-      return this->get_backend(gogo);
-
     case TYPE_INTERFACE:
-      if (this->interface_type()->is_empty())
-	return Interface_type::get_backend_empty_interface_type(gogo);
-      else
-	{
-	  std::vector<Backend::Btyped_identifier> bfields;
-	  get_backend_interface_fields(gogo, this->interface_type(), true,
-				       &bfields);
-	  bt = gogo->backend()->struct_type(bfields);
-	}
+      {
+	go_assert(!this->interface_type()->is_empty());
+	std::vector<Backend::Btyped_identifier> bfields;
+	get_backend_interface_fields(gogo, this->interface_type(), true,
+				     &bfields);
+	bt = gogo->backend()->struct_type(bfields);
+      }
       break;
-
-    case TYPE_NAMED:
-    case TYPE_FORWARD:
-      // Named types keep track of their own dependencies and manage
-      // their own placeholders.
-      return this->get_backend(gogo);
 
     case TYPE_SINK:
     case TYPE_CALL_MULTIPLE_RESULT:
+      /* Note that various classifications were handled in the earlier
+	 switch.  */
     default:
       go_unreachable();
     }
 
-  this->btype_ = bt;
-  this->btype_is_placeholder_ = true;
+  if (ins.first->second.btype == NULL)
+    {
+      ins.first->second.btype = bt;
+      ins.first->second.is_placeholder = true;
+    }
+  else
+    {
+      // A placeholder for this type got created along the way.  Use
+      // that one and ignore the one we just built.
+      bt = ins.first->second.btype;
+    }
+
   return bt;
 }
 
@@ -1099,12 +1137,8 @@ Type::get_backend_placeholder(Gogo* gogo)
 // using a placeholder type.
 
 void
-Type::finish_backend(Gogo* gogo)
+Type::finish_backend(Gogo* gogo, Btype *placeholder)
 {
-  go_assert(this->btype_ != NULL);
-  if (!this->btype_is_placeholder_)
-    return;
-
   switch (this->classification_)
     {
     case TYPE_ERROR:
@@ -1120,7 +1154,7 @@ Type::finish_backend(Gogo* gogo)
     case TYPE_FUNCTION:
       {
 	Btype* bt = this->do_get_backend(gogo);
-	if (!gogo->backend()->set_placeholder_function_type(this->btype_, bt))
+	if (!gogo->backend()->set_placeholder_function_type(placeholder, bt))
 	  go_assert(saw_errors());
       }
       break;
@@ -1128,7 +1162,7 @@ Type::finish_backend(Gogo* gogo)
     case TYPE_POINTER:
       {
 	Btype* bt = this->do_get_backend(gogo);
-	if (!gogo->backend()->set_placeholder_pointer_type(this->btype_, bt))
+	if (!gogo->backend()->set_placeholder_pointer_type(placeholder, bt))
 	  go_assert(saw_errors());
       }
       break;
@@ -1165,7 +1199,7 @@ Type::finish_backend(Gogo* gogo)
       go_unreachable();
     }
 
-  this->btype_is_placeholder_ = false;
+  this->btype_ = placeholder;
 }
 
 // Return a pointer to the type descriptor for this type.
@@ -2968,8 +3002,8 @@ String_type::do_get_backend(Gogo* gogo)
       // backend representation, so force it to be finished now.
       if (!gogo->named_types_are_converted())
 	{
-	  pb->get_backend_placeholder(gogo);
-	  pb->finish_backend(gogo);
+	  Btype* bt = pb->get_backend_placeholder(gogo);
+	  pb->finish_backend(gogo, bt);
 	}
 
       fields[0].name = "__data";
@@ -4136,6 +4170,11 @@ Struct_field::is_field_name(const std::string& name) const
 
 // Class Struct_type.
 
+// A hash table used to find identical unnamed structs so that they
+// share method tables.
+
+Struct_type::Identical_structs Struct_type::identical_structs;
+
 // Traversal.
 
 int
@@ -4562,6 +4601,21 @@ Struct_type::finalize_methods(Gogo* gogo)
 {
   if (this->all_methods_ != NULL)
     return;
+
+  // It is possible to have multiple identical structs that have
+  // methods.  We want them to share method tables.  Otherwise we will
+  // emit identical methods more than once, which is bad since they
+  // will even have the same names.
+  std::pair<Identical_structs::iterator, bool> ins =
+    Struct_type::identical_structs.insert(std::make_pair(this, this));
+  if (!ins.second)
+    {
+      // An identical struct was already entered into the hash table.
+      // Note that finalize_methods is, fortunately, not recursive.
+      this->all_methods_ = ins.first->second->all_methods_;
+      return;
+    }
+
   Type::finalize_methods(gogo, this, this->location_, &this->all_methods_);
 }
 
@@ -6463,6 +6517,24 @@ Type::make_channel_type(bool send, bool receive, Type* element_type)
 }
 
 // Class Interface_type.
+
+// Return the list of methods.
+
+const Typed_identifier_list*
+Interface_type::methods() const
+{
+  go_assert(this->methods_are_finalized_ || saw_errors());
+  return this->all_methods_;
+}
+
+// Return the number of methods.
+
+size_t
+Interface_type::method_count() const
+{
+  go_assert(this->methods_are_finalized_ || saw_errors());
+  return this->all_methods_ == NULL ? 0 : this->all_methods_->size();
+}
 
 // Traversal.
 
@@ -9592,6 +9664,19 @@ Forward_declaration_type::do_traverse(Traverse* traverse)
       && Type::traverse(this->real_type(), traverse) == TRAVERSE_EXIT)
     return TRAVERSE_EXIT;
   return TRAVERSE_CONTINUE;
+}
+
+// Verify the type.
+
+bool
+Forward_declaration_type::do_verify()
+{
+  if (!this->is_defined() && !this->is_nil_constant_as_type())
+    {
+      this->warn();
+      return false;
+    }
+  return true;
 }
 
 // Get the backend representation for the type.

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1448,10 +1448,15 @@ package body Sem_Ch12 is
                   --  defined aspect/pragma Remote_Access_Type. In that case
                   --  the actual must be remote as well.
 
+                  --  If the current instantiation is the construction of a
+                  --  local copy for a formal package the actuals may be
+                  --  defaulted, and there is no matching actual to check.
+
                   if Nkind (Analyzed_Formal) = N_Formal_Type_Declaration
                     and then
                       Nkind (Formal_Type_Definition (Analyzed_Formal)) =
                                             N_Access_To_Object_Definition
+                     and then Present (Match)
                   then
                      declare
                         Formal_Ent : constant Entity_Id :=
@@ -4924,6 +4929,17 @@ package body Sem_Ch12 is
             Assoc := Associated_Node (Assoc);
          end if;
 
+         --  An additional special case: an unconstrained type in an object
+         --  declaration may have been rewritten as a local subtype constrained
+         --  by the expression in the declaration. We need to recover the
+         --  original entity which may be global.
+
+         if Present (Original_Node (Assoc))
+           and then Nkind (Parent (N)) = N_Object_Declaration
+         then
+            Assoc := Original_Node (Assoc);
+         end if;
+
          return Assoc;
       end if;
    end Get_Associated_Node;
@@ -5703,7 +5719,7 @@ package body Sem_Ch12 is
                  and then Is_Child_Unit (E)
                then
                   if Is_Child_Unit (E)
-                    and then not Is_Visible_Child_Unit (E)
+                    and then not Is_Visible_Lib_Unit (E)
                   then
                      Error_Msg_NE
                        ("generic child unit& is not visible", Gen_Id, E);
@@ -10436,23 +10452,24 @@ package body Sem_Ch12 is
          T : constant Entity_Id := Get_Instance_Of (Gen_T);
 
       begin
-         return (Base_Type (T) = Base_Type (Act_T)
+         --  Some detailed comments would be useful here ???
+
+         return ((Base_Type (T) = Act_T
+                   or else Base_Type (T) = Base_Type (Act_T))
                   and then Subtypes_Statically_Match (T, Act_T))
 
            or else (Is_Class_Wide_Type (Gen_T)
                      and then Is_Class_Wide_Type (Act_T)
-                     and then
-                       Subtypes_Match
-                        (Get_Instance_Of (Root_Type (Gen_T)),
-                         Root_Type (Act_T)))
+                     and then Subtypes_Match
+                                (Get_Instance_Of (Root_Type (Gen_T)),
+                                 Root_Type (Act_T)))
 
            or else
-             ((Ekind (Gen_T) = E_Anonymous_Access_Subprogram_Type
-                 or else Ekind (Gen_T) = E_Anonymous_Access_Type)
+             (Ekind_In (Gen_T, E_Anonymous_Access_Subprogram_Type,
+                               E_Anonymous_Access_Type)
                and then Ekind (Act_T) = Ekind (Gen_T)
-               and then
-                 Subtypes_Statically_Match
-                   (Designated_Type (Gen_T), Designated_Type (Act_T)));
+               and then Subtypes_Statically_Match
+                          (Designated_Type (Gen_T), Designated_Type (Act_T)));
       end Subtypes_Match;
 
       -----------------------------------------
@@ -10475,8 +10492,7 @@ package body Sem_Ch12 is
 
          --  This is a binding interpretation that applies to previous versions
          --  of the language, but for now we retain the milder check in order
-         --  to preserve ACATS tests.
-         --  These will be protested eventually ???
+         --  to preserve ACATS tests. These will be protested eventually ???
 
          if Ada_Version < Ada_2012 then
             Check_Mode_Conformant
@@ -10684,13 +10700,16 @@ package body Sem_Ch12 is
          --  issues when the generic is a child unit and some aspect of the
          --  generic type is declared in a parent unit of the generic. We do
          --  the test to handle this special case only after a direct check
-         --  for static matching has failed.
+         --  for static matching has failed. The case where both the component
+         --  type and the array type are separate formals, and the component
+         --  type is a private view may also require special checking in
+         --  Subtypes_Match.
 
          if Subtypes_Match
            (Component_Type (A_Gen_T), Component_Type (Act_T))
              or else Subtypes_Match
-                      (Find_Actual_Type (Component_Type (A_Gen_T), A_Gen_T),
-                       Component_Type (Act_T))
+               (Find_Actual_Type (Component_Type (A_Gen_T), A_Gen_T),
+               Component_Type (Act_T))
          then
             null;
          else
@@ -12139,8 +12158,8 @@ package body Sem_Ch12 is
       E1 := First_Entity (Form);
       E2 := First_Entity (Act);
       while Present (E1) and then E1 /= First_Private_Entity (Form) loop
-         --  Could this test be a single condition???
-         --  Seems like it could, and isn't FPE (Form) a constant anyway???
+         --  Could this test be a single condition??? Seems like it could, and
+         --  isn't FPE (Form) a constant anyway???
 
          if not Is_Internal (E1)
            and then Present (Parent (E1))
@@ -12406,7 +12425,7 @@ package body Sem_Ch12 is
                   --  provide additional warning which might explain the error.
 
                   Set_Is_Immediately_Visible (Cur, Vis);
-                  Error_Msg_NE ("& hides outer unit with the same name?",
+                  Error_Msg_NE ("& hides outer unit with the same name??",
                     N, Defining_Unit_Name (N));
                end if;
 
@@ -12662,7 +12681,20 @@ package body Sem_Ch12 is
          if Is_Type (E)
            and then Nkind (Parent (E)) = N_Subtype_Declaration
          then
-            Set_Is_Generic_Actual_Type (E, False);
+            --  If the actual for E is itself a generic actual type from
+            --  an enclosing instance, E is still a generic actual type
+            --  outside of the current instance. This matter when resolving
+            --  an overloaded call that may be ambiguous in the enclosing
+            --  instance, when two of its actuals coincide.
+
+            if Is_Entity_Name (Subtype_Indication (Parent (E)))
+              and then Is_Generic_Actual_Type
+                         (Entity (Subtype_Indication (Parent (E))))
+            then
+               null;
+            else
+               Set_Is_Generic_Actual_Type (E, False);
+            end if;
 
             --  An unusual case of aliasing: the actual may also be directly
             --  visible in the generic, and be private there, while it is fully
@@ -12981,7 +13013,36 @@ package body Sem_Ch12 is
             end if;
 
             if Is_Global (E) then
-               Set_Global_Type (N, N2);
+
+               --  If the entity is a package renaming that is the prefix of
+               --  an expanded name, it has been rewritten as the renamed
+               --  package, which is necessary semantically but complicates
+               --  ASIS tree traversal, so we recover the original entity to
+               --  expose the renaming. Take into account that the context may
+               --  be a nested generic and that the original node may itself
+               --  have an associated node.
+
+               if Ekind (E) = E_Package
+                 and then Nkind (Parent (N)) = N_Expanded_Name
+                 and then Present (Original_Node (N2))
+                 and then Present (Entity (Original_Node (N2)))
+                 and then Is_Entity_Name (Entity (Original_Node (N2)))
+               then
+                  if Is_Global (Entity (Original_Node (N2))) then
+                     N2 := Original_Node (N2);
+                     Set_Associated_Node (N, N2);
+                     Set_Global_Type (N, N2);
+
+                  else
+                     --  Renaming is local, and will be resolved in instance
+
+                     Set_Associated_Node (N, Empty);
+                     Set_Etype  (N, Empty);
+                  end if;
+
+               else
+                  Set_Global_Type (N, N2);
+               end if;
 
             elsif Nkind (N) = N_Op_Concat
               and then Is_Generic_Type (Etype (N2))

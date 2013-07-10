@@ -1,8 +1,5 @@
 /* Subroutines for insn-output.c for SPARC.
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com)
    64-bit SPARC-V9 support by Michael Tiemann, Jim Wilson, and Doug Evans,
    at Cygnus Support.
@@ -4324,13 +4321,14 @@ mem_min_alignment (rtx mem, int desired)
    mapped into one sparc_mode_class mode.  */
 
 enum sparc_mode_class {
-  S_MODE, D_MODE, T_MODE, O_MODE,
+  H_MODE, S_MODE, D_MODE, T_MODE, O_MODE,
   SF_MODE, DF_MODE, TF_MODE, OF_MODE,
   CC_MODE, CCFP_MODE
 };
 
 /* Modes for single-word and smaller quantities.  */
-#define S_MODES ((1 << (int) S_MODE) | (1 << (int) SF_MODE))
+#define S_MODES \
+  ((1 << (int) H_MODE) | (1 << (int) S_MODE) | (1 << (int) SF_MODE))
 
 /* Modes for double-word and smaller quantities.  */
 #define D_MODES (S_MODES | (1 << (int) D_MODE) | (1 << DF_MODE))
@@ -4341,13 +4339,11 @@ enum sparc_mode_class {
 /* Modes for 8-word and smaller quantities.  */
 #define O_MODES (T_MODES | (1 << (int) O_MODE) | (1 << (int) OF_MODE))
 
-/* Modes for single-float quantities.  We must allow any single word or
-   smaller quantity.  This is because the fix/float conversion instructions
-   take integer inputs/outputs from the float registers.  */
-#define SF_MODES (S_MODES)
+/* Modes for single-float quantities.  */
+#define SF_MODES ((1 << (int) S_MODE) | (1 << (int) SF_MODE))
 
 /* Modes for double-float and smaller quantities.  */
-#define DF_MODES (D_MODES)
+#define DF_MODES (SF_MODES | (1 << (int) D_MODE) | (1 << DF_MODE))
 
 /* Modes for quad-float and smaller quantities.  */
 #define TF_MODES (DF_MODES | (1 << (int) TF_MODE))
@@ -4443,7 +4439,9 @@ sparc_init_modes (void)
 	case MODE_INT:
 	case MODE_PARTIAL_INT:
 	case MODE_COMPLEX_INT:
-	  if (GET_MODE_SIZE (i) <= 4)
+	  if (GET_MODE_SIZE (i) < 4)
+	    sparc_mode_class[i] = 1 << (int) H_MODE;
+	  else if (GET_MODE_SIZE (i) == 4)
 	    sparc_mode_class[i] = 1 << (int) S_MODE;
 	  else if (GET_MODE_SIZE (i) == 8)
 	    sparc_mode_class[i] = 1 << (int) D_MODE;
@@ -4455,14 +4453,16 @@ sparc_init_modes (void)
 	    sparc_mode_class[i] = 0;
 	  break;
 	case MODE_VECTOR_INT:
-	  if (GET_MODE_SIZE (i) <= 4)
-	    sparc_mode_class[i] = 1 << (int)SF_MODE;
+	  if (GET_MODE_SIZE (i) == 4)
+	    sparc_mode_class[i] = 1 << (int) SF_MODE;
 	  else if (GET_MODE_SIZE (i) == 8)
-	    sparc_mode_class[i] = 1 << (int)DF_MODE;
+	    sparc_mode_class[i] = 1 << (int) DF_MODE;
+	  else
+	    sparc_mode_class[i] = 0;
 	  break;
 	case MODE_FLOAT:
 	case MODE_COMPLEX_FLOAT:
-	  if (GET_MODE_SIZE (i) <= 4)
+	  if (GET_MODE_SIZE (i) == 4)
 	    sparc_mode_class[i] = 1 << (int) SF_MODE;
 	  else if (GET_MODE_SIZE (i) == 8)
 	    sparc_mode_class[i] = 1 << (int) DF_MODE;
@@ -9515,7 +9515,14 @@ sparc_solaris_elf_asm_named_section (const char *name, unsigned int flags,
   if (flags & SECTION_CODE)
     fputs (",#execinstr", asm_out_file);
 
-  /* ??? Handle SECTION_BSS.  */
+  /* Sun as only supports #nobits/#progbits since Solaris 10.  */
+  if (HAVE_AS_SPARC_NOBITS)
+    {
+      if (flags & SECTION_BSS)
+	fputs (",#nobits", asm_out_file);
+      else
+	fputs (",#progbits", asm_out_file);
+    }
 
   fputc ('\n', asm_out_file);
 }
@@ -11190,18 +11197,6 @@ sparc_emit_membar_for_model (enum memmodel model,
 
   if (before_after & 1)
     {
-      if (model == MEMMODEL_ACQUIRE
-          || model == MEMMODEL_ACQ_REL
-          || model == MEMMODEL_SEQ_CST)
-	{
-	  if (load_store & 1)
-	    mm |= LoadLoad | LoadStore;
-	  if (load_store & 2)
-	    mm |= StoreLoad | StoreStore;
-	}
-    }
-  if (before_after & 2)
-    {
       if (model == MEMMODEL_RELEASE
 	  || model == MEMMODEL_ACQ_REL
 	  || model == MEMMODEL_SEQ_CST)
@@ -11210,6 +11205,18 @@ sparc_emit_membar_for_model (enum memmodel model,
 	    mm |= LoadLoad | StoreLoad;
 	  if (load_store & 2)
 	    mm |= LoadStore | StoreStore;
+	}
+    }
+  if (before_after & 2)
+    {
+      if (model == MEMMODEL_ACQUIRE
+	  || model == MEMMODEL_ACQ_REL
+	  || model == MEMMODEL_SEQ_CST)
+	{
+	  if (load_store & 1)
+	    mm |= LoadLoad | LoadStore;
+	  if (load_store & 2)
+	    mm |= StoreLoad | StoreStore;
 	}
     }
 

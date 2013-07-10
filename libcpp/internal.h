@@ -1,6 +1,5 @@
 /* Part of CPP library.
-   Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007,
-   2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -302,6 +301,8 @@ struct cpp_buffer
 
   const unsigned char *buf;        /* Entire character buffer.  */
   const unsigned char *rlimit;     /* Writable byte at end of file.  */
+  const unsigned char *to_free;	   /* Pointer that should be freed when
+				      popping the buffer.  */
 
   _cpp_line_note *notes;           /* Array of notes.  */
   unsigned int cur_note;           /* Next note to process.  */
@@ -636,7 +637,8 @@ extern int _cpp_compare_file_date (cpp_reader *, const char *, int);
 extern void _cpp_report_missing_guards (cpp_reader *);
 extern void _cpp_init_files (cpp_reader *);
 extern void _cpp_cleanup_files (cpp_reader *);
-extern void _cpp_pop_file_buffer (cpp_reader *, struct _cpp_file *);
+extern void _cpp_pop_file_buffer (cpp_reader *, struct _cpp_file *,
+				  const unsigned char *);
 extern bool _cpp_save_file_entries (cpp_reader *pfile, FILE *f);
 extern bool _cpp_read_file_entries (cpp_reader *, FILE *);
 extern const char *_cpp_get_file_name (_cpp_file *);

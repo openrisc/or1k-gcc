@@ -1,6 +1,5 @@
 /* Integrated Register Allocator.  Changing code and generating moves.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -435,7 +434,7 @@ setup_entered_from_non_parent_p (void)
   loop_p loop;
 
   ira_assert (current_loops != NULL);
-  FOR_EACH_VEC_SAFE_ELT (ira_loops.larray, i, loop)
+  FOR_EACH_VEC_SAFE_ELT (get_loops (), i, loop)
     if (ira_loop_nodes[i].regno_allocno_map != NULL)
       ira_loop_nodes[i].entered_from_non_parent_p
 	= entered_from_non_parent_p (&ira_loop_nodes[i]);

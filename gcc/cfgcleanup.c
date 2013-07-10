@@ -1,7 +1,5 @@
 /* Control flow optimization code for GNU compiler.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010, 2011,
-   2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1138,6 +1136,28 @@ old_insns_match_p (int mode ATTRIBUTE_UNUSED, rtx i1, rtx i2)
 			CALL_INSN_FUNCTION_USAGE (i2))
 	  || SIBLING_CALL_P (i1) != SIBLING_CALL_P (i2))
 	return dir_none;
+
+      /* For address sanitizer, never crossjump __asan_report_* builtins,
+	 otherwise errors might be reported on incorrect lines.  */
+      if (flag_asan)
+	{
+	  rtx call = get_call_rtx_from (i1);
+	  if (call && GET_CODE (XEXP (XEXP (call, 0), 0)) == SYMBOL_REF)
+	    {
+	      rtx symbol = XEXP (XEXP (call, 0), 0);
+	      if (SYMBOL_REF_DECL (symbol)
+		  && TREE_CODE (SYMBOL_REF_DECL (symbol)) == FUNCTION_DECL)
+		{
+		  if ((DECL_BUILT_IN_CLASS (SYMBOL_REF_DECL (symbol))
+		       == BUILT_IN_NORMAL)
+		      && DECL_FUNCTION_CODE (SYMBOL_REF_DECL (symbol))
+			 >= BUILT_IN_ASAN_REPORT_LOAD1
+		      && DECL_FUNCTION_CODE (SYMBOL_REF_DECL (symbol))
+			 <= BUILT_IN_ASAN_REPORT_STORE16)
+		    return dir_none;
+		}
+	    }
+	}
     }
 
 #ifdef STACK_REGS
@@ -2997,14 +3017,11 @@ cleanup_cfg (int mode)
       && (changed
 	  || (mode & CLEANUP_CFG_CHANGED)))
     {
-      bitmap changed_bbs;
       timevar_push (TV_REPAIR_LOOPS);
       /* The above doesn't preserve dominance info if available.  */
       gcc_assert (!dom_info_available_p (CDI_DOMINATORS));
       calculate_dominance_info (CDI_DOMINATORS);
-      changed_bbs = BITMAP_ALLOC (NULL);
-      fix_loop_structure (changed_bbs);
-      BITMAP_FREE (changed_bbs);
+      fix_loop_structure (NULL);
       free_dominance_info (CDI_DOMINATORS);
       timevar_pop (TV_REPAIR_LOOPS);
     }

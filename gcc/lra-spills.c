@@ -1,6 +1,5 @@
 /* Change pseudos by memory.
-   Copyright (C) 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -569,6 +568,7 @@ lra_spill (void)
   free (slots);
   free (pseudo_slots);
   free (pseudo_regnos);
+  free (spill_hard_reg);
 }
 
 /* Apply alter_subreg for subregs of regs in *LOC.  Use FINAL_P for

@@ -1,6 +1,5 @@
 /* Vectorizer
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Dorit Naishlos <dorit@il.ibm.com>
 
 This file is part of GCC.
@@ -924,7 +923,6 @@ extern bool vect_analyze_data_ref_accesses (loop_vec_info, bb_vec_info);
 extern bool vect_prune_runtime_alias_test_list (loop_vec_info);
 extern tree vect_check_gather (gimple, loop_vec_info, tree *, tree *,
 			       int *);
-extern bool vect_check_strided_load (gimple, loop_vec_info, tree *, tree *);
 extern bool vect_analyze_data_refs (loop_vec_info, bb_vec_info, int *);
 extern tree vect_create_data_ref_ptr (gimple, tree, struct loop *, tree,
 				      tree *, gimple_stmt_iterator *,
@@ -980,7 +978,7 @@ extern bool vect_analyze_slp (loop_vec_info, bb_vec_info);
 extern bool vect_make_slp_decision (loop_vec_info);
 extern void vect_detect_hybrid_slp (loop_vec_info);
 extern void vect_get_slp_defs (vec<tree> , slp_tree,
-			       vec<slp_void_p> *, int);
+			       vec<vec<tree> > *, int);
 
 extern LOC find_bb_location (basic_block);
 extern bb_vec_info vect_slp_analyze_bb (basic_block);

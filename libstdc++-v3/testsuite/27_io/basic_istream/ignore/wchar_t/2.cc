@@ -1,4 +1,4 @@
-// Copyright (C) 2004, 2005, 2006, 2007, 2009 Free Software Foundation
+// Copyright (C) 2004-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -18,6 +18,11 @@
 // 27.6.1.3 unformatted input functions
 
 // { dg-xfail-run-if "not supported on OR1K newlib" { or1k-*-elf } }
+// { dg-options "-DMAX_SIZE=355" { target simulator } }
+
+#ifndef MAX_SIZE
+#define MAX_SIZE 555
+#endif
 
 #include <istream>
 #include <string>
@@ -69,7 +74,7 @@ void test01()
 
   const wchar_t delim = L'|';
   const unsigned nchunks = 10;
-  const wstring data = prepare(555, nchunks, delim);
+  const wstring data = prepare(MAX_SIZE, nchunks, delim);
 
   wofstream ofstrm;
   ofstrm.open(filename);

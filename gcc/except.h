@@ -1,6 +1,5 @@
 /* Exception Handling interface routines.
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2007, 2008, 2009, 2010  Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
    Contributed by Mike Stump <mrs@cygnus.com>.
 
 This file is part of GCC.
@@ -230,6 +229,7 @@ extern void init_eh_for_function (void);
 
 extern void remove_eh_landing_pad (eh_landing_pad);
 extern void remove_eh_handler (eh_region);
+extern void remove_unreachable_eh_regions (sbitmap);
 
 extern bool current_function_has_exception_handlers (void);
 extern void output_function_exception_table (const char *);

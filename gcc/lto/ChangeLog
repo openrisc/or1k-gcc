@@ -1,3 +1,40 @@
+2013-05-31  Release Manager
+
+	* GCC 4.8.1 released.
+
+2013-03-22  Release Manager
+
+	* GCC 4.8.0 released.
+
+2013-02-08  Richard Biener  <rguenther@suse.de>
+
+	PR lto/56231
+	* lto-lang.c (lto_init): Do not enter a dummy file.
+
+2013-02-07  Uros Bizjak  <ubizjak@gmail.com>
+
+	PR bootstrap/56227
+	* lto.c (lto_resolution_ready): Use %wx instead of
+	HOST_WIDE_INT_PRINT_HEX_PURE in the argument to internal_error.
+
+2013-02-04  Richard Guenther  <rguenther@suse.de>
+
+	PR lto/56168
+	* lto.c (read_cgraph_and_symbols): Do not call lto_symtab_merge_decls
+	or lto_fixup_decls at LTRANS time.
+
+2013-01-09  Jan Hubicka  <jh@suse.cz>
+
+	PR lto/45375
+	* lto.c (do_whole_program_analysis): Remove unreachable nodes after IPA.
+
+2012-12-10  H.J. Lu  <hongjiu.lu@intel.com>
+
+	PR lto/55466
+	* lto.c (lto_register_var_decl_in_symtab): Don't record static
+	variables.
+	(lto_main): Record the global variables if WPA isn't enabled.
+
 2012-11-20  Diego Novillo  <dnovillo@google.com>
 	    Jakub Jelinek  <jakub@redhat.com>
 

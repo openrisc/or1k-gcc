@@ -1,6 +1,5 @@
 /* Miscellaneous stuff that doesn't fit anywhere else.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -158,8 +157,11 @@ gfc_typename (gfc_typespec *ts)
       sprintf (buffer, "TYPE(%s)", ts->u.derived->name);
       break;
     case BT_CLASS:
-      sprintf (buffer, "CLASS(%s)",
-	       ts->u.derived->components->ts.u.derived->name);
+      ts = &ts->u.derived->components->ts;
+      if (ts->u.derived->attr.unlimited_polymorphic)
+	sprintf (buffer, "CLASS(*)");
+      else
+	sprintf (buffer, "CLASS(%s)", ts->u.derived->name);
       break;
     case BT_ASSUMED:
       sprintf (buffer, "TYPE(*)");

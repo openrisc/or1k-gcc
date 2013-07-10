@@ -5,15 +5,45 @@
 package net
 
 import (
+	"reflect"
 	"runtime"
 	"testing"
 )
 
+var resolveUDPAddrTests = []struct {
+	net     string
+	litAddr string
+	addr    *UDPAddr
+	err     error
+}{
+	{"udp", "127.0.0.1:0", &UDPAddr{IP: IPv4(127, 0, 0, 1), Port: 0}, nil},
+	{"udp4", "127.0.0.1:65535", &UDPAddr{IP: IPv4(127, 0, 0, 1), Port: 65535}, nil},
+
+	{"udp", "[::1]:1", &UDPAddr{IP: ParseIP("::1"), Port: 1}, nil},
+	{"udp6", "[::1]:65534", &UDPAddr{IP: ParseIP("::1"), Port: 65534}, nil},
+
+	{"", "127.0.0.1:0", &UDPAddr{IP: IPv4(127, 0, 0, 1), Port: 0}, nil}, // Go 1.0 behavior
+	{"", "[::1]:0", &UDPAddr{IP: ParseIP("::1"), Port: 0}, nil},         // Go 1.0 behavior
+
+	{"sip", "127.0.0.1:0", nil, UnknownNetworkError("sip")},
+}
+
+func TestResolveUDPAddr(t *testing.T) {
+	for _, tt := range resolveUDPAddrTests {
+		addr, err := ResolveUDPAddr(tt.net, tt.litAddr)
+		if err != tt.err {
+			t.Fatalf("ResolveUDPAddr(%v, %v) failed: %v", tt.net, tt.litAddr, err)
+		}
+		if !reflect.DeepEqual(addr, tt.addr) {
+			t.Fatalf("got %#v; expected %#v", addr, tt.addr)
+		}
+	}
+}
+
 func TestWriteToUDP(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9":
-		t.Logf("skipping test on %q", runtime.GOOS)
-		return
+		t.Skipf("skipping test on %q", runtime.GOOS)
 	}
 
 	l, err := ListenPacket("udp", "127.0.0.1:0")
@@ -99,8 +129,7 @@ var udpConnLocalNameTests = []struct {
 
 func TestUDPConnLocalName(t *testing.T) {
 	if testing.Short() || !*testExternal {
-		t.Logf("skipping test to avoid external network")
-		return
+		t.Skip("skipping test to avoid external network")
 	}
 
 	for _, tt := range udpConnLocalNameTests {

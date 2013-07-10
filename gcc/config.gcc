@@ -1,6 +1,5 @@
 # GCC target-specific configuration file.
-# Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-# 2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+# Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
 #This file is part of GCC.
 
@@ -540,6 +539,9 @@ x86_64-*-*)
 	fi
 	tm_file="vxworks-dummy.h ${tm_file}"
 	;;
+arm*-*-* | mips*-*-* | sh*-*-* | sparc*-*-*)
+	tm_file="vxworks-dummy.h ${tm_file}"
+	;;
 esac
 
 # On a.out targets, we need to use collect2.
@@ -742,6 +744,9 @@ case ${target} in
   use_gcc_stdint=wrap
   tm_defines="$tm_defines DEFAULT_LIBC=LIBC_UCLIBC SINGLE_LIBC"
   ;;
+*-*-rdos*)
+  use_gcc_stdint=wrap
+  ;;
 *-*-solaris2*)
   # i?86-*-solaris2* needs to insert headers between cpu default and
   # Solaris 2 specific ones.
@@ -862,7 +867,7 @@ arm-wrs-vxworks)
 	tmake_file="${tmake_file} arm/t-arm arm/t-vxworks"
 	;;
 arm*-*-netbsdelf*)
-	tm_file="dbxelf.h elfos.h netbsd.h netbsd-elf.h arm/elf.h arm/aout.h arm/arm.h arm/netbsd-elf.h"
+	tm_file="dbxelf.h elfos.h netbsd.h netbsd-elf.h arm/elf.h arm/aout.h ${tm_file} arm/netbsd-elf.h"
 	extra_options="${extra_options} netbsd.opt netbsd-elf.opt"
 	tmake_file="${tmake_file} arm/t-arm"
 	;;
@@ -874,7 +879,7 @@ arm*-*-linux-*)			# ARM GNU/Linux with ELF
 	    ;;
 	esac
 	tmake_file="${tmake_file} arm/t-arm arm/t-arm-elf arm/t-bpabi arm/t-linux-eabi"
-	tm_file="$tm_file arm/bpabi.h arm/linux-eabi.h arm/aout.h arm/arm.h"
+	tm_file="$tm_file arm/bpabi.h arm/linux-eabi.h arm/aout.h vxworks-dummy.h arm/arm.h"
 	# Define multilib configuration for arm-linux-androideabi.
 	case ${target} in
 	*-androideabi)
@@ -892,7 +897,7 @@ arm*-*-linux-*)			# ARM GNU/Linux with ELF
 arm*-*-uclinux*eabi*)		# ARM ucLinux
 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/linux-gas.h arm/uclinux-elf.h glibc-stdint.h"
 	tmake_file="arm/t-arm arm/t-arm-elf arm/t-bpabi"
-	tm_file="$tm_file arm/bpabi.h arm/uclinux-eabi.h arm/aout.h arm/arm.h"
+	tm_file="$tm_file arm/bpabi.h arm/uclinux-eabi.h arm/aout.h vxworks-dummy.h arm/arm.h"
 	# The BPABI long long divmod functions return a 128-bit value in
 	# registers r0-r3.  Correctly modeling that requires the use of
 	# TImode.
@@ -901,6 +906,10 @@ arm*-*-uclinux*eabi*)		# ARM ucLinux
 	default_use_cxa_atexit=yes
 	;;
 arm*-*-eabi* | arm*-*-symbianelf* | arm*-*-rtems*)
+	case ${target} in
+	arm*eb-*-eabi*)
+	  tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=1"
+	esac
 	# The BPABI long long divmod functions return a 128-bit value in
 	# registers r0-r3.  Correctly modeling that requires the use of
 	# TImode.
@@ -925,7 +934,7 @@ arm*-*-eabi* | arm*-*-symbianelf* | arm*-*-rtems*)
 	  tmake_file="${tmake_file} arm/t-symbian"
 	  ;;
 	esac
-	tm_file="${tm_file} arm/aout.h arm/arm.h"
+	tm_file="${tm_file} arm/aout.h vxworks-dummy.h arm/arm.h"
 	;;
 avr-*-rtems*)
 	tm_file="elfos.h avr/elf.h avr/avr-arch.h avr/avr.h dbxelf.h avr/rtems.h rtems.h newlib-stdint.h"
@@ -1208,6 +1217,13 @@ i[34567]86-*-elf*)
 x86_64-*-elf*)
 	tm_file="${tm_file} i386/unix.h i386/att.h dbxelf.h elfos.h newlib-stdint.h i386/i386elf.h i386/x86-64.h"
 	;;
+i[34567]86-*-rdos*)
+    tm_file="${tm_file} i386/unix.h i386/att.h dbxelf.h elfos.h newlib-stdint.h i386/i386elf.h i386/rdos.h"
+    ;;
+x86_64-*-rdos*)
+    tm_file="${tm_file} i386/unix.h i386/att.h dbxelf.h elfos.h newlib-stdint.h i386/i386elf.h i386/x86-64.h i386/rdos.h i386/rdos64.h"
+    tmake_file="i386/t-i386elf t-svr4"
+    ;;
 i[34567]86-*-freebsd*)
 	tm_file="${tm_file} i386/unix.h i386/att.h dbxelf.h elfos.h ${fbsd_tm_file} i386/freebsd.h"
 	;;
@@ -1731,9 +1747,20 @@ mep-*-*)
 	use_gcc_stdint=wrap
 	;;
 microblaze*-linux*)
+	case $target in
+		microblazeel-*)
+			tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=0"
+			;;
+		microblaze-*)
+			tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=4321"
+			;;
+	esac
 	tm_file="${tm_file} dbxelf.h gnu-user.h linux.h microblaze/linux.h"
+	tm_file="${tm_file} glibc-stdint.h"
 	c_target_objs="${c_target_objs} microblaze-c.o"
 	cxx_target_objs="${cxx_target_objs} microblaze-c.o"
+	tmake_file="${tmake_file} microblaze/t-microblaze"
+	tmake_file="${tmake_file} microblaze/t-microblaze-linux"
 	;;
 microblaze*-*-rtems*)
 	tm_file="${tm_file} dbxelf.h"
@@ -1743,11 +1770,19 @@ microblaze*-*-rtems*)
 	tmake_file="${tmake_file} microblaze/t-microblaze"
 	tmake_file="${tmake_file} t-rtems microblaze/t-rtems"
         ;;
-microblaze*-*-*)
-        tm_file="${tm_file} dbxelf.h"
+microblaze*-*-elf)
+	case $target in
+		microblazeel-*)
+			tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=0"
+			;;
+		microblaze-*)
+			tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=4321"
+			;;
+	esac
+	tm_file="${tm_file} dbxelf.h newlib-stdint.h"
 	c_target_objs="${c_target_objs} microblaze-c.o"
 	cxx_target_objs="${cxx_target_objs} microblaze-c.o"
-        tmake_file="${tmake_file} microblaze/t-microblaze"
+	tmake_file="${tmake_file} microblaze/t-microblaze"
         ;;
 mips*-*-netbsd*)			# NetBSD/mips, either endian.
 	target_cpu_default="MASK_ABICALLS"
@@ -2364,7 +2399,7 @@ sh-*-elf* | sh[12346l]*-*-elf* | \
 		sh[1234]*)	sh_multilibs=${sh_cpu_target} ;;
 		sh64* | sh5*)	sh_multilibs=m5-32media,m5-32media-nofpu,m5-compact,m5-compact-nofpu,m5-64media,m5-64media-nofpu ;;
 		sh-superh-*)	sh_multilibs=m4,m4-single,m4-single-only,m4-nofpu ;;
-		sh*-*-linux*)	sh_multilibs=m1,m3e,m4 ;;
+		sh*-*-linux*)	sh_multilibs=m1,m2,m2a,m3e,m4 ;;
 		sh*-*-netbsd*)	sh_multilibs=m3,m3e,m4 ;;
 		*) sh_multilibs=m1,m2,m2e,m4,m4-single,m4-single-only,m2a,m2a-single ;;
 		esac
@@ -2568,6 +2603,9 @@ v850-*-rtems*)
 	;;
 v850*-*-*)
 	case ${target} in
+	v850e3v5-*-*)
+		target_cpu_default="TARGET_CPU_v850e3v5"
+		;;
 	v850e2v3-*-*)
 		target_cpu_default="TARGET_CPU_v850e2v3"
 		;;
@@ -3628,7 +3666,7 @@ case "${target}" in
 	v850*-*-*)
 		supported_defaults=cpu
 		case ${with_cpu} in
-		"" | v850e | v850e1 | v850e2 | v850es | v850e2v3)
+		"" | v850e | v850e1 | v850e2 | v850es | v850e2v3 | v850e3v5)
 			# OK
 			;;
 		*)
@@ -3755,7 +3793,7 @@ case ${target} in
 		case "x$with_cpu" in
 		x)
 			;;
-		xv850e | xv850e1 | xv850e2 | xv850e2v3)
+		xv850e | xv850e1 | xv850e2 | xv850e2v3 | xv850e3v5)
 			target_cpu_default2="TARGET_CPU_$with_cpu"
 			;;
 		xv850es)

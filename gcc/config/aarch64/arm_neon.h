@@ -1,6 +1,6 @@
 /* ARM NEON intrinsics include file.
 
-   Copyright (C) 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GCC.
@@ -35,11 +35,11 @@ typedef __builtin_aarch64_simd_hi int16x4_t
   __attribute__ ((__vector_size__ (8)));
 typedef __builtin_aarch64_simd_si int32x2_t
   __attribute__ ((__vector_size__ (8)));
-typedef __builtin_aarch64_simd_di int64x1_t;
-typedef __builtin_aarch64_simd_si int32x1_t;
-typedef __builtin_aarch64_simd_hi int16x1_t;
-typedef __builtin_aarch64_simd_qi int8x1_t;
-typedef __builtin_aarch64_simd_df float64x1_t;
+typedef int64_t int64x1_t;
+typedef int32_t int32x1_t;
+typedef int16_t int16x1_t;
+typedef int8_t int8x1_t;
+typedef double float64x1_t;
 typedef __builtin_aarch64_simd_sf float32x2_t
   __attribute__ ((__vector_size__ (8)));
 typedef __builtin_aarch64_simd_poly8 poly8x8_t
@@ -52,10 +52,10 @@ typedef __builtin_aarch64_simd_uhi uint16x4_t
   __attribute__ ((__vector_size__ (8)));
 typedef __builtin_aarch64_simd_usi uint32x2_t
   __attribute__ ((__vector_size__ (8)));
-typedef __builtin_aarch64_simd_udi uint64x1_t;
-typedef __builtin_aarch64_simd_usi uint32x1_t;
-typedef __builtin_aarch64_simd_uhi uint16x1_t;
-typedef __builtin_aarch64_simd_uqi uint8x1_t;
+typedef uint64_t uint64x1_t;
+typedef uint32_t uint32x1_t;
+typedef uint16_t uint16x1_t;
+typedef uint8_t uint8x1_t;
 typedef __builtin_aarch64_simd_qi int8x16_t
   __attribute__ ((__vector_size__ (16)));
 typedef __builtin_aarch64_simd_hi int16x8_t
@@ -8387,156 +8387,156 @@ vhsubq_u32 (uint32x4_t a, uint32x4_t b)
 }
 
 __extension__ static __inline float32x2_t __attribute__ ((__always_inline__))
-vld1_dup_f32 (float32_t * a)
+vld1_dup_f32 (const float32_t * a)
 {
   float32x2_t result;
-  __asm__ ("ld1r {%0.2s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.2s}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline float64x1_t __attribute__ ((__always_inline__))
-vld1_dup_f64 (float64_t * a)
+vld1_dup_f64 (const float64_t * a)
 {
   float64x1_t result;
-  __asm__ ("ld1 {%0.1d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.1d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline poly8x8_t __attribute__ ((__always_inline__))
-vld1_dup_p8 (poly8_t * a)
+vld1_dup_p8 (const poly8_t * a)
 {
   poly8x8_t result;
-  __asm__ ("ld1r {%0.8b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.8b}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline poly16x4_t __attribute__ ((__always_inline__))
-vld1_dup_p16 (poly16_t * a)
+vld1_dup_p16 (const poly16_t * a)
 {
   poly16x4_t result;
-  __asm__ ("ld1r {%0.4h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.4h}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int8x8_t __attribute__ ((__always_inline__))
-vld1_dup_s8 (int8_t * a)
+vld1_dup_s8 (const int8_t * a)
 {
   int8x8_t result;
-  __asm__ ("ld1r {%0.8b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.8b}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int16x4_t __attribute__ ((__always_inline__))
-vld1_dup_s16 (int16_t * a)
+vld1_dup_s16 (const int16_t * a)
 {
   int16x4_t result;
-  __asm__ ("ld1r {%0.4h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.4h}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int32x2_t __attribute__ ((__always_inline__))
-vld1_dup_s32 (int32_t * a)
+vld1_dup_s32 (const int32_t * a)
 {
   int32x2_t result;
-  __asm__ ("ld1r {%0.2s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.2s}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int64x1_t __attribute__ ((__always_inline__))
-vld1_dup_s64 (int64_t * a)
+vld1_dup_s64 (const int64_t * a)
 {
   int64x1_t result;
-  __asm__ ("ld1 {%0.1d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.1d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint8x8_t __attribute__ ((__always_inline__))
-vld1_dup_u8 (uint8_t * a)
+vld1_dup_u8 (const uint8_t * a)
 {
   uint8x8_t result;
-  __asm__ ("ld1r {%0.8b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.8b}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint16x4_t __attribute__ ((__always_inline__))
-vld1_dup_u16 (uint16_t * a)
+vld1_dup_u16 (const uint16_t * a)
 {
   uint16x4_t result;
-  __asm__ ("ld1r {%0.4h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.4h}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint32x2_t __attribute__ ((__always_inline__))
-vld1_dup_u32 (uint32_t * a)
+vld1_dup_u32 (const uint32_t * a)
 {
   uint32x2_t result;
-  __asm__ ("ld1r {%0.2s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.2s}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint64x1_t __attribute__ ((__always_inline__))
-vld1_dup_u64 (uint64_t * a)
+vld1_dup_u64 (const uint64_t * a)
 {
   uint64x1_t result;
-  __asm__ ("ld1 {%0.1d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.1d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline float32x2_t __attribute__ ((__always_inline__))
-vld1_f32 (float32_t * a)
+vld1_f32 (const float32_t * a)
 {
   float32x2_t result;
-  __asm__ ("ld1 {%0.2s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.2s}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const float32x2_t *_a = (float32x2_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline float64x1_t __attribute__ ((__always_inline__))
-vld1_f64 (float64_t * a)
+vld1_f64 (const float64_t * a)
 {
   float64x1_t result;
-  __asm__ ("ld1 {%0.1d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.1d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
@@ -8544,11 +8544,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        float32x2_t b_ = (b);                                            \
-       float32_t * a_ = (a);                                            \
+       const float32_t * a_ = (a);                                      \
        float32x2_t result;                                              \
-       __asm__ ("ld1 {%0.s}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.s}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8557,11 +8557,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        float64x1_t b_ = (b);                                            \
-       float64_t * a_ = (a);                                            \
+       const float64_t * a_ = (a);                                      \
        float64x1_t result;                                              \
-       __asm__ ("ld1 {%0.d}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.d}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8570,11 +8570,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        poly8x8_t b_ = (b);                                              \
-       poly8_t * a_ = (a);                                              \
+       const poly8_t * a_ = (a);                                        \
        poly8x8_t result;                                                \
-       __asm__ ("ld1 {%0.b}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.b}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8583,11 +8583,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        poly16x4_t b_ = (b);                                             \
-       poly16_t * a_ = (a);                                             \
+       const poly16_t * a_ = (a);                                       \
        poly16x4_t result;                                               \
-       __asm__ ("ld1 {%0.h}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.h}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8596,11 +8596,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int8x8_t b_ = (b);                                               \
-       int8_t * a_ = (a);                                               \
+       const int8_t * a_ = (a);                                         \
        int8x8_t result;                                                 \
-       __asm__ ("ld1 {%0.b}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.b}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8609,11 +8609,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int16x4_t b_ = (b);                                              \
-       int16_t * a_ = (a);                                              \
+       const int16_t * a_ = (a);                                        \
        int16x4_t result;                                                \
-       __asm__ ("ld1 {%0.h}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.h}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8622,11 +8622,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int32x2_t b_ = (b);                                              \
-       int32_t * a_ = (a);                                              \
+       const int32_t * a_ = (a);                                        \
        int32x2_t result;                                                \
-       __asm__ ("ld1 {%0.s}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.s}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8635,11 +8635,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int64x1_t b_ = (b);                                              \
-       int64_t * a_ = (a);                                              \
+       const int64_t * a_ = (a);                                        \
        int64x1_t result;                                                \
-       __asm__ ("ld1 {%0.d}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.d}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8648,11 +8648,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint8x8_t b_ = (b);                                              \
-       uint8_t * a_ = (a);                                              \
+       const uint8_t * a_ = (a);                                        \
        uint8x8_t result;                                                \
-       __asm__ ("ld1 {%0.b}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.b}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8661,11 +8661,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint16x4_t b_ = (b);                                             \
-       uint16_t * a_ = (a);                                             \
+       const uint16_t * a_ = (a);                                       \
        uint16x4_t result;                                               \
-       __asm__ ("ld1 {%0.h}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.h}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8674,11 +8674,11 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint32x2_t b_ = (b);                                             \
-       uint32_t * a_ = (a);                                             \
+       const uint32_t * a_ = (a);                                       \
        uint32x2_t result;                                               \
-       __asm__ ("ld1 {%0.s}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.s}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8687,276 +8687,276 @@ vld1_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint64x1_t b_ = (b);                                             \
-       uint64_t * a_ = (a);                                             \
+       const uint64_t * a_ = (a);                                       \
        uint64x1_t result;                                               \
-       __asm__ ("ld1 {%0.d}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.d}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i" (c), "Utv"(*a_), "0"(b_)                          \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
 
 __extension__ static __inline poly8x8_t __attribute__ ((__always_inline__))
-vld1_p8 (poly8_t * a)
+vld1_p8 (const poly8_t * a)
 {
   poly8x8_t result;
-  __asm__ ("ld1 {%0.8b}, [%1]"
-           : "=w"(result)
-           : "r"(a)
-           : /* No clobbers */);
+  __asm__ ("ld1 {%0.8b}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const poly8x8_t *_a = (poly8x8_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline poly16x4_t __attribute__ ((__always_inline__))
-vld1_p16 (poly16_t * a)
+vld1_p16 (const poly16_t * a)
 {
   poly16x4_t result;
-  __asm__ ("ld1 {%0.4h}, [%1]"
-           : "=w"(result)
-           : "r"(a)
-           : /* No clobbers */);
+  __asm__ ("ld1 {%0.4h}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const poly16x4_t *_a = (poly16x4_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int8x8_t __attribute__ ((__always_inline__))
-vld1_s8 (int8_t * a)
+vld1_s8 (const int8_t * a)
 {
   int8x8_t result;
-  __asm__ ("ld1 {%0.8b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.8b}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const int8x8_t *_a = (int8x8_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int16x4_t __attribute__ ((__always_inline__))
-vld1_s16 (int16_t * a)
+vld1_s16 (const int16_t * a)
 {
   int16x4_t result;
-  __asm__ ("ld1 {%0.4h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.4h}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const int16x4_t *_a = (int16x4_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int32x2_t __attribute__ ((__always_inline__))
-vld1_s32 (int32_t * a)
+vld1_s32 (const int32_t * a)
 {
   int32x2_t result;
-  __asm__ ("ld1 {%0.2s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.2s}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const int32x2_t *_a = (int32x2_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int64x1_t __attribute__ ((__always_inline__))
-vld1_s64 (int64_t * a)
+vld1_s64 (const int64_t * a)
 {
   int64x1_t result;
-  __asm__ ("ld1 {%0.1d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.1d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint8x8_t __attribute__ ((__always_inline__))
-vld1_u8 (uint8_t * a)
+vld1_u8 (const uint8_t * a)
 {
   uint8x8_t result;
-  __asm__ ("ld1 {%0.8b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.8b}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const uint8x8_t *_a = (uint8x8_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint16x4_t __attribute__ ((__always_inline__))
-vld1_u16 (uint16_t * a)
+vld1_u16 (const uint16_t * a)
 {
   uint16x4_t result;
-  __asm__ ("ld1 {%0.4h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.4h}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const uint16x4_t *_a = (uint16x4_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint32x2_t __attribute__ ((__always_inline__))
-vld1_u32 (uint32_t * a)
+vld1_u32 (const uint32_t * a)
 {
   uint32x2_t result;
-  __asm__ ("ld1 {%0.2s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.2s}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const uint32x2_t *_a = (uint32x2_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint64x1_t __attribute__ ((__always_inline__))
-vld1_u64 (uint64_t * a)
+vld1_u64 (const uint64_t * a)
 {
   uint64x1_t result;
-  __asm__ ("ld1 {%0.1d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.1d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline float32x4_t __attribute__ ((__always_inline__))
-vld1q_dup_f32 (float32_t * a)
+vld1q_dup_f32 (const float32_t * a)
 {
   float32x4_t result;
-  __asm__ ("ld1r {%0.4s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.4s}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline float64x2_t __attribute__ ((__always_inline__))
-vld1q_dup_f64 (float64_t * a)
+vld1q_dup_f64 (const float64_t * a)
 {
   float64x2_t result;
-  __asm__ ("ld1r {%0.2d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.2d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline poly8x16_t __attribute__ ((__always_inline__))
-vld1q_dup_p8 (poly8_t * a)
+vld1q_dup_p8 (const poly8_t * a)
 {
   poly8x16_t result;
-  __asm__ ("ld1r {%0.16b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.16b}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline poly16x8_t __attribute__ ((__always_inline__))
-vld1q_dup_p16 (poly16_t * a)
+vld1q_dup_p16 (const poly16_t * a)
 {
   poly16x8_t result;
-  __asm__ ("ld1r {%0.8h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.8h}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int8x16_t __attribute__ ((__always_inline__))
-vld1q_dup_s8 (int8_t * a)
+vld1q_dup_s8 (const int8_t * a)
 {
   int8x16_t result;
-  __asm__ ("ld1r {%0.16b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.16b}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
-vld1q_dup_s16 (int16_t * a)
+vld1q_dup_s16 (const int16_t * a)
 {
   int16x8_t result;
-  __asm__ ("ld1r {%0.8h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.8h}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
-vld1q_dup_s32 (int32_t * a)
+vld1q_dup_s32 (const int32_t * a)
 {
   int32x4_t result;
-  __asm__ ("ld1r {%0.4s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.4s}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int64x2_t __attribute__ ((__always_inline__))
-vld1q_dup_s64 (int64_t * a)
+vld1q_dup_s64 (const int64_t * a)
 {
   int64x2_t result;
-  __asm__ ("ld1r {%0.2d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.2d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint8x16_t __attribute__ ((__always_inline__))
-vld1q_dup_u8 (uint8_t * a)
+vld1q_dup_u8 (const uint8_t * a)
 {
   uint8x16_t result;
-  __asm__ ("ld1r {%0.16b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.16b}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint16x8_t __attribute__ ((__always_inline__))
-vld1q_dup_u16 (uint16_t * a)
+vld1q_dup_u16 (const uint16_t * a)
 {
   uint16x8_t result;
-  __asm__ ("ld1r {%0.8h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.8h}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint32x4_t __attribute__ ((__always_inline__))
-vld1q_dup_u32 (uint32_t * a)
+vld1q_dup_u32 (const uint32_t * a)
 {
   uint32x4_t result;
-  __asm__ ("ld1r {%0.4s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.4s}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint64x2_t __attribute__ ((__always_inline__))
-vld1q_dup_u64 (uint64_t * a)
+vld1q_dup_u64 (const uint64_t * a)
 {
   uint64x2_t result;
-  __asm__ ("ld1r {%0.2d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1r {%0.2d}, %1"
+	   : "=w"(result)
+	   : "Utv"(*a)
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline float32x4_t __attribute__ ((__always_inline__))
-vld1q_f32 (float32_t * a)
+vld1q_f32 (const float32_t * a)
 {
   float32x4_t result;
-  __asm__ ("ld1 {%0.4s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.4s}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const float32x4_t *_a = (float32x4_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline float64x2_t __attribute__ ((__always_inline__))
-vld1q_f64 (float64_t * a)
+vld1q_f64 (const float64_t * a)
 {
   float64x2_t result;
-  __asm__ ("ld1 {%0.2d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.2d}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const float64x2_t *_a = (float64x2_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
@@ -8964,11 +8964,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        float32x4_t b_ = (b);                                            \
-       float32_t * a_ = (a);                                            \
+       const float32_t * a_ = (a);                                      \
        float32x4_t result;                                              \
-       __asm__ ("ld1 {%0.s}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.s}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8977,11 +8977,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        float64x2_t b_ = (b);                                            \
-       float64_t * a_ = (a);                                            \
+       const float64_t * a_ = (a);                                      \
        float64x2_t result;                                              \
-       __asm__ ("ld1 {%0.d}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.d}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -8990,11 +8990,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        poly8x16_t b_ = (b);                                             \
-       poly8_t * a_ = (a);                                              \
+       const poly8_t * a_ = (a);                                        \
        poly8x16_t result;                                               \
-       __asm__ ("ld1 {%0.b}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.b}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9003,11 +9003,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        poly16x8_t b_ = (b);                                             \
-       poly16_t * a_ = (a);                                             \
+       const poly16_t * a_ = (a);                                       \
        poly16x8_t result;                                               \
-       __asm__ ("ld1 {%0.h}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.h}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9016,11 +9016,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int8x16_t b_ = (b);                                              \
-       int8_t * a_ = (a);                                               \
+       const int8_t * a_ = (a);                                         \
        int8x16_t result;                                                \
-       __asm__ ("ld1 {%0.b}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.b}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9029,11 +9029,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int16x8_t b_ = (b);                                              \
-       int16_t * a_ = (a);                                              \
+       const int16_t * a_ = (a);                                        \
        int16x8_t result;                                                \
-       __asm__ ("ld1 {%0.h}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.h}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9042,11 +9042,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int32x4_t b_ = (b);                                              \
-       int32_t * a_ = (a);                                              \
+       const int32_t * a_ = (a);                                        \
        int32x4_t result;                                                \
-       __asm__ ("ld1 {%0.s}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.s}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9055,11 +9055,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        int64x2_t b_ = (b);                                              \
-       int64_t * a_ = (a);                                              \
+       const int64_t * a_ = (a);                                        \
        int64x2_t result;                                                \
-       __asm__ ("ld1 {%0.d}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.d}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9068,11 +9068,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint8x16_t b_ = (b);                                             \
-       uint8_t * a_ = (a);                                              \
+       const uint8_t * a_ = (a);                                        \
        uint8x16_t result;                                               \
-       __asm__ ("ld1 {%0.b}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.b}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9081,11 +9081,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint16x8_t b_ = (b);                                             \
-       uint16_t * a_ = (a);                                             \
+       const uint16_t * a_ = (a);                                       \
        uint16x8_t result;                                               \
-       __asm__ ("ld1 {%0.h}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.h}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9094,11 +9094,11 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint32x4_t b_ = (b);                                             \
-       uint32_t * a_ = (a);                                             \
+       const uint32_t * a_ = (a);                                       \
        uint32x4_t result;                                               \
-       __asm__ ("ld1 {%0.s}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.s}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
@@ -9107,122 +9107,122 @@ vld1q_f64 (float64_t * a)
   __extension__                                                         \
     ({                                                                  \
        uint64x2_t b_ = (b);                                             \
-       uint64_t * a_ = (a);                                             \
+       const uint64_t * a_ = (a);                                       \
        uint64x2_t result;                                               \
-       __asm__ ("ld1 {%0.d}[%3],[%1]"                                   \
+       __asm__ ("ld1 {%0.d}[%1], %2"                                    \
                 : "=w"(result)                                          \
-                : "r"(a_), "0"(b_), "i"(c)                              \
+                : "i"(c), "Utv"(*a_), "0"(b_)                           \
                 : /* No clobbers */);                                   \
        result;                                                          \
      })
 
 __extension__ static __inline poly8x16_t __attribute__ ((__always_inline__))
-vld1q_p8 (poly8_t * a)
+vld1q_p8 (const poly8_t * a)
 {
   poly8x16_t result;
-  __asm__ ("ld1 {%0.16b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.16b}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const poly8x16_t *_a = (poly8x16_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline poly16x8_t __attribute__ ((__always_inline__))
-vld1q_p16 (poly16_t * a)
+vld1q_p16 (const poly16_t * a)
 {
   poly16x8_t result;
-  __asm__ ("ld1 {%0.8h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.16b}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const poly16x8_t *_a = (poly16x8_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int8x16_t __attribute__ ((__always_inline__))
-vld1q_s8 (int8_t * a)
+vld1q_s8 (const int8_t * a)
 {
   int8x16_t result;
-  __asm__ ("ld1 {%0.16b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.16b}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const int8x16_t *_a = (int8x16_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
-vld1q_s16 (int16_t * a)
+vld1q_s16 (const int16_t * a)
 {
   int16x8_t result;
-  __asm__ ("ld1 {%0.8h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.8h}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const int16x8_t *_a = (int16x8_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
-vld1q_s32 (int32_t * a)
+vld1q_s32 (const int32_t * a)
 {
   int32x4_t result;
-  __asm__ ("ld1 {%0.4s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.4s}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const int32x4_t *_a = (int32x4_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline int64x2_t __attribute__ ((__always_inline__))
-vld1q_s64 (int64_t * a)
+vld1q_s64 (const int64_t * a)
 {
   int64x2_t result;
-  __asm__ ("ld1 {%0.2d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.2d}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const int64x2_t *_a = (int64x2_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint8x16_t __attribute__ ((__always_inline__))
-vld1q_u8 (uint8_t * a)
+vld1q_u8 (const uint8_t * a)
 {
   uint8x16_t result;
-  __asm__ ("ld1 {%0.16b},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.16b}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const uint8x16_t *_a = (uint8x16_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint16x8_t __attribute__ ((__always_inline__))
-vld1q_u16 (uint16_t * a)
+vld1q_u16 (const uint16_t * a)
 {
   uint16x8_t result;
-  __asm__ ("ld1 {%0.8h},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.8h}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const uint16x8_t *_a = (uint16x8_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint32x4_t __attribute__ ((__always_inline__))
-vld1q_u32 (uint32_t * a)
+vld1q_u32 (const uint32_t * a)
 {
   uint32x4_t result;
-  __asm__ ("ld1 {%0.4s},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.4s}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const uint32x4_t *_a = (uint32x4_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
 __extension__ static __inline uint64x2_t __attribute__ ((__always_inline__))
-vld1q_u64 (uint64_t * a)
+vld1q_u64 (const uint64_t * a)
 {
   uint64x2_t result;
-  __asm__ ("ld1 {%0.2d},[%1]"
-           : "=w"(result)
-           : "r"(a)
-           : "memory");
+  __asm__ ("ld1 {%0.2d}, %1"
+	   : "=w"(result)
+	   : "Utv"(({const uint64x2_t *_a = (uint64x2_t *) a; *_a;}))
+	   : /* No clobbers */);
   return result;
 }
 
@@ -11647,7 +11647,7 @@ __extension__ static __inline int8x16_t __attribute__ ((__always_inline__))
 vmovn_high_s16 (int8x8_t a, int16x8_t b)
 {
   int8x16_t result = vcombine_s8 (a, vcreate_s8 (UINT64_C (0x0)));
-  __asm__ ("xtn2 %0.16b,%2.8h"
+  __asm__ ("xtn2 %0.16b,%1.8h"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -11658,7 +11658,7 @@ __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
 vmovn_high_s32 (int16x4_t a, int32x4_t b)
 {
   int16x8_t result = vcombine_s16 (a, vcreate_s16 (UINT64_C (0x0)));
-  __asm__ ("xtn2 %0.8h,%2.4s"
+  __asm__ ("xtn2 %0.8h,%1.4s"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -11669,7 +11669,7 @@ __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
 vmovn_high_s64 (int32x2_t a, int64x2_t b)
 {
   int32x4_t result = vcombine_s32 (a, vcreate_s32 (UINT64_C (0x0)));
-  __asm__ ("xtn2 %0.4s,%2.2d"
+  __asm__ ("xtn2 %0.4s,%1.2d"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -11680,7 +11680,7 @@ __extension__ static __inline uint8x16_t __attribute__ ((__always_inline__))
 vmovn_high_u16 (uint8x8_t a, uint16x8_t b)
 {
   uint8x16_t result = vcombine_u8 (a, vcreate_u8 (UINT64_C (0x0)));
-  __asm__ ("xtn2 %0.16b,%2.8h"
+  __asm__ ("xtn2 %0.16b,%1.8h"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -11691,7 +11691,7 @@ __extension__ static __inline uint16x8_t __attribute__ ((__always_inline__))
 vmovn_high_u32 (uint16x4_t a, uint32x4_t b)
 {
   uint16x8_t result = vcombine_u16 (a, vcreate_u16 (UINT64_C (0x0)));
-  __asm__ ("xtn2 %0.8h,%2.4s"
+  __asm__ ("xtn2 %0.8h,%1.4s"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -11702,7 +11702,7 @@ __extension__ static __inline uint32x4_t __attribute__ ((__always_inline__))
 vmovn_high_u64 (uint32x2_t a, uint64x2_t b)
 {
   uint32x4_t result = vcombine_u32 (a, vcreate_u32 (UINT64_C (0x0)));
-  __asm__ ("xtn2 %0.4s,%2.2d"
+  __asm__ ("xtn2 %0.4s,%1.2d"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14121,7 +14121,7 @@ __extension__ static __inline int8x16_t __attribute__ ((__always_inline__))
 vqmovn_high_s16 (int8x8_t a, int16x8_t b)
 {
   int8x16_t result = vcombine_s8 (a, vcreate_s8 (UINT64_C (0x0)));
-  __asm__ ("sqxtn2 %0.16b, %2.8h"
+  __asm__ ("sqxtn2 %0.16b, %1.8h"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14132,7 +14132,7 @@ __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
 vqmovn_high_s32 (int16x4_t a, int32x4_t b)
 {
   int16x8_t result = vcombine_s16 (a, vcreate_s16 (UINT64_C (0x0)));
-  __asm__ ("sqxtn2 %0.8h, %2.4s"
+  __asm__ ("sqxtn2 %0.8h, %1.4s"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14143,7 +14143,7 @@ __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
 vqmovn_high_s64 (int32x2_t a, int64x2_t b)
 {
   int32x4_t result = vcombine_s32 (a, vcreate_s32 (UINT64_C (0x0)));
-  __asm__ ("sqxtn2 %0.4s, %2.2d"
+  __asm__ ("sqxtn2 %0.4s, %1.2d"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14154,7 +14154,7 @@ __extension__ static __inline uint8x16_t __attribute__ ((__always_inline__))
 vqmovn_high_u16 (uint8x8_t a, uint16x8_t b)
 {
   uint8x16_t result = vcombine_u8 (a, vcreate_u8 (UINT64_C (0x0)));
-  __asm__ ("uqxtn2 %0.16b, %2.8h"
+  __asm__ ("uqxtn2 %0.16b, %1.8h"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14165,7 +14165,7 @@ __extension__ static __inline uint16x8_t __attribute__ ((__always_inline__))
 vqmovn_high_u32 (uint16x4_t a, uint32x4_t b)
 {
   uint16x8_t result = vcombine_u16 (a, vcreate_u16 (UINT64_C (0x0)));
-  __asm__ ("uqxtn2 %0.8h, %2.4s"
+  __asm__ ("uqxtn2 %0.8h, %1.4s"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14176,7 +14176,7 @@ __extension__ static __inline uint32x4_t __attribute__ ((__always_inline__))
 vqmovn_high_u64 (uint32x2_t a, uint64x2_t b)
 {
   uint32x4_t result = vcombine_u32 (a, vcreate_u32 (UINT64_C (0x0)));
-  __asm__ ("uqxtn2 %0.4s, %2.2d"
+  __asm__ ("uqxtn2 %0.4s, %1.2d"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14187,7 +14187,7 @@ __extension__ static __inline uint8x16_t __attribute__ ((__always_inline__))
 vqmovun_high_s16 (uint8x8_t a, int16x8_t b)
 {
   uint8x16_t result = vcombine_u8 (a, vcreate_u8 (UINT64_C (0x0)));
-  __asm__ ("sqxtun2 %0.16b, %2.8h"
+  __asm__ ("sqxtun2 %0.16b, %1.8h"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14198,7 +14198,7 @@ __extension__ static __inline uint16x8_t __attribute__ ((__always_inline__))
 vqmovun_high_s32 (uint16x4_t a, int32x4_t b)
 {
   uint16x8_t result = vcombine_u16 (a, vcreate_u16 (UINT64_C (0x0)));
-  __asm__ ("sqxtun2 %0.8h, %2.4s"
+  __asm__ ("sqxtun2 %0.8h, %1.4s"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -14209,7 +14209,7 @@ __extension__ static __inline uint32x4_t __attribute__ ((__always_inline__))
 vqmovun_high_s64 (uint32x2_t a, int64x2_t b)
 {
   uint32x4_t result = vcombine_u32 (a, vcreate_u32 (UINT64_C (0x0)));
-  __asm__ ("sqxtun2 %0.4s, %2.2d"
+  __asm__ ("sqxtun2 %0.4s, %1.2d"
            : "+w"(result)
            : "w"(b)
            : /* No clobbers */);
@@ -18877,49 +18877,49 @@ vpaddd_s64 (int64x2_t __a)
 __extension__ static __inline int16x4_t __attribute__ ((__always_inline__))
 vqdmulh_laneq_s16 (int16x4_t __a, int16x8_t __b, const int __c)
 {
-  return __builtin_aarch64_sqdmulh_lanev4hi (__a, __b, __c);
+  return __builtin_aarch64_sqdmulh_laneqv4hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x2_t __attribute__ ((__always_inline__))
 vqdmulh_laneq_s32 (int32x2_t __a, int32x4_t __b, const int __c)
 {
-  return __builtin_aarch64_sqdmulh_lanev2si (__a, __b, __c);
+  return __builtin_aarch64_sqdmulh_laneqv2si (__a, __b, __c);
 }
 
 __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
 vqdmulhq_laneq_s16 (int16x8_t __a, int16x8_t __b, const int __c)
 {
-  return __builtin_aarch64_sqdmulh_lanev8hi (__a, __b, __c);
+  return __builtin_aarch64_sqdmulh_laneqv8hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
 vqdmulhq_laneq_s32 (int32x4_t __a, int32x4_t __b, const int __c)
 {
-  return __builtin_aarch64_sqdmulh_lanev4si (__a, __b, __c);
+  return __builtin_aarch64_sqdmulh_laneqv4si (__a, __b, __c);
 }
 
 __extension__ static __inline int16x4_t __attribute__ ((__always_inline__))
 vqrdmulh_laneq_s16 (int16x4_t __a, int16x8_t __b, const int __c)
 {
-  return  __builtin_aarch64_sqrdmulh_lanev4hi (__a, __b, __c);
+  return  __builtin_aarch64_sqrdmulh_laneqv4hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x2_t __attribute__ ((__always_inline__))
 vqrdmulh_laneq_s32 (int32x2_t __a, int32x4_t __b, const int __c)
 {
-  return __builtin_aarch64_sqrdmulh_lanev2si (__a, __b, __c);
+  return __builtin_aarch64_sqrdmulh_laneqv2si (__a, __b, __c);
 }
 
 __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
 vqrdmulhq_laneq_s16 (int16x8_t __a, int16x8_t __b, const int __c)
 {
-  return __builtin_aarch64_sqrdmulh_lanev8hi (__a, __b, __c);
+  return __builtin_aarch64_sqrdmulh_laneqv8hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
 vqrdmulhq_laneq_s32 (int32x4_t __a, int32x4_t __b, const int __c)
 {
-  return __builtin_aarch64_sqrdmulh_lanev4si (__a, __b, __c);
+  return __builtin_aarch64_sqrdmulh_laneqv4si (__a, __b, __c);
 }
 
 /* Table intrinsics.  */
@@ -21974,29 +21974,25 @@ vqdmlsls_lane_s32 (int64x1_t __a, int32x1_t __b, int32x4_t __c, const int __d)
 __extension__ static __inline int16x4_t __attribute__ ((__always_inline__))
 vqdmulh_lane_s16 (int16x4_t __a, int16x4_t __b, const int __c)
 {
-  int16x8_t __tmp = vcombine_s16 (__b, vcreate_s16 (INT64_C (0)));
-  return __builtin_aarch64_sqdmulh_lanev4hi (__a, __tmp, __c);
+  return __builtin_aarch64_sqdmulh_lanev4hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x2_t __attribute__ ((__always_inline__))
 vqdmulh_lane_s32 (int32x2_t __a, int32x2_t __b, const int __c)
 {
-  int32x4_t __tmp = vcombine_s32 (__b, vcreate_s32 (INT64_C (0)));
-  return __builtin_aarch64_sqdmulh_lanev2si (__a, __tmp, __c);
+  return __builtin_aarch64_sqdmulh_lanev2si (__a, __b, __c);
 }
 
 __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
 vqdmulhq_lane_s16 (int16x8_t __a, int16x4_t __b, const int __c)
 {
-  int16x8_t __tmp = vcombine_s16 (__b, vcreate_s16 (INT64_C (0)));
-  return __builtin_aarch64_sqdmulh_lanev8hi (__a, __tmp, __c);
+  return __builtin_aarch64_sqdmulh_lanev8hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
 vqdmulhq_lane_s32 (int32x4_t __a, int32x2_t __b, const int __c)
 {
-  int32x4_t __tmp = vcombine_s32 (__b, vcreate_s32 (INT64_C (0)));
-  return __builtin_aarch64_sqdmulh_lanev4si (__a, __tmp, __c);
+  return __builtin_aarch64_sqdmulh_lanev4si (__a, __b, __c);
 }
 
 __extension__ static __inline int16x1_t __attribute__ ((__always_inline__))
@@ -22290,29 +22286,25 @@ vqnegs_s32 (int32x1_t __a)
 __extension__ static __inline int16x4_t __attribute__ ((__always_inline__))
 vqrdmulh_lane_s16 (int16x4_t __a, int16x4_t __b, const int __c)
 {
-  int16x8_t __tmp = vcombine_s16 (__b, vcreate_s16 (INT64_C (0)));
-  return  __builtin_aarch64_sqrdmulh_lanev4hi (__a, __tmp, __c);
+  return  __builtin_aarch64_sqrdmulh_lanev4hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x2_t __attribute__ ((__always_inline__))
 vqrdmulh_lane_s32 (int32x2_t __a, int32x2_t __b, const int __c)
 {
-  int32x4_t __tmp = vcombine_s32 (__b, vcreate_s32 (INT64_C (0)));
-  return __builtin_aarch64_sqrdmulh_lanev2si (__a, __tmp, __c);
+  return __builtin_aarch64_sqrdmulh_lanev2si (__a, __b, __c);
 }
 
 __extension__ static __inline int16x8_t __attribute__ ((__always_inline__))
 vqrdmulhq_lane_s16 (int16x8_t __a, int16x4_t __b, const int __c)
 {
-  int16x8_t __tmp = vcombine_s16 (__b, vcreate_s16 (INT64_C (0)));
-  return __builtin_aarch64_sqrdmulh_lanev8hi (__a, __tmp, __c);
+  return __builtin_aarch64_sqrdmulh_lanev8hi (__a, __b, __c);
 }
 
 __extension__ static __inline int32x4_t __attribute__ ((__always_inline__))
 vqrdmulhq_lane_s32 (int32x4_t __a, int32x2_t __b, const int __c)
 {
-  int32x4_t __tmp = vcombine_s32 (__b, vcreate_s32 (INT64_C (0)));
-  return __builtin_aarch64_sqrdmulh_lanev4si (__a, __tmp, __c);
+  return __builtin_aarch64_sqrdmulh_lanev4si (__a, __b, __c);
 }
 
 __extension__ static __inline int16x1_t __attribute__ ((__always_inline__))

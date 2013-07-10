@@ -1,7 +1,6 @@
 ; Options for the language- and target-independent parts of the compiler.
 
-; Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-; Free Software Foundation, Inc.
+; Copyright (C) 2003-2013 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -506,6 +505,10 @@ Waggregate-return
 Common Var(warn_aggregate_return) Warning
 Warn about returning structures, unions or arrays
 
+Waggressive-loop-optimizations
+Common Var(warn_aggressive_loop_optimizations) Init(1) Warning
+Warn if a loop with constant number of iterations triggers undefined behavior
+
 Warray-bounds
 Common Var(warn_array_bounds) Warning
 Warn if an array is accessed out of bounds
@@ -786,12 +789,17 @@ Driver Undocumented
 ;    argument.
 ;    First selectable in G++ 4.7.
 ;
-; 7: The version of the ABI that treats nullptr_t as a builtin type.
+; 7: The version of the ABI that treats nullptr_t as a builtin type and
+;    corrects the mangling of lambdas in default argument scope.
 ;    First selectable in G++ 4.8.
 ; Additional positive integers will be assigned as new versions of
 ; the ABI become the default version of the ABI.
 fabi-version=
 Common Joined RejectNegative UInteger Var(flag_abi_version) Init(2)
+
+faggressive-loop-optimizations
+Common Report Var(flag_aggressive_loop_optimizations) Optimization Init(1) 
+Aggressively optimize loops using language constraints
 
 falign-functions
 Common Report Var(align_functions,0) Optimization UInteger
@@ -2170,6 +2178,14 @@ Perform loop unswitching
 funwind-tables
 Common Report Var(flag_unwind_tables) Optimization
 Just generate unwind tables for exception handling
+
+fuse-ld=bfd
+Common Negative(fuse-ld=gold)
+Use the bfd linker instead of the default linker
+
+fuse-ld=gold
+Common Negative(fuse-ld=bfd)
+Use the gold linker instead of the default linker
 
 fuse-linker-plugin
 Common Undocumented

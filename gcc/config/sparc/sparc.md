@@ -1,7 +1,5 @@
 ;; Machine description for SPARC chip for GCC
-;;  Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-;;  1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-;;  2011 Free Software Foundation, Inc.
+;;  Copyright (C) 1987-2013 Free Software Foundation, Inc.
 ;;  Contributed by Michael Tiemann (tiemann@cygnus.com)
 ;;  64-bit SPARC-V9 support by Michael Tiemann, Jim Wilson, and Doug Evans,
 ;;  at Cygnus Support.
@@ -7757,7 +7755,7 @@
 				     (match_operand 3 "tld_symbolic_operand" "")]
 				    UNSPEC_TLSLDO)
 			 (match_operand:SI 1 "register_operand" "r")))
-	(match_operand:QI 0 "register_operand" "=r"))]
+	(match_operand:QI 0 "register_operand" "r"))]
   "TARGET_TLS && TARGET_ARCH32"
   "stb\t%0, [%1 + %2], %%tldo_add(%3)"
   [(set_attr "type" "store")])
@@ -7767,7 +7765,7 @@
 				     (match_operand 3 "tld_symbolic_operand" "")]
 				    UNSPEC_TLSLDO)
 			 (match_operand:DI 1 "register_operand" "r")))
-	(match_operand:QI 0 "register_operand" "=r"))]
+	(match_operand:QI 0 "register_operand" "r"))]
   "TARGET_TLS && TARGET_ARCH64"
   "stb\t%0, [%1 + %2], %%tldo_add(%3)"
   [(set_attr "type" "store")])
@@ -7777,7 +7775,7 @@
 				     (match_operand 3 "tld_symbolic_operand" "")]
 				    UNSPEC_TLSLDO)
 			 (match_operand:SI 1 "register_operand" "r")))
-	(match_operand:HI 0 "register_operand" "=r"))]
+	(match_operand:HI 0 "register_operand" "r"))]
   "TARGET_TLS && TARGET_ARCH32"
   "sth\t%0, [%1 + %2], %%tldo_add(%3)"
   [(set_attr "type" "store")])
@@ -7787,7 +7785,7 @@
 				     (match_operand 3 "tld_symbolic_operand" "")]
 				    UNSPEC_TLSLDO)
 			 (match_operand:DI 1 "register_operand" "r")))
-	(match_operand:HI 0 "register_operand" "=r"))]
+	(match_operand:HI 0 "register_operand" "r"))]
   "TARGET_TLS && TARGET_ARCH64"
   "sth\t%0, [%1 + %2], %%tldo_add(%3)"
   [(set_attr "type" "store")])
@@ -7797,7 +7795,7 @@
 				     (match_operand 3 "tld_symbolic_operand" "")]
 				    UNSPEC_TLSLDO)
 			 (match_operand:SI 1 "register_operand" "r")))
-	(match_operand:SI 0 "register_operand" "=r"))]
+	(match_operand:SI 0 "register_operand" "r"))]
   "TARGET_TLS && TARGET_ARCH32"
   "st\t%0, [%1 + %2], %%tldo_add(%3)"
   [(set_attr "type" "store")])
@@ -7807,7 +7805,7 @@
 				     (match_operand 3 "tld_symbolic_operand" "")]
 				    UNSPEC_TLSLDO)
 			 (match_operand:DI 1 "register_operand" "r")))
-	(match_operand:SI 0 "register_operand" "=r"))]
+	(match_operand:SI 0 "register_operand" "r"))]
   "TARGET_TLS && TARGET_ARCH64"
   "stw\t%0, [%1 + %2], %%tldo_add(%3)"
   [(set_attr "type" "store")])
@@ -7817,7 +7815,7 @@
 				     (match_operand 3 "tld_symbolic_operand" "")]
 				    UNSPEC_TLSLDO)
 			 (match_operand:DI 1 "register_operand" "r")))
-	(match_operand:DI 0 "register_operand" "=r"))]
+	(match_operand:DI 0 "register_operand" "r"))]
   "TARGET_TLS && TARGET_ARCH64"
   "stx\t%0, [%1 + %2], %%tldo_add(%3)"
   [(set_attr "type" "store")])

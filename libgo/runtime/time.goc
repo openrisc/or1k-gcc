@@ -110,8 +110,10 @@ addtimer(Timer *t)
 			runtime_ready(timers.timerproc);
 		}
 	}
-	if(timers.timerproc == nil)
+	if(timers.timerproc == nil) {
 		timers.timerproc = __go_go(timerproc, nil);
+		timers.timerproc->issystem = true;
+	}
 }
 
 // Delete timer t from the heap.
@@ -255,7 +257,7 @@ siftdown(int32 i)
 }
 
 void
-runtime_time_scan(void (*addroot)(byte*, uintptr))
+runtime_time_scan(void (*addroot)(Obj))
 {
-	addroot((byte*)&timers, sizeof timers);
+	addroot((Obj){(byte*)&timers, sizeof timers, 0});
 }

@@ -1,3 +1,11 @@
+2013-05-31  Release Manager
+
+	* GCC 4.8.1 released.
+
+2013-03-22  Release Manager
+
+	* GCC 4.8.0 released.
+
 2012-11-20  Diego Novillo  <dnovillo@google.com>
 
 	* objc-act.c: Replace all vec<T, A>() initializers with vNULL.
@@ -3360,8 +3368,7 @@
 	Move to c-objc-common.h.
 
 
-Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-Free Software Foundation, Inc.
+Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

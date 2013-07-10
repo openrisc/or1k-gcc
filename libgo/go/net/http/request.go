@@ -71,7 +71,13 @@ var reqWriteExcludeHeader = map[string]bool{
 // or to be sent by a client.
 type Request struct {
 	Method string // GET, POST, PUT, etc.
-	URL    *url.URL
+
+	// URL is created from the URI supplied on the Request-Line
+	// as stored in RequestURI.
+	//
+	// For most requests, fields other than Path and RawQuery
+	// will be empty. (See RFC 2616, Section 5.1.2)
+	URL *url.URL
 
 	// The protocol version for incoming requests.
 	// Outgoing requests always use HTTP/1.1.
@@ -124,6 +130,7 @@ type Request struct {
 	// The host on which the URL is sought.
 	// Per RFC 2616, this is either the value of the Host: header
 	// or the host name given in the URL itself.
+	// It may be of the form "host:port".
 	Host string
 
 	// Form contains the parsed form data, including both the URL
@@ -324,11 +331,20 @@ func (req *Request) write(w io.Writer, usingProxy bool, extraHeaders Header) err
 	}
 	// TODO(bradfitz): escape at least newlines in ruri?
 
-	bw := bufio.NewWriter(w)
-	fmt.Fprintf(bw, "%s %s HTTP/1.1\r\n", valueOrDefault(req.Method, "GET"), ruri)
+	// Wrap the writer in a bufio Writer if it's not already buffered.
+	// Don't always call NewWriter, as that forces a bytes.Buffer
+	// and other small bufio Writers to have a minimum 4k buffer
+	// size.
+	var bw *bufio.Writer
+	if _, ok := w.(io.ByteWriter); !ok {
+		bw = bufio.NewWriter(w)
+		w = bw
+	}
+
+	fmt.Fprintf(w, "%s %s HTTP/1.1\r\n", valueOrDefault(req.Method, "GET"), ruri)
 
 	// Header lines
-	fmt.Fprintf(bw, "Host: %s\r\n", host)
+	fmt.Fprintf(w, "Host: %s\r\n", host)
 
 	// Use the defaultUserAgent unless the Header contains one, which
 	// may be blank to not send the header.
@@ -339,7 +355,7 @@ func (req *Request) write(w io.Writer, usingProxy bool, extraHeaders Header) err
 		}
 	}
 	if userAgent != "" {
-		fmt.Fprintf(bw, "User-Agent: %s\r\n", userAgent)
+		fmt.Fprintf(w, "User-Agent: %s\r\n", userAgent)
 	}
 
 	// Process Body,ContentLength,Close,Trailer
@@ -347,33 +363,36 @@ func (req *Request) write(w io.Writer, usingProxy bool, extraHeaders Header) err
 	if err != nil {
 		return err
 	}
-	err = tw.WriteHeader(bw)
+	err = tw.WriteHeader(w)
 	if err != nil {
 		return err
 	}
 
 	// TODO: split long values?  (If so, should share code with Conn.Write)
-	err = req.Header.WriteSubset(bw, reqWriteExcludeHeader)
+	err = req.Header.WriteSubset(w, reqWriteExcludeHeader)
 	if err != nil {
 		return err
 	}
 
 	if extraHeaders != nil {
-		err = extraHeaders.Write(bw)
+		err = extraHeaders.Write(w)
 		if err != nil {
 			return err
 		}
 	}
 
-	io.WriteString(bw, "\r\n")
+	io.WriteString(w, "\r\n")
 
 	// Write body and trailer
-	err = tw.WriteBody(bw)
+	err = tw.WriteBody(w)
 	if err != nil {
 		return err
 	}
 
-	return bw.Flush()
+	if bw != nil {
+		return bw.Flush()
+	}
+	return nil
 }
 
 // ParseHTTPVersion parses a HTTP version string.
@@ -426,9 +445,11 @@ func NewRequest(method, urlStr string, body io.Reader) (*Request, error) {
 	}
 	if body != nil {
 		switch v := body.(type) {
-		case *strings.Reader:
-			req.ContentLength = int64(v.Len())
 		case *bytes.Buffer:
+			req.ContentLength = int64(v.Len())
+		case *bytes.Reader:
+			req.ContentLength = int64(v.Len())
+		case *strings.Reader:
 			req.ContentLength = int64(v.Len())
 		}
 	}
@@ -643,16 +664,20 @@ func parsePostForm(r *Request) (vs url.Values, err error) {
 	return
 }
 
-// ParseForm parses the raw query from the URL.
+// ParseForm parses the raw query from the URL and updates r.Form.
 //
-// For POST or PUT requests, it also parses the request body as a form.
-// POST and PUT body parameters take precedence over URL query string values.
+// For POST or PUT requests, it also parses the request body as a form and
+// put the results into both r.PostForm and r.Form.
+// POST and PUT body parameters take precedence over URL query string values
+// in r.Form.
+//
 // If the request Body's size has not already been limited by MaxBytesReader,
 // the size is capped at 10MB.
 //
 // ParseMultipartForm calls ParseForm automatically.
 // It is idempotent.
-func (r *Request) ParseForm() (err error) {
+func (r *Request) ParseForm() error {
+	var err error
 	if r.PostForm == nil {
 		if r.Method == "POST" || r.Method == "PUT" {
 			r.PostForm, err = parsePostForm(r)
@@ -728,6 +753,7 @@ func (r *Request) ParseMultipartForm(maxMemory int64) error {
 // FormValue returns the first value for the named component of the query.
 // POST and PUT body parameters take precedence over URL query string values.
 // FormValue calls ParseMultipartForm and ParseForm if necessary.
+// To access multiple values of the same key use ParseForm.
 func (r *Request) FormValue(key string) string {
 	if r.Form == nil {
 		r.ParseMultipartForm(defaultMaxMemory)

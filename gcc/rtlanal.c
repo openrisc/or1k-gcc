@@ -1,7 +1,5 @@
 /* Analyze RTL for GNU compiler.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -2107,7 +2105,6 @@ volatile_insn_p (const_rtx x)
       return 0;
 
     case UNSPEC_VOLATILE:
- /* case TRAP_IF: This isn't clear yet.  */
       return 1;
 
     case ASM_INPUT:
@@ -2240,7 +2237,6 @@ side_effects_p (const_rtx x)
     case POST_MODIFY:
     case CALL:
     case UNSPEC_VOLATILE:
- /* case TRAP_IF: This isn't clear yet.  */
       return 1;
 
     case MEM:
@@ -2312,9 +2308,9 @@ may_trap_p_1 (const_rtx x, unsigned flags)
       return 0;
 
     case UNSPEC:
-    case UNSPEC_VOLATILE:
       return targetm.unspec_may_trap_p (x, flags);
 
+    case UNSPEC_VOLATILE:
     case ASM_INPUT:
     case TRAP_IF:
       return 1;
@@ -2406,8 +2402,7 @@ may_trap_p_1 (const_rtx x, unsigned flags)
 
     default:
       /* Any floating arithmetic may trap.  */
-      if (SCALAR_FLOAT_MODE_P (GET_MODE (x))
-	  && flag_trapping_math)
+      if (SCALAR_FLOAT_MODE_P (GET_MODE (x)) && flag_trapping_math)
 	return 1;
     }
 

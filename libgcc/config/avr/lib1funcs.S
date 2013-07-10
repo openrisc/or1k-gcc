@@ -1,6 +1,5 @@
 /*  -*- Mode: Asm -*-  */
-/* Copyright (C) 1998, 1999, 2000, 2007, 2008, 2009
-   Free Software Foundation, Inc.
+/* Copyright (C) 1998-2013 Free Software Foundation, Inc.
    Contributed by Denis Chertykov <chertykov@gmail.com>
 
 This file is free software; you can redistribute it and/or modify it
@@ -80,6 +79,41 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define XJMP  rjmp
 #endif
 
+;; Prologue stuff
+
+.macro do_prologue_saves n_pushed n_frame=0
+    ldi r26, lo8(\n_frame)
+    ldi r27, hi8(\n_frame)
+    ldi r30, lo8(gs(.L_prologue_saves.\@))
+    ldi r31, hi8(gs(.L_prologue_saves.\@))
+    XJMP __prologue_saves__ + ((18 - (\n_pushed)) * 2)
+.L_prologue_saves.\@:
+.endm
+
+;; Epilogue stuff
+
+.macro do_epilogue_restores n_pushed n_frame=0
+    in      r28, __SP_L__
+#ifdef __AVR_HAVE_SPH__
+    in      r29, __SP_H__
+.if \n_frame > 63
+    subi    r28, lo8(-\n_frame)
+    sbci    r29, hi8(-\n_frame)
+.elseif \n_frame > 0
+    adiw    r28, \n_frame
+.endif
+#else
+    clr     r29
+.if \n_frame > 0
+    subi    r28, lo8(-\n_frame)
+.endif
+#endif /* HAVE SPH */
+    ldi     r30, \n_pushed
+    XJMP __epilogue_restores__ + ((18 - (\n_pushed)) * 2)
+.endm
+
+;; Support function entry and exit for convenience
+
 .macro DEFUN name
 .global \name
 .func \name
@@ -98,6 +132,9 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 .size \name, .-\name
 .endfunc
 .endm
+
+;; Skip next instruction, typically a jump target
+#define skip cpse 0,0
 
 ;; Negate a 2-byte value held in consecutive registers
 .macro NEG2  reg
@@ -151,16 +188,16 @@ __mulqi3_loop:
 	add	r_res,r_arg2
 	add	r_arg2,r_arg2	; shift multiplicand
 	breq	__mulqi3_exit	; while multiplicand != 0
-	lsr	r_arg1		; 
+	lsr	r_arg1		;
 	brne	__mulqi3_loop	; exit if multiplier = 0
 __mulqi3_exit:	
 	mov	r_arg1,r_res	; result to return register
 	ret
 ENDF __mulqi3
 
-#undef r_arg2  
-#undef r_arg1  
-#undef r_res   
+#undef r_arg2
+#undef r_arg1
+#undef r_res
 	
 #endif 	/* defined (L_mulqi3) */
 
@@ -370,7 +407,7 @@ DEFUN __mulsi3_helper
 
 2:  ;; B <<= 1
     lsl  B0      $  rol  B1      $  rol  B2      $  rol  B3
-    
+
 3:  ;; A >>= 1:  Carry = n-th bit of A
     lsr  A3      $  ror  A2      $  ror  A1      $  ror  A0
 
@@ -409,7 +446,7 @@ ENDF __mulsi3_helper
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#if defined (__AVR_HAVE_MUL__)    
+#if defined (__AVR_HAVE_MUL__)
 #define A0 26
 #define B0 18
 #define C0 22
@@ -427,7 +464,7 @@ ENDF __mulsi3_helper
 /*******************************************************
     Widening Multiplication  32 = 16 x 16  with MUL
 *******************************************************/
-                              
+
 #if defined (L_mulhisi3)
 ;;; R25:R22 = (signed long) R27:R26 * (signed long) R19:R18
 ;;; C3:C0   = (signed long) A1:A0   * (signed long) B1:B0
@@ -512,7 +549,7 @@ DEFUN __mulshisi3
     XJMP    __muluhisi3
     ;; FALLTHRU
 ENDF __mulshisi3
-    
+
 ;;; R25:R22 = (one-extended long) R27:R26 * R21:R18
 ;;; (C3:C0) = (one-extended long) A1:A0   * B3:B0
 ;;; Clobbers: __tmp_reg__
@@ -647,23 +684,23 @@ DEFUN __mulpsi3
     ;; C[] = 0
     clr     __tmp_reg__
     clr     C2
-    
+
 0:  ;; Shift N-th Bit of B[] into Carry.  N = 24 - Loop
     LSR  B2     $  ror  B1     $  ror  B0
-    
+
     ;; If the N-th Bit of B[] was set...
     brcc    1f
-    
+
     ;; ...then add A[] * 2^N to the Result C[]
     ADD  C0,A0  $  adc  C1,A1  $  adc  C2,A2
-    
+
 1:  ;; Multiply A[] by 2
     LSL  A0     $  rol  A1     $  rol  A2
-    
+
     ;; Loop until B[] is 0
     subi B0,0   $  sbci B1,0   $  sbci B2,0
     brne    0b
-    
+
     ;; Copy C[] to the return Register A[]
     wmov    A0, C0
     mov     A2, C2
@@ -737,8 +774,6 @@ ENDF __mulsqipsi3
        Multiplication 64 x 64
 *******************************************************/
 
-#if defined (L_muldi3)
-
 ;; A[] = A[] * B[]
 
 ;; A[0..7]: In: Multiplicand
@@ -774,6 +809,8 @@ ENDF __mulsqipsi3
 #define C5  C4+1
 #define C6  C4+2
 #define C7  C4+3
+
+#if defined (L_muldi3)
 
 ;; A[]     *= B[]
 ;; R25:R18 *= R17:R10
@@ -819,7 +856,7 @@ DEFUN __muldi3
 
     wmov    26, B2
     ;; 0 * 1
-    rcall   __muldi3_6
+    XCALL   __muldi3_6
 
     pop     A0
     pop     A1
@@ -830,7 +867,7 @@ DEFUN __muldi3
     pop     r26
     pop     r27
     ;; 1 * 0
-    rcall   __muldi3_6
+    XCALL   __muldi3_6
 
     pop     A0
     pop     A1
@@ -853,7 +890,12 @@ DEFUN __muldi3
     pop     r28
     pop     r29
     ret
+ENDF __muldi3
+#endif /* L_muldi3 */
 
+#if defined (L_muldi3_6)
+;; A helper for some 64-bit multiplications with MUL available
+DEFUN __muldi3_6
 __muldi3_6:
     XCALL   __umulhisi3
     add     C2, 22
@@ -863,7 +905,8 @@ __muldi3_6:
     brcc    0f
     adiw    C6, 1
 0:  ret
-ENDF __muldi3
+ENDF __muldi3_6
+#endif /* L_muldi3_6 */
 
 #undef C7
 #undef C6
@@ -875,6 +918,8 @@ ENDF __muldi3
 #undef C0
 
 #else /* !HAVE_MUL */
+
+#if defined (L_muldi3)
 
 #define C0  26
 #define C1  C0+1
@@ -953,6 +998,7 @@ ENDF __muldi3
 #undef C1
 #undef C0
 
+#endif /* L_muldi3 */
 #endif /* HAVE_MUL */
 
 #undef B7
@@ -973,7 +1019,240 @@ ENDF __muldi3
 #undef A1
 #undef A0
 
-#endif /* L_muldi3 */
+/*******************************************************
+   Widening Multiplication 64 = 32 x 32  with  MUL
+*******************************************************/
+
+#if defined (__AVR_HAVE_MUL__)
+#define A0 r22
+#define A1 r23 
+#define A2 r24
+#define A3 r25
+ 
+#define B0 r18
+#define B1 r19
+#define B2 r20
+#define B3 r21
+ 
+#define C0  18
+#define C1  C0+1
+#define C2  20
+#define C3  C2+1
+#define C4  28
+#define C5  C4+1
+#define C6  C4+2
+#define C7  C4+3
+
+#if defined (L_umulsidi3)
+
+;; Unsigned widening 64 = 32 * 32 Multiplication with MUL
+
+;; R18[8] = R22[4] * R18[4]
+;;
+;; Ordinary ABI Function, but additionally sets
+;; X = R20[2] = B2[2]
+;; Z = R22[2] = A0[2]
+DEFUN __umulsidi3
+    clt
+    ;; FALLTHRU
+ENDF  __umulsidi3
+    ;; T = sign (A)
+DEFUN __umulsidi3_helper
+    push    29  $  push    28 ; Y
+    wmov    30, A2
+    ;; Counting in Words, we have to perform 4 Multiplications
+    ;; 0 * 0
+    wmov    26, A0
+    XCALL __umulhisi3
+    push    23  $  push    22 ; C0
+    wmov    28, B0
+    wmov    18, B2
+    wmov    C2, 24
+    push    27  $  push    26 ; A0
+    push    19  $  push    18 ; B2
+    ;;
+    ;;  18  20  22  24  26  28  30  |  B2, B3, A0, A1, C0, C1, Y
+    ;;  B2  C2  --  --  --  B0  A2
+    ;; 1 * 1
+    wmov    26, 30      ; A2
+    XCALL __umulhisi3
+    ;; Sign-extend A.  T holds the sign of A
+    brtc    0f
+    ;; Subtract B from the high part of the result
+    sub     22, 28
+    sbc     23, 29
+    sbc     24, 18
+    sbc     25, 19
+0:  wmov    18, 28      ;; B0
+    wmov    C4, 22
+    wmov    C6, 24
+    ;;
+    ;;  18  20  22  24  26  28  30  |  B2, B3, A0, A1, C0, C1, Y
+    ;;  B0  C2  --  --  A2  C4  C6
+    ;;
+    ;; 1 * 0
+    XCALL __muldi3_6
+    ;; 0 * 1
+    pop     26  $   pop 27  ;; B2
+    pop     18  $   pop 19  ;; A0
+    XCALL __muldi3_6
+
+    ;; Move result C into place and save A0 in Z
+    wmov    22, C4
+    wmov    24, C6
+    wmov    30, 18 ; A0
+    pop     C0  $   pop C1
+
+    ;; Epilogue
+    pop     28  $   pop 29  ;; Y
+    ret
+ENDF __umulsidi3_helper
+#endif /* L_umulsidi3 */
+
+
+#if defined (L_mulsidi3)
+
+;; Signed widening 64 = 32 * 32 Multiplication
+;;
+;; R18[8] = R22[4] * R18[4]
+;; Ordinary ABI Function
+DEFUN __mulsidi3
+    bst     A3, 7
+    sbrs    B3, 7           ; Enhanced core has no skip bug
+    XJMP __umulsidi3_helper
+
+    ;; B needs sign-extension
+    push    A3
+    push    A2
+    XCALL __umulsidi3_helper
+    ;; A0 survived in Z
+    sub     r22, r30
+    sbc     r23, r31
+    pop     r26
+    pop     r27
+    sbc     r24, r26
+    sbc     r25, r27
+    ret
+ENDF __mulsidi3
+#endif /* L_mulsidi3 */
+
+#undef A0
+#undef A1
+#undef A2
+#undef A3
+#undef B0
+#undef B1
+#undef B2
+#undef B3
+#undef C0
+#undef C1
+#undef C2
+#undef C3
+#undef C4
+#undef C5
+#undef C6
+#undef C7
+#endif /* HAVE_MUL */
+
+/**********************************************************
+    Widening Multiplication 64 = 32 x 32  without  MUL
+**********************************************************/
+
+#if defined (L_mulsidi3) && !defined (__AVR_HAVE_MUL__)
+#define A0 18
+#define A1 A0+1
+#define A2 A0+2
+#define A3 A0+3
+#define A4 A0+4
+#define A5 A0+5
+#define A6 A0+6
+#define A7 A0+7
+
+#define B0 10
+#define B1 B0+1
+#define B2 B0+2
+#define B3 B0+3
+#define B4 B0+4
+#define B5 B0+5
+#define B6 B0+6
+#define B7 B0+7
+
+#define AA0 22
+#define AA1 AA0+1
+#define AA2 AA0+2
+#define AA3 AA0+3
+
+#define BB0 18
+#define BB1 BB0+1
+#define BB2 BB0+2
+#define BB3 BB0+3
+
+#define Mask r30
+
+;; Signed / Unsigned widening 64 = 32 * 32 Multiplication without MUL
+;;
+;; R18[8] = R22[4] * R18[4]
+;; Ordinary ABI Function
+DEFUN __mulsidi3
+    set
+    skip
+    ;; FALLTHRU
+ENDF  __mulsidi3
+
+DEFUN __umulsidi3
+    clt     ; skipped
+    ;; Save 10 Registers: R10..R17, R28, R29
+    do_prologue_saves 10
+    ldi     Mask, 0xff
+    bld     Mask, 7
+    ;; Move B into place...
+    wmov    B0, BB0
+    wmov    B2, BB2
+    ;; ...and extend it
+    and     BB3, Mask
+    lsl     BB3
+    sbc     B4, B4
+    mov     B5, B4
+    wmov    B6, B4
+    ;; Move A into place...
+    wmov    A0, AA0
+    wmov    A2, AA2
+    ;; ...and extend it
+    and     AA3, Mask
+    lsl     AA3
+    sbc     A4, A4
+    mov     A5, A4
+    wmov    A6, A4
+    XCALL   __muldi3
+    do_epilogue_restores 10
+ENDF __umulsidi3
+
+#undef A0
+#undef A1
+#undef A2
+#undef A3
+#undef A4
+#undef A5
+#undef A6
+#undef A7
+#undef B0
+#undef B1
+#undef B2
+#undef B3
+#undef B4
+#undef B5
+#undef B6
+#undef B7
+#undef AA0
+#undef AA1
+#undef AA2
+#undef AA3
+#undef BB0
+#undef BB1
+#undef BB2
+#undef BB3
+#undef Mask
+#endif /* L_mulsidi3 && !HAVE_MUL */
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	
@@ -1002,7 +1281,7 @@ __udivmodqi4_ep:
 	rol	r_arg1		; shift dividend (with CARRY)
 	dec	r_cnt		; decrement loop counter
 	brne	__udivmodqi4_loop
-	com	r_arg1		; complement result 
+	com	r_arg1		; complement result
 				; because C flag was complemented in loop
 	ret
 ENDF __udivmodqi4
@@ -1112,14 +1391,14 @@ __divmodhi4_exit:
 ENDF __divmodhi4
 #endif /* defined (L_divmodhi4) */
 
-#undef r_remH  
-#undef r_remL  
-             
-#undef r_arg1H 
-#undef r_arg1L 
-             
-#undef r_arg2H 
-#undef r_arg2L 
+#undef r_remH
+#undef r_remL
+
+#undef r_arg1H
+#undef r_arg1L
+
+#undef r_arg2H
+#undef r_arg2L
              	
 #undef r_cnt   	
 
@@ -1501,8 +1780,8 @@ DEFUN __udivmod64
 
 1:  ;; Compare shifted Devidend against Divisor
     ;; If -- even after Shifting -- it is smaller...
-    CP  A7,B0  $  cpc C0,B1  $  cpc C1,B2  $  cpc C2,B3  
-    cpc C3,B4  $  cpc C4,B5  $  cpc C5,B6  $  cpc C6,B7  
+    CP  A7,B0  $  cpc C0,B1  $  cpc C1,B2  $  cpc C2,B3
+    cpc C3,B4  $  cpc C4,B5  $  cpc C5,B6  $  cpc C6,B7
     brcc    2f
 
     ;; ...then we can subtract it.  Thus, it is legal to shift left
@@ -1596,7 +1875,7 @@ DEFUN __udivmod64
 
 ENDF __udivmod64
 #endif /* L_udivmod64 */
-    
+
 
 #if defined (L_divdi3)
 
@@ -1622,18 +1901,14 @@ DEFUN  __divdi3_moddi3
     brmi    0f
     ;; Both Signs are 0:  the following Complexitiy is not needed
     XJMP    __udivdi3_umoddi3
-#endif /* SPEED_DIV */    
+#endif /* SPEED_DIV */
 
 0:  ;; The Prologue
     ;; Save 12 Registers:  Y, 17...8
-    ;; No Frame needed (X = 0)
-    clr r26
-    clr r27
-    ldi r30, lo8(gs(1f))
-    ldi r31, hi8(gs(1f))
-    XJMP __prologue_saves__ + ((18 - 12) * 2)
+    ;; No Frame needed
+    do_prologue_saves 12
 
-1:  ;; SS.7 will contain the Sign of the Quotient  (A.sign * B.sign)
+    ;; SS.7 will contain the Sign of the Quotient  (A.sign * B.sign)
     ;; SS.6 will contain the Sign of the Remainder (A.sign)
     mov     SS, A7
     asr     SS
@@ -1645,7 +1920,7 @@ DEFUN  __divdi3_moddi3
 #else
     brpl    21f
 #endif /* SPEED_DIV */
-   
+
     XCALL   __negdi2
 
     ;; Adjust Divisor's Sign and SS.7 as needed
@@ -1673,23 +1948,16 @@ DEFUN  __divdi3_moddi3
 #endif /* __AVR_HAVE_JMP_CALL__ */
     XCALL   __negdi2
 
-4:  ;; Epilogue: Restore the Z = 12 Registers and return
-    in r28, __SP_L__
-#if defined (__AVR_HAVE_SPH__)
-    in r29, __SP_H__
-#else
-    clr r29
-#endif /* #SP = 8/16 */
-    ldi r30, 12
-    XJMP __epilogue_restores__ + ((18 - 12) * 2)
+4:  ;; Epilogue: Restore 12 Registers and return
+    do_epilogue_restores 12
 
 ENDF __divdi3_moddi3
+
+#endif /* L_divdi3 */
 
 #undef R_cnt
 #undef SS
 #undef NN
-
-#endif /* L_divdi3 */
 
 .section .text.libgcc, "ax", @progbits
 
@@ -1809,7 +2077,7 @@ ENDF __negdi2
 
 
 .section .text.libgcc.prologue, "ax", @progbits
-    
+
 /**********************************
  * This is a prologue subroutine
  **********************************/
@@ -1944,7 +2212,7 @@ _cleanup:
 
 
 .section .text.libgcc, "ax", @progbits
-    
+
 #ifdef L_tablejump
 DEFUN __tablejump2__
 	lsl	r30
@@ -2146,7 +2414,7 @@ ENDF __do_global_dtors
 #endif /* L_dtors */
 
 .section .text.libgcc, "ax", @progbits
-    
+
 #ifdef L_tablejump_elpm
 DEFUN __tablejump_elpm__
 #if defined (__AVR_HAVE_ELPMX__)
@@ -2484,7 +2752,7 @@ DEFUN __loop_ffsqi2
     brcc __loop_ffsqi2
     mov  r24, r26
     clr  r25
-    ret    
+    ret
 ENDF __loop_ffsqi2
 #endif /* defined (L_loop_ffsqi2) */
 
@@ -2586,7 +2854,7 @@ ENDF __clzhi2
 
 
 /**********************************
- * Parity 
+ * Parity
  **********************************/
 
 #if defined (L_paritydi2)
@@ -2702,20 +2970,20 @@ ENDF __popcountdi2
 DEFUN __popcountqi2
     mov  __tmp_reg__, r24
     andi r24, 1
-    lsr  __tmp_reg__    
-    lsr  __tmp_reg__    
+    lsr  __tmp_reg__
+    lsr  __tmp_reg__
     adc  r24, __zero_reg__
-    lsr  __tmp_reg__    
+    lsr  __tmp_reg__
     adc  r24, __zero_reg__
-    lsr  __tmp_reg__    
+    lsr  __tmp_reg__
     adc  r24, __zero_reg__
-    lsr  __tmp_reg__    
+    lsr  __tmp_reg__
     adc  r24, __zero_reg__
-    lsr  __tmp_reg__    
+    lsr  __tmp_reg__
     adc  r24, __zero_reg__
-    lsr  __tmp_reg__    
-    adc  r24, __tmp_reg__    
-    ret    
+    lsr  __tmp_reg__
+    adc  r24, __tmp_reg__
+    ret
 ENDF __popcountqi2
 #endif /* defined (L_popcountqi2) */
 
@@ -2762,64 +3030,73 @@ ENDF __bswapdi2
 ;; Arithmetic shift right
 ;; r25:r18 = ashr64 (r25:r18, r17:r16)
 DEFUN __ashrdi3
-    push r16
-    andi r16, 63
-    breq 2f
-1:  asr  r25
-    ror  r24
-    ror  r23
-    ror  r22
-    ror  r21
-    ror  r20
-    ror  r19
-    ror  r18
-    dec  r16
-    brne 1b
-2:  pop  r16
-    ret
-ENDF __ashrdi3
-#endif /* defined (L_ashrdi3) */
+    bst     r25, 7
+    bld     __zero_reg__, 0
+    ;; FALLTHRU
+ENDF  __ashrdi3
 
-#if defined (L_lshrdi3)
 ;; Logic shift right
 ;; r25:r18 = lshr64 (r25:r18, r17:r16)
 DEFUN __lshrdi3
-    push r16
-    andi r16, 63
-    breq 2f
-1:  lsr  r25
-    ror  r24
-    ror  r23
-    ror  r22
-    ror  r21
-    ror  r20
-    ror  r19
-    ror  r18
-    dec  r16
-    brne 1b
-2:  pop  r16
+    lsr     __zero_reg__
+    sbc     __tmp_reg__, __tmp_reg__
+    push    r16
+0:  cpi     r16, 8
+    brlo 2f
+    subi    r16, 8
+    mov     r18, r19
+    mov     r19, r20
+    mov     r20, r21
+    mov     r21, r22
+    mov     r22, r23
+    mov     r23, r24
+    mov     r24, r25
+    mov     r25, __tmp_reg__
+    rjmp 0b
+1:  asr     __tmp_reg__
+    ror     r25
+    ror     r24
+    ror     r23
+    ror     r22
+    ror     r21
+    ror     r20
+    ror     r19
+    ror     r18
+2:  dec     r16
+    brpl 1b
+    pop     r16
     ret
 ENDF __lshrdi3
-#endif /* defined (L_lshrdi3) */
+#endif /* defined (L_ashrdi3) */
 
 #if defined (L_ashldi3)
 ;; Shift left
 ;; r25:r18 = ashl64 (r25:r18, r17:r16)
 DEFUN __ashldi3
-    push r16
-    andi r16, 63
-    breq 2f
-1:  lsl  r18
-    rol  r19
-    rol  r20
-    rol  r21
-    rol  r22
-    rol  r23
-    rol  r24
-    rol  r25
-    dec  r16
-    brne 1b
-2:  pop  r16
+    push    r16
+0:  cpi     r16, 8
+    brlo 2f
+    mov     r25, r24
+    mov     r24, r23
+    mov     r23, r22
+    mov     r22, r21
+    mov     r21, r20
+    mov     r20, r19
+    mov     r19, r18
+    clr     r18
+    subi    r16, 8
+    rjmp 0b
+1:  lsl     r18
+    rol     r19
+    rol     r20
+    rol     r21
+    rol     r22
+    rol     r23
+    rol     r24
+    rol     r25
+2:  dec     r16
+    brpl 1b
+    pop     r16
     ret
 ENDF __ashldi3
 #endif /* defined (L_ashldi3) */
@@ -2828,21 +3105,32 @@ ENDF __ashldi3
 ;; Shift left
 ;; r25:r18 = rotl64 (r25:r18, r17:r16)
 DEFUN __rotldi3
-    push r16
-    andi r16, 63
-    breq 2f
-1:  lsl  r18
-    rol  r19
-    rol  r20
-    rol  r21
-    rol  r22
-    rol  r23
-    rol  r24
-    rol  r25
-    adc  r18, __zero_reg__
-    dec  r16
-    brne 1b
-2:  pop  r16
+    push    r16
+0:  cpi     r16, 8
+    brlo 2f
+    subi    r16, 8
+    mov     __tmp_reg__, r25
+    mov     r25, r24
+    mov     r24, r23
+    mov     r23, r22
+    mov     r22, r21
+    mov     r21, r20
+    mov     r20, r19
+    mov     r19, r18
+    mov     r18, __tmp_reg__
+    rjmp 0b
+1:  lsl     r18
+    rol     r19
+    rol     r20
+    rol     r21
+    rol     r22
+    rol     r23
+    rol     r24
+    rol     r25
+    adc     r18, __zero_reg__
+2:  dec     r16
+    brpl 1b
+    pop     r16
     ret
 ENDF __rotldi3
 #endif /* defined (L_rotldi3) */
@@ -2850,10 +3138,10 @@ ENDF __rotldi3
 
 .section .text.libgcc.fmul, "ax", @progbits
 
-/***********************************************************/    
+/***********************************************************/
 ;;; Softmul versions of FMUL, FMULS and FMULSU to implement
 ;;; __builtin_avr_fmul* if !AVR_HAVE_MUL
-/***********************************************************/    
+/***********************************************************/
 
 #define A1 24
 #define B1 25

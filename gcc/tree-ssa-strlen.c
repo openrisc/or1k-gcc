@@ -1,5 +1,5 @@
 /* String length optimization
-   Copyright (C) 2011 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
    Contributed by Jakub Jelinek <jakub@redhat.com>
 
 This file is part of GCC.
@@ -807,12 +807,10 @@ adjust_last_stmt (strinfo si, gimple stmt, bool is_strcat)
       return;
     }
 
-  if (!is_gimple_call (last.stmt))
-    return;
-  callee = gimple_call_fndecl (last.stmt);
-  if (callee == NULL_TREE || DECL_BUILT_IN_CLASS (callee) != BUILT_IN_NORMAL)
+  if (!gimple_call_builtin_p (last.stmt, BUILT_IN_NORMAL))
     return;
 
+  callee = gimple_call_fndecl (last.stmt);
   switch (DECL_FUNCTION_CODE (callee))
     {
     case BUILT_IN_MEMCPY:
@@ -1690,7 +1688,7 @@ handle_char_store (gimple_stmt_iterator *gsi)
 	       its length may be decreased.  */
 	    adjust_last_stmt (si, stmt, false);
 	}
-      else if (si != NULL)
+      else if (si != NULL && integer_zerop (gimple_assign_rhs1 (stmt)))
 	{
 	  si = unshare_strinfo (si);
 	  si->length = build_int_cst (size_type_node, 0);
@@ -1750,7 +1748,7 @@ strlen_optimize_stmt (gimple_stmt_iterator *gsi)
   if (is_gimple_call (stmt))
     {
       tree callee = gimple_call_fndecl (stmt);
-      if (callee && DECL_BUILT_IN_CLASS (callee) == BUILT_IN_NORMAL)
+      if (gimple_call_builtin_p (stmt, BUILT_IN_NORMAL))
 	switch (DECL_FUNCTION_CODE (callee))
 	  {
 	  case BUILT_IN_STRLEN:

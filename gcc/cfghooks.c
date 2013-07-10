@@ -1,6 +1,5 @@
 /* Hooks for cfg representation specific functions.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <s.pop@laposte.net>
 
 This file is part of GCC.
@@ -278,6 +277,22 @@ dump_bb (FILE *outf, basic_block bb, int indent, int flags)
   if (flags & TDF_BLOCKS)
     dump_bb_info (outf, bb, indent, flags, false, true);
   fputc ('\n', outf);
+}
+
+/* Dumps basic block BB to pretty-printer PP, for use as a label of
+   a DOT graph record-node.  The implementation of this hook is
+   expected to write the label to the stream that is attached to PP.
+   Field separators between instructions are pipe characters printed
+   verbatim.  Instructions should be written with some characters
+   escaped, using pp_write_text_as_dot_label_to_stream().  */
+
+void
+dump_bb_for_graph (pretty_printer *pp, basic_block bb)
+{
+  if (!cfg_hooks->dump_bb_for_graph)
+    internal_error ("%s does not support dump_bb_for_graph",
+		    cfg_hooks->name);
+  cfg_hooks->dump_bb_for_graph (pp, bb);
 }
 
 /* Dump the complete CFG to FILE.  FLAGS are the TDF_* flags in dumpfile.h.  */
@@ -708,11 +723,23 @@ merge_blocks (basic_block a, basic_block b)
 
   cfg_hooks->merge_blocks (a, b);
 
-  /* If we merge a loop header into its predecessor, update the loop
-     structure.  */
   if (current_loops != NULL)
     {
-      if (b->loop_father->header == b)
+      /* If the block we merge into is a loop header do nothing unless ... */
+      if (a->loop_father->header == a)
+	{
+	  /* ... we merge two loop headers, in which case we kill
+	     the inner loop.  */
+	  if (b->loop_father->header == b)
+	    {
+	      b->loop_father->header = NULL;
+	      b->loop_father->latch = NULL;
+	      loops_state_set (LOOPS_NEED_FIXUP);
+	    }
+	}
+      /* If we merge a loop header into its predecessor, update the loop
+	 structure.  */
+      else if (b->loop_father->header == b)
 	{
 	  remove_bb_from_loops (a);
 	  add_bb_to_loop  (a, b->loop_father);
@@ -734,7 +761,12 @@ merge_blocks (basic_block a, basic_block b)
     {
       e->src = a;
       if (current_loops != NULL)
-	rescan_loop_exit (e, true, false);
+	{
+	  /* If b was a latch, a now is.  */
+	  if (e->dest->loop_father->latch == b)
+	    e->dest->loop_father->latch = a;
+	  rescan_loop_exit (e, true, false);
+	}
     }
   a->succs = b->succs;
   a->flags |= b->flags;

@@ -1,6 +1,5 @@
 /* IRA allocation based on graph coloring.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -2516,8 +2515,7 @@ improve_allocation (void)
     }
 }
 
-/* Sort allocnos according to their priorities which are calculated
-   analogous to ones in file `global.c'.  */
+/* Sort allocnos according to their priorities.  */
 static int
 allocno_priority_compare_func (const void *v1p, const void *v2p)
 {

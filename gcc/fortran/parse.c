@@ -1,7 +1,5 @@
 /* Main parser.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -264,6 +262,7 @@ end_of_block:
 static gfc_statement
 decode_statement (void)
 {
+  gfc_namespace *ns;
   gfc_statement st;
   locus old_locus;
   match m;
@@ -365,7 +364,12 @@ decode_statement (void)
   match (NULL, gfc_match_associate, ST_ASSOCIATE);
   match (NULL, gfc_match_critical, ST_CRITICAL);
   match (NULL, gfc_match_select, ST_SELECT_CASE);
+
+  gfc_current_ns = gfc_build_block_ns (gfc_current_ns);
   match (NULL, gfc_match_select_type, ST_SELECT_TYPE);
+  ns = gfc_current_ns;
+  gfc_current_ns = gfc_current_ns->parent;
+  gfc_free_namespace (ns);
 
   /* General statement matching: Instead of testing every possible
      statement, we eliminate most possibilities by peeking at the
@@ -4293,6 +4297,7 @@ parse_module (void)
 {
   gfc_statement st;
   gfc_gsymbol *s;
+  bool error;
 
   s = gfc_get_gsymbol (gfc_new_block->name);
   if (s->defined || (s->type != GSYM_UNKNOWN && s->type != GSYM_MODULE))
@@ -4306,6 +4311,7 @@ parse_module (void)
 
   st = parse_spec (ST_NONE);
 
+  error = false;
 loop:
   switch (st)
     {
@@ -4324,12 +4330,15 @@ loop:
       gfc_error ("Unexpected %s statement in MODULE at %C",
 		 gfc_ascii_statement (st));
 
+      error = true;
       reject_statement ();
       st = next_statement ();
       goto loop;
     }
 
-  s->ns = gfc_current_ns;
+  /* Make sure not to free the namespace twice on error.  */
+  if (!error)
+    s->ns = gfc_current_ns;
 }
 
 

@@ -1,6 +1,5 @@
 /* Scanning of rtl for dataflow analysis.
-   Copyright (C) 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2007-2013 Free Software Foundation, Inc.
    Contributed by Kenneth Zadeck (zadeck@naturalbridge.com).
 
 This file is part of GCC.
@@ -389,7 +388,7 @@ regstat_compute_ri (void)
   BITMAP_FREE (local_processed);
   free (local_live_last_luid);
 
-  /* See the setjmp comment in regstat_ri_bb_compute.  */
+  /* See the setjmp comment in regstat_bb_compute_ri.  */
   EXECUTE_IF_SET_IN_BITMAP (setjmp_crosses, FIRST_PSEUDO_REGISTER, regno, bi)
     {
       REG_BASIC_BLOCK (regno) = REG_BLOCK_UNKNOWN;

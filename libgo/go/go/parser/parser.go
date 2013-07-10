@@ -149,7 +149,7 @@ func (p *parser) shortVarDecl(decl *ast.AssignStmt, list []ast.Expr) {
 				}
 			}
 		} else {
-			p.errorExpected(x.Pos(), "identifier")
+			p.errorExpected(x.Pos(), "identifier on left side of :=")
 		}
 	}
 	if n == 0 && p.mode&DeclarationErrors != 0 {
@@ -162,7 +162,12 @@ func (p *parser) shortVarDecl(decl *ast.AssignStmt, list []ast.Expr) {
 // internal consistency.
 var unresolved = new(ast.Object)
 
-func (p *parser) resolve(x ast.Expr) {
+// If x is an identifier, tryResolve attempts to resolve x by looking up
+// the object it denotes. If no object is found and collectUnresolved is
+// set, x is marked as unresolved and collected in the list of unresolved
+// identifiers.
+//
+func (p *parser) tryResolve(x ast.Expr, collectUnresolved bool) {
 	// nothing to do if x is not an identifier or the blank identifier
 	ident, _ := x.(*ast.Ident)
 	if ident == nil {
@@ -183,8 +188,14 @@ func (p *parser) resolve(x ast.Expr) {
 	// must be found either in the file scope, package scope
 	// (perhaps in another file), or universe scope --- collect
 	// them so that they can be resolved later
-	ident.Obj = unresolved
-	p.unresolved = append(p.unresolved, ident)
+	if collectUnresolved {
+		ident.Obj = unresolved
+		p.unresolved = append(p.unresolved, ident)
+	}
+}
+
+func (p *parser) resolve(x ast.Expr) {
+	p.tryResolve(x, true)
 }
 
 // ----------------------------------------------------------------------------
@@ -578,14 +589,15 @@ func (p *parser) parseTypeName() ast.Expr {
 	return ident
 }
 
-func (p *parser) parseArrayType(ellipsisOk bool) ast.Expr {
+func (p *parser) parseArrayType() ast.Expr {
 	if p.trace {
 		defer un(trace(p, "ArrayType"))
 	}
 
 	lbrack := p.expect(token.LBRACK)
 	var len ast.Expr
-	if ellipsisOk && p.tok == token.ELLIPSIS {
+	// always permit ellipsis for more fault-tolerant parsing
+	if p.tok == token.ELLIPSIS {
 		len = &ast.Ellipsis{Ellipsis: p.pos}
 		p.next()
 	} else if p.tok != token.RBRACK {
@@ -697,7 +709,7 @@ func (p *parser) tryVarType(isParam bool) ast.Expr {
 	if isParam && p.tok == token.ELLIPSIS {
 		pos := p.pos
 		p.next()
-		typ := p.tryIdentOrType(isParam) // don't use parseType so we can provide better error message
+		typ := p.tryIdentOrType() // don't use parseType so we can provide better error message
 		if typ != nil {
 			p.resolve(typ)
 		} else {
@@ -706,7 +718,7 @@ func (p *parser) tryVarType(isParam bool) ast.Expr {
 		}
 		return &ast.Ellipsis{Ellipsis: pos, Elt: typ}
 	}
-	return p.tryIdentOrType(false)
+	return p.tryIdentOrType()
 }
 
 // If the result is an identifier, it is not resolved.
@@ -943,12 +955,12 @@ func (p *parser) parseChanType() *ast.ChanType {
 }
 
 // If the result is an identifier, it is not resolved.
-func (p *parser) tryIdentOrType(ellipsisOk bool) ast.Expr {
+func (p *parser) tryIdentOrType() ast.Expr {
 	switch p.tok {
 	case token.IDENT:
 		return p.parseTypeName()
 	case token.LBRACK:
-		return p.parseArrayType(ellipsisOk)
+		return p.parseArrayType()
 	case token.STRUCT:
 		return p.parseStructType()
 	case token.MUL:
@@ -975,7 +987,7 @@ func (p *parser) tryIdentOrType(ellipsisOk bool) ast.Expr {
 }
 
 func (p *parser) tryType() ast.Expr {
-	typ := p.tryIdentOrType(false)
+	typ := p.tryIdentOrType()
 	if typ != nil {
 		p.resolve(typ)
 	}
@@ -1083,7 +1095,7 @@ func (p *parser) parseOperand(lhs bool) ast.Expr {
 		return p.parseFuncTypeOrLit()
 	}
 
-	if typ := p.tryIdentOrType(true); typ != nil {
+	if typ := p.tryIdentOrType(); typ != nil {
 		// could be type for composite literal or conversion
 		_, isIdent := typ.(*ast.Ident)
 		assert(!isIdent, "type cannot be identifier")
@@ -1188,14 +1200,35 @@ func (p *parser) parseElement(keyOk bool) ast.Expr {
 		return p.parseLiteralValue(nil)
 	}
 
-	x := p.checkExpr(p.parseExpr(keyOk)) // don't resolve if map key
+	// Because the parser doesn't know the composite literal type, it cannot
+	// know if a key that's an identifier is a struct field name or a name
+	// denoting a value. The former is not resolved by the parser or the
+	// resolver.
+	//
+	// Instead, _try_ to resolve such a key if possible. If it resolves,
+	// it a) has correctly resolved, or b) incorrectly resolved because
+	// the key is a struct field with a name matching another identifier.
+	// In the former case we are done, and in the latter case we don't
+	// care because the type checker will do a separate field lookup.
+	//
+	// If the key does not resolve, it must a) be defined at the top-
+	// level in another file of the same package or be undeclared, or
+	// b) it is a struct field. In the former case, the type checker
+	// can do a top-level lookup, and in the latter case it will do a
+	// separate field lookup.
+	x := p.checkExpr(p.parseExpr(keyOk))
 	if keyOk {
 		if p.tok == token.COLON {
 			colon := p.pos
 			p.next()
+			// Try to resolve the key but don't collect it
+			// as unresolved identifier if it fails so that
+			// we don't get (possibly false) errors about
+			// undeclared names.
+			p.tryResolve(x, false)
 			return &ast.KeyValueExpr{Key: x, Colon: colon, Value: p.parseElement(false)}
 		}
-		p.resolve(x) // not a map key
+		p.resolve(x) // not a key
 	}
 
 	return x
@@ -1802,7 +1835,7 @@ func (p *parser) parseSwitchStmt() ast.Stmt {
 				//
 				//	switch t := 0; t := x.(T) { ... }
 				//
-				// (this code is not valid Go because the first t will
+				// (this code is not valid Go because the first t
 				// cannot be accessed and thus is never used, the extra
 				// scope is needed for the correct error message).
 				//

@@ -1,7 +1,5 @@
 /* Control flow graph manipulation code for GNU compiler.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -145,8 +143,12 @@ delete_insn (rtx insn)
 	  NOTE_KIND (insn) = NOTE_INSN_DELETED_LABEL;
 	  NOTE_DELETED_LABEL_NAME (insn) = name;
 
-	  if (bb_note != NULL_RTX && NOTE_INSN_BASIC_BLOCK_P (bb_note)
-	      && BLOCK_FOR_INSN (bb_note) == bb)
+	  /* If the note following the label starts a basic block, and the
+	     label is a member of the same basic block, interchange the two.  */
+	  if (bb_note != NULL_RTX
+	      && NOTE_INSN_BASIC_BLOCK_P (bb_note)
+	      && bb != NULL
+	      && bb == BLOCK_FOR_INSN (bb_note))
 	    {
 	      reorder_insns_nobb (insn, insn, bb_note);
 	      BB_HEAD (bb) = bb_note;
@@ -2014,14 +2016,6 @@ print_rtl_with_bb (FILE *outf, const_rtx rtx_first, int flags)
       free (start);
       free (end);
       free (in_bb_p);
-    }
-
-  if (crtl->epilogue_delay_list != 0)
-    {
-      fprintf (outf, "\n;; Insns in epilogue delay list:\n\n");
-      for (tmp_rtx = crtl->epilogue_delay_list; tmp_rtx != 0;
-	   tmp_rtx = XEXP (tmp_rtx, 1))
-	print_rtl_single (outf, XEXP (tmp_rtx, 0));
     }
 }
 
@@ -4537,6 +4531,7 @@ struct cfg_hooks rtl_cfg_hooks = {
   "rtl",
   rtl_verify_flow_info,
   rtl_dump_bb,
+  rtl_dump_bb_for_graph,
   rtl_create_basic_block,
   rtl_redirect_edge_and_branch,
   rtl_redirect_edge_and_branch_force,
@@ -4578,6 +4573,7 @@ struct cfg_hooks cfg_layout_rtl_cfg_hooks = {
   "cfglayout mode",
   rtl_verify_flow_info_1,
   rtl_dump_bb,
+  rtl_dump_bb_for_graph,
   cfg_layout_create_basic_block,
   cfg_layout_redirect_edge_and_branch,
   cfg_layout_redirect_edge_and_branch_force,

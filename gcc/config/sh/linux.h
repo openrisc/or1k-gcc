@@ -1,7 +1,5 @@
 /* Definitions for SH running Linux-based GNU systems using ELF
-   Copyright (C) 1999, 2000, 2002, 2003, 2004, 2005, 2006, 2007, 2010, 2011,
-   2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
    Contributed by Kazumoto Kojima <kkojima@rr.iij4u.or.jp>
 
 This file is part of GCC.
@@ -41,8 +39,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #undef TARGET_DEFAULT
 #define TARGET_DEFAULT \
-  (TARGET_CPU_DEFAULT | MASK_USERMODE | TARGET_ENDIAN_DEFAULT \
-   | TARGET_OPT_DEFAULT)
+  (TARGET_CPU_DEFAULT | TARGET_ENDIAN_DEFAULT | TARGET_OPT_DEFAULT)
 
 #define TARGET_ASM_FILE_END file_end_indicate_exec_stack
 
@@ -59,7 +56,6 @@ along with GCC; see the file COPYING3.  If not see
    %{static:-static}"
 
 /* Output assembler code to STREAM to call the profiler.  */
-
 #undef FUNCTION_PROFILER
 #define FUNCTION_PROFILER(STREAM,LABELNO)				\
   do {									\
@@ -149,5 +145,8 @@ along with GCC; see the file COPYING3.  If not see
 	  else if (TARGET_SH1)						\
 	    sh_atomic_model_str = "soft-imask";				\
 	}								\
+      /* Set -musermode if it hasn't been specified.  */		\
+      if (global_options_set.x_TARGET_USERMODE == 0)			\
+	TARGET_USERMODE = true;						\
     }									\
   while (0)

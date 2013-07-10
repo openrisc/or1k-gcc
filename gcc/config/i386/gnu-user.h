@@ -1,6 +1,5 @@
 /* Definitions for Intel 386 systems using GNU userspace.
-   Copyright (C) 1994, 1995, 1996, 1997, 1998, 1999, 2001, 2002, 2004, 2005,
-   2006, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1994-2013 Free Software Foundation, Inc.
    Contributed by Eric Youngdale.
    Modified for stabs-in-ELF by H.J. Lu.
 
@@ -155,7 +154,11 @@ along with GCC; see the file COPYING3.  If not see
 /* i386 glibc provides __stack_chk_guard in %gs:0x14.  */
 #define TARGET_THREAD_SSP_OFFSET	0x14
 
-/* We steal the last transactional memory word.  */
+/* We only build the -fsplit-stack support in libgcc if the
+   assembler has full support for the CFI directives.  */
+#if HAVE_GAS_CFI_PERSONALITY_DIRECTIVE
 #define TARGET_CAN_SPLIT_STACK
+#endif
+/* We steal the last transactional memory word.  */
 #define TARGET_THREAD_SPLIT_STACK_OFFSET 0x30
 #endif

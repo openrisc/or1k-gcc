@@ -1,7 +1,5 @@
 /* Top level of GCC compilers (cc1, cc1plus, etc.)
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1478,12 +1476,6 @@ process_options (void)
 	}
     }
 
-  if (flag_function_sections && profile_flag)
-    {
-      warning (0, "-ffunction-sections disabled; it makes profiling impossible");
-      flag_function_sections = 0;
-    }
-
 #ifndef HAVE_prefetch
   if (flag_prefetch_loop_arrays > 0)
     {
@@ -1534,18 +1526,6 @@ process_options (void)
     }
   if (!flag_stack_protect)
     warn_stack_protect = 0;
-
-  /* ??? Unwind info is not correct around the CFG unless either a frame
-     pointer is present or A_O_A is set.  Fixing this requires rewriting
-     unwind info generation to be aware of the CFG and propagating states
-     around edges.  */
-  if (flag_unwind_tables && !ACCUMULATE_OUTGOING_ARGS
-      && flag_omit_frame_pointer)
-    {
-      warning (0, "unwind tables currently require a frame pointer "
-	       "for correctness");
-      flag_omit_frame_pointer = 0;
-    }
 
   /* Address Sanitizer needs porting to each target architecture.  */
   if (flag_asan

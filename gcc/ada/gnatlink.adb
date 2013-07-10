@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1996-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1996-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -903,7 +903,8 @@ procedure Gnatlink is
       --------------
 
       procedure Write_RF (S : String) is
-         Success : Boolean := True;
+         Success    : Boolean            := True;
+         Back_Slash : constant Character := '\';
 
       begin
          --  If a GNU response file is used, space and backslash need to be
@@ -915,7 +916,7 @@ procedure Gnatlink is
          if Using_GNU_response_file then
             for J in S'Range loop
                if S (J) = ' ' or else S (J) = '\' then
-                  if Write (Tname_FD, ASCII.BACK_SLASH'Address, 1) /= 1 then
+                  if Write (Tname_FD, Back_Slash'Address, 1) /= 1 then
                      Success := False;
                   end if;
                end if;
@@ -1649,7 +1650,7 @@ begin
    --             because bindgen uses brackets encoding for all upper
    --             half and wide characters in identifier names.
 
-   --  In addition, in CodePeer mode compile with -gnatcC
+   --  In addition, in CodePeer mode compile with -x adascil -gnatcC
 
    Binder_Options_From_ALI.Increment_Last;
    Binder_Options_From_ALI.Table (Binder_Options_From_ALI.Last) :=
@@ -1664,7 +1665,13 @@ begin
    if Opt.CodePeer_Mode then
       Binder_Options_From_ALI.Increment_Last;
       Binder_Options_From_ALI.Table (Binder_Options_From_ALI.Last) :=
-           new String'("-gnatcC");
+        new String'("-x");
+      Binder_Options_From_ALI.Increment_Last;
+      Binder_Options_From_ALI.Table (Binder_Options_From_ALI.Last) :=
+        new String'("adascil");
+      Binder_Options_From_ALI.Increment_Last;
+      Binder_Options_From_ALI.Table (Binder_Options_From_ALI.Last) :=
+        new String'("-gnatcC");
    end if;
 
    --  Locate all the necessary programs and verify required files are present

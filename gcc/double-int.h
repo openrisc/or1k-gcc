@@ -1,5 +1,5 @@
 /* Operations with long integers.
-   Copyright (C) 2006, 2007, 2008, 2010, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -19,10 +19,6 @@ along with GCC; see the file COPYING3.  If not see
 
 #ifndef DOUBLE_INT_H
 #define DOUBLE_INT_H
-
-#ifndef GENERATOR_FILE
-#include <gmp.h>
-#endif
 
 /* A large integer is currently represented as a pair of HOST_WIDE_INTs.
    It therefore represents a number with precision of
@@ -62,6 +58,10 @@ struct double_int
   static double_int from_uhwi (unsigned HOST_WIDE_INT cst);
   static double_int from_shwi (HOST_WIDE_INT cst);
   static double_int from_pair (HOST_WIDE_INT high, unsigned HOST_WIDE_INT low);
+
+  /* Construct from a fuffer of length LEN.  BUFFER will be read according
+     to byte endianess and word endianess.  */
+  static double_int from_buffer (const unsigned char *buffer, int len);
 
   /* No copy assignment operator or destructor to keep the type a POD.  */
 

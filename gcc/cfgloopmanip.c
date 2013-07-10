@@ -1,6 +1,5 @@
 /* Loop manipulation code for GNU compiler.
-   Copyright (C) 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -112,10 +111,13 @@ fix_bb_placement (basic_block bb)
 /* Fix placement of LOOP inside loop tree, i.e. find the innermost superloop
    of LOOP to that leads at least one exit edge of LOOP, and set it
    as the immediate superloop of LOOP.  Return true if the immediate superloop
-   of LOOP changed.  */
+   of LOOP changed.
+
+   IRRED_INVALIDATED is set to true if a change in the loop structures might
+   invalidate the information about irreducible regions.  */
 
 static bool
-fix_loop_placement (struct loop *loop)
+fix_loop_placement (struct loop *loop, bool *irred_invalidated)
 {
   unsigned i;
   edge e;
@@ -140,7 +142,12 @@ fix_loop_placement (struct loop *loop)
       /* The exit edges of LOOP no longer exits its original immediate
 	 superloops; remove them from the appropriate exit lists.  */
       FOR_EACH_VEC_ELT (exits, i, e)
-	rescan_loop_exit (e, false, false);
+	{
+	  /* We may need to recompute irreducible loops.  */
+	  if (e->flags & EDGE_IRREDUCIBLE_LOOP)
+	    *irred_invalidated = true;
+	  rescan_loop_exit (e, false, false);
+	}
 
       ret = true;
     }
@@ -213,7 +220,7 @@ fix_bb_placements (basic_block from,
       if (from->loop_father->header == from)
 	{
 	  /* Subloop header, maybe move the loop upward.  */
-	  if (!fix_loop_placement (from->loop_father))
+	  if (!fix_loop_placement (from->loop_father, irred_invalidated))
 	    continue;
 	  target_loop = loop_outer (from->loop_father);
 	}
@@ -481,7 +488,7 @@ scale_loop_frequencies (struct loop *loop, int num, int den)
    to iterate too many times.  */
 
 void
-scale_loop_profile (struct loop *loop, int scale, int iteration_bound)
+scale_loop_profile (struct loop *loop, int scale, gcov_type iteration_bound)
 {
   gcov_type iterations = expected_loop_iterations_unbounded (loop);
   edge e;
@@ -491,7 +498,7 @@ scale_loop_profile (struct loop *loop, int scale, int iteration_bound)
     fprintf (dump_file, ";; Scaling loop %i with scale %f, "
 	     "bounding iterations to %i from guessed %i\n",
 	     loop->num, (double)scale / REG_BR_PROB_BASE,
-	     iteration_bound, (int)iterations);
+	     (int)iteration_bound, (int)iterations);
 
   /* See if loop is predicted to iterate too many times.  */
   if (iteration_bound && iterations > 0
@@ -966,7 +973,7 @@ fix_loop_placements (struct loop *loop, bool *irred_invalidated)
   while (loop_outer (loop))
     {
       outer = loop_outer (loop);
-      if (!fix_loop_placement (loop))
+      if (!fix_loop_placement (loop, irred_invalidated))
 	break;
 
       /* Changing the placement of a loop in the loop tree may alter the
@@ -1752,144 +1759,4 @@ loop_version (struct loop *loop,
   split_edge (loop_preheader_edge (nloop));
 
   return nloop;
-}
-
-/* The structure of loops might have changed.  Some loops might get removed
-   (and their headers and latches were set to NULL), loop exists might get
-   removed (thus the loop nesting may be wrong), and some blocks and edges
-   were changed (so the information about bb --> loop mapping does not have
-   to be correct).  But still for the remaining loops the header dominates
-   the latch, and loops did not get new subloops (new loops might possibly
-   get created, but we are not interested in them).  Fix up the mess.
-
-   If CHANGED_BBS is not NULL, basic blocks whose loop has changed are
-   marked in it.  */
-
-void
-fix_loop_structure (bitmap changed_bbs)
-{
-  basic_block bb;
-  struct loop *loop, *ploop;
-  loop_iterator li;
-  bool record_exits = false;
-  struct loop **superloop = XNEWVEC (struct loop *, number_of_loops ());
-
-  /* We need exact and fast dominance info to be available.  */
-  gcc_assert (dom_info_state (CDI_DOMINATORS) == DOM_OK);
-
-  /* Remove the old bb -> loop mapping.  Remember the depth of the blocks in
-     the loop hierarchy, so that we can recognize blocks whose loop nesting
-     relationship has changed.  */
-  FOR_EACH_BB (bb)
-    {
-      if (changed_bbs)
-	bb->aux = (void *) (size_t) loop_depth (bb->loop_father);
-      bb->loop_father = current_loops->tree_root;
-    }
-
-  if (loops_state_satisfies_p (LOOPS_HAVE_RECORDED_EXITS))
-    {
-      release_recorded_exits ();
-      record_exits = true;
-    }
-
-  /* Remove the dead loops from structures.  We start from the innermost
-     loops, so that when we remove the loops, we know that the loops inside
-     are preserved, and do not waste time relinking loops that will be
-     removed later.  */
-  FOR_EACH_LOOP (li, loop, LI_FROM_INNERMOST)
-    {
-      if (loop->header)
-	continue;
-
-      while (loop->inner)
-	{
-	  ploop = loop->inner;
-	  flow_loop_tree_node_remove (ploop);
-	  flow_loop_tree_node_add (loop_outer (loop), ploop);
-	}
-
-      /* Remove the loop and free its data.  */
-      delete_loop (loop);
-    }
-
-  /* Rescan the bodies of loops, starting from the outermost ones.  We assume
-     that no optimization interchanges the order of the loops, i.e., it cannot
-     happen that L1 was superloop of L2 before and it is subloop of L2 now
-     (without explicitly updating loop information).  At the same time, we also
-     determine the new loop structure.  */
-  current_loops->tree_root->num_nodes = n_basic_blocks;
-  FOR_EACH_LOOP (li, loop, 0)
-    {
-      superloop[loop->num] = loop->header->loop_father;
-      loop->num_nodes = flow_loop_nodes_find (loop->header, loop);
-    }
-
-  /* Now fix the loop nesting.  */
-  FOR_EACH_LOOP (li, loop, 0)
-    {
-      ploop = superloop[loop->num];
-      if (ploop != loop_outer (loop))
-	{
-	  flow_loop_tree_node_remove (loop);
-	  flow_loop_tree_node_add (ploop, loop);
-	}
-    }
-  free (superloop);
-
-  /* Mark the blocks whose loop has changed.  */
-  if (changed_bbs)
-    {
-      FOR_EACH_BB (bb)
-	{
-	  if ((void *) (size_t) loop_depth (bb->loop_father) != bb->aux)
-	    bitmap_set_bit (changed_bbs, bb->index);
-
-    	  bb->aux = NULL;
-	}
-    }
-
-  /* Then re-compute the single latch if there is one.  */
-  FOR_EACH_LOOP (li, loop, 0)
-    {
-      edge_iterator ei;
-      edge e, latch = NULL;
-      FOR_EACH_EDGE (e, ei, loop->header->preds)
-	if (dominated_by_p (CDI_DOMINATORS, e->src, loop->header))
-	  {
-	    if (!latch)
-	      latch = e;
-	    else
-	      {
-		latch = NULL;
-		break;
-	      }
-	  }
-      if (latch
-	  && latch->src->loop_father == loop)
-	loop->latch = latch->src;
-      else
-	loop->latch = NULL;
-    }
-
-  if (!loops_state_satisfies_p (LOOPS_MAY_HAVE_MULTIPLE_LATCHES))
-    disambiguate_loops_with_multiple_latches ();
-
-  if (loops_state_satisfies_p (LOOPS_HAVE_PREHEADERS))
-    create_preheaders (CP_SIMPLE_PREHEADERS);
-
-  if (loops_state_satisfies_p (LOOPS_HAVE_SIMPLE_LATCHES))
-    force_single_succ_latches ();
-
-  if (loops_state_satisfies_p (LOOPS_HAVE_MARKED_IRREDUCIBLE_REGIONS))
-    mark_irreducible_loops ();
-
-  if (record_exits)
-    record_loop_exits ();
-
-  loops_state_clear (LOOPS_NEED_FIXUP);
-
-#ifdef ENABLE_CHECKING
-  verify_loop_structure ();
-#endif
 }

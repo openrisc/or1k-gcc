@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -39,13 +39,6 @@ with System;
 
 package Errout is
 
-   Configurable_Run_Time_Violations : Nat := 0;
-   --  Count of configurable run time violations so far. This is used to
-   --  suppress certain cascaded error messages when we know that we may not
-   --  have fully expanded some items, due to high integrity violations (i.e.
-   --  the use of constructs not permitted by the library in use, or improper
-   --  constructs in No_Run_Time mode).
-
    Current_Error_Source_File : Source_File_Index
      renames Err_Vars.Current_Error_Source_File;
    --  Id of current messages. Used to post file name when unit changes. This
@@ -65,6 +58,12 @@ package Errout is
 
    Error_Msg_Exception : exception renames Err_Vars.Error_Msg_Exception;
    --  Exception raised if Raise_Exception_On_Error is true
+
+   Warning_Doc_Switch : Boolean renames Err_Vars.Warning_Doc_Switch;
+   --  If this is set True, then the ??/?x?/?X? sequences in error messages
+   --  are active (see errout.ads for details). If this switch is False, then
+   --  these sequences are ignored (i.e. simply equivalent to a single ?). The
+   --  -gnatw.d switch sets this flag True, -gnatw.D sets this flag False.
 
    -----------------------------------
    -- Suppression of Error Messages --
@@ -281,6 +280,24 @@ package Errout is
    --      which is being continued. It is allowable to put ? in continuation
    --      messages, and the usual style is to include it, since it makes it
    --      clear that the continuation is part of a warning message.
+
+   --    Insertion character ?? (two question marks)
+   --      Like ?, but if the flag Warn_Doc_Switch is True, adds the string
+   --      "[enabled by default]" at the end of the warning message. In the
+   --      case of continuations, use this in each continuation message.
+
+   --    Insertion character ?x? (warning with switch)
+   --      Like ?, but if the flag Warn_Doc_Switch is True, adds the string
+   --      "[-gnatwx]" at the end of the warning message. x is a lower case
+   --      letter. In the case of continuations, use this on each continuation
+   --      message.
+
+   --    Insertion character ?X? (warning with dot switch)
+   --      Like ?, but if the flag Warn_Doc_Switch is True, adds the string
+   --      "[-gnatw.x]" at the end of the warning message. X is an upper case
+   --      letter corresponding to the lower case letter x in the message. In
+   --      the case of continuations, use this on each continuation
+   --      message.
 
    --    Insertion character < (Less Than: conditional warning message)
    --      The character < appearing anywhere in a message is used for a
@@ -728,6 +745,9 @@ package Errout is
    --  points to the start of the first token in the expression. In the case
    --  where the expression is parenthesized, an attempt is made to include
    --  the parentheses (i.e. to return the location of the initial paren).
+
+   function Get_Ignore_Errors return Boolean;
+   --  Return True if all error calls are ignored.
 
    procedure Purge_Messages (From : Source_Ptr; To : Source_Ptr)
      renames Erroutc.Purge_Messages;

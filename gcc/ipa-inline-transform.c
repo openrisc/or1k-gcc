@@ -1,6 +1,5 @@
 /* Callgraph transformations to handle inlining
-   Copyright (C) 2003, 2004, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Jan Hubicka
 
 This file is part of GCC.
@@ -93,9 +92,7 @@ can_remove_node_now_p_1 (struct cgraph_node *node)
 	     those only after all devirtualizable virtual calls are processed.
 	     Lacking may edges in callgraph we just preserve them post
 	     inlining.  */
-	  && (!DECL_VIRTUAL_P (node->symbol.decl)
-	      || (!DECL_COMDAT (node->symbol.decl)
-		  && !DECL_EXTERNAL (node->symbol.decl)))
+	  && !DECL_VIRTUAL_P (node->symbol.decl)
 	  /* During early inlining some unanalyzed cgraph nodes might be in the
 	     callgraph and they might reffer the function in question.  */
 	  && !cgraph_new_nodes);
@@ -211,8 +208,7 @@ inline_call (struct cgraph_edge *e, bool update_original,
   struct cgraph_node *callee = cgraph_function_or_thunk_node (e->callee, NULL);
   bool new_edges_found = false;
 
-  /* FIXME: re-enable once ipa-cp problem is fixed.  */
-#if 0
+#ifdef ENABLE_CHECKING
   int estimated_growth = estimate_edge_growth (e);
   bool predicated = inline_edge_summary (e)->predicate != NULL;
 #endif
@@ -260,8 +256,8 @@ inline_call (struct cgraph_edge *e, bool update_original,
   if (update_overall_summary)
    inline_update_overall_summary (to);
   new_size = inline_summary (to)->size;
-  /* FIXME: re-enable once ipa-cp problem is fixed.  */
-#if 0
+
+#ifdef ENABLE_CHECKING
   /* Verify that estimated growth match real growth.  Allow off-by-one
      error due to INLINE_SIZE_SCALE roudoff errors.  */
   gcc_assert (!update_overall_summary || !overall_size
@@ -270,7 +266,7 @@ inline_call (struct cgraph_edge *e, bool update_original,
 		 wrong, we should remove them from callgraph.  */
 	      || predicated);
 #endif
-   
+
   /* Account the change of overall unit size; external functions will be
      removed and are thus not accounted.  */
   if (overall_size

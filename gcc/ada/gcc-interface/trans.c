@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 1992-2012, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2013, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -37,6 +37,7 @@
 #include "bitmap.h"
 #include "cgraph.h"
 #include "target.h"
+#include "common/common-target.h"
 
 #include "ada.h"
 #include "adadecode.h"
@@ -302,6 +303,10 @@ gigi (Node_Id gnat_root, int max_gnat_node, int number_name ATTRIBUTE_UNUSED,
 
   type_annotate_only = (gigi_operating_mode == 1);
 
+  /* ??? Disable the generation of the SCO instance table until after the
+     back-end supports instance based debug info discriminators.  */
+  Generate_SCO_Instance_Table = False;
+
   for (i = 0; i < number_file; i++)
     {
       /* Use the identifier table to make a permanent copy of the filename as
@@ -500,6 +505,13 @@ gigi (Node_Id gnat_root, int max_gnat_node, int number_name ATTRIBUTE_UNUSED,
 			   Empty);
   DECL_IGNORED_P (end_handler_decl) = 1;
 
+  unhandled_except_decl
+    = create_subprog_decl (get_identifier ("__gnat_unhandled_except_handler"),
+			   NULL_TREE,
+			   ftype, NULL_TREE, false, true, true, true, NULL,
+			   Empty);
+  DECL_IGNORED_P (unhandled_except_decl) = 1;
+
   reraise_zcx_decl
     = create_subprog_decl (get_identifier ("__gnat_reraise_zcx"), NULL_TREE,
 			   ftype, NULL_TREE, false, true, true, true, NULL,
@@ -632,6 +644,12 @@ gigi (Node_Id gnat_root, int max_gnat_node, int number_name ATTRIBUTE_UNUSED,
   all_others_decl
     = create_var_decl (get_identifier ("ALL_OTHERS"),
 		       get_identifier ("__gnat_all_others_value"),
+		       integer_type_node, NULL_TREE, true, false, true, false,
+		       NULL, Empty);
+
+  unhandled_others_decl
+    = create_var_decl (get_identifier ("UNHANDLED_OTHERS"),
+		       get_identifier ("__gnat_unhandled_others_value"),
 		       integer_type_node, NULL_TREE, true, false, true, false,
 		       NULL, Empty);
 
@@ -1236,14 +1254,19 @@ Pragma_to_gnu (Node_Id gnat_node)
       switch (Chars (Expression
 		     (First (Pragma_Argument_Associations (gnat_node)))))
 	{
-	case Name_Time:  case Name_Space:
-	  if (!optimize)
-	    post_error ("insufficient -O value?", gnat_node);
-	  break;
-
 	case Name_Off:
 	  if (optimize)
 	    post_error ("must specify -O0?", gnat_node);
+	  break;
+
+	case Name_Space:
+	  if (!optimize_size)
+	    post_error ("must specify -Os?", gnat_node);
+	  break;
+
+	case Name_Time:
+	  if (!optimize)
+	    post_error ("insufficient -O value?", gnat_node);
 	  break;
 
 	default:
@@ -1933,14 +1956,19 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 	    gnu_result = bitsize_int (bitpos % BITS_PER_UNIT);
 	    gnu_result = size_binop (PLUS_EXPR, gnu_result,
 				     TYPE_SIZE (TREE_TYPE (gnu_prefix)));
-	    gnu_result = size_binop (MINUS_EXPR, gnu_result,
-				     bitsize_one_node);
+	    /* ??? Avoid a large unsigned result that will overflow when
+	       converted to the signed universal_integer.  */
+	    if (integer_zerop (gnu_result))
+	      gnu_result = integer_minus_one_node;
+	    else
+	      gnu_result
+		= size_binop (MINUS_EXPR, gnu_result, bitsize_one_node);
 	    break;
 
 	  case Attr_Bit_Position:
 	    gnu_result = gnu_field_bitpos;
 	    break;
-		}
+	  }
 
 	/* If this has a PLACEHOLDER_EXPR, qualify it by the object we are
 	   handling.  */
@@ -2043,13 +2071,8 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
       break;
 
     default:
-      /* Say we have an unimplemented attribute.  Then set the value to be
-	 returned to be a zero and hope that's something we can convert to
-	 the type of this attribute.  */
-      post_error ("unimplemented attribute", gnat_node);
-      gnu_result_type = get_unpadded_type (Etype (gnat_node));
-      gnu_result = integer_zero_node;
-      break;
+      /* This abort means that we have an unimplemented attribute.  */
+      gcc_unreachable ();
     }
 
   /* If this is an attribute where the prefix was unused, force a use of it if
@@ -3375,16 +3398,22 @@ Subprogram_Body_to_gnu (Node_Id gnat_node)
 	if (!present_gnu_tree (gnat_param))
 	  {
 	    tree gnu_cico_entry = gnu_cico_list;
+	    tree gnu_decl;
 
 	    /* Skip any entries that have been already filled in; they must
 	       correspond to In Out parameters.  */
 	    while (gnu_cico_entry && TREE_VALUE (gnu_cico_entry))
 	      gnu_cico_entry = TREE_CHAIN (gnu_cico_entry);
 
+	    /* Do any needed dereferences for by-ref objects.  */
+	    gnu_decl = gnat_to_gnu_entity (gnat_param, NULL_TREE, 1);
+	    gcc_assert (DECL_P (gnu_decl));
+	    if (DECL_BY_REF_P (gnu_decl))
+	      gnu_decl = build_unary_op (INDIRECT_REF, NULL_TREE, gnu_decl);
+
 	    /* Do any needed references for padded types.  */
 	    TREE_VALUE (gnu_cico_entry)
-	      = convert (TREE_TYPE (TREE_PURPOSE (gnu_cico_entry)),
-			 gnat_to_gnu_entity (gnat_param, NULL_TREE, 1));
+	      = convert (TREE_TYPE (TREE_PURPOSE (gnu_cico_entry)), gnu_decl);
 	  }
     }
   else
@@ -3484,6 +3513,26 @@ Subprogram_Body_to_gnu (Node_Id gnat_node)
      declaration tree.  */
   set_end_locus_from_node (gnu_result, gnat_node);
   set_end_locus_from_node (gnu_subprog_decl, gnat_node);
+
+  /* On SEH targets, install an exception handler around the main entry
+     point to catch unhandled exceptions.  */
+  if (DECL_NAME (gnu_subprog_decl) == main_identifier_node
+      && targetm_common.except_unwind_info (&global_options) == UI_SEH)
+    {
+      tree t;
+      tree etype;
+
+      t = build_call_expr (builtin_decl_explicit (BUILT_IN_EH_POINTER),
+			   1, integer_zero_node);
+      t = build_call_n_expr (unhandled_except_decl, 1, t);
+
+      etype = build_unary_op (ADDR_EXPR, NULL_TREE, unhandled_others_decl);
+      etype = tree_cons (NULL_TREE, etype, NULL_TREE);
+
+      t = build2 (CATCH_EXPR, void_type_node, etype, t);
+      gnu_result = build2 (TRY_CATCH_EXPR, TREE_TYPE (gnu_result),
+			   gnu_result, t);
+    }
 
   end_subprog_body (gnu_result);
 
@@ -4699,6 +4748,7 @@ Compilation_Unit_to_gnu (Node_Id gnat_node)
   const bool body_p = (Nkind (gnat_unit) == N_Package_Body
 		       || Nkind (gnat_unit) == N_Subprogram_Body);
   const Entity_Id gnat_unit_entity = Defining_Entity (gnat_unit);
+  Node_Id gnat_pragma;
   /* Make the decl for the elaboration procedure.  */
   tree gnu_elab_proc_decl
     = create_subprog_decl
@@ -4734,8 +4784,16 @@ Compilation_Unit_to_gnu (Node_Id gnat_node)
 	return;
     }
 
+  /* Then process any pragmas and declarations preceding the unit.  */
+  for (gnat_pragma = First (Context_Items (gnat_node));
+       Present (gnat_pragma);
+       gnat_pragma = Next (gnat_pragma))
+    if (Nkind (gnat_pragma) == N_Pragma)
+      add_stmt (gnat_to_gnu (gnat_pragma));
   process_decls (Declarations (Aux_Decls_Node (gnat_node)), Empty, Empty,
 		 true, true);
+
+  /* Process the unit itself.  */
   add_stmt (gnat_to_gnu (gnat_unit));
 
   /* If we can inline, generate code for all the inlined subprograms.  */
@@ -4886,7 +4944,7 @@ Raise_Error_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p)
 	    {
 	      rci->low_bound = gnu_low_bound;
 	      rci->high_bound = gnu_high_bound;
-	      rci->type = gnat_to_gnu_type (gnat_type);
+	      rci->type = get_unpadded_type (gnat_type);
 	      rci->invariant_cond = build1 (SAVE_EXPR, boolean_type_node,
 					    boolean_true_node);
 	      gnu_cond = build_binary_op (TRUTH_ANDIF_EXPR,
@@ -5403,6 +5461,10 @@ gnat_to_gnu (Node_Id gnat_node)
 		       gnu_array_object);
 
 	gnu_result = gnu_array_object;
+
+	/* The failure of this assertion will very likely come from a missing
+	   expansion for a packed array access.  */
+	gcc_assert (TREE_CODE (TREE_TYPE (gnu_array_object)) == ARRAY_TYPE);
 
 	/* First compute the number of dimensions of the array, then
 	   fill the expression array, the order depending on whether
@@ -6748,7 +6810,6 @@ gnat_to_gnu (Node_Id gnat_node)
     /****************/
 
     case N_Expression_With_Actions:
-      gnu_result_type = get_unpadded_type (Etype (gnat_node));
       /* This construct doesn't define a scope so we don't wrap the statement
 	 list in a BIND_EXPR; however, we wrap it in a SAVE_EXPR to protect it
 	 from unsharing.  */
@@ -6758,6 +6819,7 @@ gnat_to_gnu (Node_Id gnat_node)
       gnu_expr = gnat_to_gnu (Expression (gnat_node));
       gnu_result
 	= build_compound_expr (TREE_TYPE (gnu_expr), gnu_result, gnu_expr);
+      gnu_result_type = get_unpadded_type (Etype (gnat_node));
       break;
 
     case N_Freeze_Entity:
@@ -8057,14 +8119,16 @@ static tree
 emit_range_check (tree gnu_expr, Entity_Id gnat_range_type, Node_Id gnat_node)
 {
   tree gnu_range_type = get_unpadded_type (gnat_range_type);
-  tree gnu_low  = TYPE_MIN_VALUE (gnu_range_type);
-  tree gnu_high = TYPE_MAX_VALUE (gnu_range_type);
   tree gnu_compare_type = get_base_type (TREE_TYPE (gnu_expr));
 
   /* If GNU_EXPR has GNAT_RANGE_TYPE as its base type, no check is needed.
      This can for example happen when translating 'Val or 'Value.  */
   if (gnu_compare_type == gnu_range_type)
     return gnu_expr;
+
+  /* Range checks can only be applied to types with ranges.  */
+  gcc_assert (INTEGRAL_TYPE_P (gnu_range_type)
+              || SCALAR_FLOAT_TYPE_P (gnu_range_type));
 
   /* If GNU_EXPR has an integral type that is narrower than GNU_RANGE_TYPE,
      we can't do anything since we might be truncating the bounds.  No
@@ -8085,13 +8149,16 @@ emit_range_check (tree gnu_expr, Entity_Id gnat_range_type, Node_Id gnat_node)
     (build_binary_op (TRUTH_ORIF_EXPR, boolean_type_node,
 		      invert_truthvalue
 		      (build_binary_op (GE_EXPR, boolean_type_node,
-				       convert (gnu_compare_type, gnu_expr),
-				       convert (gnu_compare_type, gnu_low))),
+				        convert (gnu_compare_type, gnu_expr),
+				        convert (gnu_compare_type,
+						 TYPE_MIN_VALUE
+						 (gnu_range_type)))),
 		      invert_truthvalue
 		      (build_binary_op (LE_EXPR, boolean_type_node,
 					convert (gnu_compare_type, gnu_expr),
 					convert (gnu_compare_type,
-						 gnu_high)))),
+						 TYPE_MAX_VALUE
+						 (gnu_range_type))))),
      gnu_expr, CE_Range_Check_Failed, gnat_node);
 }
 

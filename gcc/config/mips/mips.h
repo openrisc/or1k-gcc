@@ -1,8 +1,5 @@
 /* Definitions of target machine for GNU compiler.  MIPS version.
-   Copyright (C) 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1989-2013 Free Software Foundation, Inc.
    Contributed by A. Lichnewsky (lich@inria.inria.fr).
    Changed by Michael Meissner	(meissner@osf.org).
    64-bit r4000 support by Ian Lance Taylor (ian@cygnus.com) and
@@ -1641,8 +1638,11 @@ struct mips_cpu_info {
 #define COP3_REG_FIRST 144
 #define COP3_REG_LAST 175
 #define COP3_REG_NUM (COP3_REG_LAST - COP3_REG_FIRST + 1)
-/* ALL_COP_REG_NUM assumes that COP0,2,and 3 are numbered consecutively.  */
-#define ALL_COP_REG_NUM (COP3_REG_LAST - COP0_REG_FIRST + 1)
+
+/* These definitions assume that COP0, 2 and 3 are numbered consecutively.  */
+#define ALL_COP_REG_FIRST COP0_REG_FIRST
+#define ALL_COP_REG_LAST COP3_REG_LAST
+#define ALL_COP_REG_NUM (ALL_COP_REG_LAST - ALL_COP_REG_FIRST + 1)
 
 #define DSP_ACC_REG_FIRST 176
 #define DSP_ACC_REG_LAST 181

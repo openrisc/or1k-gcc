@@ -1,6 +1,5 @@
 /* Tail call optimization on trees.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -34,6 +33,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "langhooks.h"
 #include "dbgcnt.h"
 #include "target.h"
+#include "cfgloop.h"
 #include "common/common-target.h"
 
 /* The file implements the tail recursion elimination.  It is also used to
@@ -599,8 +599,8 @@ add_successor_phi_arg (edge e, tree var, tree phi_arg)
 }
 
 /* Creates a GIMPLE statement which computes the operation specified by
-   CODE, OP0 and OP1 to a new variable with name LABEL and inserts the
-   statement in the position specified by GSI and UPDATE.  Returns the
+   CODE, ACC and OP1 to a new variable with name LABEL and inserts the
+   statement in the position specified by GSI.  Returns the
    tree node of the statement's result.  */
 
 static tree
@@ -622,7 +622,7 @@ adjust_return_value_with_ops (enum tree_code code, const char *label,
 					    fold_convert (TREE_TYPE (op1), acc),
 					    op1));
       rhs = force_gimple_operand_gsi (&gsi, rhs,
-				      false, NULL, true, GSI_CONTINUE_LINKING);
+				      false, NULL, true, GSI_SAME_STMT);
       stmt = gimple_build_assign (result, rhs);
     }
 
@@ -1012,7 +1012,12 @@ tree_optimize_tail_calls_1 (bool opt_tailcalls)
     }
 
   if (changed)
-    free_dominance_info (CDI_DOMINATORS);
+    {
+      /* We may have created new loops.  Make them magically appear.  */
+      if (current_loops)
+	loops_state_set (LOOPS_NEED_FIXUP);
+      free_dominance_info (CDI_DOMINATORS);
+    }
 
   /* Add phi nodes for the virtual operands defined in the function to the
      header of the loop created by tail recursion elimination.  Do so

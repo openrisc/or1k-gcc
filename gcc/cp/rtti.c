@@ -1,7 +1,5 @@
 /* RunTime Type Identification
-   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1995-2013 Free Software Foundation, Inc.
    Mostly written by Jason Merrill (jason@cygnus.com).
 
 This file is part of GCC.
@@ -89,6 +87,12 @@ typedef enum tinfo_kind
   /* ...		   abi::__vmi_type_info<I> */
 } tinfo_kind;
 
+/* Helper macro to get maximum scalar-width of pointer or of the 'long'-type.
+   This of interest for llp64 targets.  */
+#define LONGPTR_T \
+  integer_types[(POINTER_SIZE <= TYPE_PRECISION (integer_types[itk_long]) \
+		 ? itk_long : itk_long_long)]
+
 /* A vector of all tinfo decls that haven't yet been emitted.  */
 vec<tree, va_gc> *unemitted_tinfo_decls;
 
@@ -102,7 +106,6 @@ static tree tinfo_name (tree, bool);
 static tree build_dynamic_cast_1 (tree, tree, tsubst_flags_t);
 static tree throw_bad_cast (void);
 static tree throw_bad_typeid (void);
-static tree get_tinfo_decl_dynamic (tree);
 static tree get_tinfo_ptr (tree);
 static bool typeid_ok_p (void);
 static int qualifier_flags (tree);
@@ -232,7 +235,7 @@ throw_bad_typeid (void)
    otherwise return the static type of the expression.  */
 
 static tree
-get_tinfo_decl_dynamic (tree exp)
+get_tinfo_decl_dynamic (tree exp, tsubst_flags_t complain)
 {
   tree type;
   tree t;
@@ -251,7 +254,7 @@ get_tinfo_decl_dynamic (tree exp)
   /* For UNKNOWN_TYPEs call complete_type_or_else to get diagnostics.  */
   if (CLASS_TYPE_P (type) || type == unknown_type_node
       || type == init_list_type_node)
-    type = complete_type_or_else (type, exp);
+    type = complete_type_or_maybe_complain (type, exp, complain);
 
   if (!type)
     return error_mark_node;
@@ -272,7 +275,7 @@ get_tinfo_decl_dynamic (tree exp)
     /* Otherwise return the type_info for the static type of the expr.  */
     t = get_tinfo_ptr (TYPE_MAIN_VARIANT (type));
 
-  return cp_build_indirect_ref (t, RO_NULL, tf_warning_or_error);
+  return cp_build_indirect_ref (t, RO_NULL, complain);
 }
 
 static bool
@@ -310,7 +313,7 @@ typeid_ok_p (void)
    an lvalue of type "const std::type_info".  */
 
 tree
-build_typeid (tree exp)
+build_typeid (tree exp, tsubst_flags_t complain)
 {
   tree cond = NULL_TREE, initial_expr = exp;
   int nonnull = 0;
@@ -334,10 +337,10 @@ build_typeid (tree exp)
       exp = mark_lvalue_use (exp);
       exp = stabilize_reference (exp);
       cond = cp_convert (boolean_type_node, TREE_OPERAND (exp, 0),
-			 tf_warning_or_error);
+			 complain);
     }
 
-  exp = get_tinfo_decl_dynamic (exp);
+  exp = get_tinfo_decl_dynamic (exp, complain);
 
   if (exp == error_mark_node)
     return error_mark_node;
@@ -463,7 +466,7 @@ get_tinfo_ptr (tree type)
 /* Return the type_info object for TYPE.  */
 
 tree
-get_typeid (tree type)
+get_typeid (tree type, tsubst_flags_t complain)
 {
   if (type == error_mark_node || !typeid_ok_p ())
     return error_mark_node;
@@ -483,13 +486,12 @@ get_typeid (tree type)
   /* For UNKNOWN_TYPEs call complete_type_or_else to get diagnostics.  */
   if (CLASS_TYPE_P (type) || type == unknown_type_node
       || type == init_list_type_node)
-    type = complete_type_or_else (type, NULL_TREE);
+    type = complete_type_or_maybe_complain (type, NULL_TREE, complain);
 
   if (!type)
     return error_mark_node;
 
-  return cp_build_indirect_ref (get_tinfo_ptr (type), RO_NULL, 
-                                tf_warning_or_error);
+  return cp_build_indirect_ref (get_tinfo_ptr (type), RO_NULL, complain);
 }
 
 /* Check whether TEST is null before returning RESULT.  If TEST is used in
@@ -1116,7 +1118,7 @@ get_pseudo_ti_init (tree type, unsigned tk_index)
 	tree binfo = TYPE_BINFO (type);
 	int nbases = BINFO_N_BASE_BINFOS (binfo);
 	vec<tree, va_gc> *base_accesses = BINFO_BASE_ACCESSES (binfo);
-	tree offset_type = integer_types[itk_long];
+	tree offset_type = LONGPTR_T;
 	tree base_inits = NULL_TREE;
 	int ix;
 	vec<constructor_elt, va_gc> *init_vec = NULL;
@@ -1420,7 +1422,7 @@ create_tinfo_types (void)
     fields = field;
 
     field = build_decl (BUILTINS_LOCATION,
-			FIELD_DECL, NULL_TREE, integer_types[itk_long]);
+			FIELD_DECL, NULL_TREE, LONGPTR_T);
     DECL_CHAIN (field) = fields;
     fields = field;
 

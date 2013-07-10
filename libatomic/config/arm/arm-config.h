@@ -1,4 +1,4 @@
-/* Copyright (C) 2012 Free Software Foundation, Inc.
+/* Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>.
 
    This file is part of the GNU Atomic Library (libatomic).
@@ -55,6 +55,10 @@
 	|| defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) \
 	|| defined(__ARM_ARCH_7EM__)
 # define __ARM_ARCH__ 7
+#endif
+
+#if defined(__ARM_ARCH_8A__)
+# define __ARM_ARCH__ 8
 #endif
 
 #ifndef __ARM_ARCH__

@@ -1,5 +1,5 @@
 /* dwarf.c -- Get file/line information from DWARF for backtraces.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 Redistribution and use in source and binary forms, with or without
@@ -283,8 +283,12 @@ struct unit
   int addrsize;
   /* Offset into line number information.  */
   off_t lineoff;
+  /* Primary source file.  */
+  const char *filename;
   /* Compilation command working directory.  */
   const char *comp_dir;
+  /* Absolute file name, only set if needed.  */
+  const char *abs_filename;
   /* The abbreviations for this unit.  */
   struct abbrevs abbrevs;
 
@@ -1288,6 +1292,7 @@ build_address_map (struct backtrace_state *state, uintptr_t base_address,
       int have_ranges;
       uint64_t lineoff;
       int have_lineoff;
+      const char *filename;
       const char *comp_dir;
 
       if (info.reported_underflow)
@@ -1346,6 +1351,7 @@ build_address_map (struct backtrace_state *state, uintptr_t base_address,
       have_ranges = 0;
       lineoff = 0;
       have_lineoff = 0;
+      filename = NULL;
       comp_dir = NULL;
       for (i = 0; i < abbrev->num_attrs; ++i)
 	{
@@ -1394,6 +1400,10 @@ build_address_map (struct backtrace_state *state, uintptr_t base_address,
 		  have_lineoff = 1;
 		}
 	      break;
+	    case DW_AT_name:
+	      if (val.encoding == ATTR_VAL_STRING)
+		filename = val.u.string;
+	      break;
 	    case DW_AT_comp_dir:
 	      if (val.encoding == ATTR_VAL_STRING)
 		comp_dir = val.u.string;
@@ -1421,7 +1431,9 @@ build_address_map (struct backtrace_state *state, uintptr_t base_address,
 	  u->version = version;
 	  u->is_dwarf64 = is_dwarf64;
 	  u->addrsize = addrsize;
+	  u->filename = filename;
 	  u->comp_dir = comp_dir;
+	  u->abs_filename = NULL;
 	  u->lineoff = lineoff;
 	  u->abbrevs = abbrevs;
 	  memset (&abbrevs, 0, sizeof abbrevs);
@@ -1643,7 +1655,8 @@ read_line_header (struct backtrace_state *state, struct unit *u,
 		    strnlen ((const char *) hdr_buf.buf, hdr_buf.left) + 1))
 	return 0;
       dir_index = read_uleb128 (&hdr_buf);
-      if (IS_ABSOLUTE_PATH (filename))
+      if (IS_ABSOLUTE_PATH (filename)
+	  || (dir_index == 0 && u->comp_dir == NULL))
 	hdr->filenames[i] = filename;
       else
 	{
@@ -2460,9 +2473,20 @@ read_function_info (struct backtrace_state *state, struct dwarf_data *ddata,
 		    struct function_addrs **ret_addrs,
 		    size_t *ret_addrs_count)
 {
+  struct function_vector lvec;
+  struct function_vector *pfvec;
   struct dwarf_buf unit_buf;
   struct function_addrs *addrs;
   size_t addrs_count;
+
+  /* Use FVEC if it is not NULL.  Otherwise use our own vector.  */
+  if (fvec != NULL)
+    pfvec = fvec;
+  else
+    {
+      memset (&lvec, 0, sizeof lvec);
+      pfvec = &lvec;
+    }
 
   unit_buf.name = ".debug_info";
   unit_buf.start = ddata->dwarf_info;
@@ -2476,20 +2500,28 @@ read_function_info (struct backtrace_state *state, struct dwarf_data *ddata,
   while (unit_buf.left > 0)
     {
       if (!read_function_entry (state, ddata, u, 0, &unit_buf, lhdr,
-				error_callback, data, fvec))
+				error_callback, data, pfvec))
 	return;
     }
 
-  if (fvec->count == 0)
+  if (pfvec->count == 0)
     return;
 
-  addrs = (struct function_addrs *) fvec->vec.base;
-  addrs_count = fvec->count;
+  addrs = (struct function_addrs *) pfvec->vec.base;
+  addrs_count = pfvec->count;
 
-  /* Finish this list of addresses, but leave the remaining space in
-     the vector available for the next function unit.  */
-  backtrace_vector_finish (state, &fvec->vec);
-  fvec->count = 0;
+  if (fvec == NULL)
+    {
+      if (!backtrace_vector_release (state, &lvec.vec, error_callback, data))
+	return;
+    }
+  else
+    {
+      /* Finish this list of addresses, but leave the remaining space in
+	 the vector available for the next function unit.  */
+      backtrace_vector_finish (state, &fvec->vec);
+      fvec->count = 0;
+    }
 
   qsort (addrs, addrs_count, sizeof (struct function_addrs),
 	 function_addrs_compare);
@@ -2650,8 +2682,16 @@ dwarf_lookup_pc (struct backtrace_state *state, struct dwarf_data *ddata,
       if (read_line_info (state, ddata, error_callback, data, entry->u, &lhdr,
 			  &lines, &count))
 	{
+	  struct function_vector *pfvec;
+
+	  /* If not threaded, reuse DDATA->FVEC for better memory
+	     consumption.  */
+	  if (state->threaded)
+	    pfvec = NULL;
+	  else
+	    pfvec = &ddata->fvec;
 	  read_function_info (state, ddata, &lhdr, error_callback, data,
-			      entry->u, &ddata->fvec, &function_addrs,
+			      entry->u, pfvec, &function_addrs,
 			      &function_addrs_count);
 	  free_line_header (state, &lhdr, error_callback, data);
 	  new_data = 1;
@@ -2701,8 +2741,45 @@ dwarf_lookup_pc (struct backtrace_state *state, struct dwarf_data *ddata,
 				sizeof (struct line), line_search);
   if (ln == NULL)
     {
-      error_callback (data, "inconsistent DWARF line number info", 0);
-      return 0;
+      /* The PC is between the low_pc and high_pc attributes of the
+	 compilation unit, but no entry in the line table covers it.
+	 This implies that the start of the compilation unit has no
+	 line number information.  */
+
+      if (entry->u->abs_filename == NULL)
+	{
+	  const char *filename;
+
+	  filename = entry->u->filename;
+	  if (filename != NULL
+	      && !IS_ABSOLUTE_PATH (filename)
+	      && entry->u->comp_dir != NULL)
+	    {
+	      size_t filename_len;
+	      const char *dir;
+	      size_t dir_len;
+	      char *s;
+
+	      filename_len = strlen (filename);
+	      dir = entry->u->comp_dir;
+	      dir_len = strlen (dir);
+	      s = (char *) backtrace_alloc (state, dir_len + filename_len + 2,
+					    error_callback, data);
+	      if (s == NULL)
+		{
+		  *found = 0;
+		  return 0;
+		}
+	      memcpy (s, dir, dir_len);
+	      /* FIXME: Should use backslash if DOS file system.  */
+	      s[dir_len] = '/';
+	      memcpy (s + dir_len + 1, filename, filename_len + 1);
+	      filename = s;
+	    }
+	  entry->u->abs_filename = filename;
+	}
+
+      return callback (data, pc, entry->u->abs_filename, 0, NULL);
     }
 
   /* Search for function name within this unit.  */

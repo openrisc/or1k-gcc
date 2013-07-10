@@ -1,5 +1,5 @@
 ;; Patterns for the Intel Wireless MMX technology architecture.
-;; Copyright (C) 2011, 2012 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2013 Free Software Foundation, Inc.
 ;; Written by Marvell, Inc.
 ;;
 ;; This file is part of GCC.
@@ -17,21 +17,6 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with GCC; see the file COPYING3.  If not see
 ;; <http://www.gnu.org/licenses/>.
-
-(define_c_enum "unspec" [
-  UNSPEC_WADDC		; Used by the intrinsic form of the iWMMXt WADDC instruction.
-  UNSPEC_WABS		; Used by the intrinsic form of the iWMMXt WABS instruction.
-  UNSPEC_WQMULWMR	; Used by the intrinsic form of the iWMMXt WQMULWMR instruction.
-  UNSPEC_WQMULMR	; Used by the intrinsic form of the iWMMXt WQMULMR instruction.
-  UNSPEC_WQMULWM	; Used by the intrinsic form of the iWMMXt WQMULWM instruction.
-  UNSPEC_WQMULM		; Used by the intrinsic form of the iWMMXt WQMULM instruction.
-  UNSPEC_WQMIAxyn	; Used by the intrinsic form of the iWMMXt WMIAxyn instruction.
-  UNSPEC_WQMIAxy	; Used by the intrinsic form of the iWMMXt WMIAxy instruction.
-  UNSPEC_TANDC		; Used by the intrinsic form of the iWMMXt TANDC instruction.
-  UNSPEC_TORC		; Used by the intrinsic form of the iWMMXt TORC instruction.
-  UNSPEC_TORVSC		; Used by the intrinsic form of the iWMMXt TORVSC instruction.
-  UNSPEC_TEXTRC		; Used by the intrinsic form of the iWMMXt TEXTRC instruction.
-])
 
 (define_insn "iwmmxt_wabs<mode>3"
   [(set (match_operand:VMMX               0 "register_operand" "=y")

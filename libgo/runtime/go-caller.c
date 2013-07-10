@@ -156,9 +156,9 @@ struct caller_ret
   _Bool ok;
 };
 
-struct caller_ret Caller (int n) asm ("runtime.Caller");
+struct caller_ret Caller (int n) __asm__ (GOSYM_PREFIX "runtime.Caller");
 
-Func *FuncForPC (uintptr_t) asm ("runtime.FuncForPC");
+Func *FuncForPC (uintptr_t) __asm__ (GOSYM_PREFIX "runtime.FuncForPC");
 
 /* Implement runtime.Caller.  */
 
@@ -166,16 +166,16 @@ struct caller_ret
 Caller (int skip)
 {
   struct caller_ret ret;
-  uintptr pc;
+  Location loc;
   int32 n;
-  String fn;
 
   runtime_memclr (&ret, sizeof ret);
-  n = runtime_callers (skip + 1, &pc, 1);
+  n = runtime_callers (skip + 1, &loc, 1);
   if (n < 1)
     return ret;
-  ret.pc = pc;
-  __go_file_line (pc, &fn, &ret.file, &ret.line);
+  ret.pc = loc.pc;
+  ret.file = loc.filename;
+  ret.line = loc.lineno;
   ret.ok = 1;
   return ret;
 }
@@ -216,7 +216,7 @@ struct funcline_go_return
 
 struct funcline_go_return
 runtime_funcline_go (Func *f, uintptr targetpc)
-  __asm__ ("runtime.funcline_go");
+  __asm__ (GOSYM_PREFIX "runtime.funcline_go");
 
 struct funcline_go_return
 runtime_funcline_go (Func *f __attribute__((unused)), uintptr targetpc)

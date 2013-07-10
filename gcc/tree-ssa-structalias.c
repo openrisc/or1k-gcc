@@ -1,6 +1,5 @@
 /* Tree based points-to analysis
-   Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
    Contributed by Daniel Berlin <dberlin@dberlin.org>
 
    This file is part of GCC.
@@ -304,7 +303,9 @@ static inline bool type_can_have_subvars (const_tree);
 /* Pool of variable info structures.  */
 static alloc_pool variable_info_pool;
 
-
+/* Map varinfo to final pt_solution.  */
+static pointer_map_t *final_solutions;
+struct obstack final_solutions_obstack;
 
 /* Table of variable info structures for constraint variables.
    Indexed directly by variable info id.  */
@@ -1907,45 +1908,29 @@ equiv_class_label_eq (const void *p1, const void *p2)
 	  && bitmap_equal_p (eql1->labels, eql2->labels));
 }
 
-/* Lookup a equivalence class in TABLE by the bitmap of LABELS it
-   contains.  */
+/* Lookup a equivalence class in TABLE by the bitmap of LABELS with
+   hash HAS it contains.  Sets *REF_LABELS to the bitmap LABELS
+   is equivalent to.  */
 
-static unsigned int
-equiv_class_lookup (htab_t table, bitmap labels)
+static equiv_class_label *
+equiv_class_lookup_or_add (htab_t table, bitmap labels)
 {
-  void **slot;
-  struct equiv_class_label ecl;
+  equiv_class_label **slot;
+  equiv_class_label ecl;
 
   ecl.labels = labels;
   ecl.hashcode = bitmap_hash (labels);
+  slot = (equiv_class_label **) htab_find_slot_with_hash (table, &ecl,
+							  ecl.hashcode, INSERT);
+  if (!*slot)
+    {
+      *slot = XNEW (struct equiv_class_label);
+      (*slot)->labels = labels;
+      (*slot)->hashcode = ecl.hashcode;
+      (*slot)->equivalence_class = 0;
+    }
 
-  slot = htab_find_slot_with_hash (table, &ecl,
-				   ecl.hashcode, NO_INSERT);
-  if (!slot)
-    return 0;
-  else
-    return ((equiv_class_label_t) *slot)->equivalence_class;
-}
-
-
-/* Add an equivalence class named EQUIVALENCE_CLASS with labels LABELS
-   to TABLE.  */
-
-static void
-equiv_class_add (htab_t table, unsigned int equivalence_class,
-		 bitmap labels)
-{
-  void **slot;
-  equiv_class_label_t ecl = XNEW (struct equiv_class_label);
-
-  ecl->labels = labels;
-  ecl->equivalence_class = equivalence_class;
-  ecl->hashcode = bitmap_hash (labels);
-
-  slot = htab_find_slot_with_hash (table, ecl,
-				   ecl->hashcode, INSERT);
-  gcc_assert (!*slot);
-  *slot = (void *) ecl;
+  return *slot;
 }
 
 /* Perform offline variable substitution.
@@ -2097,14 +2082,13 @@ condense_visit (constraint_graph_t graph, struct scc_info *si, unsigned int n)
 static void
 label_visit (constraint_graph_t graph, struct scc_info *si, unsigned int n)
 {
-  unsigned int i;
+  unsigned int i, first_pred;
   bitmap_iterator bi;
+
   bitmap_set_bit (si->visited, n);
 
-  if (!graph->points_to[n])
-    graph->points_to[n] = BITMAP_ALLOC (&predbitmap_obstack);
-
   /* Label and union our incoming edges's points to sets.  */
+  first_pred = -1U;
   EXECUTE_IF_IN_NONNULL_BITMAP (graph->preds[n], 0, i, bi)
     {
       unsigned int w = si->node_mapping[i];
@@ -2116,23 +2100,67 @@ label_visit (constraint_graph_t graph, struct scc_info *si, unsigned int n)
 	continue;
 
       if (graph->points_to[w])
-	bitmap_ior_into(graph->points_to[n], graph->points_to[w]);
+	{
+	  if (!graph->points_to[n])
+	    {
+	      if (first_pred == -1U)
+		first_pred = w;
+	      else
+		{
+		  graph->points_to[n] = BITMAP_ALLOC (&predbitmap_obstack);
+		  bitmap_ior (graph->points_to[n],
+			      graph->points_to[first_pred],
+			      graph->points_to[w]);
+		}
+	    }
+	  else
+	    bitmap_ior_into(graph->points_to[n], graph->points_to[w]);
+	}
     }
-  /* Indirect nodes get fresh variables.  */
+
+  /* Indirect nodes get fresh variables and a new pointer equiv class.  */
   if (!bitmap_bit_p (graph->direct_nodes, n))
-    bitmap_set_bit (graph->points_to[n], FIRST_REF_NODE + n);
+    {
+      if (!graph->points_to[n])
+	{
+	  graph->points_to[n] = BITMAP_ALLOC (&predbitmap_obstack);
+	  if (first_pred != -1U)
+	    bitmap_copy (graph->points_to[n], graph->points_to[first_pred]);
+	}
+      bitmap_set_bit (graph->points_to[n], FIRST_REF_NODE + n);
+      graph->pointer_label[n] = pointer_equiv_class++;
+      equiv_class_label_t ecl;
+      ecl = equiv_class_lookup_or_add (pointer_equiv_class_table,
+				       graph->points_to[n]);
+      ecl->equivalence_class = graph->pointer_label[n];
+      return;
+    }
+
+  /* If there was only a single non-empty predecessor the pointer equiv
+     class is the same.  */
+  if (!graph->points_to[n])
+    {
+      if (first_pred != -1U)
+	{
+	  graph->pointer_label[n] = graph->pointer_label[first_pred];
+	  graph->points_to[n] = graph->points_to[first_pred];
+	}
+      return;
+    }
 
   if (!bitmap_empty_p (graph->points_to[n]))
     {
-      unsigned int label = equiv_class_lookup (pointer_equiv_class_table,
-					       graph->points_to[n]);
-      if (!label)
+      equiv_class_label_t ecl;
+      ecl = equiv_class_lookup_or_add (pointer_equiv_class_table,
+				       graph->points_to[n]);
+      if (ecl->equivalence_class == 0)
+	ecl->equivalence_class = pointer_equiv_class++;
+      else
 	{
-	  label = pointer_equiv_class++;
-	  equiv_class_add (pointer_equiv_class_table,
-			   label, graph->points_to[n]);
+	  BITMAP_FREE (graph->points_to[n]);
+	  graph->points_to[n] = ecl->labels;
 	}
-      graph->pointer_label[n] = label;
+      graph->pointer_label[n] = ecl->equivalence_class;
     }
 }
 
@@ -2172,7 +2200,6 @@ perform_var_substitution (constraint_graph_t graph)
       bitmap pointed_by;
       bitmap_iterator bi;
       unsigned int j;
-      unsigned int label;
 
       if (!graph->pointed_by[i])
 	continue;
@@ -2190,14 +2217,10 @@ perform_var_substitution (constraint_graph_t graph)
 
       /* Look up the location equivalence label if one exists, or make
 	 one otherwise.  */
-      label = equiv_class_lookup (location_equiv_class_table,
-				  pointed_by);
-      if (label == 0)
-	{
-	  label = location_equiv_class++;
-	  equiv_class_add (location_equiv_class_table,
-			   label, pointed_by);
-	}
+      equiv_class_label_t ecl;
+      ecl = equiv_class_lookup_or_add (location_equiv_class_table, pointed_by);
+      if (ecl->equivalence_class == 0)
+	ecl->equivalence_class = location_equiv_class++;
       else
 	{
 	  if (dump_file && (dump_flags & TDF_DETAILS))
@@ -2205,21 +2228,27 @@ perform_var_substitution (constraint_graph_t graph)
 		     get_varinfo (i)->name);
 	  BITMAP_FREE (pointed_by);
 	}
-      graph->loc_label[i] = label;
+      graph->loc_label[i] = ecl->equivalence_class;
 
     }
 
   if (dump_file && (dump_flags & TDF_DETAILS))
     for (i = 0; i < FIRST_REF_NODE; i++)
       {
-	bool direct_node = bitmap_bit_p (graph->direct_nodes, i);
-	fprintf (dump_file,
-		 "Equivalence classes for %s node id %d:%s are pointer: %d"
-		 ", location:%d\n",
-		 direct_node ? "Direct node" : "Indirect node", i,
-		 get_varinfo (i)->name,
-		 graph->pointer_label[si->node_mapping[i]],
-		 graph->loc_label[si->node_mapping[i]]);
+	unsigned j = si->node_mapping[i];
+	if (j != i)
+	  fprintf (dump_file, "%s node id %d (%s) mapped to SCC leader "
+		   "node id %d (%s)\n",
+		    bitmap_bit_p (graph->direct_nodes, i)
+		    ? "Direct" : "Indirect", i, get_varinfo (i)->name,
+		    j, get_varinfo (j)->name);
+	else
+	  fprintf (dump_file,
+		   "Equivalence classes for %s node id %d (%s): pointer %d"
+		   ", location %d\n",
+		   bitmap_bit_p (graph->direct_nodes, i)
+		   ? "direct" : "indirect", i, get_varinfo (i)->name,
+		   graph->pointer_label[i], graph->loc_label[i]);
       }
 
   /* Quickly eliminate our non-pointer variables.  */
@@ -4014,8 +4043,7 @@ find_func_aliases_for_builtin_call (gimple t)
   vec<ce_s> rhsc = vNULL;
   varinfo_t fi;
 
-  if (fndecl != NULL_TREE
-      && DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL)
+  if (gimple_call_builtin_p (t, BUILT_IN_NORMAL))
     /* ???  All builtins that are handled here need to be handled
        in the alias-oracle query functions explicitly!  */
     switch (DECL_FUNCTION_CODE (fndecl))
@@ -4768,8 +4796,7 @@ find_func_clobbers (gimple origt)
 
       /* For builtins we do not have separate function info.  For those
 	 we do not generate escapes for we have to generate clobbers/uses.  */
-      if (decl
-	  && DECL_BUILT_IN_CLASS (decl) == BUILT_IN_NORMAL)
+      if (gimple_call_builtin_p (t, BUILT_IN_NORMAL))
 	switch (DECL_FUNCTION_CODE (decl))
 	  {
 	  /* The following functions use and clobber memory pointed to
@@ -5859,20 +5886,28 @@ set_uids_in_ptset (bitmap into, bitmap from, struct pt_solution *pt)
 
 /* Compute the points-to solution *PT for the variable VI.  */
 
-static void
-find_what_var_points_to (varinfo_t orig_vi, struct pt_solution *pt)
+static struct pt_solution
+find_what_var_points_to (varinfo_t orig_vi)
 {
   unsigned int i;
   bitmap_iterator bi;
   bitmap finished_solution;
   bitmap result;
   varinfo_t vi;
-
-  memset (pt, 0, sizeof (struct pt_solution));
+  void **slot;
+  struct pt_solution *pt;
 
   /* This variable may have been collapsed, let's get the real
      variable.  */
   vi = get_varinfo (find (orig_vi->id));
+
+  /* See if we have already computed the solution and return it.  */
+  slot = pointer_map_insert (final_solutions, vi);
+  if (*slot != NULL)
+    return *(struct pt_solution *)*slot;
+
+  *slot = pt = XOBNEW (&final_solutions_obstack, struct pt_solution);
+  memset (pt, 0, sizeof (struct pt_solution));
 
   /* Translate artificial variables into SSA_NAME_PTR_INFO
      attributes.  */
@@ -5908,7 +5943,7 @@ find_what_var_points_to (varinfo_t orig_vi, struct pt_solution *pt)
   /* Instead of doing extra work, simply do not create
      elaborate points-to information for pt_anything pointers.  */
   if (pt->anything)
-    return;
+    return *pt;
 
   /* Share the final set of variables when possible.  */
   finished_solution = BITMAP_GGC_ALLOC ();
@@ -5926,6 +5961,8 @@ find_what_var_points_to (varinfo_t orig_vi, struct pt_solution *pt)
       pt->vars = result;
       bitmap_clear (finished_solution);
     }
+
+  return *pt;
 }
 
 /* Given a pointer variable P, fill in its points-to set.  */
@@ -5950,7 +5987,7 @@ find_what_p_points_to (tree p)
     return;
 
   pi = get_ptr_info (p);
-  find_what_var_points_to (vi, &pi->pt);
+  pi->pt = find_what_var_points_to (vi);
 }
 
 
@@ -6467,6 +6504,9 @@ init_alias_vars (void)
   init_base_vars ();
 
   gcc_obstack_init (&fake_var_decl_obstack);
+
+  final_solutions = pointer_map_create ();
+  gcc_obstack_init (&final_solutions_obstack);
 }
 
 /* Remove the REF and ADDRESS edges from GRAPH, as well as all the
@@ -6625,8 +6665,7 @@ compute_points_to_sets (void)
   solve_constraints ();
 
   /* Compute the points-to set for ESCAPED used for call-clobber analysis.  */
-  find_what_var_points_to (get_varinfo (escaped_id),
-			   &cfun->gimple_df->escaped);
+  cfun->gimple_df->escaped = find_what_var_points_to (get_varinfo (escaped_id));
 
   /* Make sure the ESCAPED solution (which is used as placeholder in
      other solutions) does not reference itself.  This simplifies
@@ -6666,7 +6705,7 @@ compute_points_to_sets (void)
 	    memset (pt, 0, sizeof (struct pt_solution));
 	  else if ((vi = lookup_call_use_vi (stmt)) != NULL)
 	    {
-	      find_what_var_points_to (vi, pt);
+	      *pt = find_what_var_points_to (vi);
 	      /* Escaped (and thus nonlocal) variables are always
 	         implicitly used by calls.  */
 	      /* ???  ESCAPED can be empty even though NONLOCAL
@@ -6687,7 +6726,7 @@ compute_points_to_sets (void)
 	    memset (pt, 0, sizeof (struct pt_solution));
 	  else if ((vi = lookup_call_clobber_vi (stmt)) != NULL)
 	    {
-	      find_what_var_points_to (vi, pt);
+	      *pt = find_what_var_points_to (vi);
 	      /* Escaped (and thus nonlocal) variables are always
 	         implicitly clobbered by calls.  */
 	      /* ???  ESCAPED can be empty even though NONLOCAL
@@ -6742,6 +6781,9 @@ delete_points_to_sets (void)
   free_alloc_pool (constraint_pool);
 
   obstack_free (&fake_var_decl_obstack, NULL);
+
+  pointer_map_destroy (final_solutions);
+  obstack_free (&final_solutions_obstack, NULL);
 }
 
 
@@ -7010,7 +7052,7 @@ ipa_pta_execute (void)
      ???  Note that the computed escape set is not correct
      for the whole unit as we fail to consider graph edges to
      externally visible functions.  */
-  find_what_var_points_to (get_varinfo (escaped_id), &ipa_escaped_pt);
+  ipa_escaped_pt = find_what_var_points_to (get_varinfo (escaped_id));
 
   /* Make sure the ESCAPED solution (which is used as placeholder in
      other solutions) does not reference itself.  This simplifies
@@ -7045,9 +7087,9 @@ ipa_pta_execute (void)
       /* Compute the call-use and call-clobber sets for all direct calls.  */
       fi = lookup_vi_for_tree (node->symbol.decl);
       gcc_assert (fi->is_fn_info);
-      find_what_var_points_to (first_vi_for_offset (fi, fi_clobbers),
-			       &clobbers);
-      find_what_var_points_to (first_vi_for_offset (fi, fi_uses), &uses);
+      clobbers
+	= find_what_var_points_to (first_vi_for_offset (fi, fi_clobbers));
+      uses = find_what_var_points_to (first_vi_for_offset (fi, fi_uses));
       for (e = node->callers; e; e = e->next_caller)
 	{
 	  if (!e->call_stmt)
@@ -7084,7 +7126,7 @@ ipa_pta_execute (void)
 		    memset (pt, 0, sizeof (struct pt_solution));
 		  else if ((vi = lookup_call_use_vi (stmt)) != NULL)
 		    {
-		      find_what_var_points_to (vi, pt);
+		      *pt = find_what_var_points_to (vi);
 		      /* Escaped (and thus nonlocal) variables are always
 			 implicitly used by calls.  */
 		      /* ???  ESCAPED can be empty even though NONLOCAL
@@ -7105,7 +7147,7 @@ ipa_pta_execute (void)
 		    memset (pt, 0, sizeof (struct pt_solution));
 		  else if ((vi = lookup_call_clobber_vi (stmt)) != NULL)
 		    {
-		      find_what_var_points_to (vi, pt);
+		      *pt = find_what_var_points_to (vi);
 		      /* Escaped (and thus nonlocal) variables are always
 			 implicitly clobbered by calls.  */
 		      /* ???  ESCAPED can be empty even though NONLOCAL
@@ -7165,14 +7207,14 @@ ipa_pta_execute (void)
 
 			  if (!uses->anything)
 			    {
-			      find_what_var_points_to
-				  (first_vi_for_offset (vi, fi_uses), &sol);
+			      sol = find_what_var_points_to
+				      (first_vi_for_offset (vi, fi_uses));
 			      pt_solution_ior_into (uses, &sol);
 			    }
 			  if (!clobbers->anything)
 			    {
-			      find_what_var_points_to
-				  (first_vi_for_offset (vi, fi_clobbers), &sol);
+			      sol = find_what_var_points_to
+				      (first_vi_for_offset (vi, fi_clobbers));
 			      pt_solution_ior_into (clobbers, &sol);
 			    }
 			}

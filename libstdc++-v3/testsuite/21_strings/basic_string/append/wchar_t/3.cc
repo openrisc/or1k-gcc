@@ -1,6 +1,6 @@
 // 2004-25-10  Paolo Carlini  <pcarlini@suse.de>
 
-// Copyright (C) 2004, 2009 Free Software Foundation, Inc.
+// Copyright (C) 2004-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -20,6 +20,11 @@
 // 21.3.5 string modifiers
 
 // { dg-options " -DSTR_LOOP_SIZE=9" { target { or1k-*-elf } } }
+// { dg-options "-DITERATIONS=14" { target simulator } }
+
+#ifndef ITERATIONS
+#define ITERATIONS 18
+#endif
 
 #include <string>
 #include <testsuite_hooks.h>
@@ -39,7 +44,7 @@ test03()
     {
       wstring one(source);
       wstring two(source);
-      for (unsigned j = 0; j < 18; ++j)
+      for (unsigned j = 0; j < ITERATIONS; ++j)
 	{
 	  VERIFY( one == two );
 	  one.append(one);

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -577,7 +577,7 @@ package body Sem_Res is
                --  Warn about the danger
 
                Error_Msg_N
-                 ("?creation of & object may raise Storage_Error!",
+                 ("??creation of & object may raise Storage_Error!",
                   Scope (Disc));
 
                <<No_Danger>>
@@ -769,8 +769,8 @@ package body Sem_Res is
               and then Nkind (Parent (P)) = N_Subprogram_Body
               and then Is_Empty_List (Declarations (Parent (P)))
             then
-               Error_Msg_N ("!?infinite recursion", N);
-               Error_Msg_N ("\!?Storage_Error will be raised at run time", N);
+               Error_Msg_N ("!??infinite recursion", N);
+               Error_Msg_N ("\!??Storage_Error will be raised at run time", N);
                Insert_Action (N,
                  Make_Raise_Storage_Error (Sloc (N),
                    Reason => SE_Infinite_Recursion));
@@ -867,8 +867,8 @@ package body Sem_Res is
          end if;
       end loop;
 
-      Error_Msg_N ("!?possible infinite recursion", N);
-      Error_Msg_N ("\!?Storage_Error may be raised at run time", N);
+      Error_Msg_N ("!??possible infinite recursion", N);
+      Error_Msg_N ("\!??Storage_Error may be raised at run time", N);
 
       return True;
    end Check_Infinite_Recursion;
@@ -2864,18 +2864,6 @@ package body Sem_Res is
             return;
          end if;
 
-         --  AI05-144-2: Check dangerous order dependence within an expression
-         --  that is not a subexpression. Exclude RHS of an assignment, because
-         --  both sides may have side-effects and the check must be performed
-         --  over the statement.
-
-         if Nkind (Parent (N)) not in N_Subexpr
-           and then Nkind (Parent (N)) /= N_Assignment_Statement
-           and then Nkind (Parent (N)) /= N_Procedure_Call_Statement
-         then
-            Check_Order_Dependence;
-         end if;
-
          --  The expression is definitely NOT overloaded at this point, so
          --  we reset the Is_Overloaded flag to avoid any confusion when
          --  reanalyzing the node.
@@ -3095,7 +3083,7 @@ package body Sem_Res is
 
                if Wrong_Order then
                   Error_Msg_N
-                    ("actuals for this call may be in wrong order?", N);
+                    ("?P?actuals for this call may be in wrong order", N);
                end if;
             end;
          end;
@@ -3378,6 +3366,7 @@ package body Sem_Res is
 
    begin
       Check_Argument_Order;
+      Check_Function_Writable_Actuals (N);
 
       if Present (First_Actual (N)) then
          Check_Prefixed_Call;
@@ -3420,7 +3409,47 @@ package body Sem_Res is
                   Generate_Reference (Orig_A, A, 'm');
 
                elsif not Is_Overloaded (A) then
-                  Generate_Reference (Orig_A, A);
+                  if Ekind (F) /= E_Out_Parameter then
+                     Generate_Reference (Orig_A, A);
+
+                  --  RM 6.4.1(12): For an out parameter that is passed by
+                  --  copy, the formal parameter object is created, and:
+
+                  --  * For an access type, the formal parameter is initialized
+                  --    from the value of the actual, without checking that the
+                  --    value satisfies any constraint, any predicate, or any
+                  --    exclusion of the null value.
+
+                  --  * For a scalar type that has the Default_Value aspect
+                  --    specified, the formal parameter is initialized from the
+                  --    value of the actual, without checking that the value
+                  --    satisfies any constraint or any predicate.
+                  --  I do not understand why this case is included??? this is
+                  --  not a case where an OUT parameter is treated as IN OUT.
+
+                  --  * For a composite type with discriminants or that has
+                  --    implicit initial values for any subcomponents, the
+                  --    behavior is as for an in out parameter passed by copy.
+
+                  --  Hence for these cases we generate the read reference now
+                  --  (the write reference will be generated later by
+                  --   Note_Possible_Modification).
+
+                  elsif Is_By_Copy_Type (Etype (F))
+                    and then
+                      (Is_Access_Type (Etype (F))
+                         or else
+                           (Is_Scalar_Type (Etype (F))
+                              and then
+                                Present (Default_Aspect_Value (Etype (F))))
+                         or else
+                           (Is_Composite_Type (Etype (F))
+                              and then (Has_Discriminants (Etype (F))
+                                         or else Is_Partially_Initialized_Type
+                                                   (Etype (F)))))
+                  then
+                     Generate_Reference (Orig_A, A);
+                  end if;
                end if;
             end if;
          end if;
@@ -3776,21 +3805,6 @@ package body Sem_Res is
                end if;
             end if;
 
-            --  Save actual for subsequent check on order dependence, and
-            --  indicate whether actual is modifiable. For AI05-0144-2.
-
-            --  If this is a call to a reference function that is the result
-            --  of expansion, as in element iterator loops, this does not lead
-            --  to a dangerous order dependence: only subsequent use of the
-            --  denoted element might, in some enclosing call.
-
-            if not Has_Implicit_Dereference (Etype (Nam))
-              or else Comes_From_Source (N)
-            then
-               Save_Actual (A, Ekind (F) /= E_In_Parameter);
-            end if;
-
-            --  For mode IN, if actual is an entity, and the type of the formal
             --  has warnings suppressed, then we reset Never_Set_In_Source for
             --  the calling entity. The reason for this is to catch cases like
             --  GNAT.Spitbol.Patterns.Vstring_Var where the called subprogram
@@ -3963,14 +3977,14 @@ package body Sem_Res is
                   if Is_Controlling_Formal (F) then
                      Apply_Compile_Time_Constraint_Error
                        (N      => A,
-                        Msg    => "null value not allowed here?",
+                        Msg    => "null value not allowed here??",
                         Reason => CE_Access_Check_Failed);
 
                   elsif Ada_Version >= Ada_2005 then
                      Apply_Compile_Time_Constraint_Error
                        (N      => A,
                         Msg    => "(Ada 2005) null not allowed in "
-                                  & "null-excluding formal?",
+                                  & "null-excluding formal??",
                         Reason => CE_Null_Not_Allowed);
                   end if;
                end if;
@@ -4448,9 +4462,9 @@ package body Sem_Res is
                  Deepest_Type_Access_Level (Typ)
             then
                if In_Instance_Body then
-                  Error_Msg_N ("?type in allocator has deeper level than" &
+                  Error_Msg_N ("??type in allocator has deeper level than" &
                                " designated class-wide type", E);
-                  Error_Msg_N ("\?Program_Error will be raised at run time",
+                  Error_Msg_N ("\??Program_Error will be raised at run time",
                                E);
                   Rewrite (N,
                     Make_Raise_Program_Error (Sloc (N),
@@ -4556,8 +4570,8 @@ package body Sem_Res is
         and then Ekind (Current_Scope) = E_Package
         and then not In_Package_Body (Current_Scope)
       then
-         Error_Msg_N ("?cannot activate task before body seen", N);
-         Error_Msg_N ("\?Program_Error will be raised at run time", N);
+         Error_Msg_N ("??cannot activate task before body seen", N);
+         Error_Msg_N ("\??Program_Error will be raised at run time", N);
       end if;
 
       --  Ada 2012 (AI05-0111-3): Detect an attempt to allocate a task or a
@@ -4569,8 +4583,8 @@ package body Sem_Res is
         and then Present (Subpool_Handle_Name (N))
         and then Has_Task (Desig_T)
       then
-         Error_Msg_N ("?cannot allocate task on subpool", N);
-         Error_Msg_N ("\?Program_Error will be raised at run time", N);
+         Error_Msg_N ("??cannot allocate task on subpool", N);
+         Error_Msg_N ("\??Program_Error will be raised at run time", N);
 
          Rewrite (N,
            Make_Raise_Program_Error (Sloc (N),
@@ -5026,24 +5040,24 @@ package body Sem_Res is
                      then
                         Error_Msg_N
                           ("float division by zero, " &
-                           "may generate '+'/'- infinity?", Right_Opnd (N));
+                           "may generate '+'/'- infinity??", Right_Opnd (N));
 
                         --  For all other cases, we get a Constraint_Error
 
                      else
                         Apply_Compile_Time_Constraint_Error
-                          (N, "division by zero?", CE_Divide_By_Zero,
+                          (N, "division by zero??", CE_Divide_By_Zero,
                            Loc => Sloc (Right_Opnd (N)));
                      end if;
 
                   when N_Op_Rem =>
                      Apply_Compile_Time_Constraint_Error
-                       (N, "rem with zero divisor?", CE_Divide_By_Zero,
+                       (N, "rem with zero divisor??", CE_Divide_By_Zero,
                         Loc => Sloc (Right_Opnd (N)));
 
                   when N_Op_Mod =>
                      Apply_Compile_Time_Constraint_Error
-                       (N, "mod with zero divisor?", CE_Divide_By_Zero,
+                       (N, "mod with zero divisor??", CE_Divide_By_Zero,
                         Loc => Sloc (Right_Opnd (N)));
 
                   --  Division by zero can only happen with division, rem,
@@ -5108,6 +5122,7 @@ package body Sem_Res is
 
       Check_Unset_Reference (L);
       Check_Unset_Reference (R);
+      Check_Function_Writable_Actuals (N);
    end Resolve_Arithmetic_Op;
 
    ------------------
@@ -5285,10 +5300,10 @@ package body Sem_Res is
                then
                   Rtype := Etype (N);
                   Error_Msg_NE
-                    ("?& should not be used in entry body (RM C.7(17))",
+                    ("??& should not be used in entry body (RM C.7(17))",
                      N, Nam);
                   Error_Msg_NE
-                    ("\Program_Error will be raised at run time?", N, Nam);
+                    ("\Program_Error will be raised at run time??", N, Nam);
                   Rewrite (N,
                     Make_Raise_Program_Error (Loc,
                       Reason => PE_Current_Task_In_Entry_Body));
@@ -5578,9 +5593,9 @@ package body Sem_Res is
 
                      Set_Has_Recursive_Call (Nam);
                      Error_Msg_N
-                       ("?possible infinite recursion!", N);
+                       ("??possible infinite recursion!", N);
                      Error_Msg_N
-                       ("\?Storage_Error may be raised at run time!", N);
+                       ("\??Storage_Error may be raised at run time!", N);
                   end if;
 
                   exit Scope_Loop;
@@ -5898,8 +5913,8 @@ package body Sem_Res is
             end loop;
 
             if not Call_OK then
-               Error_Msg_N ("!? cannot determine tag of result", N);
-               Error_Msg_N ("!? Program_Error will be raised", N);
+               Error_Msg_N ("!?? cannot determine tag of result", N);
+               Error_Msg_N ("!?? Program_Error will be raised", N);
                Insert_Action (N,
                  Make_Raise_Program_Error (Sloc (N),
                     Reason => PE_Explicit_Raise));
@@ -6100,7 +6115,7 @@ package body Sem_Res is
       --  Check comparison on unordered enumeration
 
       if Bad_Unordered_Enumeration_Reference (N, Etype (L)) then
-         Error_Msg_N ("comparison on unordered enumeration type?", N);
+         Error_Msg_N ("comparison on unordered enumeration type?U?", N);
       end if;
 
       --  Evaluate the relation (note we do this after the above check since
@@ -6939,7 +6954,7 @@ package body Sem_Res is
            and then Comes_From_Source (R)
          then
             Error_Msg_N -- CODEFIX
-              ("?comparison with True is redundant!", R);
+              ("?r?comparison with True is redundant!", R);
          end if;
 
          Check_Unset_Reference (L);
@@ -7322,9 +7337,9 @@ package body Sem_Res is
         and then Is_Bit_Packed_Array (Array_Type)
         and then Is_LHS (N)
       then
-         Error_Msg_N ("?assignment to component of packed atomic array",
+         Error_Msg_N ("??assignment to component of packed atomic array",
                       Prefix (N));
-         Error_Msg_N ("?\may cause unexpected accesses to atomic object",
+         Error_Msg_N ("??\may cause unexpected accesses to atomic object",
                       Prefix (N));
       end if;
    end Resolve_Indexed_Component;
@@ -7632,6 +7647,8 @@ package body Sem_Res is
             end if;
          end;
       end if;
+
+      Check_Function_Writable_Actuals (N);
    end Resolve_Logical_Op;
 
    ---------------------------
@@ -7700,7 +7717,7 @@ package body Sem_Res is
                while Present (Alt) loop
                   if Is_Static_Expression (Alt)
                     and then (Nkind_In (Alt, N_Integer_Literal,
-                                         N_Character_Literal)
+                                             N_Character_Literal)
                                or else Nkind (Alt) in N_Has_Entity)
                   then
                      Nalts := Nalts + 1;
@@ -7709,7 +7726,7 @@ package body Sem_Res is
                      for J in 1 .. Nalts - 1 loop
                         if Alts (J).Val = Alts (Nalts).Val then
                            Error_Msg_Sloc := Sloc (Alts (J).Alt);
-                           Error_Msg_N ("duplicate of value given#?", Alt);
+                           Error_Msg_N ("duplicate of value given#??", Alt);
                         end if;
                      end loop;
                   end if;
@@ -7729,6 +7746,7 @@ package body Sem_Res is
 
       if Present (Alternatives (N)) then
          Resolve_Set_Membership;
+         Check_Function_Writable_Actuals (N);
          return;
 
       elsif not Is_Overloaded (R)
@@ -7793,6 +7811,7 @@ package body Sem_Res is
       end if;
 
       Eval_Membership_Op (N);
+      Check_Function_Writable_Actuals (N);
    end Resolve_Membership_Op;
 
    ------------------
@@ -7838,7 +7857,7 @@ package body Sem_Res is
          if not Inside_Init_Proc then
             Insert_Action
               (Compile_Time_Constraint_Error (N,
-                 "(Ada 2005) null not allowed in null-excluding objects?"),
+                 "(Ada 2005) null not allowed in null-excluding objects??"),
                Make_Raise_Constraint_Error (Loc,
                  Reason => CE_Access_Check_Failed));
          else
@@ -8308,7 +8327,7 @@ package body Sem_Res is
            and then not Is_Boolean_Type (Typ)
            and then Parent_Is_Boolean
          then
-            Error_Msg_N ("?not expression should be parenthesized here!", N);
+            Error_Msg_N ("?q?not expression should be parenthesized here!", N);
          end if;
 
          --  Warn on double negation if checking redundant constructs
@@ -8319,7 +8338,7 @@ package body Sem_Res is
            and then Root_Type (Typ) = Standard_Boolean
            and then Nkind (Right_Opnd (N)) = N_Op_Not
          then
-            Error_Msg_N ("redundant double negation?", N);
+            Error_Msg_N ("redundant double negation?r?", N);
          end if;
 
          --  Complete resolution and evaluation of NOT
@@ -8459,7 +8478,7 @@ package body Sem_Res is
 
         and then not First_Last_Ref
       then
-         Error_Msg ("subrange of unordered enumeration type?", Sloc (N));
+         Error_Msg ("subrange of unordered enumeration type?U?", Sloc (N));
       end if;
 
       Check_Unset_Reference (L);
@@ -8546,7 +8565,7 @@ package body Sem_Res is
                  and then Warn_On_Bad_Fixed_Value
                then
                   Error_Msg_N
-                    ("?static fixed-point value is not a multiple of Small!",
+                    ("?b?static fixed-point value is not a multiple of Small!",
                      N);
                end if;
 
@@ -8796,9 +8815,9 @@ package body Sem_Res is
         and then Is_LHS (N)
       then
          Error_Msg_N
-           ("?assignment to component of packed atomic record", Prefix (N));
+           ("??assignment to component of packed atomic record", Prefix (N));
          Error_Msg_N
-           ("?\may cause unexpected accesses to atomic object", Prefix (N));
+           ("\??may cause unexpected accesses to atomic object", Prefix (N));
       end if;
 
       Analyze_Dimension (N);
@@ -8891,7 +8910,7 @@ package body Sem_Res is
                      --  of the First_Node call here.
 
                      Error_Msg_F
-                       ("?assertion would fail at run time!",
+                       ("?A?assertion would fail at run time!",
                         Expression
                           (First (Pragma_Argument_Associations (Orig))));
                   end if;
@@ -8906,10 +8925,9 @@ package body Sem_Res is
 
                declare
                   Expr : constant Node_Id :=
-                           Original_Node
-                             (Expression
-                                (Next (First
-                                  (Pragma_Argument_Associations (Orig)))));
+                    Original_Node
+                      (Expression
+                        (Next (First (Pragma_Argument_Associations (Orig)))));
                begin
                   if Is_Entity_Name (Expr)
                     and then Entity (Expr) = Standard_False
@@ -8923,7 +8941,7 @@ package body Sem_Res is
                      --  comment above for an explanation of why we do this.
 
                      Error_Msg_F
-                       ("?check would fail at run time!",
+                       ("?A?check would fail at run time!",
                         Expression
                           (Last (Pragma_Argument_Associations (Orig))));
                   end if;
@@ -9329,7 +9347,8 @@ package body Sem_Res is
                        or else Char_Val > Expr_Value (Comp_Typ_Hi)
                      then
                         Apply_Compile_Time_Constraint_Error
-                          (N, "character out of range?", CE_Range_Check_Failed,
+                          (N, "character out of range??",
+                           CE_Range_Check_Failed,
                            Loc => Source_Ptr (Int (Loc) + J));
                      end if;
                   end loop;
@@ -9474,11 +9493,10 @@ package body Sem_Res is
               and then abs (Realval (Rop)) < Delta_Value (Standard_Duration)
             then
                Error_Msg_N
-                 ("?universal real operand can only " &
-                  "be interpreted as Duration!",
-                  Rop);
+                 ("??universal real operand can only "
+                  & "be interpreted as Duration!", Rop);
                Error_Msg_N
-                 ("\?precision will be lost in the conversion!", Rop);
+                 ("\??precision will be lost in the conversion!", Rop);
             end if;
 
          elsif Is_Numeric_Type (Typ)
@@ -9649,15 +9667,17 @@ package body Sem_Res is
             --  entity, give the name of the entity in the message. If not,
             --  just mention the expression.
 
+            --  Shoudn't we test Warn_On_Redundant_Constructs here ???
+
             else
                if Is_Entity_Name (Orig_N) then
                   Error_Msg_Node_2 := Orig_T;
                   Error_Msg_NE -- CODEFIX
-                    ("?redundant conversion, & is of type &!",
+                    ("??redundant conversion, & is of type &!",
                      N, Entity (Orig_N));
                else
                   Error_Msg_NE
-                    ("?redundant conversion, expression is of type&!",
+                    ("??redundant conversion, expression is of type&!",
                      N, Orig_T);
                end if;
             end if;
@@ -9825,7 +9845,7 @@ package body Sem_Res is
 
          if OK and then Hi >= Lo and then Lo >= 0 then
             Error_Msg_N -- CODEFIX
-             ("?abs applied to known non-negative value has no effect", N);
+             ("?r?abs applied to known non-negative value has no effect", N);
          end if;
       end if;
 
@@ -9963,8 +9983,10 @@ package body Sem_Res is
 
                --  If we fall through warning should be issued
 
+               --  Shouldn't we test Warn_On_Questionable_Missing_Parens ???
+
                Error_Msg_N
-                 ("?unary minus expression should be parenthesized here!", N);
+                 ("??unary minus expression should be parenthesized here!", N);
             end if;
          end if;
       end;
@@ -10438,9 +10460,11 @@ package body Sem_Res is
       end loop;
 
       if Nkind (N) = N_Real_Literal then
-         Error_Msg_NE ("?real literal interpreted as }!", N, T1);
+         Error_Msg_NE
+           ("??real literal interpreted as }!", N, T1);
       else
-         Error_Msg_NE ("?universal_fixed expression interpreted as }!", N, T1);
+         Error_Msg_NE
+           ("??universal_fixed expression interpreted as }!", N, T1);
       end if;
 
       return T1;
@@ -10623,10 +10647,10 @@ package body Sem_Res is
                then
                   if In_Instance_Body then
                      Error_Msg_N
-                       ("?source array type has " &
+                       ("??source array type has " &
                         "deeper accessibility level than target", Operand);
                      Error_Msg_N
-                       ("\?Program_Error will be raised at run time",
+                       ("\??Program_Error will be raised at run time",
                         Operand);
                      Rewrite (N,
                        Make_Raise_Program_Error (Sloc (N),
@@ -10910,10 +10934,10 @@ package body Sem_Res is
 
                if In_Instance_Body then
                   Error_Msg_N
-                    ("?cannot convert local pointer to non-local access type",
+                    ("??cannot convert local pointer to non-local access type",
                      Operand);
                   Error_Msg_N
-                    ("\?Program_Error will be raised at run time", Operand);
+                    ("\??Program_Error will be raised at run time", Operand);
 
                else
                   Error_Msg_N
@@ -10943,10 +10967,11 @@ package body Sem_Res is
 
                   if In_Instance_Body then
                      Error_Msg_N
-                       ("?cannot convert access discriminant to non-local" &
+                       ("??cannot convert access discriminant to non-local" &
                         " access type", Operand);
                      Error_Msg_N
-                       ("\?Program_Error will be raised at run time", Operand);
+                       ("\??Program_Error will be raised at run time",
+                        Operand);
                   else
                      Error_Msg_N
                        ("cannot convert access discriminant to non-local" &
@@ -11087,10 +11112,10 @@ package body Sem_Res is
 
                if In_Instance_Body then
                   Error_Msg_N
-                    ("?cannot convert local pointer to non-local access type",
+                    ("??cannot convert local pointer to non-local access type",
                      Operand);
                   Error_Msg_N
-                    ("\?Program_Error will be raised at run time", Operand);
+                    ("\??Program_Error will be raised at run time", Operand);
 
                else
                   --  Avoid generation of spurious error message
@@ -11125,10 +11150,10 @@ package body Sem_Res is
 
                   if In_Instance_Body then
                      Error_Msg_N
-                       ("?cannot convert access discriminant to non-local" &
-                        " access type", Operand);
+                       ("??cannot convert access discriminant to non-local"
+                        & " access type", Operand);
                      Error_Msg_N
-                       ("\?Program_Error will be raised at run time",
+                       ("\??Program_Error will be raised at run time",
                         Operand);
 
                   else

@@ -1,4 +1,4 @@
-// Copyright (C) 2012 Free Software Foundation, Inc.
+// Copyright (C) 2012-2013 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -25,6 +25,20 @@
 #include <cstdlib>
 #include <new>
 #include "bits/gthr.h"
+
+#if HAVE___CXA_THREAD_ATEXIT_IMPL
+
+extern "C" int __cxa_thread_atexit_impl (void (*func) (void *),
+					 void *arg, void *d);
+extern "C" int
+__cxxabiv1::__cxa_thread_atexit (void (*dtor)(void *),
+				 void *obj, void *dso_handle)
+  _GLIBCXX_NOTHROW
+{
+  return __cxa_thread_atexit_impl (dtor, obj, dso_handle);
+}
+
+#else /* HAVE___CXA_THREAD_ATEXIT_IMPL */
 
 namespace {
   // One element in a singly-linked stack of cleanups.
@@ -116,3 +130,5 @@ __cxxabiv1::__cxa_thread_atexit (void (*dtor)(void *), void *obj, void */*dso_ha
 
   return 0;
 }
+
+#endif /* HAVE___CXA_THREAD_ATEXIT_IMPL */

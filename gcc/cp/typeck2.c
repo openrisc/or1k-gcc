@@ -1,9 +1,6 @@
 /* Report error messages, build initializers, and perform
    some front-end optimizations for C++ compiler.
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
-   2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Hacked by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -1615,7 +1612,7 @@ build_m_component_ref (tree datum, tree component, tsubst_flags_t complain)
 
   if (TYPE_PTRDATAMEM_P (ptrmem_type))
     {
-      bool is_lval = real_lvalue_p (datum);
+      cp_lvalue_kind kind = lvalue_kind (datum);
       tree ptype;
 
       /* Compute the type of the field, as described in [expr.ref].
@@ -1645,12 +1642,39 @@ build_m_component_ref (tree datum, tree component, tsubst_flags_t complain)
 	return error_mark_node;
 
       /* If the object expression was an rvalue, return an rvalue.  */
-      if (!is_lval)
+      if (kind & clk_class)
+	datum = rvalue (datum);
+      else if (kind & clk_rvalueref)
 	datum = move (datum);
       return datum;
     }
   else
-    return build2 (OFFSET_REF, type, datum, component);
+    {
+      /* 5.5/6: In a .* expression whose object expression is an rvalue, the
+	 program is ill-formed if the second operand is a pointer to member
+	 function with ref-qualifier &. In a .* expression whose object
+	 expression is an lvalue, the program is ill-formed if the second
+	 operand is a pointer to member function with ref-qualifier &&.  */
+      if (FUNCTION_REF_QUALIFIED (type))
+	{
+	  bool lval = real_lvalue_p (datum);
+	  if (lval && FUNCTION_RVALUE_QUALIFIED (type))
+	    {
+	      if (complain & tf_error)
+		error ("pointer-to-member-function type %qT requires an rvalue",
+		       ptrmem_type);
+	      return error_mark_node;
+	    }
+	  else if (!lval && !FUNCTION_RVALUE_QUALIFIED (type))
+	    {
+	      if (complain & tf_error)
+		error ("pointer-to-member-function type %qT requires an lvalue",
+		       ptrmem_type);
+	      return error_mark_node;
+	    }
+	}
+      return build2 (OFFSET_REF, type, datum, component);
+    }
 }
 
 /* Return a tree node for the expression TYPENAME '(' PARMS ')'.  */
@@ -1871,7 +1895,7 @@ merge_exception_specifiers (tree list, tree add, tree fn)
       /* If ADD is a deferred noexcept, we must have been called from
 	 process_subob_fn.  For implicitly declared functions, we build up
 	 a list of functions to consider at instantiation time.  */
-      if (noex == boolean_true_node)
+      if (noex && operand_equal_p (noex, boolean_true_node, 0))
 	noex = NULL_TREE;
       gcc_assert (fn && (!noex || is_overloaded_fn (noex)));
       noex = build_overload (fn, noex);

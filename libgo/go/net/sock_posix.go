@@ -9,7 +9,6 @@
 package net
 
 import (
-	"io"
 	"syscall"
 	"time"
 )
@@ -18,15 +17,10 @@ var listenerBacklog = maxListenerBacklog()
 
 // Generic socket creation.
 func socket(net string, f, t, p int, ipv6only bool, ulsa, ursa syscall.Sockaddr, deadline time.Time, toAddr func(syscall.Sockaddr) Addr) (fd *netFD, err error) {
-	// See ../syscall/exec_unix.go for description of ForkLock.
-	syscall.ForkLock.RLock()
-	s, err := syscall.Socket(f, t, p)
+	s, err := sysSocket(f, t, p)
 	if err != nil {
-		syscall.ForkLock.RUnlock()
 		return nil, err
 	}
-	syscall.CloseOnExec(s)
-	syscall.ForkLock.RUnlock()
 
 	if err = setDefaultSockopts(s, f, t, ipv6only); err != nil {
 		closesocket(s)
@@ -57,16 +51,13 @@ func socket(net string, f, t, p int, ipv6only bool, ulsa, ursa syscall.Sockaddr,
 	}
 
 	if ursa != nil {
-		if !deadline.IsZero() {
-			fd.wdeadline = deadline.UnixNano()
-		}
+		fd.wdeadline.setTime(deadline)
 		if err = fd.connect(ursa); err != nil {
 			closesocket(s)
-			fd.Close()
 			return nil, err
 		}
 		fd.isConnected = true
-		fd.wdeadline = 0
+		fd.wdeadline.set(0)
 	}
 
 	lsa, _ := syscall.Getsockname(s)
@@ -75,15 +66,4 @@ func socket(net string, f, t, p int, ipv6only bool, ulsa, ursa syscall.Sockaddr,
 	raddr := toAddr(rsa)
 	fd.setAddr(laddr, raddr)
 	return fd, nil
-}
-
-type writerOnly struct {
-	io.Writer
-}
-
-// Fallback implementation of io.ReaderFrom's ReadFrom, when sendfile isn't
-// applicable.
-func genericReadFrom(w io.Writer, r io.Reader) (n int64, err error) {
-	// Use wrapper to hide existing r.ReadFrom from io.Copy.
-	return io.Copy(writerOnly{w}, r)
 }

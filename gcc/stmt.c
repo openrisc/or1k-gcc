@@ -1,7 +1,5 @@
 /* Expands front end tree to back end RTL for GCC
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1762,6 +1760,10 @@ expand_switch_as_decision_tree_p (tree range,
     return true;
   if (!flag_jump_tables)
     return true;
+#ifndef ASM_OUTPUT_ADDR_DIFF_ELT
+  if (flag_pic)
+    return true;
+#endif
 
   /* If the switch is relatively small such that the cost of one
      indirect jump on the target are higher than the cost of a
@@ -2061,7 +2063,7 @@ compute_cases_per_edge (gimple stmt)
       tree lab = CASE_LABEL (elt);
       basic_block case_bb = label_to_block_fn (cfun, lab);
       edge case_edge = find_edge (bb, case_bb);
-      case_edge->aux = (void *)((long)(case_edge->aux) + 1);
+      case_edge->aux = (void *)((intptr_t)(case_edge->aux) + 1);
     }
 }
 
@@ -2176,7 +2178,7 @@ expand_case (gimple stmt)
       edge case_edge = find_edge (bb, case_bb);
       case_list = add_case_node (
           case_list, low, high, lab,
-          case_edge->probability / (long)(case_edge->aux),
+          case_edge->probability / (intptr_t)(case_edge->aux),
           case_node_pool);
     }
   pointer_set_destroy (seen_labels);
@@ -2282,7 +2284,7 @@ expand_sjlj_dispatch_table (rtx dispatch_index,
       tree range = maxval;
       rtx default_label = gen_label_rtx ();
 
-      for (int i = ncases - 1; i > 0; --i)
+      for (int i = ncases - 1; i >= 0; --i)
 	{
 	  tree elt = dispatch_table[i];
 	  tree low = CASE_LOW (elt);

@@ -1,6 +1,5 @@
 /* Default target hook functions.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -102,10 +101,8 @@ default_unspec_may_trap_p (const_rtx x, unsigned flags)
 {
   int i;
 
-  if (GET_CODE (x) == UNSPEC_VOLATILE
-      /* Any floating arithmetic may trap.  */
-      || (SCALAR_FLOAT_MODE_P (GET_MODE (x))
-	  && flag_trapping_math))
+  /* Any floating arithmetic may trap.  */
+  if ((SCALAR_FLOAT_MODE_P (GET_MODE (x)) && flag_trapping_math))
     return 1;
 
   for (i = 0; i < XVECLEN (x, 0); ++i)
@@ -1538,6 +1535,13 @@ bool
 default_member_type_forces_blk (const_tree, enum machine_mode)
 {
   return false;
+}
+
+/* Default version of canonicalize_comparison.  */
+
+void
+default_canonicalize_comparison (int *, rtx *, rtx *, bool)
+{
 }
 
 #include "gt-targhooks.h"

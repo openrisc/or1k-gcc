@@ -1,7 +1,6 @@
 /* Threads compatibility routines for libgcc2 and libobjc.  */
 /* Compile this one with gcc.  */
-/* Copyright (C) 1997, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-   2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+/* Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -877,14 +876,6 @@ __gthread_cond_wait_recursive (__gthread_cond_t *__cond,
 			       __gthread_recursive_mutex_t *__mutex)
 {
   return __gthread_cond_wait (__cond, __mutex);
-}
-
-static inline int
-__gthread_cond_timedwait_recursive (__gthread_cond_t *__cond,
-				    __gthread_recursive_mutex_t *__mutex,
-				    const __gthread_time_t *__abs_timeout)
-{
-  return __gthread_cond_timedwait (__cond, __mutex, __abs_timeout);
 }
 
 static inline int

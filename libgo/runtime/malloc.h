@@ -247,7 +247,7 @@ struct MStats
 };
 
 extern MStats mstats
-  __asm__ ("runtime.VmemStats");
+  __asm__ (GOSYM_PREFIX "runtime.VmemStats");
 
 
 // Size classes.  Computed and initialized by InitSizes.
@@ -446,7 +446,7 @@ void	runtime_markallocated(void *v, uintptr n, bool noptr);
 void	runtime_checkallocated(void *v, uintptr n);
 void	runtime_markfreed(void *v, uintptr n);
 void	runtime_checkfreed(void *v, uintptr n);
-int32	runtime_checking;
+extern	int32	runtime_checking;
 void	runtime_markspan(void *v, uintptr size, uintptr n, bool leftover);
 void	runtime_unmarkspan(void *v, uintptr size);
 bool	runtime_blockspecial(void*);
@@ -468,17 +468,25 @@ enum
 	FlagNoGC = 1<<2,	// must not free or scan for pointers
 };
 
+typedef struct Obj Obj;
+struct Obj
+{
+	byte	*p;	// data pointer
+	uintptr	n;	// size of data in bytes
+	uintptr	ti;	// type info
+};
+
 void	runtime_MProf_Malloc(void*, uintptr);
 void	runtime_MProf_Free(void*, uintptr);
 void	runtime_MProf_GC(void);
-void	runtime_MProf_Mark(void (*addroot)(byte *, uintptr));
+void	runtime_MProf_Mark(void (*addroot)(Obj));
 int32	runtime_gcprocs(void);
 void	runtime_helpgc(int32 nproc);
 void	runtime_gchelper(void);
 
 struct __go_func_type;
 bool	runtime_getfinalizer(void *p, bool del, void (**fn)(void*), const struct __go_func_type **ft);
-void	runtime_walkfintab(void (*fn)(void*), void (*scan)(byte *, uintptr));
+void	runtime_walkfintab(void (*fn)(void*), void (*scan)(Obj));
 
 enum
 {
@@ -492,5 +500,9 @@ enum
 
 // defined in mgc0.go
 void	runtime_gc_m_ptr(Eface*);
+void	runtime_gc_itab_ptr(Eface*);
 
 void	runtime_memorydump(void);
+
+void	runtime_time_scan(void (*)(Obj));
+void	runtime_trampoline_scan(void (*)(Obj));

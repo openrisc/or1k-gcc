@@ -1,5 +1,5 @@
 /* Top-level LTO routines.
-   Copyright 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -1766,7 +1766,6 @@ lto_register_var_decl_in_symtab (struct data_in *data_in, tree decl)
       ASM_FORMAT_PRIVATE_NAME (label, name, DECL_UID (decl));
       SET_DECL_ASSEMBLER_NAME (decl, get_identifier (label));
       rest_of_decl_compilation (decl, 1, 0);
-      vec_safe_push (lto_global_var_decls, decl);
     }
 
   /* If this variable has already been declared, queue the
@@ -2226,8 +2225,7 @@ lto_resolution_read (splay_tree file_ids, FILE *resolution, lto_file *file)
 	{
 	  nd = lto_splay_tree_lookup (file_ids, id);
 	  if (nd == NULL)
-	    internal_error ("resolution sub id " HOST_WIDE_INT_PRINT_HEX_PURE
-			    " not in object file", id);
+	    internal_error ("resolution sub id %wx not in object file", id);
 	}
 
       file_data = (struct lto_file_decl_data *)nd->value;
@@ -3034,16 +3032,22 @@ read_cgraph_and_symbols (unsigned nfiles, const char **fnames)
     fprintf (stderr, "Merging declarations\n");
 
   timevar_push (TV_IPA_LTO_DECL_MERGE);
-  /* Merge global decls.  */
-  lto_symtab_merge_decls ();
+  /* Merge global decls.  In ltrans mode we read merged cgraph, we do not
+     need to care about resolving symbols again, we only need to replace
+     duplicated declarations read from the callgraph and from function
+     sections.  */
+  if (!flag_ltrans)
+    {
+      lto_symtab_merge_decls ();
 
-  /* If there were errors during symbol merging bail out, we have no
-     good way to recover here.  */
-  if (seen_error ())
-    fatal_error ("errors during merging of translation units");
+      /* If there were errors during symbol merging bail out, we have no
+	 good way to recover here.  */
+      if (seen_error ())
+	fatal_error ("errors during merging of translation units");
 
-  /* Fixup all decls.  */
-  lto_fixup_decls (all_file_decl_data);
+      /* Fixup all decls.  */
+      lto_fixup_decls (all_file_decl_data);
+    }
   htab_delete (tree_with_vars);
   tree_with_vars = NULL;
   ggc_collect ();
@@ -3216,6 +3220,7 @@ do_whole_program_analysis (void)
   cgraph_state = CGRAPH_STATE_IPA_SSA;
 
   execute_ipa_pass_list (all_regular_ipa_passes);
+  symtab_remove_unreachable_nodes (false, dump_file);
 
   if (cgraph_dump_file)
     {
@@ -3380,6 +3385,8 @@ lto_main (void)
 	do_whole_program_analysis ();
       else
 	{
+	  struct varpool_node *vnode;
+
 	  timevar_start (TV_PHASE_OPT_GEN);
 
 	  materialize_cgraph ();
@@ -3397,6 +3404,10 @@ lto_main (void)
 	     this.  */
 	  if (flag_lto_report)
 	    print_lto_report_1 ();
+
+	  /* Record the global variables.  */
+	  FOR_EACH_DEFINED_VARIABLE (vnode)
+	    vec_safe_push (lto_global_var_decls, vnode->symbol.decl);
 	}
     }
 

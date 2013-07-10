@@ -1,5 +1,5 @@
 /* LTO symbol table.
-   Copyright 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -439,13 +439,20 @@ lto_symtab_merge_decls_1 (symtab_node first)
 		&& COMPLETE_TYPE_P (TREE_TYPE (e->symbol.decl)))
 	      prevailing = e;
 	}
+      /* For variables prefer the non-builtin if one is available.  */
+      else if (TREE_CODE (prevailing->symbol.decl) == FUNCTION_DECL)
+	{
+	  for (e = first; e; e = e->symbol.next_sharing_asm_name)
+	    if (TREE_CODE (e->symbol.decl) == FUNCTION_DECL
+		&& !DECL_BUILT_IN (e->symbol.decl))
+	      {
+		prevailing = e;
+		break;
+	      }
+	}
     }
 
   symtab_prevail_in_asm_name_hash (prevailing);
-
-  /* Record the prevailing variable.  */
-  if (TREE_CODE (prevailing->symbol.decl) == VAR_DECL)
-    vec_safe_push (lto_global_var_decls, prevailing->symbol.decl);
 
   /* Diagnose mismatched objects.  */
   for (e = prevailing->symbol.next_sharing_asm_name;
@@ -499,12 +506,6 @@ void
 lto_symtab_merge_decls (void)
 {
   symtab_node node;
-
-  /* In ltrans mode we read merged cgraph, we do not really need to care
-     about resolving symbols again, we only need to replace duplicated declarations
-     read from the callgraph and from function sections.  */
-  if (flag_ltrans)
-    return;
 
   /* Populate assembler name hash.   */
   symtab_initialize_asm_name_hash ();
@@ -589,6 +590,11 @@ lto_symtab_prevailing_decl (tree decl)
 
   /* DECL_ABSTRACTs are their own prevailng decl.  */
   if (TREE_CODE (decl) == FUNCTION_DECL && DECL_ABSTRACT (decl))
+    return decl;
+
+  /* Likewise builtins are their own prevailing decl.  This preserves
+     non-builtin vs. builtin uses from compile-time.  */
+  if (TREE_CODE (decl) == FUNCTION_DECL && DECL_BUILT_IN (decl))
     return decl;
 
   /* Ensure DECL_ASSEMBLER_NAME will not set assembler name.  */

@@ -1,7 +1,5 @@
 /* Perform instruction reorganizations for delay slot filling.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
    Contributed by Richard Kenner (kenner@vlsi1.ultra.nyu.edu).
    Hacked by Michael Tiemann (tiemann@cygnus.com).
 
@@ -100,16 +98,7 @@ along with GCC; see the file COPYING3.  If not see
    delay slot.  In that case, we point each insn at the other with REG_CC_USER
    and REG_CC_SETTER notes.  Note that these restrictions affect very few
    machines because most RISC machines with delay slots will not use CC0
-   (the RT is the only known exception at this point).
-
-   Not yet implemented:
-
-   The Acorn Risc Machine can conditionally execute most insns, so
-   it is profitable to move single insns into a position to execute
-   based on the condition code of the previous insn.
-
-   The HP-PA can conditionally nullify insns, providing a similar
-   effect to the ARM, differing mostly in which insn is "in charge".  */
+   (the RT is the only known exception at this point).  */
 
 #include "config.h"
 #include "system.h"
@@ -444,12 +433,7 @@ find_end_label (rtx kind)
 	     if needed.  */
 	  emit_label (label);
 #ifdef HAVE_return
-	  /* We don't bother trying to create a return insn if the
-	     epilogue has filled delay-slots; we would have to try and
-	     move the delay-slot fillers to the delay-slots for the new
-	     return insn or in front of the new return insn.  */
-	  if (crtl->epilogue_delay_list == NULL
-	      && HAVE_return)
+	  if (HAVE_return)
 	    {
 	      /* The return we make may have delay slots too.  */
 	      rtx insn = gen_return ();
@@ -813,8 +797,7 @@ optimize_skip (rtx insn)
      we have one insn followed by a branch to the same label we branch to.
      In both of these cases, inverting the jump and annulling the delay
      slot give the same effect in fewer insns.  */
-  if ((next_trial == next_active_insn (JUMP_LABEL (insn))
-       && ! (next_trial == 0 && crtl->epilogue_delay_list != 0))
+  if (next_trial == next_active_insn (JUMP_LABEL (insn))
       || (next_trial != 0
 	  && simplejump_or_return_p (next_trial)
 	  && JUMP_LABEL (insn) == JUMP_LABEL (next_trial)))

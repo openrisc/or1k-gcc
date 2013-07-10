@@ -1,5 +1,5 @@
 /* Dump infrastructure for optimizations and intermediate representation.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -62,9 +62,7 @@ static struct dump_file_info dump_files[TDI_end] =
    0, 0, 0, 0, 4},
   {".nested", "tree-nested", NULL, NULL, NULL, NULL, NULL, TDF_TREE,
    0, 0, 0, 0, 5},
-  {".vcg", "tree-vcg", NULL, NULL, NULL, NULL, NULL, TDF_TREE,
-   0, 0, 0, 0, 6},
-#define FIRST_AUTO_NUMBERED_DUMP 7
+#define FIRST_AUTO_NUMBERED_DUMP 6
 
   {NULL, "tree-all", NULL, NULL, NULL, NULL, NULL, TDF_TREE,
    0, 0, 0, 0, 0},
@@ -262,12 +260,13 @@ dump_loc (int dump_kind, FILE *dfile, source_location loc)
   /* Currently vectorization passes print location information.  */
   if (dump_kind)
     {
-      if (loc == UNKNOWN_LOCATION)
+      if (LOCATION_LOCUS (loc) > BUILTINS_LOCATION)
+        fprintf (dfile, "\n%s:%d: note: ", LOCATION_FILE (loc),
+                 LOCATION_LINE (loc));
+      else if (current_function_decl)
         fprintf (dfile, "\n%s:%d: note: ",
                  DECL_SOURCE_FILE (current_function_decl),
                  DECL_SOURCE_LINE (current_function_decl));
-     else
-        fprintf (dfile, "\n%d: ", LOCATION_LINE (loc));
     }
 }
 

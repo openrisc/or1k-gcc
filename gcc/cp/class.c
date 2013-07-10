@@ -1,8 +1,5 @@
 /* Functions related to building classes and their related objects.
-   Copyright (C) 1987, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011,
-   2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -1048,6 +1045,12 @@ add_method (tree type, tree method, tree using_decl)
 	 overloaded if any of them is a static member
 	 function declaration.
 
+	 [over.load] Member function declarations with the same name and
+	 the same parameter-type-list as well as member function template
+	 declarations with the same name, the same parameter-type-list, and
+	 the same template parameter lists cannot be overloaded if any of
+	 them, but not all, have a ref-qualifier.
+
 	 [namespace.udecl] When a using-declaration brings names
 	 from a base class into a derived class scope, member
 	 functions in the derived class override and/or hide member
@@ -1063,11 +1066,13 @@ add_method (tree type, tree method, tree using_decl)
 	 coming from the using class in overload resolution.  */
       if (! DECL_STATIC_FUNCTION_P (fn)
 	  && ! DECL_STATIC_FUNCTION_P (method)
-	  && TREE_TYPE (TREE_VALUE (parms1)) != error_mark_node
-	  && TREE_TYPE (TREE_VALUE (parms2)) != error_mark_node
-	  && (cp_type_quals (TREE_TYPE (TREE_VALUE (parms1)))
-	      != cp_type_quals (TREE_TYPE (TREE_VALUE (parms2)))))
-	continue;
+	  /* Either both or neither need to be ref-qualified for
+	     differing quals to allow overloading.  */
+	  && (FUNCTION_REF_QUALIFIED (fn_type)
+	      == FUNCTION_REF_QUALIFIED (method_type))
+	  && (type_memfn_quals (fn_type) != type_memfn_quals (method_type)
+	      || type_memfn_rqual (fn_type) != type_memfn_rqual (method_type)))
+	  continue;
 
       /* For templates, the return type and template parameters
 	 must be identical.  */
@@ -1096,8 +1101,6 @@ add_method (tree type, tree method, tree using_decl)
 	      && TREE_CODE (method) == FUNCTION_DECL
 	      && !DECL_EXTERN_C_P (fn)
 	      && !DECL_EXTERN_C_P (method)
-	      && (DECL_FUNCTION_SPECIFIC_TARGET (fn)
-		  || DECL_FUNCTION_SPECIFIC_TARGET (method))
 	      && targetm.target_option.function_versions (fn, method))
  	    {
 	      /* Mark functions as versions if necessary.  Modify the mangled
@@ -2068,6 +2071,8 @@ same_signature_p (const_tree fndecl, const_tree base_fndecl)
       base_types = TYPE_ARG_TYPES (TREE_TYPE (base_fndecl));
       if ((cp_type_quals (TREE_TYPE (TREE_VALUE (base_types)))
 	   == cp_type_quals (TREE_TYPE (TREE_VALUE (types))))
+	  && (type_memfn_rqual (TREE_TYPE (fndecl))
+	      == type_memfn_rqual (TREE_TYPE (base_fndecl)))
 	  && compparms (TREE_CHAIN (base_types), TREE_CHAIN (types)))
 	return 1;
     }
@@ -2546,6 +2551,10 @@ modify_all_vtables (tree t, tree virtuals)
   tree binfo = TYPE_BINFO (t);
   tree *fnsp;
 
+  /* Mangle the vtable name before entering dfs_walk (c++/51884).  */
+  if (TYPE_CONTAINS_VPTR_P (t))
+    get_vtable_decl (t, false);
+
   /* Update all of the vtables.  */
   dfs_walk_once (binfo, dfs_modify_vtables, NULL, t);
 
@@ -3015,11 +3024,10 @@ add_implicitly_declared_members (tree t, tree* access_decls,
     {
       tree using_decl = TREE_VALUE (*access_decls);
       tree decl = USING_DECL_DECLS (using_decl);
-      if (DECL_SELF_REFERENCE_P (decl))
+      if (DECL_NAME (using_decl) == ctor_identifier)
 	{
 	  /* declare, then remove the decl */
-	  tree ctor_list = lookup_fnfields_slot (TREE_TYPE (decl),
-						 ctor_identifier);
+	  tree ctor_list = decl;
 	  location_t loc = input_location;
 	  input_location = DECL_SOURCE_LOCATION (using_decl);
 	  if (ctor_list)
@@ -5250,13 +5258,14 @@ check_bases_and_members (tree t)
   cant_have_const_ctor = 0;
   no_const_asn_ref = 0;
 
-  /* Deduce noexcept on destructors.  */
-  if (cxx_dialect >= cxx0x)
-    deduce_noexcept_on_destructors (t);
-
   /* Check all the base-classes.  */
   check_bases (t, &cant_have_const_ctor,
 	       &no_const_asn_ref);
+
+  /* Deduce noexcept on destructors.  This needs to happen after we've set
+     triviality flags appropriately for our bases.  */
+  if (cxx_dialect >= cxx0x)
+    deduce_noexcept_on_destructors (t);
 
   /* Check all the method declarations.  */
   check_methods (t);
@@ -7815,9 +7824,9 @@ dump_class_hierarchy_r (FILE *stream,
   int i;
 
   indented = maybe_indent_hierarchy (stream, indent, 0);
-  fprintf (stream, "%s (0x%lx) ",
+  fprintf (stream, "%s (0x" HOST_WIDE_INT_PRINT_HEX ") ",
 	   type_as_string (BINFO_TYPE (binfo), TFF_PLAIN_IDENTIFIER),
-	   (unsigned long) binfo);
+	   (HOST_WIDE_INT) (uintptr_t) binfo);
   if (binfo != igo)
     {
       fprintf (stream, "alternative-path\n");
@@ -7839,10 +7848,10 @@ dump_class_hierarchy_r (FILE *stream,
   if (BINFO_PRIMARY_P (binfo))
     {
       indented = maybe_indent_hierarchy (stream, indent + 3, indented);
-      fprintf (stream, " primary-for %s (0x%lx)",
+      fprintf (stream, " primary-for %s (0x" HOST_WIDE_INT_PRINT_HEX ")",
 	       type_as_string (BINFO_TYPE (BINFO_INHERITANCE_CHAIN (binfo)),
 			       TFF_PLAIN_IDENTIFIER),
-	       (unsigned long)BINFO_INHERITANCE_CHAIN (binfo));
+	       (HOST_WIDE_INT) (uintptr_t) BINFO_INHERITANCE_CHAIN (binfo));
     }
   if (BINFO_LOST_PRIMARY_P (binfo))
     {
@@ -7975,7 +7984,8 @@ dump_vtable (tree t, tree binfo, tree vtable)
       if (ctor_vtbl_p)
 	{
 	  if (!BINFO_VIRTUAL_P (binfo))
-	    fprintf (stream, " (0x%lx instance)", (unsigned long)binfo);
+	    fprintf (stream, " (0x" HOST_WIDE_INT_PRINT_HEX " instance)",
+		     (HOST_WIDE_INT) (uintptr_t) binfo);
 	  fprintf (stream, " in %s", type_as_string (t, TFF_PLAIN_IDENTIFIER));
 	}
       fprintf (stream, "\n");
@@ -8360,6 +8370,12 @@ build_ctor_vtbl_group (tree binfo, tree t)
      construction vtable group.  */
   vtbl = build_vtable (t, id, ptr_type_node);
   DECL_CONSTRUCTION_VTABLE_P (vtbl) = 1;
+  /* Don't export construction vtables from shared libraries.  Even on
+     targets that don't support hidden visibility, this tells
+     can_refer_decl_in_current_unit_p not to assume that it's safe to
+     access from a different compilation unit (bz 54314).  */
+  DECL_VISIBILITY (vtbl) = VISIBILITY_HIDDEN;
+  DECL_VISIBILITY_SPECIFIED (vtbl) = true;
 
   v = NULL;
   accumulate_vtbl_inits (binfo, TYPE_BINFO (TREE_TYPE (binfo)),

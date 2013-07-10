@@ -1,6 +1,6 @@
 // 2004-11-29  Paolo Carlini  <pcarlini@suse.de>
 
-// Copyright (C) 2004, 2009 Free Software Foundation
+// Copyright (C) 2004-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -20,6 +20,11 @@
 // 21.3.3 string capacity
 
 // { dg-options " -DSTR_MAX_SIZE=16" { target { or1k-*-elf } } }
+// { dg-options "-DMAX_SIZE=16" { target simulator } }
+
+#ifndef MAX_SIZE
+#define MAX_SIZE 20
+#endif
 
 #include <string>
 #include <testsuite_hooks.h>
@@ -36,7 +41,7 @@ void test01()
   // and shrink-to-fit (in the future, maybe this will change
   // for short strings).
   const size_type minsize = 2 << 0;
-  const size_type maxsize = 2 << 20;
+  const size_type maxsize = 2 << MAX_SIZE;
   for (size_type i = minsize; i <= maxsize; i *= 2)
     {
       wstring str(i, L'x');

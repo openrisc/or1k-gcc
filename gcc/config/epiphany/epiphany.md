@@ -1,6 +1,5 @@
 ;; Machine description of the Adaptiva epiphany cpu for GNU C compiler
-;; Copyright (C) 1994, 1997, 1998, 1999, 2000, 2004, 2005, 2007, 2009, 2010,
-;; 2011, 2012 Free Software Foundation, Inc.
+;; Copyright (C) 1994-2013 Free Software Foundation, Inc.
 ;; Contributed by Embecosm on behalf of Adapteva, Inc.
 
 ;; This file is part of GCC.
@@ -1432,6 +1431,16 @@
    movfs %3,status\;eor %3,%3,%1\;and %3,%3,%2\;eor %3,%3,%1\;movts status,%3"
   [(set_attr "type" "flow")
    (set_attr "length" "20,4")])
+
+(define_insn_and_split "save_config"
+  [(set (match_operand:SI 0 "gpr_operand" "=r") (reg:SI CONFIG_REGNUM))
+   (use (reg:SI FP_NEAREST_REGNUM))
+   (use (reg:SI FP_TRUNCATE_REGNUM))
+   (use (reg:SI FP_ANYFP_REGNUM))]
+  ""
+  "#"
+  "reload_completed"
+  [(set (match_dup 0) (reg:SI CONFIG_REGNUM))])
 
 (define_insn_and_split "set_fp_mode"
   [(set (reg:SI FP_NEAREST_REGNUM)

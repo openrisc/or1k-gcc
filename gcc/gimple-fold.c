@@ -1,5 +1,5 @@
 /* Statement simplification on GIMPLE.
-   Copyright (C) 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Split out from tree-ssa-ccp.c.
 
 This file is part of GCC.
@@ -202,7 +202,7 @@ get_symbol_constant_value (tree sym)
       tree val = DECL_INITIAL (sym);
       if (val)
 	{
-	  val = canonicalize_constructor_val (val, sym);
+	  val = canonicalize_constructor_val (unshare_expr (val), sym);
 	  if (val && is_gimple_min_invariant (val))
 	    return val;
 	  else
@@ -378,7 +378,7 @@ fold_gimple_assign (gimple_stmt_iterator *si)
 	  }
 
 	else if (DECL_P (rhs))
-	  return unshare_expr (get_symbol_constant_value (rhs));
+	  return get_symbol_constant_value (rhs);
 
         /* If we couldn't fold the RHS, hand over to the generic
            fold routines.  */
@@ -1157,11 +1157,6 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace)
   bool changed = false;
   gimple stmt = gsi_stmt (*gsi);
   unsigned i;
-  gimple_stmt_iterator gsinext = *gsi;
-  gimple next_stmt;
-
-  gsi_next (&gsinext);
-  next_stmt = gsi_end_p (gsinext) ? NULL : gsi_stmt (gsinext);
 
   /* Fold the main computation performed by the statement.  */
   switch (gimple_code (stmt))
@@ -1284,9 +1279,8 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace)
 
   stmt = gsi_stmt (*gsi);
 
-  /* Fold *& on the lhs.  Don't do this if stmt folded into nothing,
-     as we'd changing the next stmt.  */
-  if (gimple_has_lhs (stmt) && stmt != next_stmt)
+  /* Fold *& on the lhs.  */
+  if (gimple_has_lhs (stmt))
     {
       tree lhs = gimple_get_lhs (stmt);
       if (lhs && REFERENCE_CLASS_P (lhs))
@@ -2947,7 +2941,7 @@ fold_ctor_reference (tree type, tree ctor, unsigned HOST_WIDE_INT offset,
   /* We found the field with exact match.  */
   if (useless_type_conversion_p (type, TREE_TYPE (ctor))
       && !offset)
-    return canonicalize_constructor_val (ctor, from_decl);
+    return canonicalize_constructor_val (unshare_expr (ctor), from_decl);
 
   /* We are at the end of walk, see if we can view convert the
      result.  */
@@ -2956,7 +2950,7 @@ fold_ctor_reference (tree type, tree ctor, unsigned HOST_WIDE_INT offset,
       && operand_equal_p (TYPE_SIZE (type),
 			  TYPE_SIZE (TREE_TYPE (ctor)), 0))
     {
-      ret = canonicalize_constructor_val (ctor, from_decl);
+      ret = canonicalize_constructor_val (unshare_expr (ctor), from_decl);
       ret = fold_unary (VIEW_CONVERT_EXPR, type, ret);
       if (ret)
 	STRIP_NOPS (ret);

@@ -238,6 +238,7 @@ package body Aspects is
 
    Canonical_Aspect : constant array (Aspect_Id) of Aspect_Id :=
    (No_Aspect                           => No_Aspect,
+    Aspect_Abstract_State               => Aspect_Abstract_State,
     Aspect_Ada_2005                     => Aspect_Ada_2005,
     Aspect_Ada_2012                     => Aspect_Ada_2005,
     Aspect_Address                      => Aspect_Address,
@@ -252,6 +253,7 @@ package body Aspects is
     Aspect_Component_Size               => Aspect_Component_Size,
     Aspect_Constant_Indexing            => Aspect_Constant_Indexing,
     Aspect_Contract_Case                => Aspect_Contract_Case,
+    Aspect_Contract_Cases               => Aspect_Contract_Cases,
     Aspect_Convention                   => Aspect_Convention,
     Aspect_CPU                          => Aspect_CPU,
     Aspect_Default_Component_Value      => Aspect_Default_Component_Value,
@@ -267,6 +269,7 @@ package body Aspects is
     Aspect_External_Name                => Aspect_External_Name,
     Aspect_External_Tag                 => Aspect_External_Tag,
     Aspect_Favor_Top_Level              => Aspect_Favor_Top_Level,
+    Aspect_Global                       => Aspect_Global,
     Aspect_Implicit_Dereference         => Aspect_Implicit_Dereference,
     Aspect_Import                       => Aspect_Import,
     Aspect_Independent                  => Aspect_Independent,
@@ -303,6 +306,7 @@ package body Aspects is
     Aspect_Remote_Call_Interface        => Aspect_Remote_Call_Interface,
     Aspect_Remote_Types                 => Aspect_Remote_Types,
     Aspect_Read                         => Aspect_Read,
+    Aspect_Relative_Deadline            => Aspect_Relative_Deadline,
     Aspect_Scalar_Storage_Order         => Aspect_Scalar_Storage_Order,
     Aspect_Shared                       => Aspect_Atomic,
     Aspect_Shared_Passive               => Aspect_Shared_Passive,

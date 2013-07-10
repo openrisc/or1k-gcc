@@ -1,6 +1,5 @@
 /* Prototypes for exported functions defined in arm.c and pe.c
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2012  Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rearnsha@arm.com)
    Minor hacks by Nick Clifton (nickc@cygnus.com)
 
@@ -53,7 +52,6 @@ extern int const_ok_for_op (HOST_WIDE_INT, enum rtx_code);
 extern int const_ok_for_dimode_op (HOST_WIDE_INT, enum rtx_code);
 extern int arm_split_constant (RTX_CODE, enum machine_mode, rtx,
 			       HOST_WIDE_INT, rtx, rtx, int);
-extern RTX_CODE arm_canonicalize_comparison (RTX_CODE, rtx *, rtx *);
 extern int legitimate_pic_operand_p (rtx);
 extern rtx legitimize_pic_address (rtx, enum machine_mode, rtx);
 extern rtx legitimize_tls_address (rtx, rtx);
@@ -103,6 +101,7 @@ extern int arm_early_load_addr_dep (rtx, rtx);
 extern int arm_no_early_alu_shift_dep (rtx, rtx);
 extern int arm_no_early_alu_shift_value_dep (rtx, rtx);
 extern int arm_no_early_mul_dep (rtx, rtx);
+extern int arm_mac_accumulator_is_result (rtx, rtx);
 extern int arm_mac_accumulator_is_mul_result (rtx, rtx);
 
 extern int tls_mentioned_p (rtx);
@@ -225,6 +224,27 @@ extern const char *arm_mangle_type (const_tree);
 
 extern void arm_order_regs_for_local_alloc (void);
 
+/* Vectorizer cost model implementation.  */
+struct cpu_vec_costs {
+  const int scalar_stmt_cost;   /* Cost of any scalar operation, excluding
+				   load and store.  */
+  const int scalar_load_cost;   /* Cost of scalar load.  */
+  const int scalar_store_cost;  /* Cost of scalar store.  */
+  const int vec_stmt_cost;      /* Cost of any vector operation, excluding
+                                   load, store, vector-to-scalar and
+                                   scalar-to-vector operation.  */
+  const int vec_to_scalar_cost;    /* Cost of vect-to-scalar operation.  */
+  const int scalar_to_vec_cost;    /* Cost of scalar-to-vector operation.  */
+  const int vec_align_load_cost;   /* Cost of aligned vector load.  */
+  const int vec_unalign_load_cost; /* Cost of unaligned vector load.  */
+  const int vec_unalign_store_cost; /* Cost of unaligned vector load.  */
+  const int vec_store_cost;        /* Cost of vector store.  */
+  const int cond_taken_branch_cost;    /* Cost of taken branch for vectorizer
+					  cost model.  */
+  const int cond_not_taken_branch_cost;/* Cost of not taken branch for
+					  vectorizer cost model.  */
+};
+
 #ifdef RTX_CODE
 /* This needs to be here because we need RTX_CODE and similar.  */
 
@@ -247,6 +267,8 @@ struct tune_params
      performance. The first element covers Thumb state and the second one
      is for ARM state.  */
   bool logical_op_non_short_circuit[2];
+  /* Vectorizer costs.  */
+  const struct cpu_vec_costs* vec_costs;
 };
 
 extern const struct tune_params *current_tune;

@@ -1,6 +1,5 @@
 /* General Solaris system support.
-   Copyright (C) 2004, 2005 , 2007, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery, LLC.
 
 This file is part of GCC.
@@ -125,8 +124,7 @@ solaris_output_init_fini (FILE *file, tree decl)
    the visibility type VIS, which must not be VISIBILITY_DEFAULT.  */
 
 void
-solaris_assemble_visibility (tree decl ATTRIBUTE_UNUSED,
-			     int vis ATTRIBUTE_UNUSED)
+solaris_assemble_visibility (tree decl, int vis ATTRIBUTE_UNUSED)
 {
 #ifdef HAVE_GAS_HIDDEN
   /* Sun as uses .symbolic for STV_PROTECTED.  STV_INTERNAL is marked as
@@ -153,8 +151,9 @@ solaris_assemble_visibility (tree decl ATTRIBUTE_UNUSED,
   assemble_name (asm_out_file, name);
   fprintf (asm_out_file, "\n");
 #else
-  warning (OPT_Wattributes, "visibility attribute not supported "
-	   "in this configuration; ignored");
+  if (!DECL_ARTIFICIAL (decl))
+    warning (OPT_Wattributes, "visibility attribute not supported "
+			      "in this configuration; ignored");
 #endif
 }
 

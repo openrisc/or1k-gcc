@@ -888,7 +888,7 @@ class Type
 
   // Finish the backend representation of a placeholder.
   void
-  finish_backend(Gogo*);
+  finish_backend(Gogo*, Btype*);
 
   // Build a type descriptor entry for this type.  Return a pointer to
   // it.  The location is the location which causes us to need the
@@ -1210,10 +1210,18 @@ class Type
   Btype*
   get_btype_without_hash(Gogo*);
 
+  // A backend type that may be a placeholder.
+  struct Type_btype_entry
+  {
+    Btype *btype;
+    bool is_placeholder;
+  };
+
   // A mapping from Type to Btype*, used to ensure that the backend
-  // representation of identical types is identical.
-  typedef Unordered_map_hash(const Type*, Btype*, Type_hash_identical,
-			     Type_identical) Type_btypes;
+  // representation of identical types is identical.  This is only
+  // used for unnamed types.
+  typedef Unordered_map_hash(const Type*, Type_btype_entry,
+			     Type_hash_identical, Type_identical) Type_btypes;
 
   static Type_btypes type_btypes;
 
@@ -1230,9 +1238,6 @@ class Type
 
   // The type classification.
   Type_classification classification_;
-  // Whether btype_ is a placeholder type used while named types are
-  // being converted.
-  bool btype_is_placeholder_;
   // The backend representation of the type, once it has been
   // determined.
   Btype* btype_;
@@ -2179,6 +2184,12 @@ class Struct_type : public Type
   do_export(Export*) const;
 
  private:
+  // Used to merge method sets of identical unnamed structs.
+  typedef Unordered_map_hash(Struct_type*, Struct_type*, Type_hash_identical,
+			     Type_identical) Identical_structs;
+
+  static Identical_structs identical_structs;
+
   // Used to avoid infinite loops in field_reference_depth.
   struct Saw_named_type
   {
@@ -2529,19 +2540,11 @@ class Interface_type : public Type
   // Return the list of methods.  This will return NULL for an empty
   // interface.
   const Typed_identifier_list*
-  methods() const
-  {
-    go_assert(this->methods_are_finalized_);
-    return this->all_methods_;
-  }
+  methods() const;
 
   // Return the number of methods.
   size_t
-  method_count() const
-  {
-    go_assert(this->methods_are_finalized_);
-    return this->all_methods_ == NULL ? 0 : this->all_methods_->size();
-  }
+  method_count() const;
 
   // Return the method NAME, or NULL.
   const Typed_identifier*
@@ -3017,6 +3020,9 @@ class Forward_declaration_type : public Type
  protected:
   int
   do_traverse(Traverse* traverse);
+
+  bool
+  do_verify();
 
   bool
   do_has_pointer() const

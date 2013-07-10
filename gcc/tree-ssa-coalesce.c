@@ -1,6 +1,5 @@
 /* Coalesce SSA_NAMES together for the out-of-ssa pass.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
    Contributed by Andrew MacLeod <amacleod@redhat.com>
 
 This file is part of GCC.
@@ -1259,7 +1258,7 @@ coalesce_partitions (var_map map, ssa_conflicts_p graph, coalesce_list_p cl,
 
 /* Hashtable support for storing SSA names hashed by their SSA_NAME_VAR.  */
 
-struct ssa_name_var_hash : typed_noop_remove <union tree_node>
+struct ssa_name_var_hash : typed_noop_remove <tree_node>
 {
   typedef union tree_node value_type;
   typedef union tree_node compare_type;

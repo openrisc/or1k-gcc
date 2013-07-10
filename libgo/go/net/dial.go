@@ -5,7 +5,6 @@
 package net
 
 import (
-	"runtime"
 	"time"
 )
 
@@ -15,6 +14,7 @@ func parseDialNetwork(net string) (afnet string, proto int, err error) {
 		switch net {
 		case "tcp", "tcp4", "tcp6":
 		case "udp", "udp4", "udp6":
+		case "ip", "ip4", "ip6":
 		case "unix", "unixgram", "unixpacket":
 		default:
 			return "", 0, UnknownNetworkError(net)
@@ -54,12 +54,8 @@ func resolveAfnetAddr(afnet, addr string, deadline time.Time) (Addr, error) {
 		return nil, nil
 	}
 	switch afnet {
-	case "tcp", "tcp4", "tcp6":
-		return resolveTCPAddr(afnet, addr, deadline)
-	case "udp", "udp4", "udp6":
-		return resolveUDPAddr(afnet, addr, deadline)
-	case "ip", "ip4", "ip6":
-		return resolveIPAddr(afnet, addr, deadline)
+	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6", "ip", "ip4", "ip6":
+		return resolveInternetAddr(afnet, addr, deadline)
 	case "unix", "unixgram", "unixpacket":
 		return ResolveUnixAddr(afnet, addr)
 	}
@@ -116,30 +112,16 @@ func dialAddr(net, addr string, addri Addr, deadline time.Time) (c Conn, err err
 	return
 }
 
-const useDialTimeoutRace = runtime.GOOS == "windows" || runtime.GOOS == "plan9"
-
 // DialTimeout acts like Dial but takes a timeout.
 // The timeout includes name resolution, if required.
 func DialTimeout(net, addr string, timeout time.Duration) (Conn, error) {
-	if useDialTimeoutRace {
-		// On windows and plan9, use the relatively inefficient
-		// goroutine-racing implementation of DialTimeout that
-		// doesn't push down deadlines to the pollster.
-		// TODO: remove this once those are implemented.
-		return dialTimeoutRace(net, addr, timeout)
-	}
-	deadline := time.Now().Add(timeout)
-	_, addri, err := resolveNetAddr("dial", net, addr, deadline)
-	if err != nil {
-		return nil, err
-	}
-	return dialAddr(net, addr, addri, deadline)
+	return dialTimeout(net, addr, timeout)
 }
 
 // dialTimeoutRace is the old implementation of DialTimeout, still used
 // on operating systems where the deadline hasn't been pushed down
 // into the pollserver.
-// TODO: fix this on Windows and plan9.
+// TODO: fix this on plan9.
 func dialTimeoutRace(net, addr string, timeout time.Duration) (Conn, error) {
 	t := time.NewTimer(timeout)
 	defer t.Stop()
@@ -218,8 +200,8 @@ func Listen(net, laddr string) (Listener, error) {
 // ListenPacket announces on the local network address laddr.
 // The network string net must be a packet-oriented network:
 // "udp", "udp4", "udp6", "ip", "ip4", "ip6" or "unixgram".
-func ListenPacket(net, addr string) (PacketConn, error) {
-	afnet, a, err := resolveNetAddr("listen", net, addr, noDeadline)
+func ListenPacket(net, laddr string) (PacketConn, error) {
+	afnet, a, err := resolveNetAddr("listen", net, laddr, noDeadline)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +223,7 @@ func ListenPacket(net, addr string) (PacketConn, error) {
 		if a != nil {
 			la = a.(*UnixAddr)
 		}
-		return DialUnix(net, la, nil)
+		return ListenUnixgram(net, la)
 	}
 	return nil, UnknownNetworkError(net)
 }

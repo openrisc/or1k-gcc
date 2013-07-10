@@ -1,8 +1,6 @@
 // RB tree implementation -*- C++ -*-
 
-// Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-// 2009, 2010, 2011
-// Free Software Foundation, Inc.
+// Copyright (C) 2001-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -64,6 +62,9 @@
 #include <bits/allocator.h>
 #include <bits/stl_function.h>
 #include <bits/cpp_type_traits.h>
+#if __cplusplus >= 201103L
+#include <bits/alloc_traits.h>
+#endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -402,8 +403,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  _Link_type __tmp = _M_get_node();
 	  __try
 	    {
-	      _M_get_Node_allocator().construct(__tmp,
-					     std::forward<_Args>(__args)...);
+	      allocator_traits<_Node_allocator>::
+		construct(_M_get_Node_allocator(), __tmp,
+			  std::forward<_Args>(__args)...);
 	    }
 	  __catch(...)
 	    {

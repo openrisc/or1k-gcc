@@ -1,6 +1,5 @@
 /* Conditional constant propagation pass for the GNU compiler.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
    Adapted from original RTL SSA-CCP by Daniel Berlin <dberlin@dberlin.org>
    Adapted to GIMPLE trees by Diego Novillo <dnovillo@redhat.com>
 
@@ -163,6 +162,7 @@ typedef struct prop_value_d prop_value_t;
    memory reference used to store (i.e., the LHS of the assignment
    doing the store).  */
 static prop_value_t *const_val;
+static unsigned n_const_val;
 
 static void canonicalize_float_value (prop_value_t *);
 static bool ccp_fold_stmt (gimple_stmt_iterator *);
@@ -296,7 +296,8 @@ get_value (tree var)
 {
   prop_value_t *val;
 
-  if (const_val == NULL)
+  if (const_val == NULL
+      || SSA_NAME_VERSION (var) >= n_const_val)
     return NULL;
 
   val = &const_val[SSA_NAME_VERSION (var)];
@@ -714,7 +715,8 @@ ccp_initialize (void)
 {
   basic_block bb;
 
-  const_val = XCNEWVEC (prop_value_t, num_ssa_names);
+  n_const_val = num_ssa_names;
+  const_val = XCNEWVEC (prop_value_t, n_const_val);
 
   /* Initialize simulation flags for PHI nodes and statements.  */
   FOR_EACH_BB (bb)
@@ -1546,7 +1548,6 @@ evaluate_stmt (gimple stmt)
       && !is_constant)
     {
       enum gimple_code code = gimple_code (stmt);
-      tree fndecl;
       val.lattice_val = VARYING;
       val.value = NULL_TREE;
       val.mask = double_int_minus_one;
@@ -1593,10 +1594,9 @@ evaluate_stmt (gimple stmt)
 	      || POINTER_TYPE_P (TREE_TYPE (rhs1)))
 	    val = bit_value_binop (code, TREE_TYPE (rhs1), rhs1, rhs2);
 	}
-      else if (code == GIMPLE_CALL
-	       && (fndecl = gimple_call_fndecl (stmt))
-	       && DECL_BUILT_IN_CLASS (fndecl) == BUILT_IN_NORMAL)
+      else if (gimple_call_builtin_p (stmt, BUILT_IN_NORMAL))
 	{
+	  tree fndecl = gimple_call_fndecl (stmt);
 	  switch (DECL_FUNCTION_CODE (fndecl))
 	    {
 	    case BUILT_IN_MALLOC:
@@ -2108,7 +2108,7 @@ do_ssa_ccp (void)
   ccp_initialize ();
   ssa_propagate (ccp_visit_stmt, ccp_visit_phi_node);
   if (ccp_finalize ())
-    todo = (TODO_cleanup_cfg | TODO_update_ssa | TODO_remove_unused_locals);
+    todo = (TODO_cleanup_cfg | TODO_update_ssa);
   free_dominance_info (CDI_DOMINATORS);
   return todo;
 }

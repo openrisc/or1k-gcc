@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler, for IBM RS/6000.
-   Copyright (C) 1992-2012 Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
    Contributed by Richard Kenner (kenner@vlsi1.ultra.nyu.edu)
 
    This file is part of GCC.
@@ -355,6 +355,12 @@ extern const char *host_detect_local_cpu (int argc, const char **argv);
 /* Define the default processor.  This is overridden by other tm.h files.  */
 #define PROCESSOR_DEFAULT   PROCESSOR_PPC603
 #define PROCESSOR_DEFAULT64 PROCESSOR_RS64A
+
+/* Specify the dialect of assembler to use.  Only new mnemonics are supported
+   starting with GCC 4.8, i.e. just one dialect, but for backwards
+   compatibility with older inline asm ASSEMBLER_DIALECT needs to be
+   defined.  */
+#define ASSEMBLER_DIALECT 1
 
 /* Debug support */
 #define MASK_DEBUG_STACK	0x01	/* debug stack applications */
@@ -1062,12 +1068,17 @@ extern unsigned rs6000_pointer_size;
 #define HARD_REGNO_NREGS(REGNO, MODE) rs6000_hard_regno_nregs[(MODE)][(REGNO)]
 
 /* When setting up caller-save slots (MODE == VOIDmode) ensure we allocate
-   enough space to account for vectors in FP regs. */
+   enough space to account for vectors in FP regs.  However, TFmode/TDmode
+   should not use VSX instructions to do a caller save. */
 #define HARD_REGNO_CALLER_SAVE_MODE(REGNO, NREGS, MODE)			\
   (TARGET_VSX								\
    && ((MODE) == VOIDmode || ALTIVEC_OR_VSX_VECTOR_MODE (MODE))		\
-   && FP_REGNO_P (REGNO)				\
-   ? V2DFmode						\
+   && FP_REGNO_P (REGNO)						\
+   ? V2DFmode								\
+   : ((MODE) == TFmode && FP_REGNO_P (REGNO))				\
+   ? DFmode								\
+   : ((MODE) == TDmode && FP_REGNO_P (REGNO))				\
+   ? DImode								\
    : choose_hard_reg_mode ((REGNO), (NREGS), false))
 
 #define HARD_REGNO_CALL_PART_CLOBBERED(REGNO, MODE)			\
@@ -1075,7 +1086,8 @@ extern unsigned rs6000_pointer_size;
      && (GET_MODE_SIZE (MODE) > 4)					\
      && INT_REGNO_P (REGNO)) ? 1 : 0)					\
    || (TARGET_VSX && FP_REGNO_P (REGNO)					\
-       && GET_MODE_SIZE (MODE) > 8))
+       && GET_MODE_SIZE (MODE) > 8 && ((MODE) != TDmode) 		\
+       && ((MODE) != TFmode)))
 
 #define VSX_VECTOR_MODE(MODE)		\
 	 ((MODE) == V4SFmode		\
@@ -1406,7 +1418,7 @@ extern enum reg_class rs6000_constraints[RS6000_CONSTRAINT_MAX];
 
    On the RS/6000, we grow upwards, from the area after the outgoing
    arguments.  */
-#define FRAME_GROWS_DOWNWARD (flag_stack_protect != 0)
+#define FRAME_GROWS_DOWNWARD (flag_stack_protect != 0 || flag_asan != 0)
 
 /* Size of the outgoing register save area */
 #define RS6000_REG_SAVE ((DEFAULT_ABI == ABI_AIX			\
@@ -1729,7 +1741,8 @@ typedef struct rs6000_args
    They give nonzero only if REGNO is a hard reg of the suitable class
    or a pseudo reg currently allocated to a suitable hard reg.
    Since they use reg_renumber, they are safe only once reg_renumber
-   has been allocated, which happens in local-alloc.c.  */
+   has been allocated, which happens in reginfo.c during register
+   allocation.  */
 
 #define REGNO_OK_FOR_INDEX_P(REGNO)				\
 ((REGNO) < FIRST_PSEUDO_REGISTER				\

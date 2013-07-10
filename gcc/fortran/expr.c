@@ -1,7 +1,5 @@
 /* Routines for manipulation of expression nodes.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -729,10 +727,10 @@ gfc_copy_shape_excluding (mpz_t *shape, int rank, gfc_expr *dim)
   mpz_t *new_shape, *s;
   int i, n;
 
-  if (shape == NULL 
+  if (shape == NULL
       || rank <= 1
       || dim == NULL
-      || dim->expr_type != EXPR_CONSTANT 
+      || dim->expr_type != EXPR_CONSTANT
       || dim->ts.type != BT_INTEGER)
     return NULL;
 
@@ -936,7 +934,7 @@ gfc_is_constant_expr (gfc_expr *e)
 	  && sym->attr.proc != PROC_INTERNAL
 	  && sym->attr.proc != PROC_ST_FUNCTION
 	  && sym->attr.proc != PROC_UNKNOWN
-	  && sym->formal == NULL)
+	  && gfc_sym_get_dummy_args (sym) == NULL)
 	return 1;
 
       if (e->value.function.isym
@@ -1389,7 +1387,7 @@ find_array_section (gfc_expr *expr, gfc_ref *ref)
 
 	  gcc_assert (begin->rank == 1);
 	  /* Zero-sized arrays have no shape and no elements, stop early.  */
-	  if (!begin->shape) 
+	  if (!begin->shape)
 	    {
 	      mpz_init_set_ui (nelts, 0);
 	      break;
@@ -1473,7 +1471,7 @@ find_array_section (gfc_expr *expr, gfc_ref *ref)
 
 	  /* An element reference reduces the rank of the expression; don't
 	     add anything to the shape array.  */
-	  if (ref->u.ar.dimen_type[d] != DIMEN_ELEMENT) 
+	  if (ref->u.ar.dimen_type[d] != DIMEN_ELEMENT)
 	    mpz_set (expr->shape[shape_i++], tmp_mpz);
 	}
 
@@ -1520,7 +1518,7 @@ find_array_section (gfc_expr *expr, gfc_ref *ref)
 	    }
 	  else
 	    {
-	      mpz_add (ctr[d], ctr[d], stride[d]); 
+	      mpz_add (ctr[d], ctr[d], stride[d]);
 
 	      if (mpz_cmp_ui (stride[d], 0) > 0
 		  ? mpz_cmp (ctr[d], end[d]) > 0
@@ -1952,7 +1950,7 @@ scalarize_intrinsic_call (gfc_expr *e)
   gfc_constructor *ci, *new_ctor;
   gfc_expr *expr, *old;
   int n, i, rank[5], array_arg;
-  
+
   /* Find which, if any, arguments are arrays.  Assume that the old
      expression carries the type information and that the first arg
      that is an array expression carries all the shape information.*/
@@ -2105,7 +2103,7 @@ check_intrinsic_op (gfc_expr *e, gfc_try (*check_function) (gfc_expr *))
     case INTRINSIC_LE_OS:
       if ((*check_function) (op2) == FAILURE)
 	return FAILURE;
-      
+
       if (!(et0 (op1) == BT_CHARACTER && et0 (op2) == BT_CHARACTER)
 	  && !(numeric_type (et0 (op1)) && numeric_type (et0 (op2))))
 	{
@@ -2271,7 +2269,7 @@ check_inquiry (gfc_expr *e, int not_restricted)
 
   name = e->symtree->n.sym->name;
 
-  functions = (gfc_option.warn_std & GFC_STD_F2003) 
+  functions = (gfc_option.warn_std & GFC_STD_F2003)
 		? inquiry_func_f2003 : inquiry_func_f95;
 
   for (i = 0; functions[i]; i++)
@@ -2360,7 +2358,7 @@ check_transformational (gfc_expr *e)
 
   name = e->symtree->n.sym->name;
 
-  functions = (gfc_option.allow_std & GFC_STD_F2003) 
+  functions = (gfc_option.allow_std & GFC_STD_F2003)
 		? trans_func_f2003 : trans_func_f95;
 
   /* NULL() is dealt with below.  */
@@ -3097,7 +3095,7 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform)
 		|| gfc_current_ns->parent->proc_name->attr.subroutine)
 	      || gfc_current_ns->parent->proc_name->attr.is_main_program))
 	{
-	  /* ... that is not a function...  */ 
+	  /* ... that is not a function...  */
 	  if (!gfc_current_ns->proc_name->attr.function)
 	    bad_proc = true;
 
@@ -3137,7 +3135,7 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform)
     }
 
   if (rvalue->expr_type == EXPR_NULL)
-    {  
+    {
       if (has_pointer && (ref == NULL || ref->next == NULL)
 	  && lvalue->symtree->n.sym->attr.data)
         return SUCCESS;
@@ -3150,10 +3148,9 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform)
     }
 
   /* This is possibly a typo: x = f() instead of x => f().  */
-  if (gfc_option.warn_surprising 
-      && rvalue->expr_type == EXPR_FUNCTION
-      && rvalue->symtree->n.sym->attr.pointer)
-    gfc_warning ("POINTER valued function appears on right-hand side of "
+  if (gfc_option.warn_surprising
+      && rvalue->expr_type == EXPR_FUNCTION && gfc_expr_attr (rvalue).pointer)
+    gfc_warning ("POINTER-valued function appears on right-hand side of "
 		 "assignment at %L", &rvalue->where);
 
   /* Check size of array assignments.  */
@@ -3222,15 +3219,15 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform)
 	      mpfr_init (rv);
 	      gfc_set_model_kind (rvalue->ts.kind);
 	      mpfr_init (diff);
-	      
+
 	      mpfr_set (rv, rvalue->value.real, GFC_RND_MODE);
 	      mpfr_sub (diff, rv, rvalue->value.real, GFC_RND_MODE);
-	  
+
 	      if (!mpfr_zero_p (diff))
 		gfc_warning ("Change of value in conversion from "
 			     " %s to %s at %L", gfc_typename (&rvalue->ts),
 			     gfc_typename (&lvalue->ts), &rvalue->where);
-	      
+
 	      mpfr_clear (rv);
 	      mpfr_clear (diff);
 	    }
@@ -3292,22 +3289,21 @@ gfc_check_assign (gfc_expr *lvalue, gfc_expr *rvalue, int conform)
 gfc_try
 gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 {
-  symbol_attribute attr;
+  symbol_attribute attr, lhs_attr;
   gfc_ref *ref;
   bool is_pure, is_implicit_pure, rank_remap;
   int proc_pointer;
 
-  if (lvalue->symtree->n.sym->ts.type == BT_UNKNOWN
-      && !lvalue->symtree->n.sym->attr.proc_pointer)
+  lhs_attr = gfc_expr_attr (lvalue);
+  if (lvalue->ts.type == BT_UNKNOWN && !lhs_attr.proc_pointer)
     {
       gfc_error ("Pointer assignment target is not a POINTER at %L",
 		 &lvalue->where);
       return FAILURE;
     }
 
-  if (lvalue->symtree->n.sym->attr.flavor == FL_PROCEDURE
-      && lvalue->symtree->n.sym->attr.use_assoc
-      && !lvalue->symtree->n.sym->attr.proc_pointer)
+  if (lhs_attr.flavor == FL_PROCEDURE && lhs_attr.use_assoc
+      && !lhs_attr.proc_pointer)
     {
       gfc_error ("'%s' in the pointer assignment at %L cannot be an "
 		 "l-value since it is a procedure",
@@ -3510,7 +3506,11 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
       if (comp)
 	s1 = comp->ts.interface;
       else
-	s1 = lvalue->symtree->n.sym;
+	{
+	  s1 = lvalue->symtree->n.sym;
+	  if (s1->ts.interface)
+	    s1 = s1->ts.interface;
+	}
 
       comp = gfc_get_proc_ptr_comp (rvalue);
       if (comp)
@@ -3518,7 +3518,7 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	  if (rvalue->expr_type == EXPR_FUNCTION)
 	    {
 	      s2 = comp->ts.interface->result;
-	      name = comp->ts.interface->result->name;
+	      name = s2->name;
 	    }
 	  else
 	    {
@@ -3528,17 +3528,35 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	}
       else if (rvalue->expr_type == EXPR_FUNCTION)
 	{
-	  s2 = rvalue->symtree->n.sym->result;
-	  name = rvalue->symtree->n.sym->result->name;
+	  if (rvalue->value.function.esym)
+	    s2 = rvalue->value.function.esym->result;
+	  else
+	    s2 = rvalue->symtree->n.sym->result;
+
+	  name = s2->name;
 	}
       else
 	{
 	  s2 = rvalue->symtree->n.sym;
-	  name = rvalue->symtree->n.sym->name;
+	  name = s2->name;
 	}
 
-      if (s1 && s2 && !gfc_compare_interfaces (s1, s2, name, 0, 1,
-					       err, sizeof(err), NULL, NULL))
+      if (s2 && s2->attr.proc_pointer && s2->ts.interface)
+	s2 = s2->ts.interface;
+
+      if (s1 == s2 || !s1 || !s2)
+	return SUCCESS;
+
+      if (!gfc_compare_interfaces (s1, s2, name, 0, 1,
+				   err, sizeof(err), NULL, NULL))
+	{
+	  gfc_error ("Interface mismatch in procedure pointer assignment "
+		     "at %L: %s", &rvalue->where, err);
+	  return FAILURE;
+	}
+
+      if (!gfc_compare_interfaces (s2, s1, name, 0, 1,
+				   err, sizeof(err), NULL, NULL))
 	{
 	  gfc_error ("Interface mismatch in procedure pointer assignment "
 		     "at %L: %s", &rvalue->where, err);
@@ -3550,9 +3568,22 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 
   if (!gfc_compare_types (&lvalue->ts, &rvalue->ts))
     {
-      gfc_error ("Different types in pointer assignment at %L; attempted "
-		 "assignment of %s to %s", &lvalue->where, 
-		 gfc_typename (&rvalue->ts), gfc_typename (&lvalue->ts));
+      /* Check for F03:C717.  */
+      if (UNLIMITED_POLY (rvalue)
+	  && !(UNLIMITED_POLY (lvalue)
+	       || (lvalue->ts.type == BT_DERIVED
+		   && (lvalue->ts.u.derived->attr.is_bind_c
+		       || lvalue->ts.u.derived->attr.sequence))))
+	gfc_error ("Data-pointer-object &L must be unlimited "
+		   "polymorphic, a sequence derived type or of a "
+		   "type with the BIND attribute assignment at %L "
+		   "to be compatible with an unlimited polymorphic "
+		   "target", &lvalue->where);
+      else
+	gfc_error ("Different types in pointer assignment at %L; "
+		   "attempted assignment of %s to %s", &lvalue->where,
+		   gfc_typename (&rvalue->ts),
+		   gfc_typename (&lvalue->ts));
       return FAILURE;
     }
 
@@ -3569,9 +3600,11 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
       return FAILURE;
     }
 
-  if (lvalue->ts.type == BT_CLASS && rvalue->ts.type == BT_DERIVED)
     /* Make sure the vtab is present.  */
+  if (lvalue->ts.type == BT_CLASS && rvalue->ts.type == BT_DERIVED)
     gfc_find_derived_vtab (rvalue->ts.u.derived);
+  else if (UNLIMITED_POLY (lvalue) && !UNLIMITED_POLY (rvalue))
+    gfc_find_intrinsic_vtab (&rvalue->ts);
 
   /* Check rank remapping.  */
   if (rank_remap)
@@ -3647,7 +3680,7 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 
   if (is_implicit_pure && gfc_impure_variable (rvalue->symtree->n.sym))
     gfc_current_ns->proc_name->attr.implicit_pure = 0;
-    
+
 
   if (gfc_has_vector_index (rvalue))
     {
@@ -3703,7 +3736,7 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	  && rvalue->symtree->n.sym->ns->proc_name->attr.flavor != FL_PROCEDURE
 	  && rvalue->symtree->n.sym->ns->proc_name->attr.flavor != FL_PROGRAM)
        for (ns = rvalue->symtree->n.sym->ns;
-	    ns->proc_name && ns->proc_name->attr.flavor != FL_PROCEDURE;
+	    ns && ns->proc_name && ns->proc_name->attr.flavor != FL_PROCEDURE;
 	    ns = ns->parent)
 	if (ns->parent == lvalue->symtree->n.sym->ns)
 	  warn = true;
@@ -3721,10 +3754,11 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
    symbol.  Used for initialization assignments.  */
 
 gfc_try
-gfc_check_assign_symbol (gfc_symbol *sym, gfc_expr *rvalue)
+gfc_check_assign_symbol (gfc_symbol *sym, gfc_component *comp, gfc_expr *rvalue)
 {
   gfc_expr lvalue;
   gfc_try r;
+  bool pointer, proc_pointer;
 
   memset (&lvalue, '\0', sizeof (gfc_expr));
 
@@ -3736,9 +3770,27 @@ gfc_check_assign_symbol (gfc_symbol *sym, gfc_expr *rvalue)
   lvalue.symtree->n.sym = sym;
   lvalue.where = sym->declared_at;
 
-  if (sym->attr.pointer || sym->attr.proc_pointer
-      || (sym->ts.type == BT_CLASS && CLASS_DATA (sym)->attr.class_pointer
-	  && rvalue->expr_type == EXPR_NULL))
+  if (comp)
+    {
+      lvalue.ref = gfc_get_ref ();
+      lvalue.ref->type = REF_COMPONENT;
+      lvalue.ref->u.c.component = comp;
+      lvalue.ref->u.c.sym = sym;
+      lvalue.ts = comp->ts;
+      lvalue.rank = comp->as ? comp->as->rank : 0;
+      lvalue.where = comp->loc;
+      pointer = comp->ts.type == BT_CLASS &&  CLASS_DATA (comp)
+		? CLASS_DATA (comp)->attr.class_pointer : comp->attr.pointer;
+      proc_pointer = comp->attr.proc_pointer;
+    }
+  else
+    {
+      pointer = sym->ts.type == BT_CLASS &&  CLASS_DATA (sym)
+		? CLASS_DATA (sym)->attr.class_pointer : sym->attr.pointer;
+      proc_pointer = sym->attr.proc_pointer;
+    }
+
+  if (pointer || proc_pointer)
     r = gfc_check_pointer_assign (&lvalue, rvalue);
   else
     r = gfc_check_assign (&lvalue, rvalue, 1);
@@ -3747,33 +3799,42 @@ gfc_check_assign_symbol (gfc_symbol *sym, gfc_expr *rvalue)
 
   if (r == FAILURE)
     return r;
-  
-  if (sym->attr.pointer && rvalue->expr_type != EXPR_NULL)
+
+  if (pointer && rvalue->expr_type != EXPR_NULL)
     {
       /* F08:C461. Additional checks for pointer initialization.  */
       symbol_attribute attr;
       attr = gfc_expr_attr (rvalue);
       if (attr.allocatable)
 	{
-	  gfc_error ("Pointer initialization target at %C "
-	             "must not be ALLOCATABLE ");
+	  gfc_error ("Pointer initialization target at %L "
+	             "must not be ALLOCATABLE", &rvalue->where);
 	  return FAILURE;
 	}
       if (!attr.target || attr.pointer)
 	{
-	  gfc_error ("Pointer initialization target at %C "
-		     "must have the TARGET attribute");
+	  gfc_error ("Pointer initialization target at %L "
+		     "must have the TARGET attribute", &rvalue->where);
 	  return FAILURE;
 	}
+
+      if (!attr.save && rvalue->expr_type == EXPR_VARIABLE
+	  && rvalue->symtree->n.sym->ns->proc_name
+	  && rvalue->symtree->n.sym->ns->proc_name->attr.is_main_program)
+	{
+	  rvalue->symtree->n.sym->ns->proc_name->attr.save = SAVE_IMPLICIT;
+	  attr.save = SAVE_IMPLICIT;
+	}
+
       if (!attr.save)
 	{
-	  gfc_error ("Pointer initialization target at %C "
-		     "must have the SAVE attribute");
+	  gfc_error ("Pointer initialization target at %L "
+		     "must have the SAVE attribute", &rvalue->where);
 	  return FAILURE;
 	}
     }
-    
-  if (sym->attr.proc_pointer && rvalue->expr_type != EXPR_NULL)
+
+  if (proc_pointer && rvalue->expr_type != EXPR_NULL)
     {
       /* F08:C1220. Additional checks for procedure pointer initialization.  */
       symbol_attribute attr = gfc_expr_attr (rvalue);
@@ -3829,7 +3890,8 @@ gfc_default_initializer (gfc_typespec *ts)
      types (otherwise we could use gfc_has_default_initializer()).  */
   for (comp = ts->u.derived->components; comp; comp = comp->next)
     if (comp->initializer || comp->attr.allocatable
-	|| (comp->ts.type == BT_CLASS && CLASS_DATA (comp)->attr.allocatable))
+	|| (comp->ts.type == BT_CLASS && CLASS_DATA (comp)
+	    && CLASS_DATA (comp)->attr.allocatable))
       break;
 
   if (!comp)
@@ -3899,6 +3961,33 @@ gfc_get_variable_expr (gfc_symtree *var)
 }
 
 
+/* Adds a full array reference to an expression, as needed.  */
+
+void
+gfc_add_full_array_ref (gfc_expr *e, gfc_array_spec *as)
+{
+  gfc_ref *ref;
+  for (ref = e->ref; ref; ref = ref->next)
+    if (!ref->next)
+      break;
+  if (ref)
+    {
+      ref->next = gfc_get_ref ();
+      ref = ref->next;
+    }
+  else
+    {
+      e->ref = gfc_get_ref ();
+      ref = e->ref;
+    }
+  ref->type = REF_ARRAY;
+  ref->u.ar.type = AR_FULL;
+  ref->u.ar.dimen = e->rank;
+  ref->u.ar.where = e->where;
+  ref->u.ar.as = as;
+}
+
+
 gfc_expr *
 gfc_lval_expr_from_sym (gfc_symbol *sym)
 {
@@ -3912,16 +4001,8 @@ gfc_lval_expr_from_sym (gfc_symbol *sym)
   /* It will always be a full array.  */
   lval->rank = sym->as ? sym->as->rank : 0;
   if (lval->rank)
-    {
-      lval->ref = gfc_get_ref ();
-      lval->ref->type = REF_ARRAY;
-      lval->ref->u.ar.type = AR_FULL;
-      lval->ref->u.ar.dimen = lval->rank;
-      lval->ref->u.ar.where = sym->declared_at;
-      lval->ref->u.ar.as = sym->ts.type == BT_CLASS
-			   ? CLASS_DATA (sym)->as : sym->as;
-    }
-
+    gfc_add_full_array_ref (lval, sym->ts.type == BT_CLASS ?
+			    CLASS_DATA (sym)->as : sym->as);
   return lval;
 }
 
@@ -4225,72 +4306,6 @@ gfc_expr_check_typed (gfc_expr* e, gfc_namespace* ns, bool strict)
 }
 
 
-/* Walk an expression tree and replace all dummy symbols by the corresponding
-   symbol in the formal_ns of "sym". Needed for copying interfaces in PROCEDURE
-   statements. The boolean return value is required by gfc_traverse_expr.  */
-
-static bool
-replace_symbol (gfc_expr *expr, gfc_symbol *sym, int *i ATTRIBUTE_UNUSED)
-{
-  if ((expr->expr_type == EXPR_VARIABLE 
-       || (expr->expr_type == EXPR_FUNCTION
-	   && !gfc_is_intrinsic (expr->symtree->n.sym, 0, expr->where)))
-      && expr->symtree->n.sym->ns == sym->ts.interface->formal_ns
-      && expr->symtree->n.sym->attr.dummy)
-    {
-      gfc_symtree *root = sym->formal_ns ? sym->formal_ns->sym_root
-					 : gfc_current_ns->sym_root;
-      gfc_symtree *stree = gfc_find_symtree (root, expr->symtree->n.sym->name);
-      gcc_assert (stree);
-      stree->n.sym->attr = expr->symtree->n.sym->attr;
-      expr->symtree = stree;
-    }
-  return false;
-}
-
-void
-gfc_expr_replace_symbols (gfc_expr *expr, gfc_symbol *dest)
-{
-  gfc_traverse_expr (expr, dest, &replace_symbol, 0);
-}
-
-
-/* The following is analogous to 'replace_symbol', and needed for copying
-   interfaces for procedure pointer components. The argument 'sym' must formally
-   be a gfc_symbol, so that the function can be passed to gfc_traverse_expr.
-   However, it gets actually passed a gfc_component (i.e. the procedure pointer
-   component in whose formal_ns the arguments have to be).  */
-
-static bool
-replace_comp (gfc_expr *expr, gfc_symbol *sym, int *i ATTRIBUTE_UNUSED)
-{
-  gfc_component *comp;
-  comp = (gfc_component *)sym;
-  if ((expr->expr_type == EXPR_VARIABLE 
-       || (expr->expr_type == EXPR_FUNCTION
-	   && !gfc_is_intrinsic (expr->symtree->n.sym, 0, expr->where)))
-      && expr->symtree->n.sym->ns == comp->ts.interface->formal_ns)
-    {
-      gfc_symtree *stree;
-      gfc_namespace *ns = comp->formal_ns;
-      /* Don't use gfc_get_symtree as we prefer to fail badly if we don't find
-	 the symtree rather than create a new one (and probably fail later).  */
-      stree = gfc_find_symtree (ns ? ns->sym_root : gfc_current_ns->sym_root,
-		      		expr->symtree->n.sym->name);
-      gcc_assert (stree);
-      stree->n.sym->attr = expr->symtree->n.sym->attr;
-      expr->symtree = stree;
-    }
-  return false;
-}
-
-void
-gfc_expr_replace_comp (gfc_expr *expr, gfc_component *dest)
-{
-  gfc_traverse_expr (expr, (gfc_symbol *)dest, &replace_comp, 0);
-}
-
-
 bool
 gfc_ref_this_image (gfc_ref *ref)
 {
@@ -4402,7 +4417,7 @@ gfc_get_corank (gfc_expr *e)
   if (e->ts.type == BT_CLASS && e->ts.u.derived->components)
     corank = e->ts.u.derived->components->as
 	     ? e->ts.u.derived->components->as->corank : 0;
-  else 
+  else
     corank = e->symtree->n.sym->as ? e->symtree->n.sym->as->corank : 0;
 
   for (ref = e->ref; ref; ref = ref->next)
@@ -4459,7 +4474,7 @@ gfc_has_ultimate_pointer (gfc_expr *e)
   for (ref = e->ref; ref; ref = ref->next)
     if (ref->type == REF_COMPONENT)
       last = ref;
- 
+
   if (last && last->u.c.component->ts.type == BT_CLASS)
     return CLASS_DATA (last->u.c.component)->attr.pointer_comp;
   else if (last && last->u.c.component->ts.type == BT_DERIVED)
@@ -4579,7 +4594,7 @@ gfc_is_simply_contiguous (gfc_expr *expr, bool strict)
 			  ar->as->upper[i]->value.integer) != 0))
 	colon = false;
     }
-  
+
   return true;
 }
 
@@ -4589,28 +4604,34 @@ gfc_is_simply_contiguous (gfc_expr *expr, bool strict)
    want to add arguments but with a NULL-expression.  */
 
 gfc_expr*
-gfc_build_intrinsic_call (const char* name, locus where, unsigned numarg, ...)
+gfc_build_intrinsic_call (gfc_namespace *ns, gfc_isym_id id, const char* name,
+			  locus where, unsigned numarg, ...)
 {
   gfc_expr* result;
   gfc_actual_arglist* atail;
   gfc_intrinsic_sym* isym;
   va_list ap;
   unsigned i;
+  const char *mangled_name = gfc_get_string (GFC_PREFIX ("%s"), name);
 
-  isym = gfc_find_function (name);
+  isym = gfc_intrinsic_function_by_id (id);
   gcc_assert (isym);
-  
+
   result = gfc_get_expr ();
   result->expr_type = EXPR_FUNCTION;
   result->ts = isym->ts;
   result->where = where;
-  result->value.function.name = name;
+  result->value.function.name = mangled_name;
   result->value.function.isym = isym;
 
-  result->symtree = gfc_find_symtree (gfc_current_ns->sym_root, name);
+  gfc_get_sym_tree (mangled_name, ns, &result->symtree, false);
+  gfc_commit_symbol (result->symtree->n.sym);
   gcc_assert (result->symtree
 	      && (result->symtree->n.sym->attr.flavor == FL_PROCEDURE
 		  || result->symtree->n.sym->attr.flavor == FL_UNKNOWN));
+  result->symtree->n.sym->intmod_sym_id = id;
+  result->symtree->n.sym->attr.flavor = FL_PROCEDURE;
+  result->symtree->n.sym->attr.intrinsic = 1;
 
   va_start (ap, numarg);
   atail = NULL;
@@ -4650,6 +4671,7 @@ gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
   bool is_pointer;
   bool check_intentin;
   bool ptr_component;
+  bool unlimited;
   symbol_attribute attr;
   gfc_ref* ref;
 
@@ -4663,6 +4685,8 @@ gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
       gcc_assert (e->symtree);
       sym = e->value.function.esym ? e->value.function.esym : e->symtree->n.sym;
     }
+
+  unlimited = e->ts.type == BT_CLASS && UNLIMITED_POLY (sym);
 
   attr = gfc_expr_attr (e);
   if (!pointer && e->expr_type == EXPR_FUNCTION && attr.pointer)
@@ -4703,7 +4727,7 @@ gfc_check_vardef_context (gfc_expr* e, bool pointer, bool alloc_obj,
   /* Find out whether the expr is a pointer; this also means following
      component references to the last one.  */
   is_pointer = (attr.pointer || attr.proc_pointer);
-  if (pointer && !is_pointer)
+  if (pointer && !is_pointer && !unlimited)
     {
       if (context)
 	gfc_error ("Non-POINTER in pointer association context (%s)"

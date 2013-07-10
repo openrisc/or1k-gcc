@@ -1,6 +1,5 @@
 /* Conditional Dead Call Elimination pass for the GNU compiler.
-   Copyright (C) 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2008-2013 Free Software Foundation, Inc.
    Contributed by Xinliang David Li <davidxl@google.com>
 
 This file is part of GCC.
@@ -899,11 +898,10 @@ tree_call_cdce (void)
       /* As we introduced new control-flow we need to insert PHI-nodes
          for the call-clobbers of the remaining call.  */
       mark_virtual_operands_for_renaming (cfun);
-      return (TODO_update_ssa | TODO_cleanup_cfg | TODO_ggc_collect
-              | TODO_remove_unused_locals);
+      return TODO_update_ssa;
     }
-  else
-    return 0;
+
+  return 0;
 }
 
 static bool

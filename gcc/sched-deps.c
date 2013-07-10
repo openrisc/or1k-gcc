@@ -1,9 +1,6 @@
 /* Instruction scheduling pass.  This file computes dependencies between
    instructions.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com) Enhanced by,
    and currently maintained by, Jim Wilson (wilson@cygnus.com)
 
@@ -354,6 +351,8 @@ delete_dep_node (dep_node_t n)
 {
   gcc_assert (dep_link_is_detached_p (DEP_NODE_BACK (n))
 	      && dep_link_is_detached_p (DEP_NODE_FORW (n)));
+
+  XDELETE (DEP_REPLACE (DEP_NODE_DEP (n)));
 
   --dn_pool_diff;
 
@@ -2710,6 +2709,25 @@ sched_analyze_2 (struct deps_desc *deps, rtx x, rtx insn)
     case PREFETCH:
       if (PREFETCH_SCHEDULE_BARRIER_P (x))
 	reg_pending_barrier = TRUE_BARRIER;
+      /* Prefetch insn contains addresses only.  So if the prefetch
+	 address has no registers, there will be no dependencies on
+	 the prefetch insn.  This is wrong with result code
+	 correctness point of view as such prefetch can be moved below
+	 a jump insn which usually generates MOVE_BARRIER preventing
+	 to move insns containing registers or memories through the
+	 barrier.  It is also wrong with generated code performance
+	 point of view as prefetch withouth dependecies will have a
+	 tendency to be issued later instead of earlier.  It is hard
+	 to generate accurate dependencies for prefetch insns as
+	 prefetch has only the start address but it is better to have
+	 something than nothing.  */
+      if (!deps->readonly)
+	{
+	  rtx x = gen_rtx_MEM (Pmode, XEXP (PATTERN (insn), 0));
+	  if (sched_deps_info->use_cselib)
+	    cselib_lookup_from_insn (x, Pmode, true, VOIDmode, insn);
+	  add_insn_mem_dependence (deps, true, insn, x);
+	}
       break;
 
     case UNSPEC_VOLATILE:
@@ -3301,9 +3319,9 @@ sched_analyze_insn (struct deps_desc *deps, rtx x, rtx insn)
             SET_REGNO_REG_SET (&deps->reg_last_in_use, i);
           }
 
-      /* Flush pending lists on jumps, but not on speculative checks.  */
-      if (JUMP_P (insn) && !(sel_sched_p ()
-                             && sel_insn_is_speculation_check (insn)))
+      /* Don't flush pending lists on speculative checks for
+	 selective scheduling.  */
+      if (!sel_sched_p () || !sel_insn_is_speculation_check (insn))
 	flush_pending_lists (deps, insn, true, true);
 
       reg_pending_barrier = NOT_A_BARRIER;

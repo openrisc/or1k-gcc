@@ -1,6 +1,5 @@
 /* Integrated Register Allocator (IRA) intercommunication header file.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -47,9 +46,6 @@ along with GCC; see the file COPYING3.  If not see
   (optimize_size || (flag_branch_probabilities && !ENTRY_BLOCK_PTR->count) \
    ? REG_FREQ_MAX : (freq * REG_FREQ_MAX / BB_FREQ_MAX)			   \
    ? (freq * REG_FREQ_MAX / BB_FREQ_MAX) : 1)
-
-/* All natural loops.  */
-extern struct loops ira_loops;
 
 /* A modified value of flag `-fira-verbose' used internally.  */
 extern int internal_flag_ira_verbose;

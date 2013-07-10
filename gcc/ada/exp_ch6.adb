@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1450,7 +1450,7 @@ package body Exp_Ch6 is
            and then Is_Valued_Procedure (Scope (Formal))
          then
             Error_Msg_N
-              ("by_reference actual may be misaligned?", Actual);
+              ("by_reference actual may be misaligned??", Actual);
             return False;
 
          else
@@ -1527,8 +1527,9 @@ package body Exp_Ch6 is
               and then In_Open_Scopes (Entity (Actual))
             then
                if Scope (Subp) /= Entity (Actual) then
-                  Error_Msg_N ("operation outside protected type may not "
-                    & "call back its protected operations?", Actual);
+                  Error_Msg_N
+                    ("operation outside protected type may not "
+                     & "call back its protected operations??", Actual);
                end if;
 
                Rewrite (Actual,
@@ -2002,8 +2003,7 @@ package body Exp_Ch6 is
                          (Loc, Sloc (Body_To_Inline (Spec)))
             then
                Error_Msg_NE
-                 ("cannot inline& (body not seen yet)?",
-                  Call_Node, Subp);
+                 ("cannot inline& (body not seen yet)??", Call_Node, Subp);
 
             else
                declare
@@ -2122,7 +2122,7 @@ package body Exp_Ch6 is
 
                if not In_Same_Extended_Unit (Call_Node, Subp) then
                   Cannot_Inline
-                    ("cannot inline& (body not seen yet)", Call_Node, Subp,
+                    ("cannot inline& (body not seen yet)?", Call_Node, Subp,
                      Is_Serious => True);
 
                elsif In_Open_Scopes (Subp) then
@@ -2136,7 +2136,7 @@ package body Exp_Ch6 is
                     and then Optimization_Level = 0
                   then
                      Error_Msg_N
-                       ("call to recursive subprogram cannot be inlined?",
+                       ("call to recursive subprogram cannot be inlined?p?",
                         N);
 
                   --  Do not emit error compiling runtime packages
@@ -2145,7 +2145,7 @@ package body Exp_Ch6 is
                     (Unit_File_Name (Get_Source_Unit (Subp)))
                   then
                      Error_Msg_N
-                       ("call to recursive subprogram cannot be inlined?",
+                       ("call to recursive subprogram cannot be inlined??",
                         N);
 
                   else
@@ -3790,7 +3790,8 @@ package body Exp_Ch6 is
                     and then In_Same_Extended_Unit (Sloc (Spec), Loc)
                   then
                      Cannot_Inline
-                      ("cannot inline& (body not seen yet)?", Call_Node, Subp);
+                       ("cannot inline& (body not seen yet)?",
+                        Call_Node, Subp);
                   end if;
                end if;
             end Inlined_Subprogram;
@@ -4035,45 +4036,6 @@ package body Exp_Ch6 is
    -------------------------------
 
    procedure Expand_Ctrl_Function_Call (N : Node_Id) is
-      function Enclosing_Context return Node_Id;
-      --  Find the enclosing context where the function call appears
-
-      -----------------------
-      -- Enclosing_Context --
-      -----------------------
-
-      function Enclosing_Context return Node_Id is
-         Context : Node_Id;
-
-      begin
-         Context := Parent (N);
-         while Present (Context) loop
-
-            --  The following could use a comment (and why is N_Case_Expression
-            --  not treated in a similar manner ???
-
-            if Nkind (Context) = N_If_Expression then
-               exit;
-
-            --  Stop the search when reaching any statement because we have
-            --  gone too far up the tree.
-
-            elsif Nkind (Context) = N_Procedure_Call_Statement
-              or else Nkind (Context) in N_Statement_Other_Than_Procedure_Call
-            then
-               exit;
-            end if;
-
-            Context := Parent (Context);
-         end loop;
-
-         return Context;
-      end Enclosing_Context;
-
-      --  Local variables
-
-      Context : constant Node_Id := Enclosing_Context;
-
    begin
       --  Optimization, if the returned value (which is on the sec-stack) is
       --  returned again, no need to copy/readjust/finalize, we can just pass
@@ -4095,15 +4057,12 @@ package body Exp_Ch6 is
 
       Remove_Side_Effects (N);
 
-      --  The function call is part of an if expression dependent expression.
-      --  The temporary result must live as long as the if expression itself,
-      --  otherwise it will be finalized too early. Mark the transient as
-      --  processed to avoid untimely finalization.
+      --  When the temporary function result appears inside a case or an if
+      --  expression, its lifetime must be extended to match that of the
+      --  context. If not, the function result would be finalized prematurely
+      --  and the evaluation of the expression could yield the wrong result.
 
-      --  Why no special handling for case expressions here ???
-
-      if Present (Context)
-        and then Nkind (Context) = N_If_Expression
+      if Within_Case_Or_If_Expression (N)
         and then Nkind (N) = N_Explicit_Dereference
       then
          Set_Is_Processed_Transient (Entity (Prefix (N)));
@@ -4222,9 +4181,7 @@ package body Exp_Ch6 is
          if Is_Entity_Name (N) and then Present (Entity (N)) then
             E := Entity (N);
 
-            if Is_Formal (E)
-              and then Scope (E) = Subp
-            then
+            if Is_Formal (E) and then Scope (E) = Subp then
                A := Renamed_Object (E);
 
                --  Rewrite the occurrence of the formal into an occurrence of
@@ -4644,7 +4601,7 @@ package body Exp_Ch6 is
       --  subprograms this must be done explicitly.
 
       if In_Open_Scopes (Subp) then
-         Error_Msg_N ("call to recursive subprogram cannot be inlined?", N);
+         Error_Msg_N ("call to recursive subprogram cannot be inlined??", N);
          Set_Is_Inlined (Subp, False);
          return;
 

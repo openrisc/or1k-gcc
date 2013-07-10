@@ -1,7 +1,5 @@
 /* Convert tree expression to rtl instructions, for GNU compiler.
-   Copyright (C) 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
-   2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -2077,6 +2075,23 @@ emit_group_store (rtx orig_dst, rtx src, tree type ATTRIBUTE_UNUSED, int ssize)
   /* Copy from the pseudo into the (probable) hard reg.  */
   if (orig_dst != dst)
     emit_move_insn (orig_dst, dst);
+}
+
+/* Return a form of X that does not use a PARALLEL.  TYPE is the type
+   of the value stored in X.  */
+
+rtx
+maybe_emit_group_store (rtx x, tree type)
+{
+  enum machine_mode mode = TYPE_MODE (type);
+  gcc_checking_assert (GET_MODE (x) == VOIDmode || GET_MODE (x) == mode);
+  if (GET_CODE (x) == PARALLEL)
+    {
+      rtx result = gen_reg_rtx (mode);
+      emit_group_store (result, x, type, int_size_in_bytes (type));
+      return result;
+    }
+  return x;
 }
 
 /* Copy a BLKmode object of TYPE out of a register SRCREG into TARGET.
@@ -4557,21 +4572,48 @@ get_bit_range (unsigned HOST_WIDE_INT *bitstart,
   *bitend = *bitstart + tree_low_cst (DECL_SIZE (repr), 1) - 1;
 }
 
+/* Returns true if ADDR is an ADDR_EXPR of a DECL that does not reside
+   in memory and has non-BLKmode.  DECL_RTL must not be a MEM; if
+   DECL_RTL was not set yet, return NORTL.  */
+
+static inline bool
+addr_expr_of_non_mem_decl_p_1 (tree addr, bool nortl)
+{
+  if (TREE_CODE (addr) != ADDR_EXPR)
+    return false;
+
+  tree base = TREE_OPERAND (addr, 0);
+
+  if (!DECL_P (base)
+      || TREE_ADDRESSABLE (base)
+      || DECL_MODE (base) == BLKmode)
+    return false;
+
+  if (!DECL_RTL_SET_P (base))
+    return nortl;
+
+  return (!MEM_P (DECL_RTL (base)));
+}
+
 /* Returns true if the MEM_REF REF refers to an object that does not
    reside in memory and has non-BLKmode.  */
 
-static bool
+static inline bool
 mem_ref_refers_to_non_mem_p (tree ref)
 {
   tree base = TREE_OPERAND (ref, 0);
-  if (TREE_CODE (base) != ADDR_EXPR)
-    return false;
-  base = TREE_OPERAND (base, 0);
-  return (DECL_P (base)
-	  && !TREE_ADDRESSABLE (base)
-	  && DECL_MODE (base) != BLKmode
-	  && DECL_RTL_SET_P (base)
-	  && !MEM_P (DECL_RTL (base)));
+  return addr_expr_of_non_mem_decl_p_1 (base, false);
+}
+
+/* Return TRUE iff OP is an ADDR_EXPR of a DECL that's not
+   addressable.  This is very much like mem_ref_refers_to_non_mem_p,
+   but instead of the MEM_REF, it takes its base, and it doesn't
+   assume a DECL is in memory just because its RTL is not set yet.  */
+
+bool
+addr_expr_of_non_mem_decl_p (tree op)
+{
+  return addr_expr_of_non_mem_decl_p_1 (op, true);
 }
 
 /* Expand an assignment that stores the value of FROM into TO.  If NONTEMPORAL
@@ -4920,7 +4962,12 @@ expand_assignment (tree to, tree from, bool nontemporal)
       rtx temp;
 
       push_temp_slots ();
-      if (REG_P (to_rtx) && TYPE_MODE (TREE_TYPE (from)) == BLKmode)
+
+      /* If the source is itself a return value, it still is in a pseudo at
+	 this point so we can move it back to the return register directly.  */
+      if (REG_P (to_rtx)
+	  && TYPE_MODE (TREE_TYPE (from)) == BLKmode
+	  && TREE_CODE (from) != CALL_EXPR)
 	temp = copy_blkmode_to_reg (GET_MODE (to_rtx), from);
       else
 	temp = expand_expr (from, NULL_RTX, GET_MODE (to_rtx), EXPAND_NORMAL);
@@ -7516,6 +7563,15 @@ expand_expr_addr_expr_1 (tree exp, rtx target, enum machine_mode tmode,
       inner = TREE_OPERAND (exp, 0);
       break;
 
+    case COMPOUND_LITERAL_EXPR:
+      /* Allow COMPOUND_LITERAL_EXPR in initializers, if e.g.
+	 rtl_for_decl_init is called on DECL_INITIAL with
+	 COMPOUNT_LITERAL_EXPRs in it, they aren't gimplified.  */
+      if (modifier == EXPAND_INITIALIZER
+	  && COMPOUND_LITERAL_EXPR_DECL (exp))
+	return expand_expr_addr_expr_1 (COMPOUND_LITERAL_EXPR_DECL (exp),
+					target, tmode, modifier, as);
+      /* FALLTHRU */
     default:
       /* If the object is a DECL, then expand it for its rtl.  Don't bypass
 	 expand_expr, as that can have various side effects; LABEL_DECLs for
@@ -7837,6 +7893,7 @@ expand_cond_expr_using_cmove (tree treeop0 ATTRIBUTE_UNUSED,
   tree type = TREE_TYPE (treeop1);
   int unsignedp = TYPE_UNSIGNED (type);
   enum machine_mode mode = TYPE_MODE (type);
+  enum machine_mode orig_mode = mode;
 
   /* If we cannot do a conditional move on the mode, try doing it
      with the promoted mode. */
@@ -7902,7 +7959,7 @@ expand_cond_expr_using_cmove (tree treeop0 ATTRIBUTE_UNUSED,
       rtx seq = get_insns ();
       end_sequence ();
       emit_insn (seq);
-      return temp;
+      return convert_modes (orig_mode, mode, temp, 0);
     }
 
   /* Otherwise discard the sequence and fall back to code with
@@ -8335,6 +8392,15 @@ expand_expr_real_2 (sepops ops, rtx target, enum machine_mode tmode,
 	      else
 		expand_operands (treeop0, treeop1, NULL_RTX, &op1, &op0,
 				 EXPAND_NORMAL);
+	      /* op0 and op1 might still be constant, despite the above
+		 != INTEGER_CST check.  Handle it.  */
+	      if (GET_MODE (op0) == VOIDmode && GET_MODE (op1) == VOIDmode)
+		{
+		  op0 = convert_modes (innermode, mode, op0, true);
+		  op1 = convert_modes (innermode, mode, op1, false);
+		  return REDUCE_BIT_FIELD (expand_mult (mode, op0, op1,
+							target, unsignedp));
+		}
 	      goto binop3;
 	    }
 	}
@@ -8357,6 +8423,19 @@ expand_expr_real_2 (sepops ops, rtx target, enum machine_mode tmode,
 		{
 		  expand_operands (treeop0, treeop1, NULL_RTX, &op0, &op1,
 				   EXPAND_NORMAL);
+		  /* op0 and op1 might still be constant, despite the above
+		     != INTEGER_CST check.  Handle it.  */
+		  if (GET_MODE (op0) == VOIDmode && GET_MODE (op1) == VOIDmode)
+		    {
+		     widen_mult_const:
+		      op0 = convert_modes (innermode, mode, op0, zextend_p);
+		      op1
+			= convert_modes (innermode, mode, op1,
+					 TYPE_UNSIGNED (TREE_TYPE (treeop1)));
+		      return REDUCE_BIT_FIELD (expand_mult (mode, op0, op1,
+							    target,
+							    unsignedp));
+		    }
 		  temp = expand_widening_mult (mode, op0, op1, target,
 					       unsignedp, this_optab);
 		  return REDUCE_BIT_FIELD (temp);
@@ -8369,9 +8448,14 @@ expand_expr_real_2 (sepops ops, rtx target, enum machine_mode tmode,
 		  op0 = expand_normal (treeop0);
 		  if (TREE_CODE (treeop1) == INTEGER_CST)
 		    op1 = convert_modes (innermode, mode,
-					 expand_normal (treeop1), unsignedp);
+					 expand_normal (treeop1),
+					 TYPE_UNSIGNED (TREE_TYPE (treeop1)));
 		  else
 		    op1 = expand_normal (treeop1);
+		  /* op0 and op1 might still be constant, despite the above
+		     != INTEGER_CST check.  Handle it.  */
+		  if (GET_MODE (op0) == VOIDmode && GET_MODE (op1) == VOIDmode)
+		    goto widen_mult_const;
 		  temp = expand_binop (mode, other_optab, op0, op1, target,
 				       unsignedp, OPTAB_LIB_WIDEN);
 		  hipart = gen_highpart (innermode, temp);
@@ -8813,6 +8897,54 @@ expand_expr_real_2 (sepops ops, rtx target, enum machine_mode tmode,
 
       if (!target)
 	target = gen_reg_rtx (TYPE_MODE (type));
+      else
+	/* If target overlaps with op1, then either we need to force
+	   op1 into a pseudo (if target also overlaps with op0),
+	   or write the complex parts in reverse order.  */
+	switch (GET_CODE (target))
+	  {
+	  case CONCAT:
+	    if (reg_overlap_mentioned_p (XEXP (target, 0), op1))
+	      {
+		if (reg_overlap_mentioned_p (XEXP (target, 1), op0))
+		  {
+		  complex_expr_force_op1:
+		    temp = gen_reg_rtx (GET_MODE_INNER (GET_MODE (target)));
+		    emit_move_insn (temp, op1);
+		    op1 = temp;
+		    break;
+		  }
+	      complex_expr_swap_order:
+		/* Move the imaginary (op1) and real (op0) parts to their
+		   location.  */
+		write_complex_part (target, op1, true);
+		write_complex_part (target, op0, false);
+
+		return target;
+	      }
+	    break;
+	  case MEM:
+	    temp = adjust_address_nv (target,
+				      GET_MODE_INNER (GET_MODE (target)), 0);
+	    if (reg_overlap_mentioned_p (temp, op1))
+	      {
+		enum machine_mode imode = GET_MODE_INNER (GET_MODE (target));
+		temp = adjust_address_nv (target, imode,
+					  GET_MODE_SIZE (imode));
+		if (reg_overlap_mentioned_p (temp, op0))
+		  goto complex_expr_force_op1;
+		goto complex_expr_swap_order;
+	      }
+	    break;
+	  default:
+	    if (reg_overlap_mentioned_p (target, op1))
+	      {
+		if (reg_overlap_mentioned_p (target, op0))
+		  goto complex_expr_force_op1;
+		goto complex_expr_swap_order;
+	      }
+	    break;
+	  }
 
       /* Move the real (op0) and imaginary (op1) parts to their location.  */
       write_complex_part (target, op0, false);
@@ -9456,6 +9588,7 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	set_mem_addr_space (temp, as);
 	align = get_object_alignment (exp);
 	if (modifier != EXPAND_WRITE
+	    && modifier != EXPAND_MEMORY
 	    && mode != BLKmode
 	    && align < GET_MODE_ALIGNMENT (mode)
 	    /* If the target does not have special handling for unaligned
@@ -9544,6 +9677,7 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 	if (TREE_THIS_VOLATILE (exp))
 	  MEM_VOLATILE_P (temp) = 1;
 	if (modifier != EXPAND_WRITE
+	    && modifier != EXPAND_MEMORY
 	    && mode != BLKmode
 	    && align < GET_MODE_ALIGNMENT (mode))
 	  {
@@ -9928,7 +10062,8 @@ expand_expr_real_1 (tree exp, rtx target, enum machine_mode tmode,
 		&& GET_MODE_CLASS (mode) != MODE_COMPLEX_INT
 		&& GET_MODE_CLASS (mode) != MODE_COMPLEX_FLOAT
 		&& modifier != EXPAND_CONST_ADDRESS
-		&& modifier != EXPAND_INITIALIZER)
+		&& modifier != EXPAND_INITIALIZER
+		&& modifier != EXPAND_MEMORY)
 	    /* If the field is volatile, we always want an aligned
 	       access.  Do this in following two situations:
 	       1. the access is not already naturally

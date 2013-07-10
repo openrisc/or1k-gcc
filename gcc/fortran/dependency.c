@@ -1,6 +1,5 @@
 /* Dependency analysis
-   Copyright (C) 2000, 2001, 2002, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
    Contributed by Paul Brook <paul@nowt.org>
 
 This file is part of GCC.
@@ -823,7 +822,7 @@ gfc_check_fncall_dependency (gfc_expr *other, sym_intent intent,
   gfc_formal_arglist *formal;
   gfc_expr *expr;
 
-  formal = fnsym ? fnsym->formal : NULL;
+  formal = fnsym ? gfc_sym_get_dummy_args (fnsym) : NULL;
   for (; actual; actual = actual->next, formal = formal ? formal->next : NULL)
     {
       expr = actual->expr;

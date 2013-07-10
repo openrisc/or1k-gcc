@@ -1,6 +1,5 @@
 /* Assign reload pseudos.
-   Copyright (C) 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -197,6 +196,12 @@ reload_pseudo_compare_func (const void *v1p, const void *v2p)
     return diff;
   if ((diff = (regno_assign_info[regno_assign_info[r2].first].freq
 	       - regno_assign_info[regno_assign_info[r1].first].freq)) != 0)
+    return diff;
+  /* Allocate bigger pseudos first to avoid register file
+     fragmentation.  */
+  if ((diff
+       = (ira_reg_class_max_nregs[cl2][lra_reg_info[r2].biggest_mode]
+	  - ira_reg_class_max_nregs[cl1][lra_reg_info[r1].biggest_mode])) != 0)
     return diff;
   /* Put pseudos from the thread nearby.  */
   if ((diff = regno_assign_info[r1].first - regno_assign_info[r2].first) != 0)
@@ -1084,6 +1089,8 @@ improve_inheritance (bitmap changed_pseudos)
   lra_copy_t cp, next_cp;
   bitmap_iterator bi;
 
+  if (lra_inheritance_iter > LRA_MAX_INHERITANCE_PASSES)
+    return;
   n = 0;
   EXECUTE_IF_SET_IN_BITMAP (&lra_inheritance_pseudos, 0, k, bi)
     if (reg_renumber[k] >= 0 && lra_reg_info[k].nrefs != 0)
@@ -1239,6 +1246,23 @@ assign_by_spills (void)
 		  asm_p = true;
 		  error_for_asm (insn,
 				 "%<asm%> operand has impossible constraints");
+		  /* Avoid further trouble with this insn.
+		     For asm goto, instead of fixing up all the edges
+		     just clear the template and clear input operands
+		     (asm goto doesn't have any output operands).  */
+		  if (JUMP_P (insn))
+		    {
+		      rtx asm_op = extract_asm_operands (PATTERN (insn));
+		      ASM_OPERANDS_TEMPLATE (asm_op) = ggc_strdup ("");
+		      ASM_OPERANDS_INPUT_VEC (asm_op) = rtvec_alloc (0);
+		      ASM_OPERANDS_INPUT_CONSTRAINT_VEC (asm_op) = rtvec_alloc (0);
+		      lra_update_insn_regno_info (insn);
+		    }
+		  else
+		    {
+		      PATTERN (insn) = gen_rtx_USE (VOIDmode, const0_rtx);
+		      lra_set_insn_deleted (insn);
+		    }
 		}
 	    }
 	  lra_assert (asm_p);
@@ -1262,6 +1286,9 @@ assign_by_spills (void)
 	  bitmap_ior_into (&changed_insns,
 			   &lra_reg_info[sorted_pseudos[i]].insn_bitmap);
 	}
+
+      /* FIXME: Look up the changed insns in the cached LRA insn data using
+	 an EXECUTE_IF_SET_IN_BITMAP over changed_insns.  */
       FOR_EACH_BB (bb)
 	FOR_BB_INSNS (bb, insn)
 	if (bitmap_bit_p (&changed_insns, INSN_UID (insn)))

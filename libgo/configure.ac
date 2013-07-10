@@ -50,8 +50,11 @@ AC_PROG_AWK
 WARN_FLAGS='-Wall -Wextra -Wwrite-strings -Wcast-qual'
 AC_SUBST(WARN_FLAGS)
 
-dnl FIXME: This should be controlled by --enable-maintainer-mode.
-WERROR="-Werror"
+AC_ARG_ENABLE(werror, [AS_HELP_STRING([--enable-werror],
+                                      [turns on -Werror @<:@default=yes@:>@])])
+if test "x$enable_werror" != "xno"; then
+  WERROR="-Werror"
+fi
 AC_SUBST(WERROR)
 
 glibgo_toolexecdir=no
@@ -152,6 +155,17 @@ AM_CONDITIONAL(LIBGO_IS_OPENBSD, test $is_openbsd = yes)
 AM_CONDITIONAL(LIBGO_IS_RTEMS, test $is_rtems = yes)
 AM_CONDITIONAL(LIBGO_IS_SOLARIS, test $is_solaris = yes)
 AC_SUBST(GOOS)
+
+dnl Test whether we need to use DejaGNU or whether we can use the
+dnl simpler gotest approach.  We can only use gotest for a native
+dnl build.
+USE_DEJAGNU=no
+case ${host} in
+  *-*-rtems*) USE_DEJAGNU=yes ;;
+  ${build}) ;;
+  *) USE_DEJAGNU=yes ;;
+esac
+AC_SUBST(USE_DEJAGNU)
 
 dnl N.B. Keep in sync with gcc/testsuite/go.test/go-test.exp (go-set-goarch).
 is_386=no
@@ -399,8 +413,9 @@ PTHREAD_LIBS=
 AC_CHECK_LIB([pthread], [pthread_create], PTHREAD_LIBS=-lpthread)
 AC_SUBST(PTHREAD_LIBS)
 
-dnl Test if -lrt is required for sched_yield.
+dnl Test if -lrt is required for sched_yield and/or nanosleep.
 AC_SEARCH_LIBS([sched_yield], [rt])
+AC_SEARCH_LIBS([nanosleep], [rt])
 
 AC_C_BIGENDIAN
 
@@ -488,7 +503,7 @@ AC_CHECK_FUNCS(strerror_r strsignal wait4 mincore setenv dl_iterate_phdr)
 AM_CONDITIONAL(HAVE_STRERROR_R, test "$ac_cv_func_strerror_r" = yes)
 AM_CONDITIONAL(HAVE_WAIT4, test "$ac_cv_func_wait4" = yes)
 
-AC_CHECK_FUNCS(epoll_create1 faccessat fallocate fchmodat fchownat futimesat inotify_add_watch inotify_init inotify_init1 inotify_rm_watch mkdirat mknodat openat renameat sync_file_range splice tee unlinkat unshare)
+AC_CHECK_FUNCS(accept4 epoll_create1 faccessat fallocate fchmodat fchownat futimesat inotify_add_watch inotify_init inotify_init1 inotify_rm_watch mkdirat mknodat openat pipe2 renameat sync_file_range splice tee unlinkat unshare utimensat)
 AC_TYPE_OFF_T
 AC_CHECK_TYPES([loff_t])
 

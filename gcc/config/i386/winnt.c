@@ -1,7 +1,6 @@
 /* Subroutines for insn-output.c for Windows NT.
    Contributed by Douglas Rupp (drupp@cs.washington.edu)
-   Copyright (C) 1995, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 1995-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -251,8 +250,9 @@ i386_pe_assemble_visibility (tree decl,
   if (!decl
       || !lookup_attribute ("visibility", DECL_ATTRIBUTES (decl)))
     return;
-  warning (OPT_Wattributes, "visibility attribute not supported "
-	   "in this configuration; ignored");
+  if (!DECL_ARTIFICIAL (decl))
+    warning (OPT_Wattributes, "visibility attribute not supported "
+			      "in this configuration; ignored");
 }
 
 /* This is used as a target hook to modify the DECL_ASSEMBLER_NAME
@@ -476,7 +476,7 @@ i386_pe_section_type_flags (tree decl, const char *name, int reloc)
 	flags |= SECTION_PE_SHARED;
     }
 
-  if (decl && DECL_ONE_ONLY (decl))
+  if (decl && DECL_P (decl) && DECL_ONE_ONLY (decl))
     flags |= SECTION_LINKONCE;
 
   /* See if we already have an entry for this section.  */

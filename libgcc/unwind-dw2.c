@@ -1,6 +1,5 @@
 /* DWARF2 exception handling and frame unwind runtime interface routines.
-   Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2008, 2009, 2010, 2011  Free Software Foundation, Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -1129,11 +1128,12 @@ execute_cfa_program (const unsigned char *insn_ptr,
 
 	case DW_CFA_GNU_window_save:
 	  /* ??? Hardcoded for SPARC register window configuration.  */
-	  for (reg = 16; reg < 32; ++reg)
-	    {
-	      fs->regs.reg[reg].how = REG_SAVED_OFFSET;
-	      fs->regs.reg[reg].loc.offset = (reg - 16) * sizeof (void *);
-	    }
+	  if (DWARF_FRAME_REGISTERS >= 32)
+	    for (reg = 16; reg < 32; ++reg)
+	      {
+		fs->regs.reg[reg].how = REG_SAVED_OFFSET;
+		fs->regs.reg[reg].loc.offset = (reg - 16) * sizeof (void *);
+	      }
 	  break;
 
 	case DW_CFA_GNU_args_size:

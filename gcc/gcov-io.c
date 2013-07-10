@@ -1,6 +1,5 @@
 /* File format for coverage information
-   Copyright (C) 1996, 1997, 1998, 2000, 2002, 2003, 2004, 2005, 2007,
-   2008  Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
    Contributed by Bob Manson <manson@cygnus.com>.
    Completely remangled by Nathan Sidwell <nathan@codesourcery.com>.
 
@@ -538,7 +537,15 @@ gcov_read_summary (struct gcov_summary *summary)
       for (bv_ix = 0; bv_ix < GCOV_HISTOGRAM_BITVECTOR_SIZE; bv_ix++)
         {
           histo_bitvector[bv_ix] = gcov_read_unsigned ();
-          h_cnt += __builtin_popcountll (histo_bitvector[bv_ix]);
+#if IN_LIBGCOV
+          /* When building libgcov we don't include system.h, which includes
+             hwint.h (where popcount_hwi is declared). However, libgcov.a
+             is built by the bootstrapped compiler and therefore the builtins
+             are always available.  */
+          h_cnt += __builtin_popcount (histo_bitvector[bv_ix]);
+#else
+          h_cnt += popcount_hwi (histo_bitvector[bv_ix]);
+#endif
         }
       bv_ix = 0;
       h_ix = 0;
@@ -622,11 +629,15 @@ gcov_time (void)
 }
 #endif /* IN_GCOV */
 
-#if IN_LIBGCOV || !IN_GCOV
+#if !IN_GCOV
 /* Determine the index into histogram for VALUE. */
 
+#if IN_LIBGCOV
 static unsigned
-gcov_histo_index(gcov_type value)
+#else
+GCOV_LINKAGE unsigned
+#endif
+gcov_histo_index (gcov_type value)
 {
   gcov_type_unsigned v = (gcov_type_unsigned)value;
   unsigned r = 0;
@@ -638,7 +649,31 @@ gcov_histo_index(gcov_type value)
 
   /* Find the place of the most-significant bit set.  */
   if (v > 0)
-    r = 63 - __builtin_clzll (v);
+    {
+#if IN_LIBGCOV
+      /* When building libgcov we don't include system.h, which includes
+         hwint.h (where floor_log2 is declared). However, libgcov.a
+         is built by the bootstrapped compiler and therefore the builtins
+         are always available.  */
+      r = sizeof (long long) * __CHAR_BIT__ - 1 - __builtin_clzll (v);
+#else
+      /* We use floor_log2 from hwint.c, which takes a HOST_WIDE_INT
+         that is either 32 or 64 bits, and gcov_type_unsigned may be 64 bits.
+         Need to check for the case where gcov_type_unsigned is 64 bits
+         and HOST_WIDE_INT is 32 bits and handle it specially.  */
+#if HOST_BITS_PER_WIDEST_INT == HOST_BITS_PER_WIDE_INT
+      r = floor_log2 (v);
+#elif HOST_BITS_PER_WIDEST_INT == 2 * HOST_BITS_PER_WIDE_INT
+      HOST_WIDE_INT hwi_v = v >> HOST_BITS_PER_WIDE_INT;
+      if (hwi_v)
+        r = floor_log2 (hwi_v) + HOST_BITS_PER_WIDE_INT;
+      else
+        r = floor_log2 ((HOST_WIDE_INT)v);
+#else
+      gcc_unreachable ();
+#endif
+#endif
+    }
 
   /* If at most the 2 least significant bits are set (value is
      0 - 3) then that value is our index into the lowest set of
@@ -664,8 +699,8 @@ gcov_histo_index(gcov_type value)
    its entry's original cumulative counter value when computing the
    new merged cum_value.  */
 
-static void gcov_histogram_merge(gcov_bucket_type *tgt_histo,
-                                 gcov_bucket_type *src_histo)
+static void gcov_histogram_merge (gcov_bucket_type *tgt_histo,
+                                  gcov_bucket_type *src_histo)
 {
   int src_i, tgt_i, tmp_i = 0;
   unsigned src_num, tgt_num, merge_num;
@@ -801,4 +836,4 @@ static void gcov_histogram_merge(gcov_bucket_type *tgt_histo,
   /* Finally, copy the merged histogram into tgt_histo.  */
   memcpy(tgt_histo, tmp_histo, sizeof (gcov_bucket_type) * GCOV_HISTOGRAM_SIZE);
 }
-#endif /* IN_LIBGCOV || !IN_GCOV */
+#endif /* !IN_GCOV */

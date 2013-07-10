@@ -1,6 +1,5 @@
 /* Definitions for AMD x86-64 using GNU userspace.
-   Copyright (C) 2001, 2002, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Jan Hubicka <jh@suse.cz>, based on linux.h.
 
 This file is part of GCC.
@@ -86,8 +85,12 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define TARGET_THREAD_SSP_OFFSET \
   (TARGET_64BIT ? (TARGET_X32 ? 0x18 : 0x28) : 0x14)
 
-/* We steal the last transactional memory word.  */
+/* We only build the -fsplit-stack support in libgcc if the
+   assembler has full support for the CFI directives.  */
+#if HAVE_GAS_CFI_PERSONALITY_DIRECTIVE
 #define TARGET_CAN_SPLIT_STACK
+#endif
+/* We steal the last transactional memory word.  */
 #define TARGET_THREAD_SPLIT_STACK_OFFSET \
   (TARGET_64BIT ? (TARGET_X32 ? 0x40 : 0x70) : 0x30)
 #endif

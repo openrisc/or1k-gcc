@@ -1,6 +1,5 @@
 /* Definitions for C++ name lookup routines.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -251,9 +250,13 @@ binding_table_find (binding_table table, tree name)
 void
 binding_table_foreach (binding_table table, bt_foreach_proc proc, void *data)
 {
-  const size_t chain_count = table->chain_count;
+  size_t chain_count;
   size_t i;
 
+  if (!table)
+    return;
+
+  chain_count = table->chain_count;
   for (i = 0; i < chain_count; ++i)
     {
       binding_entry entry = table->chain[i];
@@ -3024,14 +3027,6 @@ push_class_level_binding_1 (tree name, tree x)
       && TREE_TYPE (decl) == error_mark_node)
     decl = TREE_VALUE (decl);
 
-  if (TREE_CODE (decl) == USING_DECL
-      && TREE_CODE (USING_DECL_SCOPE (decl)) == TEMPLATE_TYPE_PARM
-      && DECL_NAME (decl) == TYPE_IDENTIFIER (USING_DECL_SCOPE (decl)))
-    /* This using-declaration declares constructors that inherit from the
-       constructors for the template parameter.  It does not redeclare the
-       name of the template parameter.  */
-    return true;
-
   if (!check_template_shadow (decl))
     return false;
 
@@ -3223,8 +3218,14 @@ do_class_using_decl (tree scope, tree name)
       error ("%<%T::%D%> names destructor", scope, name);
       return NULL_TREE;
     }
-  if (MAYBE_CLASS_TYPE_P (scope) && constructor_name_p (name, scope))
-    maybe_warn_cpp0x (CPP0X_INHERITING_CTORS);
+  /* Using T::T declares inheriting ctors, even if T is a typedef.  */
+  if (MAYBE_CLASS_TYPE_P (scope)
+      && ((TYPE_NAME (scope) && name == TYPE_IDENTIFIER (scope))
+	  || constructor_name_p (name, scope)))
+    {
+      maybe_warn_cpp0x (CPP0X_INHERITING_CTORS);
+      name = ctor_identifier;
+    }
   if (constructor_name_p (name, current_class_type))
     {
       error ("%<%T::%D%> names constructor in %qT",

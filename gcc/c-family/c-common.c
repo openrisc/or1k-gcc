@@ -1,7 +1,5 @@
 /* Subroutines shared by all languages that are variants of C.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -309,6 +307,8 @@ static tree handle_common_attribute (tree *, tree, tree, int, bool *);
 static tree handle_noreturn_attribute (tree *, tree, tree, int, bool *);
 static tree handle_hot_attribute (tree *, tree, tree, int, bool *);
 static tree handle_cold_attribute (tree *, tree, tree, int, bool *);
+static tree handle_no_sanitize_address_attribute (tree *, tree, tree,
+						  int, bool *);
 static tree handle_no_address_safety_analysis_attribute (tree *, tree, tree,
 							 int, bool *);
 static tree handle_noinline_attribute (tree *, tree, tree, int, bool *);
@@ -716,6 +716,9 @@ const struct attribute_spec c_common_attribute_table[] =
   { "no_address_safety_analysis",
 			      0, 0, true, false, false,
 			      handle_no_address_safety_analysis_attribute,
+			      false },
+  { "no_sanitize_address",    0, 0, true, false, false,
+			      handle_no_sanitize_address_attribute,
 			      false },
   { "warning",		      1, 1, true,  false, false,
 			      handle_error_attribute, false },
@@ -1269,6 +1272,25 @@ c_fully_fold_internal (tree expr, bool in_init, bool *maybe_const_operands,
 	  && !TREE_OVERFLOW_P (op0)
 	  && !TREE_OVERFLOW_P (op1))
 	overflow_warning (EXPR_LOCATION (expr), ret);
+      if ((code == LSHIFT_EXPR || code == RSHIFT_EXPR)
+	  && TREE_CODE (orig_op1) != INTEGER_CST
+	  && TREE_CODE (op1) == INTEGER_CST
+	  && (TREE_CODE (TREE_TYPE (orig_op0)) == INTEGER_TYPE
+	      || TREE_CODE (TREE_TYPE (orig_op0)) == FIXED_POINT_TYPE)
+	  && TREE_CODE (TREE_TYPE (orig_op1)) == INTEGER_TYPE
+	  && c_inhibit_evaluation_warnings == 0)
+	{
+	  if (tree_int_cst_sgn (op1) < 0)
+	    warning_at (loc, 0, (code == LSHIFT_EXPR
+				 ? G_("left shift count is negative")
+				 : G_("right shift count is negative")));
+	  else if (compare_tree_int (op1,
+				     TYPE_PRECISION (TREE_TYPE (orig_op0)))
+		   >= 0)
+	    warning_at (loc, 0, (code == LSHIFT_EXPR
+				 ? G_("left shift count >= width of type")
+				 : G_("right shift count >= width of type")));
+	}
       goto out;
 
     case INDIRECT_REF:
@@ -3010,6 +3032,7 @@ verify_tree (tree x, struct tlist **pbefore_sp, struct tlist **pno_sp,
   switch (code)
     {
     case CONSTRUCTOR:
+    case SIZEOF_EXPR:
       return;
 
     case COMPOUND_EXPR:
@@ -6488,6 +6511,22 @@ handle_cold_attribute (tree *node, tree name, tree ARG_UNUSED (args),
   return NULL_TREE;
 }
 
+/* Handle a "no_sanitize_address" attribute; arguments as in
+   struct attribute_spec.handler.  */
+
+static tree
+handle_no_sanitize_address_attribute (tree *node, tree name, tree, int,
+				      bool *no_add_attrs)
+{
+  if (TREE_CODE (*node) != FUNCTION_DECL)
+    {
+      warning (OPT_Wattributes, "%qE attribute ignored", name);
+      *no_add_attrs = true;
+    }
+
+  return NULL_TREE;
+}
+
 /* Handle a "no_address_safety_analysis" attribute; arguments as in
    struct attribute_spec.handler.  */
 
@@ -6496,11 +6535,12 @@ handle_no_address_safety_analysis_attribute (tree *node, tree name, tree, int,
 					     bool *no_add_attrs)
 {
   if (TREE_CODE (*node) != FUNCTION_DECL)
-    {
-      warning (OPT_Wattributes, "%qE attribute ignored", name);
-      *no_add_attrs = true;
-    }
-
+    warning (OPT_Wattributes, "%qE attribute ignored", name);
+  else if (!lookup_attribute ("no_sanitize_address", DECL_ATTRIBUTES (*node)))
+    DECL_ATTRIBUTES (*node)
+      = tree_cons (get_identifier ("no_sanitize_address"),
+		   NULL_TREE, DECL_ATTRIBUTES (*node));
+  *no_add_attrs = true;
   return NULL_TREE;
 }
 
@@ -6661,7 +6701,7 @@ handle_error_attribute (tree *node, tree name, tree args,
 			int ARG_UNUSED (flags), bool *no_add_attrs)
 {
   if (TREE_CODE (*node) == FUNCTION_DECL
-      || TREE_CODE (TREE_VALUE (args)) == STRING_CST)
+      && TREE_CODE (TREE_VALUE (args)) == STRING_CST)
     /* Do nothing else, just set the attribute.  We'll get at
        it later with lookup_attribute.  */
     ;
@@ -7261,8 +7301,8 @@ check_user_alignment (const_tree align, bool allow_zero)
 {
   int i;
 
-  if (!INTEGRAL_TYPE_P (TREE_TYPE (align))
-      || TREE_CODE (align) != INTEGER_CST)
+  if (TREE_CODE (align) != INTEGER_CST
+      || !INTEGRAL_TYPE_P (TREE_TYPE (align)))
     {
       error ("requested alignment is not an integer constant");
       return -1;

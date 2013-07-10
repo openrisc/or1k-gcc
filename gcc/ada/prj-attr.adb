@@ -265,6 +265,7 @@ package body Prj.Attr is
    "Ladefault_switches#" &
    "LcOleading_switches#" &
    "LcOswitches#" &
+   "LcOtrailing_switches#" &
    "LVlinker_options#" &
    "SVmap_file_option#" &
 
@@ -360,6 +361,12 @@ package body Prj.Attr is
    "SVlib_subdir#" &
    "SVproject_subdir#" &
    "SVactive#" &
+
+   --  package Remote
+
+   "Premote#" &
+   "LVbuild_slaves#" &
+   "SVroot_dir#" &
 
    --  package Stack
 

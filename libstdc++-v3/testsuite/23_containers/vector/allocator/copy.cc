@@ -1,4 +1,4 @@
-// Copyright (C) 2011 Free Software Foundation
+// Copyright (C) 2011-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -31,6 +31,7 @@ void test01()
   typedef propagating_allocator<T, false> alloc_type;
   typedef std::vector<T, alloc_type> test_type;
   test_type v1(alloc_type(1));
+  v1.push_back(T());
   test_type v2(v1);
   VERIFY(1 == v1.get_allocator().get_personality());
   VERIFY(0 == v2.get_allocator().get_personality());
@@ -42,6 +43,7 @@ void test02()
   typedef propagating_allocator<T, true> alloc_type;
   typedef std::vector<T, alloc_type> test_type;
   test_type v1(alloc_type(1));
+  v1.push_back(T());
   test_type v2(v1);
   VERIFY(1 == v1.get_allocator().get_personality());
   VERIFY(1 == v2.get_allocator().get_personality());

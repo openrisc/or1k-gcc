@@ -14,8 +14,10 @@
 #include "sanitizer_common.h"
 #include "sanitizer_internal_defs.h"
 #include "sanitizer_libc.h"
+#include "sanitizer_mutex.h"
 #include "sanitizer_placement_new.h"
 #include "sanitizer_procmaps.h"
+#include "sanitizer_stacktrace.h"
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -26,8 +28,14 @@
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/prctl.h>
 #include <unistd.h>
+#include <unwind.h>
 #include <errno.h>
+
+// <linux/futex.h> is broken on some linux distributions.
+const int FUTEX_WAIT = 0;
+const int FUTEX_WAKE = 1;
 
 // Are we using 32-bit or 64-bit syscalls?
 // x32 (which defines __x86_64__) has SANITIZER_WORDSIZE == 32
@@ -58,8 +66,16 @@ int internal_close(fd_t fd) {
   return syscall(__NR_close, fd);
 }
 
-fd_t internal_open(const char *filename, bool write) {
-  return syscall(__NR_open, filename,
+fd_t internal_open(const char *filename, int flags) {
+  return syscall(__NR_open, filename, flags);
+}
+
+fd_t internal_open(const char *filename, int flags, u32 mode) {
+  return syscall(__NR_open, filename, flags, mode);
+}
+
+fd_t OpenFile(const char *filename, bool write) {
+  return internal_open(filename,
       write ? O_WRONLY | O_CREAT /*| O_CLOEXEC*/ : O_RDONLY, 0660);
 }
 
@@ -75,16 +91,38 @@ uptr internal_write(fd_t fd, const void *buf, uptr count) {
   return res;
 }
 
+int internal_stat(const char *path, void *buf) {
+#if SANITIZER_LINUX_USES_64BIT_SYSCALLS
+  return syscall(__NR_stat, path, buf);
+#else
+  return syscall(__NR_stat64, path, buf);
+#endif
+}
+
+int internal_lstat(const char *path, void *buf) {
+#if SANITIZER_LINUX_USES_64BIT_SYSCALLS
+  return syscall(__NR_lstat, path, buf);
+#else
+  return syscall(__NR_lstat64, path, buf);
+#endif
+}
+
+int internal_fstat(fd_t fd, void *buf) {
+#if SANITIZER_LINUX_USES_64BIT_SYSCALLS
+  return syscall(__NR_fstat, fd, buf);
+#else
+  return syscall(__NR_fstat64, fd, buf);
+#endif
+}
+
 uptr internal_filesize(fd_t fd) {
 #if SANITIZER_LINUX_USES_64BIT_SYSCALLS
   struct stat st;
-  if (syscall(__NR_fstat, fd, &st))
-    return -1;
 #else
   struct stat64 st;
-  if (syscall(__NR_fstat64, fd, &st))
-    return -1;
 #endif
+  if (internal_fstat(fd, &st))
+    return -1;
   return (uptr)st.st_size;
 }
 
@@ -98,6 +136,11 @@ uptr internal_readlink(const char *path, char *buf, uptr bufsize) {
 
 int internal_sched_yield() {
   return syscall(__NR_sched_yield);
+}
+
+void internal__exit(int exitcode) {
+  syscall(__NR_exit_group, exitcode);
+  Die();  // Unreachable.
 }
 
 // ----------------- sanitizer_common.h
@@ -194,42 +237,119 @@ const char *GetEnv(const char *name) {
   return 0;  // Not found.
 }
 
-void ReExec() {
-  static const int kMaxArgv = 100;
-  InternalScopedBuffer<char*> argv(kMaxArgv + 1);
-  static char *buff;
+#ifdef __GLIBC__
+
+extern "C" {
+  extern void *__libc_stack_end;
+}
+
+static void GetArgsAndEnv(char ***argv, char ***envp) {
+  uptr *stack_end = (uptr *)__libc_stack_end;
+  int argc = *stack_end;
+  *argv = (char**)(stack_end + 1);
+  *envp = (char**)(stack_end + argc + 2);
+}
+
+#else  // __GLIBC__
+
+static void ReadNullSepFileToArray(const char *path, char ***arr,
+                                   int arr_size) {
+  char *buff;
   uptr buff_size = 0;
-  ReadFileToBuffer("/proc/self/cmdline", &buff, &buff_size, 1024 * 1024);
-  argv[0] = buff;
-  int argc, i;
-  for (argc = 1, i = 1; ; i++) {
+  *arr = (char **)MmapOrDie(arr_size * sizeof(char *), "NullSepFileArray");
+  ReadFileToBuffer(path, &buff, &buff_size, 1024 * 1024);
+  (*arr)[0] = buff;
+  int count, i;
+  for (count = 1, i = 1; ; i++) {
     if (buff[i] == 0) {
       if (buff[i+1] == 0) break;
-      argv[argc] = &buff[i+1];
-      CHECK_LE(argc, kMaxArgv);  // FIXME: make this more flexible.
-      argc++;
+      (*arr)[count] = &buff[i+1];
+      CHECK_LE(count, arr_size - 1);  // FIXME: make this more flexible.
+      count++;
     }
   }
-  argv[argc] = 0;
-  execv(argv[0], argv.data());
+  (*arr)[count] = 0;
+}
+
+static void GetArgsAndEnv(char ***argv, char ***envp) {
+  static const int kMaxArgv = 2000, kMaxEnvp = 2000;
+  ReadNullSepFileToArray("/proc/self/cmdline", argv, kMaxArgv);
+  ReadNullSepFileToArray("/proc/self/environ", envp, kMaxEnvp);
+}
+
+#endif  // __GLIBC__
+
+void ReExec() {
+  char **argv, **envp;
+  GetArgsAndEnv(&argv, &envp);
+  execve("/proc/self/exe", argv, envp);
+  Printf("execve failed, errno %d\n", errno);
+  Die();
+}
+
+void PrepareForSandboxing() {
+  // Some kinds of sandboxes may forbid filesystem access, so we won't be able
+  // to read the file mappings from /proc/self/maps. Luckily, neither the
+  // process will be able to load additional libraries, so it's fine to use the
+  // cached mappings.
+  MemoryMappingLayout::CacheMemoryMappings();
 }
 
 // ----------------- sanitizer_procmaps.h
+// Linker initialized.
+ProcSelfMapsBuff MemoryMappingLayout::cached_proc_self_maps_;
+StaticSpinMutex MemoryMappingLayout::cache_lock_;  // Linker initialized.
+
 MemoryMappingLayout::MemoryMappingLayout() {
-  proc_self_maps_buff_len_ =
-      ReadFileToBuffer("/proc/self/maps", &proc_self_maps_buff_,
-                       &proc_self_maps_buff_mmaped_size_, 1 << 26);
-  CHECK_GT(proc_self_maps_buff_len_, 0);
-  // internal_write(2, proc_self_maps_buff_, proc_self_maps_buff_len_);
+  proc_self_maps_.len =
+      ReadFileToBuffer("/proc/self/maps", &proc_self_maps_.data,
+                       &proc_self_maps_.mmaped_size, 1 << 26);
+  if (proc_self_maps_.mmaped_size == 0) {
+    LoadFromCache();
+    CHECK_GT(proc_self_maps_.len, 0);
+  }
+  // internal_write(2, proc_self_maps_.data, proc_self_maps_.len);
   Reset();
+  // FIXME: in the future we may want to cache the mappings on demand only.
+  CacheMemoryMappings();
 }
 
 MemoryMappingLayout::~MemoryMappingLayout() {
-  UnmapOrDie(proc_self_maps_buff_, proc_self_maps_buff_mmaped_size_);
+  // Only unmap the buffer if it is different from the cached one. Otherwise
+  // it will be unmapped when the cache is refreshed.
+  if (proc_self_maps_.data != cached_proc_self_maps_.data) {
+    UnmapOrDie(proc_self_maps_.data, proc_self_maps_.mmaped_size);
+  }
 }
 
 void MemoryMappingLayout::Reset() {
-  current_ = proc_self_maps_buff_;
+  current_ = proc_self_maps_.data;
+}
+
+// static
+void MemoryMappingLayout::CacheMemoryMappings() {
+  SpinMutexLock l(&cache_lock_);
+  // Don't invalidate the cache if the mappings are unavailable.
+  ProcSelfMapsBuff old_proc_self_maps;
+  old_proc_self_maps = cached_proc_self_maps_;
+  cached_proc_self_maps_.len =
+      ReadFileToBuffer("/proc/self/maps", &cached_proc_self_maps_.data,
+                       &cached_proc_self_maps_.mmaped_size, 1 << 26);
+  if (cached_proc_self_maps_.mmaped_size == 0) {
+    cached_proc_self_maps_ = old_proc_self_maps;
+  } else {
+    if (old_proc_self_maps.mmaped_size) {
+      UnmapOrDie(old_proc_self_maps.data,
+                 old_proc_self_maps.mmaped_size);
+    }
+  }
+}
+
+void MemoryMappingLayout::LoadFromCache() {
+  SpinMutexLock l(&cache_lock_);
+  if (cached_proc_self_maps_.data) {
+    proc_self_maps_ = cached_proc_self_maps_;
+  }
 }
 
 // Parse a hex value in str and update str.
@@ -263,7 +383,7 @@ static bool IsDecimal(char c) {
 
 bool MemoryMappingLayout::Next(uptr *start, uptr *end, uptr *offset,
                                char filename[], uptr filename_size) {
-  char *last = proc_self_maps_buff_ + proc_self_maps_buff_len_;
+  char *last = proc_self_maps_.data + proc_self_maps_.len;
   if (current_ >= last) return false;
   uptr dummy;
   if (!start) start = &dummy;
@@ -312,6 +432,109 @@ bool MemoryMappingLayout::GetObjectNameAndOffset(uptr addr, uptr *offset,
                                                  char filename[],
                                                  uptr filename_size) {
   return IterateForObjectNameAndOffset(addr, offset, filename, filename_size);
+}
+
+bool SanitizerSetThreadName(const char *name) {
+#ifdef PR_SET_NAME
+  return 0 == prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0);  // NOLINT
+#else
+  return false;
+#endif
+}
+
+bool SanitizerGetThreadName(char *name, int max_len) {
+#ifdef PR_GET_NAME
+  char buff[17];
+  if (prctl(PR_GET_NAME, (unsigned long)buff, 0, 0, 0))  // NOLINT
+    return false;
+  internal_strncpy(name, buff, max_len);
+  name[max_len] = 0;
+  return true;
+#else
+  return false;
+#endif
+}
+
+#ifndef SANITIZER_GO
+//------------------------- SlowUnwindStack -----------------------------------
+#ifdef __arm__
+#define UNWIND_STOP _URC_END_OF_STACK
+#define UNWIND_CONTINUE _URC_NO_REASON
+#else
+#define UNWIND_STOP _URC_NORMAL_STOP
+#define UNWIND_CONTINUE _URC_NO_REASON
+#endif
+
+uptr Unwind_GetIP(struct _Unwind_Context *ctx) {
+#ifdef __arm__
+  uptr val;
+  _Unwind_VRS_Result res = _Unwind_VRS_Get(ctx, _UVRSC_CORE,
+      15 /* r15 = PC */, _UVRSD_UINT32, &val);
+  CHECK(res == _UVRSR_OK && "_Unwind_VRS_Get failed");
+  // Clear the Thumb bit.
+  return val & ~(uptr)1;
+#else
+  return _Unwind_GetIP(ctx);
+#endif
+}
+
+_Unwind_Reason_Code Unwind_Trace(struct _Unwind_Context *ctx, void *param) {
+  StackTrace *b = (StackTrace*)param;
+  CHECK(b->size < b->max_size);
+  uptr pc = Unwind_GetIP(ctx);
+  b->trace[b->size++] = pc;
+  if (b->size == b->max_size) return UNWIND_STOP;
+  return UNWIND_CONTINUE;
+}
+
+static bool MatchPc(uptr cur_pc, uptr trace_pc) {
+  return cur_pc - trace_pc <= 64 || trace_pc - cur_pc <= 64;
+}
+
+void StackTrace::SlowUnwindStack(uptr pc, uptr max_depth) {
+  this->size = 0;
+  this->max_size = max_depth;
+  if (max_depth > 1) {
+    _Unwind_Backtrace(Unwind_Trace, this);
+    // We need to pop a few frames so that pc is on top.
+    // trace[0] belongs to the current function so we always pop it.
+    int to_pop = 1;
+    /**/ if (size > 1 && MatchPc(pc, trace[1])) to_pop = 1;
+    else if (size > 2 && MatchPc(pc, trace[2])) to_pop = 2;
+    else if (size > 3 && MatchPc(pc, trace[3])) to_pop = 3;
+    else if (size > 4 && MatchPc(pc, trace[4])) to_pop = 4;
+    else if (size > 5 && MatchPc(pc, trace[5])) to_pop = 5;
+    this->PopStackFrames(to_pop);
+  }
+  this->trace[0] = pc;
+}
+
+#endif  // #ifndef SANITIZER_GO
+
+enum MutexState {
+  MtxUnlocked = 0,
+  MtxLocked = 1,
+  MtxSleeping = 2
+};
+
+BlockingMutex::BlockingMutex(LinkerInitialized) {
+  CHECK_EQ(owner_, 0);
+}
+
+void BlockingMutex::Lock() {
+  atomic_uint32_t *m = reinterpret_cast<atomic_uint32_t *>(&opaque_storage_);
+  if (atomic_exchange(m, MtxLocked, memory_order_acquire) == MtxUnlocked)
+    return;
+  while (atomic_exchange(m, MtxSleeping, memory_order_acquire) != MtxUnlocked)
+    syscall(__NR_futex, m, FUTEX_WAIT, MtxSleeping, 0, 0, 0);
+}
+
+void BlockingMutex::Unlock() {
+  atomic_uint32_t *m = reinterpret_cast<atomic_uint32_t *>(&opaque_storage_);
+  u32 v = atomic_exchange(m, MtxUnlocked, memory_order_relaxed);
+  CHECK_NE(v, MtxUnlocked);
+  if (v == MtxSleeping)
+    syscall(__NR_futex, m, FUTEX_WAKE, 1, 0, 0, 0);
 }
 
 }  // namespace __sanitizer

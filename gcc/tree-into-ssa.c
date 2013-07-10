@@ -1,6 +1,5 @@
 /* Rewrite a program in Normal form into SSA.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@redhat.com>
 
 This file is part of GCC.
@@ -970,6 +969,12 @@ insert_phi_nodes_for (tree var, bitmap phi_insertion_points, bool update_p)
       if (update_p)
 	mark_block_for_update (bb);
 
+      if (dump_file && (dump_flags & TDF_DETAILS))
+	{
+	  fprintf (dump_file, "creating PHI node in block #%d for ", bb_index);
+	  print_generic_expr (dump_file, var, TDF_SLIM);
+	  fprintf (dump_file, "\n");
+	}
       phi = NULL;
 
       if (TREE_CODE (var) == SSA_NAME)
@@ -1355,13 +1360,18 @@ rewrite_add_phi_arguments (basic_block bb)
       for (gsi = gsi_start_phis (e->dest); !gsi_end_p (gsi);
 	   gsi_next (&gsi))
 	{
-	  tree currdef;
-	  gimple stmt;
+	  tree currdef, res;
+	  location_t loc;
 
 	  phi = gsi_stmt (gsi);
-	  currdef = get_reaching_def (SSA_NAME_VAR (gimple_phi_result (phi)));
-	  stmt = SSA_NAME_DEF_STMT (currdef);
-	  add_phi_arg (phi, currdef, e, gimple_location (stmt));
+	  res = gimple_phi_result (phi);
+	  currdef = get_reaching_def (SSA_NAME_VAR (res));
+	  /* Virtual operand PHI args do not need a location.  */
+	  if (virtual_operand_p (res))
+	    loc = UNKNOWN_LOCATION;
+	  else
+	    loc = gimple_location (SSA_NAME_DEF_STMT (currdef));
+	  add_phi_arg (phi, currdef, e, loc);
 	}
     }
 }
@@ -2018,20 +2028,26 @@ rewrite_update_phi_arguments (basic_block bb)
           /* Update the argument if there is a reaching def.  */
 	  if (reaching_def)
 	    {
-	      gimple stmt;
 	      source_location locus;
 	      int arg_i = PHI_ARG_INDEX_FROM_USE (arg_p);
 
 	      SET_USE (arg_p, reaching_def);
-	      stmt = SSA_NAME_DEF_STMT (reaching_def);
 
-	      /* Single element PHI nodes  behave like copies, so get the
-		 location from the phi argument.  */
-	      if (gimple_code (stmt) == GIMPLE_PHI &&
-		  gimple_phi_num_args (stmt) == 1)
-		locus = gimple_phi_arg_location (stmt, 0);
+	      /* Virtual operands do not need a location.  */
+	      if (virtual_operand_p (reaching_def))
+		locus = UNKNOWN_LOCATION;
 	      else
-		locus = gimple_location (stmt);
+		{
+		  gimple stmt = SSA_NAME_DEF_STMT (reaching_def);
+
+		  /* Single element PHI nodes  behave like copies, so get the
+		     location from the phi argument.  */
+		  if (gimple_code (stmt) == GIMPLE_PHI
+		      && gimple_phi_num_args (stmt) == 1)
+		    locus = gimple_phi_arg_location (stmt, 0);
+		  else
+		    locus = gimple_location (stmt);
+		}
 
 	      gimple_phi_arg_set_location (phi, arg_i, locus);
 	    }
@@ -3030,6 +3046,17 @@ insert_updated_phi_nodes_for (tree var, bitmap_head *dfs, bitmap blocks,
   BITMAP_FREE (idf);
 }
 
+/* Sort symbols_to_rename after their DECL_UID.  */
+
+static int
+insert_updated_phi_nodes_compare_uids (const void *a, const void *b)
+{
+  const_tree syma = *(const const_tree *)a;
+  const_tree symb = *(const const_tree *)b;
+  if (DECL_UID (syma) == DECL_UID (symb))
+    return 0;
+  return DECL_UID (syma) < DECL_UID (symb) ? -1 : 1;
+}
 
 /* Given a set of newly created SSA names (NEW_SSA_NAMES) and a set of
    existing SSA names (OLD_SSA_NAMES), update the SSA form so that:
@@ -3240,6 +3267,7 @@ update_ssa (unsigned update_flags)
 	  sbitmap_free (tmp);
 	}
 
+      symbols_to_rename.qsort (insert_updated_phi_nodes_compare_uids);
       FOR_EACH_VEC_ELT (symbols_to_rename, i, sym)
 	insert_updated_phi_nodes_for (sym, dfs, blocks_to_update,
 	                              update_flags);

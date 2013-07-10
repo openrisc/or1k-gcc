@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -74,6 +74,9 @@ package Exp_Util is
    --    Then_Actions or Else_Actions field as appropriate. Once again the
    --    expansion of the N_If_Expression node rewrites the node so that the
    --    actions can be positioned normally.
+
+   --    For actions coming from expansion of the expression in an expression
+   --    with actions node, the action is appended to the list of actions.
 
    --  Basically what we do is to climb up to the tree looking for the
    --  proper insertion point, as described by one of the above cases,
@@ -378,14 +381,6 @@ package Exp_Util is
    --  Build a constrained subtype from the initial value in object
    --  declarations and/or allocations when the type is indefinite (including
    --  class-wide).
-
-   function Find_Init_Call
-     (Var        : Entity_Id;
-      Rep_Clause : Node_Id) return Node_Id;
-   --  Look for init_proc call for variable Var, either among declarations
-   --  between that of Var and a subsequent Rep_Clause applying to Var, or
-   --  in the list of freeze actions associated with Var, and if found, return
-   --  that call node.
 
    function Find_Interface_ADT
      (T     : Entity_Id;
@@ -723,6 +718,14 @@ package Exp_Util is
    --  statements looking for declarations of controlled objects. If at least
    --  one such object is found, wrap the statement list in a block.
 
+   function Remove_Init_Call
+     (Var        : Entity_Id;
+      Rep_Clause : Node_Id) return Node_Id;
+   --  Look for init_proc call or aggregate initialization statements for
+   --  variable Var, either among declarations between that of Var and a
+   --  subsequent Rep_Clause applying to Var, or in the list of freeze actions
+   --  associated with Var, and if found, remove and return that call node.
+
    procedure Remove_Side_Effects
      (Exp          : Node_Id;
       Name_Req     : Boolean := False;
@@ -814,6 +817,9 @@ package Exp_Util is
    --  that may be bit aligned (see Possible_Bit_Aligned_Component). The result
    --  is conservative, in that a result of False is decisive. A result of True
    --  means that such a component may or may not be present.
+
+   function Within_Case_Or_If_Expression (N : Node_Id) return Boolean;
+   --  Determine whether arbitrary node N is within a case or an if expression
 
    procedure Wrap_Cleanup_Procedure (N : Node_Id);
    --  Given an N_Subprogram_Body node, this procedure adds an Abort_Defer call

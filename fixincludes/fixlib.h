@@ -3,7 +3,7 @@
    files which are fixed to work correctly with ANSI C and placed in a
    directory that GCC will search.
 
-   Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2004, 2009
+   Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2004, 2009, 2012
    Free Software Foundation, Inc.
 
 This file is part of GCC.
@@ -223,7 +223,7 @@ typedef enum {
   VERB_EVERYTHING
 } te_verbose;
 
-te_verbose  verbose_level;
+extern te_verbose  verbose_level;
 
 #define VLEVEL(l)  ((unsigned int) verbose_level >= (unsigned int) l)
 #define NOT_SILENT VLEVEL(VERB_FIXES)
@@ -233,7 +233,7 @@ typedef enum {
   TESTING_ON  = 1
 } fixinc_mode_t;
 
-fixinc_mode_t fixinc_mode;
+extern fixinc_mode_t fixinc_mode;
 
 #ifdef HAVE_MMAP_FILE
 #define UNLOAD_DATA() do { if (curr_data_mapped) { \

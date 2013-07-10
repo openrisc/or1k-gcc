@@ -1,7 +1,5 @@
 /* Optimize by combining instructions for GNU compiler.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -494,6 +492,17 @@ static rtx gen_lowpart_or_truncate (enum machine_mode, rtx);
 static const struct rtl_hooks combine_rtl_hooks = RTL_HOOKS_INITIALIZER;
 
 
+/* Convenience wrapper for the canonicalize_comparison target hook.
+   Target hooks cannot use enum rtx_code.  */
+static inline void
+target_canonicalize_comparison (enum rtx_code *code, rtx *op0, rtx *op1,
+				bool op0_preserve_value)
+{
+  int code_int = (int)*code;
+  targetm.canonicalize_comparison (&code_int, op0, op1, op0_preserve_value);
+  *code = (enum rtx_code)code_int;
+}
+
 /* Try to split PATTERN found in INSN.  This returns NULL_RTX if
    PATTERN can not be split.  Otherwise, it returns an insn sequence.
    This is a wrapper around split_insns which ensures that the
@@ -2944,9 +2953,7 @@ try_combine (rtx i3, rtx i2, rtx i1, rtx i0, int *new_direct_jump_p,
 	  compare_code = orig_compare_code = GET_CODE (*cc_use_loc);
 	  compare_code = simplify_compare_const (compare_code,
 						 op0, &op1);
-#ifdef CANONICALIZE_COMPARISON
-	  CANONICALIZE_COMPARISON (compare_code, op0, op1);
-#endif
+	  target_canonicalize_comparison (&compare_code, &op0, &op1, 1);
 	}
 
       /* Do the rest only if op1 is const0_rtx, which may be the
@@ -7696,8 +7703,24 @@ make_compound_operation (rtx x, enum rtx_code in_code)
 	 what it originally did, do this SUBREG as a force_to_mode.  */
       {
 	rtx inner = SUBREG_REG (x), simplified;
-	
-	tem = make_compound_operation (inner, in_code);
+	enum rtx_code subreg_code = in_code;
+
+	/* If in_code is COMPARE, it isn't always safe to pass it through
+	   to the recursive make_compound_operation call.  */
+	if (subreg_code == COMPARE
+	    && (!subreg_lowpart_p (x)
+		|| GET_CODE (inner) == SUBREG
+		/* (subreg:SI (and:DI (reg:DI) (const_int 0x800000000)) 0)
+		   is (const_int 0), rather than
+		   (subreg:SI (lshiftrt:DI (reg:DI) (const_int 35)) 0).  */
+		|| (GET_CODE (inner) == AND
+		    && CONST_INT_P (XEXP (inner, 1))
+		    && GET_MODE_SIZE (mode) < GET_MODE_SIZE (GET_MODE (inner))
+		    && exact_log2 (UINTVAL (XEXP (inner, 1)))
+		       >= GET_MODE_BITSIZE (mode))))
+	  subreg_code = SET;
+
+	tem = make_compound_operation (inner, subreg_code);
 
 	simplified
 	  = simplify_subreg (mode, tem, GET_MODE (inner), SUBREG_BYTE (x));
@@ -11959,11 +11982,9 @@ simplify_comparison (enum rtx_code code, rtx *pop0, rtx *pop1)
 	    }
 	}
 
-#ifdef CANONICALIZE_COMPARISON
   /* If this machine only supports a subset of valid comparisons, see if we
      can convert an unsupported one into a supported one.  */
-  CANONICALIZE_COMPARISON (code, op0, op1);
-#endif
+  target_canonicalize_comparison (&code, &op0, &op1, 0);
 
   *pop0 = op0;
   *pop1 = op1;

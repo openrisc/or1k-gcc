@@ -1,6 +1,5 @@
 /* Function splitting pass
-   Copyright (C) 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Jan Hubicka  <jh@suse.cz>
 
 This file is part of GCC.
@@ -1310,7 +1309,9 @@ split_function (struct split_point *split_point)
      so return slot optimization is always possible.  Moreover this is
      required to make DECL_BY_REFERENCE work.  */
   if (aggregate_value_p (DECL_RESULT (current_function_decl),
-			 TREE_TYPE (current_function_decl)))
+			 TREE_TYPE (current_function_decl))
+      && (!is_gimple_reg_type (TREE_TYPE (DECL_RESULT (current_function_decl)))
+	  || DECL_BY_REFERENCE (DECL_RESULT (current_function_decl))))
     gimple_call_set_return_slot_opt (call, true);
 
   /* Update return value.  This is bit tricky.  When we do not return,

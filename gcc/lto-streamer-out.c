@@ -1,6 +1,6 @@
 /* Write the GIMPLE representation to a file stream.
 
-   Copyright 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by Kenneth Zadeck <zadeck@naturalbridge.com>
    Re-implemented by Diego Novillo <dnovillo@google.com>
 
@@ -162,6 +162,9 @@ lto_output_location (struct output_block *ob, struct bitpack_d *bp,
   xloc = expand_location (loc);
 
   bp_pack_value (bp, ob->current_file != xloc.file, 1);
+  bp_pack_value (bp, ob->current_line != xloc.line, 1);
+  bp_pack_value (bp, ob->current_col != xloc.column, 1);
+
   if (ob->current_file != xloc.file)
     bp_pack_var_len_unsigned (bp,
 	                      streamer_string_index (ob, xloc.file,
@@ -169,12 +172,10 @@ lto_output_location (struct output_block *ob, struct bitpack_d *bp,
 						     true));
   ob->current_file = xloc.file;
 
-  bp_pack_value (bp, ob->current_line != xloc.line, 1);
   if (ob->current_line != xloc.line)
     bp_pack_var_len_unsigned (bp, xloc.line);
   ob->current_line = xloc.line;
 
-  bp_pack_value (bp, ob->current_col != xloc.column, 1);
   if (ob->current_col != xloc.column)
     bp_pack_var_len_unsigned (bp, xloc.column);
   ob->current_col = xloc.column;
@@ -328,6 +329,7 @@ lto_write_tree (struct output_block *ob, tree expr, bool ref_p)
       tree initial = DECL_INITIAL (expr);
       if (TREE_CODE (expr) == VAR_DECL
 	  && (TREE_STATIC (expr) || DECL_EXTERNAL (expr))
+	  && !DECL_IN_CONSTANT_POOL (expr)
 	  && initial)
 	{
 	  lto_symtab_encoder_t encoder;
@@ -1164,7 +1166,8 @@ write_symbol (struct streamer_tree_cache_d *cache,
   if (!TREE_PUBLIC (t)
       || is_builtin_fn (t)
       || DECL_ABSTRACT (t)
-      || TREE_CODE (t) == RESULT_DECL)
+      || TREE_CODE (t) == RESULT_DECL
+      || (TREE_CODE (t) == VAR_DECL && DECL_HARD_REGISTER (t)))
     return;
 
   gcc_assert (TREE_CODE (t) == VAR_DECL
@@ -1256,6 +1259,45 @@ write_symbol (struct streamer_tree_cache_d *cache,
   lto_output_data_stream (stream, &slot_num, 4);
 }
 
+/* Return true if NODE should appear in the plugin symbol table.  */
+
+bool
+output_symbol_p (symtab_node node)
+{
+  struct cgraph_node *cnode;
+  if (!symtab_real_symbol_p (node))
+    return false;
+  /* We keep external functions in symtab for sake of inlining
+     and devirtualization.  We do not want to see them in symbol table as
+     references unless they are really used.  */
+  cnode = dyn_cast <cgraph_node> (node);
+  if (cnode && DECL_EXTERNAL (cnode->symbol.decl)
+      && cnode->callers)
+    return true;
+
+ /* Ignore all references from external vars initializers - they are not really
+    part of the compilation unit until they are used by folding.  Some symbols,
+    like references to external construction vtables can not be referred to at all.
+    We decide this at can_refer_decl_in_current_unit_p.  */
+ if (DECL_EXTERNAL (node->symbol.decl))
+    {
+      int i;
+      struct ipa_ref *ref;
+      for (i = 0; ipa_ref_list_referring_iterate (&node->symbol.ref_list,
+					          i, ref); i++)
+	{
+	  if (ref->use == IPA_REF_ALIAS)
+	    continue;
+          if (is_a <cgraph_node> (ref->referring))
+	    return true;
+	  if (!DECL_EXTERNAL (ref->referring->symbol.decl))
+	    return true;
+	}
+      return false;
+    }
+  return true;
+}
+
 
 /* Write an IL symbol table to OB.
    SET and VSET are cgraph/varpool node sets we are outputting.  */
@@ -1284,7 +1326,7 @@ produce_symtab (struct output_block *ob)
     {
       symtab_node node = lsei_node (lsei);
 
-      if (!symtab_real_symbol_p (node) || DECL_EXTERNAL (node->symbol.decl))
+      if (!output_symbol_p (node) || DECL_EXTERNAL (node->symbol.decl))
 	continue;
       write_symbol (cache, &stream, node->symbol.decl, seen, false);
     }
@@ -1293,7 +1335,7 @@ produce_symtab (struct output_block *ob)
     {
       symtab_node node = lsei_node (lsei);
 
-      if (!symtab_real_symbol_p (node) || !DECL_EXTERNAL (node->symbol.decl))
+      if (!output_symbol_p (node) || !DECL_EXTERNAL (node->symbol.decl))
 	continue;
       write_symbol (cache, &stream, node->symbol.decl, seen, false);
     }

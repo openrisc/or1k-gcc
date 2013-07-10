@@ -1,8 +1,6 @@
 ## Makefile for the C++11 sources of the GNU C++ Standard library.
 ##
-## Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005
-## 2006, 2007, 2008, 2009, 2010, 2011, 2012
-## Free Software Foundation, Inc.
+## Copyright (C) 1997-2013 Free Software Foundation, Inc.
 ##
 ## This file is part of the libstdc++ version 3 distribution.
 ## Process this file with automake to produce Makefile.in.
@@ -52,7 +50,8 @@ cxx98_sources = \
 cxx11_sources = \
 	compatibility-c++0x.cc \
 	compatibility-atomic-c++0x.cc \
-	compatibility-thread-c++0x.cc
+	compatibility-thread-c++0x.cc \
+	compatibility-chrono.cc
 
 libstdc___la_SOURCES = $(cxx98_sources) $(cxx11_sources)
 
@@ -97,6 +96,11 @@ compatibility-atomic-c++0x.o: compatibility-atomic-c++0x.cc
 compatibility-thread-c++0x.lo: compatibility-thread-c++0x.cc
 	$(LTCXXCOMPILE) -std=gnu++11 -c $<
 compatibility-thread-c++0x.o: compatibility-thread-c++0x.cc
+	$(CXXCOMPILE) -std=gnu++11 -c $<
+
+compatibility-chrono.lo: compatibility-chrono.cc
+	$(LTCXXCOMPILE) -std=gnu++11 -c $<
+compatibility-chrono.o: compatibility-chrono.cc
 	$(CXXCOMPILE) -std=gnu++11 -c $<
 
 # A note on compatibility and static libraries.
@@ -196,7 +200,7 @@ libstdc++-symbols.ver:  ${glibcxx_srcdir}/$(SYMVER_FILE) \
 	  fi; \
 	fi
 	$(EGREP) -v '^[ 	]*#(#| |$$)' $@.tmp | \
-	  $(CC) -E -P -include ../config.h - > $@ || (rm -f $@ ; exit 1)
+	  $(CC) -E -P -include $(CONFIG_HEADER) - > $@ || (rm -f $@ ; exit 1)
 	rm -f $@.tmp
 
 CLEANFILES = libstdc++-symbols.ver

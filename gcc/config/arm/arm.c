@@ -1,7 +1,5 @@
 /* Output routines for GCC for ARM.
-   Copyright (C) 1991, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001,
-   2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1991-2013 Free Software Foundation, Inc.
    Contributed by Pieter `Tiggr' Schoenmakers (rcpieter@win.tue.nl)
    and Martin Simmons (@harleqn.co.uk).
    More major hacks by Richard Earnshaw (rearnsha@arm.com).
@@ -132,6 +130,7 @@ static void arm_output_function_prologue (FILE *, HOST_WIDE_INT);
 static int arm_comp_type_attributes (const_tree, const_tree);
 static void arm_set_default_type_attributes (tree);
 static int arm_adjust_cost (rtx, rtx, rtx, int);
+static int arm_sched_reorder (FILE *, int, rtx *, int *, int);
 static int optimal_immediate_sequence (enum rtx_code code,
 				       unsigned HOST_WIDE_INT val,
 				       struct four_ints *return_sequence);
@@ -270,6 +269,17 @@ static int arm_cortex_a5_branch_cost (bool, bool);
 static bool arm_vectorize_vec_perm_const_ok (enum machine_mode vmode,
 					     const unsigned char *sel);
 
+static int arm_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
+					   tree vectype,
+					   int misalign ATTRIBUTE_UNUSED);
+static unsigned arm_add_stmt_cost (void *data, int count,
+				   enum vect_cost_for_stmt kind,
+				   struct _stmt_vec_info *stmt_info,
+				   int misalign,
+				   enum vect_cost_model_location where);
+
+static void arm_canonicalize_comparison (int *code, rtx *op0, rtx *op1,
+					 bool op0_preserve_value);
 
 /* Table of machine attributes.  */
 static const struct attribute_spec arm_attribute_table[] =
@@ -365,6 +375,9 @@ static const struct attribute_spec arm_attribute_table[] =
 
 #undef  TARGET_SCHED_ADJUST_COST
 #define TARGET_SCHED_ADJUST_COST arm_adjust_cost
+
+#undef TARGET_SCHED_REORDER
+#define TARGET_SCHED_REORDER arm_sched_reorder
 
 #undef TARGET_REGISTER_MOVE_COST
 #define TARGET_REGISTER_MOVE_COST arm_register_move_cost
@@ -626,6 +639,16 @@ static const struct attribute_spec arm_attribute_table[] =
 #define TARGET_VECTORIZE_VEC_PERM_CONST_OK \
   arm_vectorize_vec_perm_const_ok
 
+#undef TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST
+#define TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST \
+  arm_builtin_vectorization_cost
+#undef TARGET_VECTORIZE_ADD_STMT_COST
+#define TARGET_VECTORIZE_ADD_STMT_COST arm_add_stmt_cost
+
+#undef TARGET_CANONICALIZE_COMPARISON
+#define TARGET_CANONICALIZE_COMPARISON \
+  arm_canonicalize_comparison
+
 struct gcc_target targetm = TARGET_INITIALIZER;
 
 /* Obstack for minipool constant handling.  */
@@ -884,6 +907,23 @@ struct processors
   l1_size, \
   l1_line_size
 
+/* arm generic vectorizer costs.  */
+static const
+struct cpu_vec_costs arm_default_vec_cost = {
+  1,					/* scalar_stmt_cost.  */
+  1,					/* scalar load_cost.  */
+  1,					/* scalar_store_cost.  */
+  1,					/* vec_stmt_cost.  */
+  1,					/* vec_to_scalar_cost.  */
+  1,					/* scalar_to_vec_cost.  */
+  1,					/* vec_align_load_cost.  */
+  1,					/* vec_unalign_load_cost.  */
+  1,					/* vec_unalign_store_cost.  */
+  1,					/* vec_store_cost.  */
+  3,					/* cond_taken_branch_cost.  */
+  1,					/* cond_not_taken_branch_cost.  */
+};
+
 const struct tune_params arm_slowmul_tune =
 {
   arm_slowmul_rtx_costs,
@@ -895,6 +935,7 @@ const struct tune_params arm_slowmul_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 const struct tune_params arm_fastmul_tune =
@@ -908,6 +949,7 @@ const struct tune_params arm_fastmul_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 /* StrongARM has early execution of branches, so a sequence that is worth
@@ -924,6 +966,7 @@ const struct tune_params arm_strongarm_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 const struct tune_params arm_xscale_tune =
@@ -937,6 +980,7 @@ const struct tune_params arm_xscale_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 const struct tune_params arm_9e_tune =
@@ -950,6 +994,7 @@ const struct tune_params arm_9e_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 const struct tune_params arm_v6t2_tune =
@@ -963,6 +1008,7 @@ const struct tune_params arm_v6t2_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 /* Generic Cortex tuning.  Use more specific tunings if appropriate.  */
@@ -977,6 +1023,7 @@ const struct tune_params arm_cortex_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 const struct tune_params arm_cortex_a15_tune =
@@ -990,6 +1037,7 @@ const struct tune_params arm_cortex_a15_tune =
   arm_default_branch_cost,
   true,						/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 /* Branches can be dual-issued on Cortex-A5, so conditional execution is
@@ -1006,6 +1054,7 @@ const struct tune_params arm_cortex_a5_tune =
   arm_cortex_a5_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {false, false},				/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 const struct tune_params arm_cortex_a9_tune =
@@ -1019,6 +1068,7 @@ const struct tune_params arm_cortex_a9_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 /* The arm_v6m_tune is duplicated from arm_cortex_tune, rather than
@@ -1034,6 +1084,7 @@ const struct tune_params arm_v6m_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {false, false},				/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 const struct tune_params arm_fa726te_tune =
@@ -1047,6 +1098,7 @@ const struct tune_params arm_fa726te_tune =
   arm_default_branch_cost,
   false,					/* Prefer LDRD/STRD.  */
   {true, true},					/* Prefer non short circuit.  */
+  &arm_default_vec_cost,                        /* Vectorizer costs.  */
 };
 
 
@@ -3543,8 +3595,9 @@ arm_gen_constant (enum rtx_code code, enum machine_mode mode, rtx cond,
    This can be done for a few constant compares, where we can make the
    immediate value easier to load.  */
 
-enum rtx_code
-arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
+static void
+arm_canonicalize_comparison (int *code, rtx *op0, rtx *op1,
+			     bool op0_preserve_value)
 {
   enum machine_mode mode;
   unsigned HOST_WIDE_INT i, maxval;
@@ -3563,15 +3616,15 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
     {
       rtx tem;
 
-      if (code == GT || code == LE
-	  || (!TARGET_ARM && (code == GTU || code == LEU)))
+      if (*code == GT || *code == LE
+	  || (!TARGET_ARM && (*code == GTU || *code == LEU)))
 	{
 	  /* Missing comparison.  First try to use an available
 	     comparison.  */
 	  if (CONST_INT_P (*op1))
 	    {
 	      i = INTVAL (*op1);
-	      switch (code)
+	      switch (*code)
 		{
 		case GT:
 		case LE:
@@ -3579,7 +3632,8 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
 		      && arm_const_double_by_immediates (GEN_INT (i + 1)))
 		    {
 		      *op1 = GEN_INT (i + 1);
-		      return code == GT ? GE : LT;
+		      *code = *code == GT ? GE : LT;
+		      return;
 		    }
 		  break;
 		case GTU:
@@ -3588,7 +3642,8 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
 		      && arm_const_double_by_immediates (GEN_INT (i + 1)))
 		    {
 		      *op1 = GEN_INT (i + 1);
-		      return code == GTU ? GEU : LTU;
+		      *code = *code == GTU ? GEU : LTU;
+		      return;
 		    }
 		  break;
 		default:
@@ -3597,13 +3652,15 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
 	    }
 
 	  /* If that did not work, reverse the condition.  */
-	  tem = *op0;
-	  *op0 = *op1;
-	  *op1 = tem;
-	  return swap_condition (code);
+	  if (!op0_preserve_value)
+	    {
+	      tem = *op0;
+	      *op0 = *op1;
+	      *op1 = tem;
+	      *code = (int)swap_condition ((enum rtx_code)*code);
+	    }
 	}
-
-      return code;
+      return;
     }
 
   /* If *op0 is (zero_extend:SI (subreg:QI (reg:SI) 0)) and comparing
@@ -3624,15 +3681,15 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
   if (!CONST_INT_P (*op1)
       || const_ok_for_arm (INTVAL (*op1))
       || const_ok_for_arm (- INTVAL (*op1)))
-    return code;
+    return;
 
   i = INTVAL (*op1);
 
-  switch (code)
+  switch (*code)
     {
     case EQ:
     case NE:
-      return code;
+      return;
 
     case GT:
     case LE:
@@ -3640,7 +3697,8 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
 	  && (const_ok_for_arm (i + 1) || const_ok_for_arm (-(i + 1))))
 	{
 	  *op1 = GEN_INT (i + 1);
-	  return code == GT ? GE : LT;
+	  *code = *code == GT ? GE : LT;
+	  return;
 	}
       break;
 
@@ -3650,7 +3708,8 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
 	  && (const_ok_for_arm (i - 1) || const_ok_for_arm (-(i - 1))))
 	{
 	  *op1 = GEN_INT (i - 1);
-	  return code == GE ? GT : LE;
+	  *code = *code == GE ? GT : LE;
+	  return;
 	}
       break;
 
@@ -3660,7 +3719,8 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
 	  && (const_ok_for_arm (i + 1) || const_ok_for_arm (-(i + 1))))
 	{
 	  *op1 = GEN_INT (i + 1);
-	  return code == GTU ? GEU : LTU;
+	  *code = *code == GTU ? GEU : LTU;
+	  return;
 	}
       break;
 
@@ -3670,15 +3730,14 @@ arm_canonicalize_comparison (enum rtx_code code, rtx *op0, rtx *op1)
 	  && (const_ok_for_arm (i - 1) || const_ok_for_arm (-(i - 1))))
 	{
 	  *op1 = GEN_INT (i - 1);
-	  return code == GEU ? GTU : LEU;
+	  *code = *code == GEU ? GTU : LEU;
+	  return;
 	}
       break;
 
     default:
       gcc_unreachable ();
     }
-
-  return code;
 }
 
 
@@ -5566,7 +5625,9 @@ thumb_find_work_register (unsigned long pushed_regs_mask)
   if (! cfun->machine->uses_anonymous_args
       && crtl->args.size >= 0
       && crtl->args.size <= (LAST_ARG_REGNUM * UNITS_PER_WORD)
-      && crtl->args.info.nregs < 4)
+      && (TARGET_AAPCS_BASED
+	  ? crtl->args.info.aapcs_ncrn < 4
+	  : crtl->args.info.nregs < 4))
     return LAST_ARG_REGNUM;
 
   /* Otherwise look for a call-saved register that is going to be pushed.  */
@@ -8680,6 +8741,253 @@ arm_memory_move_cost (enum machine_mode mode, reg_class_t rclass,
     }
 }
 
+/* Vectorizer cost model implementation.  */
+
+/* Implement targetm.vectorize.builtin_vectorization_cost.  */
+static int
+arm_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
+				tree vectype,
+				int misalign ATTRIBUTE_UNUSED)
+{
+  unsigned elements;
+
+  switch (type_of_cost)
+    {
+      case scalar_stmt:
+        return current_tune->vec_costs->scalar_stmt_cost;
+
+      case scalar_load:
+        return current_tune->vec_costs->scalar_load_cost;
+
+      case scalar_store:
+        return current_tune->vec_costs->scalar_store_cost;
+
+      case vector_stmt:
+        return current_tune->vec_costs->vec_stmt_cost;
+
+      case vector_load:
+        return current_tune->vec_costs->vec_align_load_cost;
+
+      case vector_store:
+        return current_tune->vec_costs->vec_store_cost;
+
+      case vec_to_scalar:
+        return current_tune->vec_costs->vec_to_scalar_cost;
+
+      case scalar_to_vec:
+        return current_tune->vec_costs->scalar_to_vec_cost;
+
+      case unaligned_load:
+        return current_tune->vec_costs->vec_unalign_load_cost;
+
+      case unaligned_store:
+        return current_tune->vec_costs->vec_unalign_store_cost;
+
+      case cond_branch_taken:
+        return current_tune->vec_costs->cond_taken_branch_cost;
+
+      case cond_branch_not_taken:
+        return current_tune->vec_costs->cond_not_taken_branch_cost;
+
+      case vec_perm:
+      case vec_promote_demote:
+        return current_tune->vec_costs->vec_stmt_cost;
+
+      case vec_construct:
+	elements = TYPE_VECTOR_SUBPARTS (vectype);
+	return elements / 2 + 1;
+
+      default:
+        gcc_unreachable ();
+    }
+}
+
+/* Implement targetm.vectorize.add_stmt_cost.  */
+
+static unsigned
+arm_add_stmt_cost (void *data, int count, enum vect_cost_for_stmt kind,
+		   struct _stmt_vec_info *stmt_info, int misalign,
+		   enum vect_cost_model_location where)
+{
+  unsigned *cost = (unsigned *) data;
+  unsigned retval = 0;
+
+  if (flag_vect_cost_model)
+    {
+      tree vectype = stmt_info ? stmt_vectype (stmt_info) : NULL_TREE;
+      int stmt_cost = arm_builtin_vectorization_cost (kind, vectype, misalign);
+
+      /* Statements in an inner loop relative to the loop being
+	 vectorized are weighted more heavily.  The value here is
+	 arbitrary and could potentially be improved with analysis.  */
+      if (where == vect_body && stmt_info && stmt_in_inner_loop_p (stmt_info))
+	count *= 50;  /* FIXME.  */
+
+      retval = (unsigned) (count * stmt_cost);
+      cost[where] += retval;
+    }
+
+  return retval;
+}
+
+/* Return true if and only if this insn can dual-issue only as older.  */
+static bool
+cortexa7_older_only (rtx insn)
+{
+  if (recog_memoized (insn) < 0)
+    return false;
+
+  if (get_attr_insn (insn) == INSN_MOV)
+    return false;
+
+  switch (get_attr_type (insn))
+    {
+    case TYPE_ALU_REG:
+    case TYPE_LOAD_BYTE:
+    case TYPE_LOAD1:
+    case TYPE_STORE1:
+    case TYPE_FFARITHS:
+    case TYPE_FADDS:
+    case TYPE_FFARITHD:
+    case TYPE_FADDD:
+    case TYPE_FCPYS:
+    case TYPE_F_CVT:
+    case TYPE_FCMPS:
+    case TYPE_FCMPD:
+    case TYPE_FCONSTS:
+    case TYPE_FCONSTD:
+    case TYPE_FMULS:
+    case TYPE_FMACS:
+    case TYPE_FMULD:
+    case TYPE_FMACD:
+    case TYPE_FDIVS:
+    case TYPE_FDIVD:
+    case TYPE_F_2_R:
+    case TYPE_F_FLAG:
+    case TYPE_F_LOADS:
+    case TYPE_F_STORES:
+      return true;
+    default:
+      return false;
+    }
+}
+
+/* Return true if and only if this insn can dual-issue as younger.  */
+static bool
+cortexa7_younger (FILE *file, int verbose, rtx insn)
+{
+  if (recog_memoized (insn) < 0)
+    {
+      if (verbose > 5)
+        fprintf (file, ";; not cortexa7_younger %d\n", INSN_UID (insn));
+      return false;
+    }
+
+  if (get_attr_insn (insn) == INSN_MOV)
+    return true;
+
+  switch (get_attr_type (insn))
+    {
+    case TYPE_SIMPLE_ALU_IMM:
+    case TYPE_SIMPLE_ALU_SHIFT:
+    case TYPE_BRANCH:
+    case TYPE_CALL:
+      return true;
+    default:
+      return false;
+    }
+}
+
+
+/* Look for an instruction that can dual issue only as an older
+   instruction, and move it in front of any instructions that can
+   dual-issue as younger, while preserving the relative order of all
+   other instructions in the ready list.  This is a hueuristic to help
+   dual-issue in later cycles, by postponing issue of more flexible
+   instructions.  This heuristic may affect dual issue opportunities
+   in the current cycle.  */
+static void
+cortexa7_sched_reorder (FILE *file, int verbose, rtx *ready, int *n_readyp,
+                        int clock)
+{
+  int i;
+  int first_older_only = -1, first_younger = -1;
+
+  if (verbose > 5)
+    fprintf (file,
+             ";; sched_reorder for cycle %d with %d insns in ready list\n",
+             clock,
+             *n_readyp);
+
+  /* Traverse the ready list from the head (the instruction to issue
+     first), and looking for the first instruction that can issue as
+     younger and the first instruction that can dual-issue only as
+     older.  */
+  for (i = *n_readyp - 1; i >= 0; i--)
+    {
+      rtx insn = ready[i];
+      if (cortexa7_older_only (insn))
+        {
+          first_older_only = i;
+          if (verbose > 5)
+            fprintf (file, ";; reorder older found %d\n", INSN_UID (insn));
+          break;
+        }
+      else if (cortexa7_younger (file, verbose, insn) && first_younger == -1)
+        first_younger = i;
+    }
+
+  /* Nothing to reorder because either no younger insn found or insn
+     that can dual-issue only as older appears before any insn that
+     can dual-issue as younger.  */
+  if (first_younger == -1)
+    {
+      if (verbose > 5)
+        fprintf (file, ";; sched_reorder nothing to reorder as no younger\n");
+      return;
+    }
+
+  /* Nothing to reorder because no older-only insn in the ready list.  */
+  if (first_older_only == -1)
+    {
+      if (verbose > 5)
+        fprintf (file, ";; sched_reorder nothing to reorder as no older_only\n");
+      return;
+    }
+
+  /* Move first_older_only insn before first_younger.  */
+  if (verbose > 5)
+    fprintf (file, ";; cortexa7_sched_reorder insn %d before %d\n",
+             INSN_UID(ready [first_older_only]),
+             INSN_UID(ready [first_younger]));
+  rtx first_older_only_insn = ready [first_older_only];
+  for (i = first_older_only; i < first_younger; i++)
+    {
+      ready[i] = ready[i+1];
+    }
+
+  ready[i] = first_older_only_insn;
+  return;
+}
+
+/* Implement TARGET_SCHED_REORDER. */
+static int
+arm_sched_reorder (FILE *file, int verbose, rtx *ready, int *n_readyp,
+                   int clock)
+{
+  switch (arm_tune)
+    {
+    case cortexa7:
+      cortexa7_sched_reorder (file, verbose, ready, n_readyp, clock);
+      break;
+    default:
+      /* Do nothing for other cores.  */
+      break;
+    }
+
+  return arm_issue_rate ();
+}
+
 /* This function implements the target macro TARGET_SCHED_ADJUST_COST.
    It corrects the value of COST based on the relationship between
    INSN and DEP through the dependence LINK.  It returns the new
@@ -10398,6 +10706,13 @@ load_multiple_sequence (rtx *operands, int nops, int *regs, int *saved_order,
 	      || unsorted_regs[i] > 14
 	      || (i != nops - 1 && unsorted_regs[i] == base_reg))
 	    return 0;
+
+          /* Don't allow SP to be loaded unless it is also the base
+             register.  It guarantees that SP is reset correctly when
+             an LDM instruction is interrupted.  Otherwise, we might
+             end up with a corrupt stack.  */
+          if (unsorted_regs[i] == SP_REGNUM && base_reg != SP_REGNUM)
+            return 0;
 
 	  unsorted_offsets[i] = INTVAL (offset);
 	  if (i == 0 || unsorted_offsets[i] < unsorted_offsets[order[0]])
@@ -15122,71 +15437,87 @@ shift_op (rtx op, HOST_WIDE_INT *amountp)
   const char * mnem;
   enum rtx_code code = GET_CODE (op);
 
-  switch (GET_CODE (XEXP (op, 1)))
-    {
-    case REG:
-    case SUBREG:
-      *amountp = -1;
-      break;
-
-    case CONST_INT:
-      *amountp = INTVAL (XEXP (op, 1));
-      break;
-
-    default:
-      gcc_unreachable ();
-    }
-
   switch (code)
     {
     case ROTATE:
-      gcc_assert (*amountp != -1);
-      *amountp = 32 - *amountp;
-      code = ROTATERT;
+      if (!CONST_INT_P (XEXP (op, 1)))
+	{
+	  output_operand_lossage ("invalid shift operand");
+	  return NULL;
+	}
 
-      /* Fall through.  */
+      code = ROTATERT;
+      *amountp = 32 - INTVAL (XEXP (op, 1));
+      mnem = "ror";
+      break;
 
     case ASHIFT:
     case ASHIFTRT:
     case LSHIFTRT:
     case ROTATERT:
       mnem = arm_shift_nmem(code);
+      if (CONST_INT_P (XEXP (op, 1)))
+	{
+	  *amountp = INTVAL (XEXP (op, 1));
+	}
+      else if (REG_P (XEXP (op, 1)))
+	{
+	  *amountp = -1;
+	  return mnem;
+	}
+      else
+	{
+	  output_operand_lossage ("invalid shift operand");
+	  return NULL;
+	}
       break;
 
     case MULT:
       /* We never have to worry about the amount being other than a
 	 power of 2, since this case can never be reloaded from a reg.  */
-      gcc_assert (*amountp != -1);
+      if (!CONST_INT_P (XEXP (op, 1)))
+	{
+	  output_operand_lossage ("invalid shift operand");
+	  return NULL;
+	}
+
+      *amountp = INTVAL (XEXP (op, 1)) & 0xFFFFFFFF;
+
+      /* Amount must be a power of two.  */
+      if (*amountp & (*amountp - 1))
+	{
+	  output_operand_lossage ("invalid shift operand");
+	  return NULL;
+	}
+
       *amountp = int_log2 (*amountp);
       return ARM_LSL_NAME;
 
     default:
-      gcc_unreachable ();
+      output_operand_lossage ("invalid shift operand");
+      return NULL;
     }
 
-  if (*amountp != -1)
+  /* This is not 100% correct, but follows from the desire to merge
+     multiplication by a power of 2 with the recognizer for a
+     shift.  >=32 is not a valid shift for "lsl", so we must try and
+     output a shift that produces the correct arithmetical result.
+     Using lsr #32 is identical except for the fact that the carry bit
+     is not set correctly if we set the flags; but we never use the
+     carry bit from such an operation, so we can ignore that.  */
+  if (code == ROTATERT)
+    /* Rotate is just modulo 32.  */
+    *amountp &= 31;
+  else if (*amountp != (*amountp & 31))
     {
-      /* This is not 100% correct, but follows from the desire to merge
-	 multiplication by a power of 2 with the recognizer for a
-	 shift.  >=32 is not a valid shift for "lsl", so we must try and
-	 output a shift that produces the correct arithmetical result.
-	 Using lsr #32 is identical except for the fact that the carry bit
-	 is not set correctly if we set the flags; but we never use the
-	 carry bit from such an operation, so we can ignore that.  */
-      if (code == ROTATERT)
-	/* Rotate is just modulo 32.  */
-	*amountp &= 31;
-      else if (*amountp != (*amountp & 31))
-	{
-	  if (code == ASHIFT)
-	    mnem = "lsr";
-	  *amountp = 32;
-	}
-
-      /* Shifts of 0 are no-ops.  */
-      if (*amountp == 0)
-	return NULL;
+      if (code == ASHIFT)
+	mnem = "lsr";
+      *amountp = 32;
     }
+
+  /* Shifts of 0 are no-ops.  */
+  if (*amountp == 0)
+    return NULL;
 
   return mnem;
 }
@@ -17435,12 +17766,6 @@ arm_print_operand (FILE *stream, rtx x, int code)
 	HOST_WIDE_INT val;
 	const char *shift;
 
-	if (!shift_operator (x, SImode))
-	  {
-	    output_operand_lossage ("invalid shift operand");
-	    break;
-	  }
-
 	shift = shift_op (x, &val);
 
 	if (shift)
@@ -17657,7 +17982,7 @@ arm_print_operand (FILE *stream, rtx x, int code)
 	      "wC12",  "wC13",  "wC14",  "wC15"
 	    };
 
-	  fprintf (stream, wc_reg_names [INTVAL (x)]);
+	  fputs (wc_reg_names [INTVAL (x)], stream);
 	}
       return;
 
@@ -19060,6 +19385,7 @@ typedef enum {
   NEON_GETLANE,
   NEON_SETLANE,
   NEON_CREATE,
+  NEON_RINT,
   NEON_DUP,
   NEON_DUPLANE,
   NEON_COMBINE,
@@ -19259,6 +19585,12 @@ static neon_builtin_datum neon_builtin_data[] =
   VAR4 (FIXCONV, vcvt_n, v2si, v2sf, v4si, v4sf),
   VAR10 (SELECT, vbsl,
 	 v8qi, v4hi, v2si, v2sf, di, v16qi, v8hi, v4si, v4sf, v2di),
+  VAR2 (RINT, vrintn, v2sf, v4sf),
+  VAR2 (RINT, vrinta, v2sf, v4sf),
+  VAR2 (RINT, vrintp, v2sf, v4sf),
+  VAR2 (RINT, vrintm, v2sf, v4sf),
+  VAR2 (RINT, vrintz, v2sf, v4sf),
+  VAR2 (RINT, vrintx, v2sf, v4sf),
   VAR1 (VTBL, vtbl1, v8qi),
   VAR1 (VTBL, vtbl2, v8qi),
   VAR1 (VTBL, vtbl3, v8qi),
@@ -19886,6 +20218,7 @@ arm_init_neon_builtins (void)
 	    is_store = 1;
 	  /* Fall through.  */
 	case NEON_UNOP:
+	case NEON_RINT:
 	case NEON_BINOP:
 	case NEON_LOGICBINOP:
 	case NEON_SHIFTINSERT:
@@ -21073,6 +21406,7 @@ arm_expand_neon_builtin (int fcode, tree exp, rtx target)
         NEON_ARG_COPY_TO_REG, NEON_ARG_STOP);
 
     case NEON_DUP:
+    case NEON_RINT:
     case NEON_SPLIT:
     case NEON_REINTERP:
       return arm_expand_neon_args (target, icode, 1, type_mode, exp, fcode,
@@ -23257,7 +23591,8 @@ arm_expand_epilogue (bool really_return)
   if (IS_NAKED (func_type)
       || (IS_VOLATILE (func_type) && TARGET_ABORT_NORETURN))
     {
-      emit_jump_insn (simple_return_rtx);
+      if (really_return)
+        emit_jump_insn (simple_return_rtx);
       return;
     }
 
@@ -23996,6 +24331,8 @@ arm_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
   if (mi_delta < 0)
     mi_delta = - mi_delta;
 
+  final_start_function (emit_barrier (), file, 1);
+
   if (TARGET_THUMB1)
     {
       int labelno = thunk_label++;
@@ -24112,6 +24449,8 @@ arm_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
         fputs ("(PLT)", file);
       fputc ('\n', file);
     }
+
+  final_end_function ();
 }
 
 int
@@ -24423,6 +24762,62 @@ static tree
 arm_cxx_guard_type (void)
 {
   return TARGET_AAPCS_BASED ? integer_type_node : long_long_integer_type_node;
+}
+
+/* Return non-zero iff the consumer (a multiply-accumulate or a
+   multiple-subtract instruction) has an accumulator dependency on the
+   result of the producer and no other dependency on that result.  It
+   does not check if the producer is multiply-accumulate instruction.  */
+int
+arm_mac_accumulator_is_result (rtx producer, rtx consumer)
+{
+  rtx result;
+  rtx op0, op1, acc;
+
+  producer = PATTERN (producer);
+  consumer = PATTERN (consumer);
+
+  if (GET_CODE (producer) == COND_EXEC)
+    producer = COND_EXEC_CODE (producer);
+  if (GET_CODE (consumer) == COND_EXEC)
+    consumer = COND_EXEC_CODE (consumer);
+
+  if (GET_CODE (producer) != SET)
+    return 0;
+
+  result = XEXP (producer, 0);
+
+  if (GET_CODE (consumer) != SET)
+    return 0;
+
+  /* Check that the consumer is of the form
+     (set (...) (plus (mult ...) (...)))
+     or
+     (set (...) (minus (...) (mult ...))).  */
+  if (GET_CODE (XEXP (consumer, 1)) == PLUS)
+    {
+      if (GET_CODE (XEXP (XEXP (consumer, 1), 0)) != MULT)
+        return 0;
+
+      op0 = XEXP (XEXP (XEXP (consumer, 1), 0), 0);
+      op1 = XEXP (XEXP (XEXP (consumer, 1), 0), 1);
+      acc = XEXP (XEXP (consumer, 1), 1);
+    }
+  else if (GET_CODE (XEXP (consumer, 1)) == MINUS)
+    {
+      if (GET_CODE (XEXP (XEXP (consumer, 1), 1)) != MULT)
+        return 0;
+
+      op0 = XEXP (XEXP (XEXP (consumer, 1), 1), 0);
+      op1 = XEXP (XEXP (XEXP (consumer, 1), 1), 1);
+      acc = XEXP (XEXP (consumer, 1), 0);
+    }
+  else
+    return 0;
+
+  return (reg_overlap_mentioned_p (result, acc)
+          && !reg_overlap_mentioned_p (result, op0)
+          && !reg_overlap_mentioned_p (result, op1));
 }
 
 /* Return non-zero if the consumer (a multiply-accumulate instruction)
@@ -25457,9 +25852,11 @@ arm_issue_rate (void)
     case cortexr5:
     case genericv7a:
     case cortexa5:
+    case cortexa7:
     case cortexa8:
     case cortexa9:
     case fa726te:
+    case marvell_pj4:
       return 2;
 
     default:
@@ -26970,7 +27367,7 @@ bool
 arm_validize_comparison (rtx *comparison, rtx * op1, rtx * op2)
 {
   enum rtx_code code = GET_CODE (*comparison);
-  enum rtx_code canonical_code;
+  int code_int;
   enum machine_mode mode = (GET_MODE (*op1) == VOIDmode) 
     ? GET_MODE (*op2) : GET_MODE (*op1);
 
@@ -26979,8 +27376,9 @@ arm_validize_comparison (rtx *comparison, rtx * op1, rtx * op2)
   if (code == UNEQ || code == LTGT)
     return false;
 
-  canonical_code = arm_canonicalize_comparison (code, op1, op2);
-  PUT_CODE (*comparison, canonical_code);
+  code_int = (int)code;
+  arm_canonicalize_comparison (&code_int, op1, op2, 0);
+  PUT_CODE (*comparison, (enum rtx_code)code_int);
 
   switch (mode)
     {

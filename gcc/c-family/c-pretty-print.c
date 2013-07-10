@@ -1,6 +1,5 @@
 /* Subroutines common to both C and C++ pretty-printers.
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -2311,6 +2310,8 @@ void
 pp_c_pretty_printer_init (c_pretty_printer *pp)
 {
   pp->offset_list               = 0;
+
+  pp->flags			= 0;
 
   pp->declaration               = pp_c_declaration;
   pp->declaration_specifiers    = pp_c_declaration_specifiers;

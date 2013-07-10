@@ -1,6 +1,5 @@
 /* Data and Control Flow Analysis for Trees.
-   Copyright (C) 2001, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
-   2012 Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@redhat.com>
 
 This file is part of GCC.
@@ -482,7 +481,7 @@ typedef struct _edge_var_map edge_var_map;
 
 
 /* A vector of var maps.  */
-typedef vec<edge_var_map> edge_var_map_vector;
+typedef vec<edge_var_map, va_heap, vl_embed> edge_var_map_vector;
 
 extern void init_tree_ssa (struct function *);
 extern void redirect_edge_var_map_add (edge, tree, tree, source_location);
@@ -610,6 +609,7 @@ struct tree_niter_desc
 /* In tree-ssa-phiopt.c */
 bool empty_block_p (basic_block);
 basic_block *blocks_in_phiopt_order (void);
+bool nonfreeing_call_p (gimple);
 
 /* In tree-ssa-loop*.c  */
 
@@ -655,8 +655,6 @@ bool gimple_duplicate_loop_to_header_edge (struct loop *, edge,
 					 edge, vec<edge> *,
 					 int);
 struct loop *slpeel_tree_duplicate_loop_to_edge_cfg (struct loop *, edge);
-void rename_variables_in_loop (struct loop *);
-void rename_variables_in_bb (basic_block bb);
 tree expand_simple_operations (tree);
 void substitute_in_loop_info (struct loop *, tree, tree);
 edge single_dom_exit (struct loop *);

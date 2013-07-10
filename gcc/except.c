@@ -1,7 +1,5 @@
 /* Implements exception handling.
-   Copyright (C) 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1989-2013 Free Software Foundation, Inc.
    Contributed by Mike Stump <mrs@cygnus.com>.
 
 This file is part of GCC.
@@ -1507,12 +1505,12 @@ remove_eh_landing_pad (eh_landing_pad lp)
   (*cfun->eh->lp_array)[lp->index] = NULL;
 }
 
-/* Splice REGION from the region tree.  */
+/* Splice the EH region at PP from the region tree.  */
 
-void
-remove_eh_handler (eh_region region)
+static void
+remove_eh_handler_splicer (eh_region *pp)
 {
-  eh_region *pp, *pp_start, p, outer;
+  eh_region region = *pp;
   eh_landing_pad lp;
 
   for (lp = region->landing_pads; lp ; lp = lp->next_lp)
@@ -1522,15 +1520,11 @@ remove_eh_handler (eh_region region)
       (*cfun->eh->lp_array)[lp->index] = NULL;
     }
 
-  outer = region->outer;
-  if (outer)
-    pp_start = &outer->inner;
-  else
-    pp_start = &cfun->eh->region_tree;
-  for (pp = pp_start, p = *pp; p != region; pp = &p->next_peer, p = *pp)
-    continue;
   if (region->inner)
     {
+      eh_region p, outer;
+      outer = region->outer;
+
       *pp = p = region->inner;
       do
 	{
@@ -1543,6 +1537,59 @@ remove_eh_handler (eh_region region)
   *pp = region->next_peer;
 
   (*cfun->eh->region_array)[region->index] = NULL;
+}
+
+/* Splice a single EH region REGION from the region tree.
+
+   To unlink REGION, we need to find the pointer to it with a relatively
+   expensive search in REGION's outer region.  If you are going to
+   remove a number of handlers, using remove_unreachable_eh_regions may
+   be a better option.  */
+
+void
+remove_eh_handler (eh_region region)
+{
+  eh_region *pp, *pp_start, p, outer;
+
+  outer = region->outer;
+  if (outer)
+    pp_start = &outer->inner;
+  else
+    pp_start = &cfun->eh->region_tree;
+  for (pp = pp_start, p = *pp; p != region; pp = &p->next_peer, p = *pp)
+    continue;
+
+  remove_eh_handler_splicer (pp);
+}
+
+/* Worker for remove_unreachable_eh_regions.
+   PP is a pointer to the region to start a region tree depth-first
+   search from.  R_REACHABLE is the set of regions that have to be
+   preserved.  */
+
+static void
+remove_unreachable_eh_regions_worker (eh_region *pp, sbitmap r_reachable)
+{
+  while (*pp)
+    {
+      eh_region region = *pp;
+      remove_unreachable_eh_regions_worker (&region->inner, r_reachable);
+      if (!bitmap_bit_p (r_reachable, region->index))
+	remove_eh_handler_splicer (pp);
+      else
+	pp = &region->next_peer;
+    }
+}
+
+/* Splice all EH regions *not* marked in R_REACHABLE from the region tree.
+   Do this by traversing the EH tree top-down and splice out regions that
+   are not marked.  By removing regions from the leaves, we avoid costly
+   searches in the region tree.  */
+
+void
+remove_unreachable_eh_regions (sbitmap r_reachable)
+{
+  remove_unreachable_eh_regions_worker (&cfun->eh->region_tree, r_reachable);
 }
 
 /* Invokes CALLBACK for every exception handler landing pad label.
@@ -1884,18 +1931,6 @@ set_nothrow_function_flags (void)
 	  }
       }
 
-  for (insn = crtl->epilogue_delay_list; insn;
-       insn = XEXP (insn, 1))
-    if (can_throw_external (insn))
-      {
-        crtl->nothrow = 0;
-
-	if (!CALL_P (insn) || !SIBLING_CALL_P (insn))
-	  {
-	    crtl->all_throwers_are_sibcalls = 0;
-	    return 0;
-	  }
-      }
   if (crtl->nothrow
       && (cgraph_function_body_availability (cgraph_get_node
 					     (current_function_decl))

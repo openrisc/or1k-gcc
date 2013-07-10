@@ -1,8 +1,6 @@
 /* Handle modules, which amounts to loading and saving symbols and
    their attendant structures.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -82,7 +80,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* Don't put any single quote (') in MOD_VERSION, 
    if yout want it to be recognized.  */
-#define MOD_VERSION "9"
+#define MOD_VERSION "10"
 
 
 /* Structure that describes a position within a module file.  */
@@ -1844,7 +1842,7 @@ typedef enum
   AB_IS_BIND_C, AB_IS_C_INTEROP, AB_IS_ISO_C, AB_ABSTRACT, AB_ZERO_COMP,
   AB_IS_CLASS, AB_PROCEDURE, AB_PROC_POINTER, AB_ASYNCHRONOUS, AB_CODIMENSION,
   AB_COARRAY_COMP, AB_VTYPE, AB_VTAB, AB_CONTIGUOUS, AB_CLASS_POINTER,
-  AB_IMPLICIT_PURE, AB_ARTIFICIAL
+  AB_IMPLICIT_PURE, AB_ARTIFICIAL, AB_UNLIMITED_POLY
 }
 ab_attribute;
 
@@ -1898,6 +1896,7 @@ static const mstring attr_bits[] =
     minit ("VTAB", AB_VTAB),
     minit ("CLASS_POINTER", AB_CLASS_POINTER),
     minit ("IMPLICIT_PURE", AB_IMPLICIT_PURE),
+    minit ("UNLIMITED_POLY", AB_UNLIMITED_POLY),
     minit (NULL, -1)
 };
 
@@ -2036,6 +2035,8 @@ mio_symbol_attribute (symbol_attribute *attr)
 	MIO_NAME (ab_attribute) (AB_PURE, attr_bits);
       if (attr->implicit_pure)
 	MIO_NAME (ab_attribute) (AB_IMPLICIT_PURE, attr_bits);
+      if (attr->unlimited_polymorphic)
+	MIO_NAME (ab_attribute) (AB_UNLIMITED_POLY, attr_bits);
       if (attr->recursive)
 	MIO_NAME (ab_attribute) (AB_RECURSIVE, attr_bits);
       if (attr->always_explicit)
@@ -2176,6 +2177,9 @@ mio_symbol_attribute (symbol_attribute *attr)
 	      break;
 	    case AB_IMPLICIT_PURE:
 	      attr->implicit_pure = 1;
+	      break;
+	    case AB_UNLIMITED_POLY:
+	      attr->unlimited_polymorphic = 1;
 	      break;
 	    case AB_RECURSIVE:
 	      attr->recursive = 1;
@@ -2569,7 +2573,6 @@ mio_component (gfc_component *c, int vtype)
 {
   pointer_info *p;
   int n;
-  gfc_formal_arglist *formal;
 
   mio_lparen ();
 
@@ -2597,36 +2600,12 @@ mio_component (gfc_component *c, int vtype)
     c->attr.class_ok = 1;
   c->attr.access = MIO_NAME (gfc_access) (c->attr.access, access_types); 
 
-  if (!vtype)
+  if (!vtype || strcmp (c->name, "_final") == 0
+      || strcmp (c->name, "_hash") == 0)
     mio_expr (&c->initializer);
 
   if (c->attr.proc_pointer)
-    {
-      if (iomode == IO_OUTPUT)
-	{
-	  formal = c->formal;
-	  while (formal && !formal->sym)
-	    formal = formal->next;
-
-	  if (formal)
-	    mio_namespace_ref (&formal->sym->ns);
-	  else
-	    mio_namespace_ref (&c->formal_ns);
-	}
-      else
-	{
-	  mio_namespace_ref (&c->formal_ns);
-	  /* TODO: if (c->formal_ns)
-	    {
-	      c->formal_ns->proc_name = c;
-	      c->refs++;
-	    }*/
-	}
-
-      mio_formal_arglist (&c->formal);
-
-      mio_typebound_proc (&c->tb);
-    }
+    mio_typebound_proc (&c->tb);
 
   mio_rparen ();
 }
@@ -4486,7 +4465,7 @@ check_for_ambiguous (gfc_symbol *st_sym, pointer_info *info)
   module_locus locus;
   symbol_attribute attr;
 
-  if (st_sym->ns->proc_name && st_sym->name == st_sym->ns->proc_name->name)
+  if (st_sym->name == gfc_current_ns->proc_name->name)
     {
       gfc_error ("'%s' of module '%s', imported at %C, is also the name of the "
 		 "current program unit", st_sym->name, module_name);
@@ -4656,8 +4635,14 @@ read_module (void)
 	  if (p == NULL)
 	    {
 	      st = gfc_find_symtree (gfc_current_ns->sym_root, name);
-	      if (st != NULL)
-		info->u.rsym.symtree = st;
+	      if (st != NULL
+		  && strcmp (st->n.sym->name, info->u.rsym.true_name) == 0
+		  && st->n.sym->module != NULL
+		  && strcmp (st->n.sym->module, info->u.rsym.module) == 0)
+		{
+		  info->u.rsym.symtree = st;
+		  info->u.rsym.sym = st->n.sym;
+		}
 	      continue;
 	    }
 
@@ -4678,7 +4663,8 @@ read_module (void)
 	      /* Check for ambiguous symbols.  */
 	      if (check_for_ambiguous (st->n.sym, info))
 		st->ambiguous = 1;
-	      info->u.rsym.symtree = st;
+	      else
+		info->u.rsym.symtree = st;
 	    }
 	  else
 	    {
@@ -5231,6 +5217,7 @@ write_symbol1_recursion (sorted_pointer_info *sp)
 
   p1->u.wsym.state = WRITTEN;
   write_symbol (p1->integer, p1->u.wsym.sym);
+  p1->u.wsym.sym->attr.public_used = 1;
  
   write_symbol1_recursion (sp->right);
 }
@@ -6157,6 +6144,8 @@ gfc_use_module (gfc_use_list *module)
 			     "intrinsic module at %C") != FAILURE)
        {
 	 use_iso_fortran_env_module ();
+	 free_rename (module->rename);
+	 module->rename = NULL;
 	 gfc_current_locus = old_locus;
 	 module->intrinsic = true;
 	 return;
@@ -6167,6 +6156,8 @@ gfc_use_module (gfc_use_list *module)
 			     "ISO_C_BINDING module at %C") != FAILURE)
 	{
 	  import_iso_c_binding_module();
+	  free_rename (module->rename);
+	  module->rename = NULL;
 	  gfc_current_locus = old_locus;
 	  module->intrinsic = true;
 	  return;
@@ -6359,8 +6350,6 @@ gfc_use_modules (void)
       next = module_list->next;
       rename_list_remove_duplicate (module_list->rename);
       gfc_use_module (module_list);
-      if (module_list->intrinsic)
-	free_rename (module_list->rename);
       free (module_list);
     }
   gfc_rename_list = NULL;

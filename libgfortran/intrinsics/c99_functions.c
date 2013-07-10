@@ -1,5 +1,5 @@
 /* Implementation of various C99 functions 
-   Copyright (C) 2004, 2009, 2010, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of the GNU Fortran 95 runtime library (libgfortran).
 
@@ -518,10 +518,8 @@ nextafterf (float x, float y)
 #endif
 
 
-#if !defined(HAVE_POWF) || defined(HAVE_BROKEN_POWF)
 #ifndef HAVE_POWF
 #define HAVE_POWF 1
-#endif
 float powf (float x, float y);
 
 float

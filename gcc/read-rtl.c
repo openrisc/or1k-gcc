@@ -1,7 +1,5 @@
 /* RTL reader for GCC.
-   Copyright (C) 1987, 1988, 1991, 1994, 1997, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2005, 2007, 2008, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -546,7 +544,7 @@ apply_iterators (rtx original, rtx *queue)
     {
       /* Apply the current iterator values.  Accumulate a condition to
 	 say when the resulting rtx can be used.  */
-      condition = NULL;
+      condition = "";
       FOR_EACH_VEC_ELT (iterator_uses, i, iuse)
 	{
 	  if (iuse->iterator->group == &substs)

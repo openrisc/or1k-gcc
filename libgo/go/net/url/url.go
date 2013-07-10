@@ -224,7 +224,7 @@ type URL struct {
 	Scheme   string
 	Opaque   string    // encoded opaque data
 	User     *Userinfo // username and password information
-	Host     string
+	Host     string    // host or host:port
 	Path     string
 	RawQuery string // encoded query values, without '?'
 	Fragment string // fragment for references, without '#'
@@ -361,6 +361,11 @@ func parse(rawurl string, viaRequest bool) (url *URL, err error) {
 	}
 	url = new(URL)
 
+	if rawurl == "*" {
+		url.Path = "*"
+		return
+	}
+
 	// Split off possible leading "http:", "mailto:", etc.
 	// Cannot contain escaped characters.
 	if url.Scheme, rest, err = getscheme(rawurl); err != nil {
@@ -381,7 +386,7 @@ func parse(rawurl string, viaRequest bool) (url *URL, err error) {
 		}
 	}
 
-	if (url.Scheme != "" || !viaRequest) && strings.HasPrefix(rest, "//") && !strings.HasPrefix(rest, "///") {
+	if (url.Scheme != "" || !viaRequest && !strings.HasPrefix(rest, "///")) && strings.HasPrefix(rest, "//") {
 		var authority string
 		authority, rest = split(rest[2:], '/', false)
 		url.User, url.Host, err = parseAuthority(authority)
@@ -429,30 +434,35 @@ func parseAuthority(authority string) (user *Userinfo, host string, err error) {
 
 // String reassembles the URL into a valid URL string.
 func (u *URL) String() string {
-	// TODO: Rewrite to use bytes.Buffer
-	result := ""
+	var buf bytes.Buffer
 	if u.Scheme != "" {
-		result += u.Scheme + ":"
+		buf.WriteString(u.Scheme)
+		buf.WriteByte(':')
 	}
 	if u.Opaque != "" {
-		result += u.Opaque
+		buf.WriteString(u.Opaque)
 	} else {
-		if u.Host != "" || u.User != nil {
-			result += "//"
+		if u.Scheme != "" || u.Host != "" || u.User != nil {
+			buf.WriteString("//")
 			if u := u.User; u != nil {
-				result += u.String() + "@"
+				buf.WriteString(u.String())
+				buf.WriteByte('@')
 			}
-			result += u.Host
+			if h := u.Host; h != "" {
+				buf.WriteString(h)
+			}
 		}
-		result += escape(u.Path, encodePath)
+		buf.WriteString(escape(u.Path, encodePath))
 	}
 	if u.RawQuery != "" {
-		result += "?" + u.RawQuery
+		buf.WriteByte('?')
+		buf.WriteString(u.RawQuery)
 	}
 	if u.Fragment != "" {
-		result += "#" + escape(u.Fragment, encodeFragment)
+		buf.WriteByte('#')
+		buf.WriteString(escape(u.Fragment, encodeFragment))
 	}
-	return result
+	return buf.String()
 }
 
 // Values maps a string key to a list of values.
@@ -572,23 +582,33 @@ func resolvePath(basepath string, refpath string) string {
 	if len(base) == 0 {
 		base = []string{""}
 	}
+
+	rm := true
 	for idx, ref := range refs {
 		switch {
 		case ref == ".":
-			base[len(base)-1] = ""
+			if idx == 0 {
+				base[len(base)-1] = ""
+				rm = true
+			} else {
+				rm = false
+			}
 		case ref == "..":
 			newLen := len(base) - 1
 			if newLen < 1 {
 				newLen = 1
 			}
 			base = base[0:newLen]
-			base[len(base)-1] = ""
+			if rm {
+				base[len(base)-1] = ""
+			}
 		default:
 			if idx == 0 || base[len(base)-1] == "" {
 				base[len(base)-1] = ref
 			} else {
 				base = append(base, ref)
 			}
+			rm = false
 		}
 	}
 	return strings.Join(base, "/")

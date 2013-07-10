@@ -111,6 +111,7 @@ Implementation Defined Pragmas
 * Pragma Ast_Entry::
 * Pragma C_Pass_By_Copy::
 * Pragma Check::
+* Pragma Check_Float_Overflow::
 * Pragma Check_Name::
 * Pragma Check_Policy::
 * Pragma Comment::
@@ -127,9 +128,12 @@ Implementation Defined Pragmas
 * Pragma CPP_Constructor::
 * Pragma CPP_Virtual::
 * Pragma CPP_Vtable::
+* Pragma CPU::
 * Pragma Debug::
 * Pragma Debug_Policy::
+* Pragma Default_Storage_Pool::
 * Pragma Detect_Blocking::
+* Pragma Dispatching_Domain::
 * Pragma Elaboration_Checks::
 * Pragma Eliminate::
 * Pragma Export_Exception::
@@ -147,6 +151,7 @@ Implementation Defined Pragmas
 * Pragma Finalize_Storage_Only::
 * Pragma Float_Representation::
 * Pragma Ident::
+* Pragma Implementation_Defined::
 * Pragma Implemented::
 * Pragma Implicit_Packing::
 * Pragma Import_Exception::
@@ -154,6 +159,8 @@ Implementation Defined Pragmas
 * Pragma Import_Object::
 * Pragma Import_Procedure::
 * Pragma Import_Valued_Procedure::
+* Pragma Independent::
+* Pragma Independent_Components::
 * Pragma Initialize_Scalars::
 * Pragma Inline_Always::
 * Pragma Inline_Generic::
@@ -170,26 +177,33 @@ Implementation Defined Pragmas
 * Pragma Linker_Destructor::
 * Pragma Linker_Section::
 * Pragma Long_Float::
+* Pragma Loop_Optimize::
 * Pragma Machine_Attribute::
 * Pragma Main::
 * Pragma Main_Storage::
 * Pragma No_Body::
+* Pragma No_Inline::
 * Pragma No_Return::
 * Pragma No_Strict_Aliasing ::
 * Pragma Normalize_Scalars::
 * Pragma Obsolescent::
 * Pragma Optimize_Alignment::
 * Pragma Ordered::
-* Pragma Overflow_Checks::
+* Pragma Overflow_Mode::
+* Pragma Partition_Elaboration_Policy::
 * Pragma Passive::
 * Pragma Persistent_BSS::
 * Pragma Polling::
 * Pragma Postcondition::
 * Pragma Precondition::
+* Pragma Preelaborable_Initialization::
+* Pragma Priority_Specific_Dispatching::
 * Pragma Profile (Ravenscar)::
 * Pragma Profile (Restricted)::
+* Pragma Profile (Rational)::
 * Pragma Psect_Object::
 * Pragma Pure_Function::
+* Pragma Relative_Deadline::
 * Pragma Remote_Access_Type::
 * Pragma Restriction_Warnings::
 * Pragma Shared::
@@ -850,6 +864,7 @@ consideration, the use of these pragmas should be minimized.
 * Pragma Ast_Entry::
 * Pragma C_Pass_By_Copy::
 * Pragma Check::
+* Pragma Check_Float_Overflow::
 * Pragma Check_Name::
 * Pragma Check_Policy::
 * Pragma Comment::
@@ -866,9 +881,12 @@ consideration, the use of these pragmas should be minimized.
 * Pragma CPP_Constructor::
 * Pragma CPP_Virtual::
 * Pragma CPP_Vtable::
+* Pragma CPU::
 * Pragma Debug::
 * Pragma Debug_Policy::
+* Pragma Default_Storage_Pool::
 * Pragma Detect_Blocking::
+* Pragma Dispatching_Domain::
 * Pragma Elaboration_Checks::
 * Pragma Eliminate::
 * Pragma Export_Exception::
@@ -886,6 +904,7 @@ consideration, the use of these pragmas should be minimized.
 * Pragma Finalize_Storage_Only::
 * Pragma Float_Representation::
 * Pragma Ident::
+* Pragma Implementation_Defined::
 * Pragma Implemented::
 * Pragma Implicit_Packing::
 * Pragma Import_Exception::
@@ -893,6 +912,8 @@ consideration, the use of these pragmas should be minimized.
 * Pragma Import_Object::
 * Pragma Import_Procedure::
 * Pragma Import_Valued_Procedure::
+* Pragma Independent::
+* Pragma Independent_Components::
 * Pragma Initialize_Scalars::
 * Pragma Inline_Always::
 * Pragma Inline_Generic::
@@ -909,26 +930,33 @@ consideration, the use of these pragmas should be minimized.
 * Pragma Linker_Destructor::
 * Pragma Linker_Section::
 * Pragma Long_Float::
+* Pragma Loop_Optimize::
 * Pragma Machine_Attribute::
 * Pragma Main::
 * Pragma Main_Storage::
 * Pragma No_Body::
+* Pragma No_Inline::
 * Pragma No_Return::
 * Pragma No_Strict_Aliasing::
 * Pragma Normalize_Scalars::
 * Pragma Obsolescent::
 * Pragma Optimize_Alignment::
 * Pragma Ordered::
-* Pragma Overflow_Checks::
+* Pragma Overflow_Mode::
+* Pragma Partition_Elaboration_Policy::
 * Pragma Passive::
 * Pragma Persistent_BSS::
 * Pragma Polling::
 * Pragma Postcondition::
 * Pragma Precondition::
+* Pragma Preelaborable_Initialization::
+* Pragma Priority_Specific_Dispatching::
 * Pragma Profile (Ravenscar)::
 * Pragma Profile (Restricted)::
+* Pragma Profile (Rational)::
 * Pragma Psect_Object::
 * Pragma Pure_Function::
+* Pragma Relative_Deadline::
 * Pragma Remote_Access_Type::
 * Pragma Restriction_Warnings::
 * Pragma Shared::
@@ -1208,6 +1236,9 @@ pragma Assertion_Policy (CHECK | DISABLE | IGNORE);
 @end smallexample
 
 @noindent
+This is a standard Ada 2005 pragma that is available as an
+implementation-defined pragma in earlier versions of Ada.
+
 If the argument is @code{CHECK}, then assertions are enabled.
 If the argument is @code{IGNORE}, then assertions are ignored.
 This pragma overrides the effect of the @option{-gnata} switch on the
@@ -1401,6 +1432,60 @@ names, so these three names would normally not be used directly in a pragma
 Checks introduced by this pragma are normally deactivated by default. They can
 be activated either by the command line option @option{-gnata}, which turns on
 all checks, or individually controlled using pragma @code{Check_Policy}.
+
+@node Pragma Check_Float_Overflow
+@unnumberedsec Pragma Check_Float_Overflow
+@cindex Floating-point overflow
+@findex Check_Float_Overflow
+@noindent
+Syntax:
+@smallexample @c ada
+pragma Check_Float_Overflow;
+@end smallexample
+
+@noindent
+In Ada, the predefined floating-point types (@code{Short_Float},
+@code{Float}, @code{Long_Float}, @code{Long_Long_Float}) are
+defined to be @emph{unconstrained}. This means that even though each
+has a well-defined base range, an operation that delivers a result
+outside this base range is not required to raise an exception.
+This implementation permission accommodates the notion
+of infinities in IEEE floating-point, and corresponds to the
+efficient execution mode on most machines. GNAT will not raise
+overflow exceptions on these machines; instead it will generate
+infinities and NaN's as defined in the IEEE standard.
+
+Generating infinities, although efficient, is not always desirable.
+Often the preferable approach is to check for overflow, even at the
+(perhaps considerable) expense of run-time performance.
+This can be accomplished by defining your own constrained floating-point subtypes -- i.e., by supplying explicit
+range constraints -- and indeed such a subtype
+can have the same base range as its base type. For example:
+
+@smallexample @c ada
+subtype My_Float is Float range Float'Range;
+@end smallexample
+
+@noindent
+Here @code{My_Float} has the same range as
+@code{Float} but is constrained, so operations on
+@code{My_Float} values will be checked for overflow
+against this range.
+
+This style will achieve the desired goal, but
+it is often more convenient to be able to simply use
+the standard predefined floating-point types as long
+as overflow checking could be guaranteed.
+The @code{Check_Float_Overflow}
+configuration pragma achieves this effect. If a unit is compiled
+subject to this configuration pragma, then all operations
+on predefined floating-point types will be treated as
+though those types were constrained, and overflow checks
+will be generated. The @code{Constraint_Error}
+exception is raised if the result is out of range.
+
+This mode can also be set by use of the compiler
+switch @option{-gnateF}.
 
 @node Pragma Check_Name
 @unnumberedsec Pragma Check_Name
@@ -1983,6 +2068,21 @@ the same object layout than the G++ compiler.
 
 See @ref{Interfacing to C++} for related information.
 
+@node Pragma CPU
+@unnumberedsec Pragma CPU
+@findex CPU
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma CPU (EXPRESSSION);
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2012, but is available in all earlier
+versions of Ada as an implementation-defined pragma.
+See Ada 2012 Reference Manual for details.
+
 @node Pragma Debug
 @unnumberedsec Pragma Debug
 @findex Debug
@@ -2033,6 +2133,21 @@ be useful when the pragma argument references subprograms
 in a with'ed package which is replaced by a dummy package
 for the final build.
 
+@node Pragma Default_Storage_Pool
+@unnumberedsec Pragma Default_Storage_Pool
+@findex Default_Storage_Pool
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Default_Storage_Pool (storage_pool_NAME | null);
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2012, but is available in all earlier
+versions of Ada as an implementation-defined pragma.
+See Ada 2012 Reference Manual for details.
+
 @node Pragma Detect_Blocking
 @unnumberedsec Pragma Detect_Blocking
 @findex Detect_Blocking
@@ -2044,9 +2159,27 @@ pragma Detect_Blocking;
 @end smallexample
 
 @noindent
+This is a standard pragma in Ada 2005, that is available in all earlier
+versions of Ada as an implementation-defined pragma.
+
 This is a configuration pragma that forces the detection of potentially
 blocking operations within a protected operation, and to raise Program_Error
 if that happens.
+
+@node Pragma Dispatching_Domain
+@unnumberedsec Pragma Dispatching_Domain
+@findex Dispatching_Domain
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Dispatching_Domain (EXPRESSION);
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2012, but is available in all earlier
+versions of Ada as an implementation-defined pragma.
+See Ada 2012 Reference Manual for details.
 
 @node Pragma Elaboration_Checks
 @unnumberedsec Pragma Elaboration_Checks
@@ -2752,6 +2885,34 @@ maximum allowed length is 31 characters, so if it is important to
 maintain compatibility with this compiler, you should obey this length
 limit.
 
+@node Pragma Implementation_Defined
+@unnumberedsec Pragma Implementation_Defined
+@findex Implementation_Defined
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Implementation_Defined (local_NAME);
+@end smallexample
+
+@noindent
+This pragma marks a previously declared entioty as implementation-defined.
+For an overloaded entity, applies to the most recent homonym.
+
+@smallexample @c ada
+pragma Implementation_Defined;
+@end smallexample
+
+@noindent
+The form with no arguments appears anywhere within a scope, most
+typically a package spec, and indicates that all entities that are
+defined within the package spec are Implementation_Defined.
+
+This pragma is used within the GNAT runtime library to identify
+implementation-defined entities introduced in language-defined units,
+for the purpose of implementing the No_Implementation_Identifiers
+restriction.
+
 @node Pragma Implemented
 @unnumberedsec Pragma Implemented
 @findex Implemented
@@ -2768,8 +2929,9 @@ implementation_kind ::= By_Entry | By_Protected_Procedure | By_Any
 This is an Ada 2012 representation pragma which applies to protected, task
 and synchronized interface primitives. The use of pragma Implemented provides
 a way to impose a static requirement on the overriding operation by adhering
-to one of the three implementation kids: entry, protected procedure or any of
-the above.
+to one of the three implementation kinds: entry, protected procedure or any of
+the above. This pragma is available in all earlier versions of Ada as an
+implementation-defined pragma.
 
 @smallexample @c ada
 type Synch_Iface is synchronized interface;
@@ -2801,6 +2963,7 @@ the target's overriding subprogram kind.
 @node Pragma Implicit_Packing
 @unnumberedsec Pragma Implicit_Packing
 @findex Implicit_Packing
+@cindex Rational Profile
 @noindent
 Syntax:
 
@@ -3095,6 +3258,49 @@ Note that it is important to use this pragma in conjunction with a separate
 pragma Import that specifies the desired convention, since otherwise the
 default convention is Ada, which is almost certainly not what is required.
 
+@node Pragma Independent
+@unnumberedsec Pragma Independent
+@findex Independent
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Independent (Local_NAME);
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2012 mode (which also provides an aspect
+of the same name). It is also available as an implementation-defined
+pragma in all earlier versions. It specifies that the
+designated object or all objects of the designated type must be
+independently addressable. This means that separate tasks can safely
+manipulate such objects. For example, if two components of a record are
+independent, then two separate tasks may access these two components.
+This may place
+constraints on the representation of the object (for instance prohibiting
+tight packing).
+
+@node Pragma Independent_Components
+@unnumberedsec Pragma Independent_Components
+@findex Independent_Components
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Independent_Components (Local_NAME);
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2012 mode (which also provides an aspect
+of the same name). It is also available as an implementation-defined
+pragma in all earlier versions. It specifies that the components of the
+designated object, or the components of each object of the designated
+type, must be
+independently addressable. This means that separate tasks can safely
+manipulate separate components in the composite object. This may place
+constraints on the representation of the object (for instance prohibiting
+tight packing).
+
 @node Pragma Initialize_Scalars
 @unnumberedsec Pragma Initialize_Scalars
 @findex Initialize_Scalars
@@ -3169,8 +3375,8 @@ pragma Inline_Always (NAME [, NAME]);
 
 @noindent
 Similar to pragma @code{Inline} except that inlining is not subject to
-the use of option @option{-gnatn} and the inlining happens regardless of
-whether this option is used.
+the use of option @option{-gnatn} or @option{-gnatN} and the inlining
+happens regardless of whether these options are used.
 
 @node Pragma Inline_Generic
 @unnumberedsec Pragma Inline_Generic
@@ -3676,6 +3882,55 @@ For further details on this pragma, see the
 @cite{DEC Ada Language Reference Manual}, section 3.5.7b.  Note that to use
 this pragma, the standard runtime libraries must be recompiled.
 
+@node Pragma Loop_Optimize
+@unnumberedsec Pragma Loop_Optimize
+@findex Loop_Optimize
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Loop_Optimize (OPTIMIZATION_HINT @{, OPTIMIZATION_HINT@});
+
+OPTIMIZATION_HINT ::= No_Unroll | Unroll | No_Vector | Vector
+@end smallexample
+
+@noindent
+This pragma must appear immediately within a loop statement.  It allows the
+programmer to specify optimization hints for the enclosing loop.  The hints
+are not mutually exclusive and can be freely mixed, but not all combinations
+will yield a sensible outcome.
+
+There are four supported optimization hints for a loop:
+@itemize @bullet
+@item No_Unroll
+
+The loop must not be unrolled.  This is a strong hint: the compiler will not
+unroll a loop marked with this hint.
+
+@item Unroll
+
+The loop should be unrolled.  This is a weak hint: the compiler will try to
+apply unrolling to this loop preferably to other optimizations, notably
+vectorization, but there is no guarantee that the loop will be unrolled.
+
+@item No_Vector
+
+The loop must not be vectorized.  This is a strong hint: the compiler will not
+vectorize a loop marked with this hint.
+
+@item Vector
+
+The loop should be vectorized.  This is a weak hint: the compiler will try to
+apply vectorization to this loop preferably to other optimizations, notably
+unrolling, but there is no guarantee that the loop will be vectorized.
+
+@end itemize
+
+These hints do not void the need to pass the appropriate switches to the
+compiler in order to enable the relevant optimizations, that is to say
+@option{-funroll-loops} for unrolling and @option{-ftree-vectorize} for
+vectorization.
+
 @node Pragma Machine_Attribute
 @unnumberedsec Pragma Machine_Attribute
 @findex Machine_Attribute
@@ -3767,6 +4022,24 @@ such a way that a body needed before is no longer needed. The provision of a
 dummy body with a No_Body pragma ensures that there is no interference from
 earlier versions of the package body.
 
+@node Pragma No_Inline
+@unnumberedsec Pragma No_Inline
+@findex No_Inline
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma No_Inline (NAME [, NAME]);
+@end smallexample
+
+@noindent
+This pragma suppresses inlining for the callable entity or the instances of
+the generic subprogram designated by @var{NAME}, including inlining that
+results from the use of pragma @code{Inline}.  This pragma is always active,
+in particular it is not subject to the use of option @option{-gnatn} or
+@option{-gnatN}.  It is illegal to specify both pragma @code{No_Inline} and
+pragma @code{Inline_Always} for the same @var{NAME}.
+
 @node Pragma No_Return
 @unnumberedsec Pragma No_Return
 @findex No_Return
@@ -3790,8 +4063,9 @@ an exception. Another use of this pragma is to suppress incorrect warnings
 about missing returns in functions, where the last statement of a function
 statement sequence is a call to such a procedure.
 
-Note that in Ada 2005 mode, this pragma is part of the language, and is
-identical in effect to the pragma as implemented in Ada 95 mode.
+Note that in Ada 2005 mode, this pragma is part of the language. It is
+available in all earlier versions of Ada as an implementation-defined
+pragma.
 
 @node Pragma No_Strict_Aliasing
 @unnumberedsec Pragma No_Strict_Aliasing
@@ -4034,7 +4308,7 @@ compiled in @code{Optimize_Alignment (Space)} mode, the alignment is set to 1.
 
 However, there is one case in which SPACE is ignored. If a variable length
 record (that is a discriminated record with a component which is an array
-whose length depends on a discriminant), has a pragam pack, then it is not
+whose length depends on a discriminant), has a pragma Pack, then it is not
 in general possible to set the alignment of such a record to one, so the
 pragma is ignored in this case (with a warning).
 
@@ -4162,23 +4436,24 @@ as unordered, and will generate warnings for inappropriate uses.
 For additional information please refer to the description of the
 @option{-gnatw.u} switch in the @value{EDITION} User's Guide.
 
-@node Pragma Overflow_Checks
-@unnumberedsec Pragma Overflow_Checks
+@node Pragma Overflow_Mode
+@unnumberedsec Pragma Overflow_Mode
 @findex Overflow checks
-@findex pragma @code{Overflow_Checks}
+@findex Overflow mode
+@findex pragma @code{Overflow_Mode}
 @noindent
 Syntax:
 
 @smallexample @c ada
-pragma Overflow_Checks
+pragma Overflow_Mode
  (  [General    =>] MODE
   [,[Assertions =>] MODE]);
 
-MODE ::= SUPPRESSED | CHECKED | MINIMIZED | ELIMINATED
+MODE ::= STRICT | MINIMIZED | ELIMINATED
 @end smallexample
 
 @noindent
-This pragma sets the current overflow mode to the given mode. For details
+This pragma sets the current overflow mode to the given setting. For details
 of the meaning of these modes, please refer to the
 ``Overflow Check Handling in GNAT'' appendix in the
 @value{EDITION} User's Guide. If only the @code{General} parameter is present,
@@ -4190,32 +4465,34 @@ The case of the @code{MODE} parameter is ignored,
 so @code{MINIMIZED}, @code{Minimized} and
 @code{minimized} all have the same effect.
 
-The @code{Overflow_Checks} pragma has the same scoping and placement
+The @code{Overflow_Mode} pragma has the same scoping and placement
 rules as pragma @code{Suppress}, so it can occur either as a
 configuration pragma, specifying a default for the whole
 program, or in a declarative scope, where it applies to the
 remaining declarations and statements in that scope.
 
-The pragma @code{Suppress (Overflow_Check)} sets mode
+The pragma @code{Suppress (Overflow_Check)} suppresses
+overflow checking, but does not affect the overflow mode.
+
+The pragma @code{Unsuppress (Overflow_Check)} unsuppresses (enables)
+overflow checking, but does not affect the overflow mode.
+
+@node Pragma Partition_Elaboration_Policy
+@unnumberedsec Pragma Partition_Elaboration_Policy
+@findex Partition_Elaboration_Policy
+@noindent
+Syntax:
 
 @smallexample @c ada
-   General => Suppressed
+pragma Partition_Elaboration_Policy (POLICY_IDENTIFIER);
+
+POLICY_IDENTIFIER ::= Concurrent | Sequential
 @end smallexample
 
 @noindent
-suppressing all overflow checking within and outside
-assertions.
-
-The pragam @code{Unsuppress (Overflow_Check)} sets mode
-
-@smallexample @c ada
-   General => Checked
-@end smallexample
-
-@noindent
-which causes overflow checking of all intermediate overflows.
-This applies both inside and outside assertions.
-
+This pragma is standard in Ada 2005, but is available in all earlier
+versions of Ada as an implementation-defined pragma.
+See Ada 2012 Reference Manual for details.
 
 @node Pragma Passive
 @unnumberedsec Pragma Passive
@@ -4469,6 +4746,45 @@ inlining (-gnatN option set) are accepted and legality-checked
 by the compiler, but are ignored at run-time even if postcondition
 checking is enabled.
 
+@node Pragma Preelaborable_Initialization
+@unnumberedsec Pragma Preelaborable_Initialization
+@findex Preelaborable_Initialization
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Preelaborable_Initialization (DIRECT_NAME);
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2005, but is available in all earlier
+versions of Ada as an implementation-defined pragma.
+See Ada 2012 Reference Manual for details.
+
+@node Pragma Priority_Specific_Dispatching
+@unnumberedsec Pragma Priority_Specific_Dispatching
+@findex Priority_Specific_Dispatching
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Priority_Specific_Dispatching (
+   POLICY_IDENTIFIER,
+   first_priority_EXPRESSION,
+   last_priority_EXPRESSION)
+
+POLICY_IDENTIFIER ::=
+   EDF_Across_Priorities            |
+   FIFO_Within_Priorities           |
+   Non_Preemptive_Within_Priorities |
+   Round_Robin_Within_Priorities
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2005, but is available in all earlier
+versions of Ada as an implementation-defined pragma.
+See Ada 2012 Reference Manual for details.
+
 @node Pragma Precondition
 @unnumberedsec Pragma Precondition
 @cindex Preconditions
@@ -4524,11 +4840,13 @@ checking is enabled.
 Syntax:
 
 @smallexample @c ada
-pragma Profile (Ravenscar);
+pragma Profile (Ravenscar | Restricted);
 @end smallexample
 
 @noindent
-A configuration pragma that establishes the following set of configuration
+This pragma is standard in Ada 2005, but is available in all earlier
+versions of Ada as an implementation-defined pragma. This is a
+configuration pragma that establishes the following set of configuration
 pragmas:
 
 @table @code
@@ -4624,7 +4942,9 @@ pragma Profile (Restricted);
 @end smallexample
 
 @noindent
-A configuration pragma that establishes the following set of restrictions:
+This is an implementation-defined version of the standard pragma defined
+in Ada 2005. It is available in all versions of Ada. It is a
+configuration pragma that establishes the following set of restrictions:
 
 @itemize @bullet
 @item No_Abort_Statements
@@ -4649,6 +4969,28 @@ This set of restrictions causes the automatic selection of a simplified
 version of the run time that provides improved performance for the
 limited set of tasking functionality permitted by this set of restrictions.
 
+@node Pragma Profile (Rational)
+@unnumberedsec Pragma Profile (Rational)
+@findex Rational compatibility mode
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Profile (Rational);
+@end smallexample
+
+@noindent
+The Rational profile is intended to facilitate porting legacy code that
+compiles with the Rational APEX compiler, even when the code includes non-
+conforming Ada constructs.  The profile enables the following three pragmas:
+
+@itemize @bullet
+pragma Implicit_Packing;
+pragma Overriding_Renamings;
+pragma Use_VADS_Size;
+@end itemize
+
+@noindent
 @node Pragma Psect_Object
 @unnumberedsec Pragma Psect_Object
 @findex Psect_Object
@@ -4731,6 +5073,21 @@ If pragma @code{Pure_Function} is applied to a library level function, the
 function is also considered pure from an optimization point of view, but the
 unit is not a Pure unit in the categorization sense. So for example, a function
 thus marked is free to @code{with} non-pure units.
+
+@node Pragma Relative_Deadline
+@unnumberedsec Pragma Relative_Deadline
+@findex Relative_Deadline
+@noindent
+Syntax:
+
+@smallexample @c ada
+pragma Relative_Deadline (time_span_EXPRESSSION);
+@end smallexample
+
+@noindent
+This pragma is standard in Ada 2005, but is available in all earlier
+versions of Ada as an implementation-defined pragma.
+See Ada 2012 Reference Manual for details.
 
 @node Pragma Remote_Access_Type
 @unnumberedsec Pragma Remote_Access_Type
@@ -5563,7 +5920,7 @@ equivalent to a C union. It was introduced as a GNAT implementation defined
 pragma in the GNAT Ada 95 mode. Ada 2005 includes an extended version of this
 pragma, making it language defined, and GNAT fully implements this extended
 version in all language modes (Ada 83, Ada 95, and Ada 2005). For full
-details, consult the Ada 2005 Reference Manual, section B.3.3.
+details, consult the Ada 2012 Reference Manual, section B.3.3.
 
 @node Pragma Unimplemented_Unit
 @unnumberedsec Pragma Unimplemented_Unit
@@ -5784,9 +6141,13 @@ code depends on the checks for its correct functioning, so that the code
 will compile correctly even if the compiler switches are set to suppress
 checks.
 
+This pragma is standard in Ada 2005. It is available in all earlier versions
+of Ada as an implementation-defined pragma.
+
 @node Pragma Use_VADS_Size
 @unnumberedsec Pragma Use_VADS_Size
 @cindex @code{Size}, VADS compatibility
+@cindex Rational profile
 @findex Use_VADS_Size
 @noindent
 Syntax:
@@ -5920,6 +6281,14 @@ full details see @ref{Warning Message Control,,, gnat_ugn, @value{EDITION}
 User's Guide}.
 
 @noindent
+The warnings controlled by the `-gnatw' switch are generated by the front end
+of the compiler. The `GCC' back end can provide additional warnings and they
+are controlled by the `-W' switch.
+The form with a single static_string_EXPRESSION argument also works for the
+latters, but the string must be a single full `-W' switch in this case.
+The above reference lists a few examples of these additional warnings.
+
+@noindent
 The specified warnings will be in effect until the end of the program
 or another pragma Warnings is encountered. The effect of the pragma is
 cumulative. Initially the set of warnings is the standard default set
@@ -5939,9 +6308,18 @@ message @code{warning: 960 bits of "a" unused}. No other regular
 expression notations are permitted. All characters other than asterisk in
 these three specific cases are treated as literal characters in the match.
 
+The above use of patterns to match the message applies only to warning
+messages generated by the front end. This form of the pragma with a
+string argument can also be used to control back end warnings controlled
+by a "-Wxxx" switch. Such warnings can be identified by the appearence
+of a string of the form "[-Wxxx]" in the message which identifies the
+"-W" switch that controls the message. By using the text of the
+"-W" switch in the pragma, such back end warnings can be turned on and off.
+
 There are two ways to use the pragma in this form. The OFF form can be used as a
 configuration pragma. The effect is to suppress all warnings (if any)
-that match the pattern string throughout the compilation.
+that match the pattern string throughout the compilation (or match the
+-W switch in the back end case).
 
 The second usage is to suppress a warning locally, and in this case, two
 pragmas must appear in sequence:
@@ -6800,17 +7178,54 @@ this attribute.
 @noindent
 For every array or record type @var{S}, the representation attribute
 @code{Scalar_Storage_Order} denotes the order in which storage elements
-that make up scalar components are ordered within S. Other properties are
+that make up scalar components are ordered within S:
+
+@smallexample @c ada
+   --  Component type definitions
+
+   subtype Yr_Type is Natural range 0 .. 127;
+   subtype Mo_Type is Natural range 1 .. 12;
+   subtype Da_Type is Natural range 1 .. 31;
+
+   --  Record declaration
+
+   type Date is record
+      Years_Since_1980 : Yr_Type;
+      Month            : Mo_Type;
+      Day_Of_Month     : Da_Type;
+   end record;
+
+   --  Record representation clause
+
+   for Date use record
+      Years_Since_1980 at 0 range 0  ..  6;
+      Month            at 0 range 7  .. 10;
+      Day_Of_Month     at 0 range 11 .. 15;
+   end record;
+
+   --  Attribute definition clauses
+
+   for Date'Bit_Order use System.High_Order_First;
+   for Date'Scalar_Storage_Order use System.High_Order_First;
+   --  If Scalar_Storage_Order is specified, it must be consistent with
+   --  Bit_Order, so it's best to always define the latter explicitly if
+   --  the former is used.
+@end smallexample
+
+Other properties are
 as for standard representation attribute @code{Bit_Order}, as defined by
 Ada RM 13.5.3(4). The default is @code{System.Default_Bit_Order}.
 
-If @code{@var{S}'Scalar_Storage_Order} is specified explicitly, it shall be
-equal to @code{@var{S}'Bit_Order}. Note: This means that if a
-@code{Scalar_Storage_Order} attribute definition clause is not confirming,
-then the type's @code{Bit_Order} shall be specified explicitly and set to
-the same value.
+For a record type @var{S}, if @code{@var{S}'Scalar_Storage_Order} is
+specified explicitly, it shall be equal to @code{@var{S}'Bit_Order}. Note:
+this means that if a @code{Scalar_Storage_Order} attribute definition
+clause is not confirming, then the type's @code{Bit_Order} shall be
+specified explicitly and set to the same value.
 
-If a component of S has itself a record or array type, then it shall also
+For a record extension, the derived type shall have the same scalar storage
+order as the parent type.
+
+If a component of @var{S} has itself a record or array type, then it shall also
 have a @code{Scalar_Storage_Order} attribute definition clause. In addition,
 if the component does not start on a byte boundary, then the scalar storage
 order specified for S and for the nested component type shall be identical.
@@ -6822,10 +7237,11 @@ A confirming @code{Scalar_Storage_Order} attribute definition clause (i.e.
 with a value equal to @code{System.Default_Bit_Order}) has no effect.
 
 If the opposite storage order is specified, then whenever the value of
-a scalar component of S is read, the storage elements of the enclosing
-machine scalar are first reversed (before retrieving the component value,
-possibly applying some shift and mask operatings on the enclosing machine
-scalar), and the opposite operation is done for writes.
+a scalar component of an object of type @var{S} is read, the storage
+elements of the enclosing machine scalar are first reversed (before
+retrieving the component value, possibly applying some shift and mask
+operatings on the enclosing machine scalar), and the opposite operation
+is done for writes.
 
 In that case, the restrictions set forth in 13.5.1(10.3/2) for scalar components
 are relaxed. Instead, the following rules apply:
@@ -7933,8 +8349,8 @@ Manual.
 @unnumberedsubsec No_Implementation_Identifiers
 @findex No_Implementation_Identifiers
 [RM 13.12.1] This restriction checks at compile time that no
-implementation-defined identifiers occur within language-defined
-packages.
+implementation-defined identifiers (marked with pragma Implementation_Defined)
+occur within language-defined packages.
 
 @node No_Implementation_Pragmas
 @unnumberedsubsec No_Implementation_Pragmas
@@ -11499,6 +11915,30 @@ fixed point types, as well as for record types, for example
 The default alignment for the type @code{V} is 4, as a result of the
 Integer field in the record, but it is permissible, as shown, to
 override the default alignment of the record with a smaller value.
+
+@cindex Alignment, subtypes
+Note that according to the Ada standard, an alignment clause applies only
+to the first named subtype. If additional subtypes are declared, then the
+compiler is allowed to choose any alignment it likes, and there is no way
+to control this choice. Consider:
+
+@smallexample @c ada
+   type R is range 1 .. 10_000;
+   for R'Alignment use 1;
+   subtype RS is R range 1 .. 1000;
+@end smallexample
+
+@noindent
+The alignment clause specifies an alignment of 1 for the first named subtype
+@code{R} but this does not necessarily apply to @code{RS}. When writing
+portable Ada code, you should avoid writing code that explicitly or
+implicitly relies on the alignment of such subtypes.
+
+For the GNAT compiler, if an explicit alignment clause is given, this
+value is also used for any subsequent subtypes. So for GNAT, in the
+above example, you can count on the alignment of @code{RS} being 1. But this
+assumption is non-portable, and other compilers may choose different
+alignments for the subtype @code{RS}.
 
 @node Size Clauses
 @section Size Clauses
@@ -16743,6 +17183,12 @@ using pragma @code{Import} with @code{Convention} = @code{CPP}.
 This pragma identifies an imported function (imported in the usual way
 with pragma @code{Import}) as corresponding to a C++ constructor.
 @end table
+
+A few restrictions are placed on the use of the @code{Access} attribute
+in conjunction with subprograms subject to convention @code{CPP}: the
+attribute may be used neither on primitive operations of a tagged
+record type with convention @code{CPP}, imported or not, nor on
+subprograms imported with pragma @code{CPP_Constructor}.
 
 In addition, C++ exceptions are propagated and can be handled in an
 @code{others} choice of an exception handler. The corresponding Ada

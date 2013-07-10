@@ -1,6 +1,5 @@
 /* Code sinking for trees
-   Copyright (C) 2001, 2002, 2003, 2004, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Daniel Berlin <dan@dberlin.org>
 
 This file is part of GCC.
@@ -336,7 +335,15 @@ statement_sink_location (gimple stmt, basic_block frombb,
 	      && gimple_vdef (use_stmt)
 	      && operand_equal_p (gimple_assign_lhs (stmt),
 				  gimple_assign_lhs (use_stmt), 0))
-	    continue;
+	    {
+	      /* If use_stmt is or might be a nop assignment then USE_STMT
+		 acts as a use as well as definition.  */
+	      if (stmt != use_stmt
+		  && ref_maybe_used_by_stmt_p (use_stmt,
+					       gimple_assign_lhs (stmt)))
+		return false;
+	      continue;
+	    }
 
 	  if (gimple_code (use_stmt) != GIMPLE_PHI)
 	    return false;

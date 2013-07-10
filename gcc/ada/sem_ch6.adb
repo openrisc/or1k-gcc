@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -261,7 +261,7 @@ package body Sem_Ch6 is
                    or else Scop /= Scope (Etype (First_Formal (Designator))))
       then
          Error_Msg_N
-           ("?abstract subprogram is not dispatching or overriding", N);
+           ("abstract subprogram is not dispatching or overriding?r?", N);
       end if;
 
       Generate_Reference_To_Formals (Designator);
@@ -408,6 +408,15 @@ package body Sem_Ch6 is
       --  that the expression can be inlined whenever possible.
 
       else
+         --  An expression function that is not a completion is not a
+         --  subprogram declaration, and thus cannot appear in a protected
+         --  definition.
+
+         if Nkind (Parent (N)) = N_Protected_Definition then
+            Error_Msg_N
+              ("an expression function is not a legal protected operation", N);
+         end if;
+
          New_Decl :=
            Make_Subprogram_Declaration (Loc, Specification => Spec);
 
@@ -501,6 +510,12 @@ package body Sem_Ch6 is
       end if;
 
       Analyze_Call (N);
+
+      --  Mark function call if within assertion
+
+      if In_Assertion_Expr /= 0 then
+         Set_In_Assertion (N);
+      end if;
    end Analyze_Function_Call;
 
    -----------------------------
@@ -579,16 +594,16 @@ package body Sem_Ch6 is
                if Inside_A_Generic then
                   Error_Msg_N
                     ("return of limited object not permitted in Ada 2005 "
-                     & "(RM-2005 6.5(5.5/2))?", Expr);
+                     & "(RM-2005 6.5(5.5/2))?y?", Expr);
 
                elsif Is_Immutably_Limited_Type (R_Type) then
                   Error_Msg_N
                     ("return by reference not permitted in Ada 2005 "
-                     & "(RM-2005 6.5(5.5/2))?", Expr);
+                     & "(RM-2005 6.5(5.5/2))?y?", Expr);
                else
                   Error_Msg_N
                     ("cannot copy object of a limited type in Ada 2005 "
-                     & "(RM-2005 6.5(5.5/2))?", Expr);
+                     & "(RM-2005 6.5(5.5/2))?y?", Expr);
                end if;
 
             --  Ada 95 mode, compatibility warnings disabled
@@ -806,10 +821,10 @@ package body Sem_Ch6 is
          --  Analyze parts specific to extended_return_statement:
 
          declare
-            Obj_Decl : constant Node_Id :=
-                         Last (Return_Object_Declarations (N));
-
-            HSS : constant Node_Id := Handled_Statement_Sequence (N);
+            Obj_Decl    : constant Node_Id :=
+                            Last (Return_Object_Declarations (N));
+            Has_Aliased : constant Boolean := Aliased_Present (Obj_Decl);
+            HSS         : constant Node_Id := Handled_Statement_Sequence (N);
 
          begin
             Expr := Expression (Obj_Decl);
@@ -842,6 +857,24 @@ package body Sem_Ch6 is
             Set_Referenced (Defining_Identifier (Obj_Decl));
 
             Check_References (Stm_Entity);
+
+            --  Check RM 6.5 (5.9/3)
+
+            if Has_Aliased then
+               if Ada_Version < Ada_2012 then
+
+                  --  Shouldn't this test Warn_On_Ada_2012_Compatibility ???
+                  --  Can it really happen (extended return???)
+
+                  Error_Msg_N
+                    ("aliased only allowed for limited"
+                     & " return objects in Ada 2012?", N);
+
+               elsif not Is_Immutably_Limited_Type (R_Type) then
+                  Error_Msg_N ("aliased only allowed for limited"
+                     & " return objects", N);
+               end if;
+            end if;
          end;
       end if;
 
@@ -924,7 +957,6 @@ package body Sem_Ch6 is
            and then Object_Access_Level (Expr) >
                       Subprogram_Access_Level (Scope_Id)
          then
-
             --  Suppress the message in a generic, where the rewriting
             --  is irrelevant.
 
@@ -938,9 +970,9 @@ package body Sem_Ch6 is
                Analyze (N);
 
                Error_Msg_N
-                 ("cannot return a local value by reference?", N);
+                 ("cannot return a local value by reference??", N);
                Error_Msg_NE
-                 ("\& will be raised at run time?",
+                 ("\& will be raised at run time??",
                    N, Standard_Program_Error);
             end if;
          end if;
@@ -952,13 +984,9 @@ package body Sem_Ch6 is
             Apply_Compile_Time_Constraint_Error
               (N      => Expr,
                Msg    => "(Ada 2005) null not allowed for "
-                         & "null-excluding return?",
+                         & "null-excluding return??",
                Reason => CE_Null_Not_Allowed);
          end if;
-
-         --  Apply checks suggested by AI05-0144 (dangerous order dependence)
-
-         Check_Order_Dependence;
       end if;
    end Analyze_Function_Return;
 
@@ -1243,11 +1271,6 @@ package body Sem_Ch6 is
          if Nkind (N) = N_Procedure_Call_Statement then
             Analyze_Call (N);
             Resolve (N, Standard_Void_Type);
-
-            --  Apply checks suggested by AI05-0144
-
-            Check_Order_Dependence;
-
          else
             Analyze (N);
          end if;
@@ -3771,6 +3794,7 @@ package body Sem_Ch6 is
                      if Has_Excluded_Statement (Then_Statements (E)) then
                         return True;
                      end if;
+
                      Next (E);
                   end loop;
                end if;
@@ -3958,7 +3982,7 @@ package body Sem_Ch6 is
             then
                Cannot_Inline
                  ("cannot inline & (call returns unconstrained type)?",
-                    N, Subp);
+                  N, Subp);
                return Abandon;
             else
                return OK;
@@ -4155,7 +4179,7 @@ package body Sem_Ch6 is
             Error_Msg_NE (Msg (Msg'First .. Msg'Last - 1), N, Subp);
 
          elsif Ineffective_Inline_Warnings then
-            Error_Msg_NE (Msg, N, Subp);
+            Error_Msg_NE (Msg & "p?", N, Subp);
          end if;
 
          return;
@@ -4194,7 +4218,7 @@ package body Sem_Ch6 is
                     (Unit_File_Name (Get_Source_Unit (Gen_P)))
                   then
                      Set_Is_Inlined (Subp, False);
-                     Error_Msg_NE (Msg, N, Subp);
+                     Error_Msg_NE (Msg & "p?", N, Subp);
                      return;
                   end if;
                end;
@@ -4212,7 +4236,7 @@ package body Sem_Ch6 is
             --  For backward compatibility we still report a warning.
 
             if Ineffective_Inline_Warnings then
-               Error_Msg_NE (Msg, N, Subp);
+               Error_Msg_NE (Msg & "p?", N, Subp);
             end if;
          end if;
 
@@ -4240,9 +4264,9 @@ package body Sem_Ch6 is
       --  This body is subsequently used for inline expansions at call sites.
 
       function Can_Split_Unconstrained_Function (N : Node_Id) return Boolean;
-      --  Return true if the function body N has no local declarations and its
-      --  unique statement is a single extended return statement with a handled
-      --  statements sequence.
+      --  Return true if we generate code for the function body N, the function
+      --  body N has no local declarations and its unique statement is a single
+      --  extended return statement with a handled statements sequence.
 
       function Check_Body_To_Inline
         (N    : Node_Id;
@@ -4977,7 +5001,13 @@ package body Sem_Ch6 is
             end loop;
          end if;
 
-         return Present (Ret_Node)
+         --  We only split the inlined function when we are generating the code
+         --  of its body; otherwise we leave duplicated split subprograms in
+         --  the tree which (if referenced) generate wrong references at link
+         --  time.
+
+         return In_Extended_Main_Code_Unit (N)
+           and then Present (Ret_Node)
            and then Nkind (Ret_Node) = N_Extended_Return_Statement
            and then No (Next (Ret_Node))
            and then Present (Handled_Statement_Sequence (Ret_Node));
@@ -6899,10 +6929,10 @@ package body Sem_Ch6 is
          if Mode = 'F' then
             if not Raise_Exception_Call then
                Error_Msg_N
-                 ("?RETURN statement missing following this statement!",
+                 ("RETURN statement missing following this statement??!",
                   Last_Stm);
                Error_Msg_N
-                 ("\?Program_Error may be raised at run time!",
+                 ("\Program_Error may be raised at run time??!",
                   Last_Stm);
             end if;
 
@@ -6918,11 +6948,11 @@ package body Sem_Ch6 is
          else
             if not Raise_Exception_Call then
                Error_Msg_N
-                 ("?implied return after this statement " &
-                  "will raise Program_Error",
+                 ("implied return after this statement " &
+                  "will raise Program_Error??",
                   Last_Stm);
                Error_Msg_NE
-                 ("\?procedure & is marked as No_Return!",
+                 ("\procedure & is marked as No_Return??!",
                   Last_Stm, Proc);
             end if;
 
@@ -7159,7 +7189,7 @@ package body Sem_Ch6 is
                   No_Warning_On_Some_Postcondition := True;
                else
                   Error_Msg_N
-                    ("?`Ensures` component refers only to pre-state", Prag);
+                    ("`Ensures` component refers only to pre-state??", Prag);
                end if;
             end if;
 
@@ -7216,7 +7246,7 @@ package body Sem_Ch6 is
                      No_Warning_On_Some_Postcondition := True;
                   else
                      Error_Msg_N
-                       ("?postcondition refers only to pre-state", Prag);
+                       ("postcondition refers only to pre-state??", Prag);
                   end if;
                end if;
             end if;
@@ -7270,17 +7300,18 @@ package body Sem_Ch6 is
       then
          if Present (Last_Postcondition) then
             if Present (Last_Contract_Case) then
-               Error_Msg_N ("?neither function postcondition nor " &
-                              "contract cases do mention result",
-                            Last_Postcondition);
+               Error_Msg_N
+                 ("neither function postcondition nor "
+                  & "contract cases mention result?T?", Last_Postcondition);
 
             else
-               Error_Msg_N ("?function postcondition does not mention result",
-                            Last_Postcondition);
+               Error_Msg_N
+                 ("function postcondition does not mention result?T?",
+                  Last_Postcondition);
             end if;
          else
-            Error_Msg_N ("?contract cases do not mention result",
-                         Last_Contract_Case);
+            Error_Msg_N
+              ("contract cases do not mention result?T?", Last_Contract_Case);
          end if;
       end if;
    end Check_Subprogram_Contract;
@@ -8130,14 +8161,14 @@ package body Sem_Ch6 is
             then
                if Scope (E) /= Standard_Standard then
                   Error_Msg_Sloc := Sloc (E);
-                  Error_Msg_N ("declaration of & hides one#?", S);
+                  Error_Msg_N ("declaration of & hides one#?h?", S);
 
                elsif Nkind (S) = N_Defining_Operator_Symbol
                  and then
                    Scope (Base_Type (Etype (First_Formal (S)))) /= Scope (S)
                then
                   Error_Msg_N
-                    ("declaration of & hides predefined operator?", S);
+                    ("declaration of & hides predefined operator?h?", S);
                end if;
             end if;
          end loop;
@@ -8186,17 +8217,15 @@ package body Sem_Ch6 is
                    & "before type& is frozen", Eq_Op, Typ);
 
                Obj_Decl := Next (Parent (Typ));
-               while Present (Obj_Decl)
-                 and then Obj_Decl /= Decl
-               loop
+               while Present (Obj_Decl) and then Obj_Decl /= Decl loop
                   if Nkind (Obj_Decl) = N_Object_Declaration
                     and then Etype (Defining_Identifier (Obj_Decl)) = Typ
                   then
-                     Error_Msg_NE ("type& is frozen by declaration?",
-                        Obj_Decl, Typ);
+                     Error_Msg_NE
+                       ("type& is frozen by declaration??", Obj_Decl, Typ);
                      Error_Msg_N
                        ("\an equality operator cannot be declared after this "
-                         & "point (RM 4.5.2 (9.8)) (Ada 2012))?", Obj_Decl);
+                         & "point (RM 4.5.2 (9.8)) (Ada 2012))??", Obj_Decl);
                      exit;
                   end if;
 
@@ -9315,7 +9344,7 @@ package body Sem_Ch6 is
                   Error_Msg_Node_2 := F_Typ;
                   Error_Msg_NE
                     ("private operation& in generic unit does not override " &
-                     "any primitive operation of& (RM 12.3 (18))?",
+                     "any primitive operation of& (RM 12.3 (18))??",
                      New_E, New_E);
                end if;
 
@@ -9337,24 +9366,24 @@ package body Sem_Ch6 is
         and then (Is_Subprogram (E) or else Is_Generic_Subprogram (E))
       then
          declare
-            Inherited : constant Subprogram_List :=
-                          Inherited_Subprograms (E);
+            Inherited : constant Subprogram_List := Inherited_Subprograms (E);
             P         : Node_Id;
 
          begin
             for J in Inherited'Range loop
                P := Spec_PPC_List (Contract (Inherited (J)));
-
                while Present (P) loop
                   Error_Msg_Sloc := Sloc (P);
 
                   if Class_Present (P) and then not Split_PPC (P) then
                      if Pragma_Name (P) = Name_Precondition then
                         Error_Msg_N
-                          ("?info: & inherits `Pre''Class` aspect from #", E);
+                          ("info: & inherits `Pre''Class` aspect from #?L?",
+                           E);
                      else
                         Error_Msg_N
-                          ("?info: & inherits `Post''Class` aspect from #", E);
+                          ("info: & inherits `Post''Class` aspect from #?L?",
+                           E);
                      end if;
                   end if;
 
@@ -9730,6 +9759,30 @@ package body Sem_Ch6 is
 
                Next_Formal (Formal);
             end loop;
+
+         --  Special case: An equality function can be redefined for a type
+         --  occurring in a declarative part, and won't otherwise be treated as
+         --  a primitive because it doesn't occur in a package spec and doesn't
+         --  override an inherited subprogram. It's important that we mark it
+         --  primitive so it can be returned by Collect_Primitive_Operations
+         --  and be used in composing the equality operation of later types
+         --  that have a component of the type.
+
+         elsif Chars (S) = Name_Op_Eq
+           and then Etype (S) = Standard_Boolean
+         then
+            B_Typ := Base_Type (Etype (First_Formal (S)));
+
+            if Scope (B_Typ) = Current_Scope
+              and then
+                Base_Type (Etype (Next_Formal (First_Formal (S)))) = B_Typ
+              and then not Is_Limited_Type (B_Typ)
+            then
+               Is_Primitive := True;
+               Set_Is_Primitive (S);
+               Set_Has_Primitive_Operations (B_Typ);
+               Check_Private_Overriding (B_Typ);
+            end if;
          end if;
       end Check_For_Primitive_Subprogram;
 
@@ -10646,7 +10699,7 @@ package body Sem_Ch6 is
                        and then No (F1)
                        and then No (F2)
                      then
-                        Error_Msg_NE ("calls to& may be ambiguous?", S, S);
+                        Error_Msg_NE ("calls to& may be ambiguous??", S, S);
                      end if;
                   end;
                end if;
@@ -11081,7 +11134,7 @@ package body Sem_Ch6 is
 
             if Convention (Formal_Type) = Convention_Ada_Pass_By_Copy then
                Error_Msg_N
-                 ("?cannot pass aliased parameter & by copy", Formal);
+                 ("cannot pass aliased parameter & by copy?", Formal);
             end if;
 
          --  Force mechanism if type has Convention Ada_Pass_By_Ref/Copy
@@ -11138,6 +11191,11 @@ package body Sem_Ch6 is
       --  has access parameters whose designated type has an invariant, then
       --  under the same visibility conditions as for other invariant checks,
       --  the type invariant must be applied to the returned value.
+
+      procedure Expand_Contract_Cases (CCs : Node_Id; Subp_Id : Entity_Id);
+      --  Given pragma Contract_Cases CCs, create the circuitry needed to
+      --  evaluate case guards and trigger consequence expressions. Subp_Id
+      --  denotes the related subprogram.
 
       function Grab_CC return Node_Id;
       --  Prag contains an analyzed contract case pragma. This function copies
@@ -11206,6 +11264,459 @@ package body Sem_Ch6 is
          end if;
       end Check_Access_Invariants;
 
+      ---------------------------
+      -- Expand_Contract_Cases --
+      ---------------------------
+
+      --  Pragma Contract_Cases is expanded in the following manner:
+
+      --    subprogram S is
+      --       Flag_1   : Boolean := False;
+      --       . . .
+      --       Flag_N   : Boolean := False;
+      --       Flag_N+1 : Boolean := False;  --  when "others" present
+      --       Count    : Natural := 0;
+
+      --       <preconditions (if any)>
+
+      --       if Case_Guard_1 then
+      --          Flag_1 := True;
+      --          Count  := Count + 1;
+      --       end if;
+      --       . . .
+      --       if Case_Guard_N then
+      --          Flag_N := True;
+      --          Count  := Count + 1;
+      --       end if;
+
+      --       if Count = 0 then
+      --          raise Assertion_Error with "contract cases incomplete";
+      --            <or>
+      --          Flag_N+1 := True;  --  when "others" present
+
+      --       elsif Count > 1 then
+      --          declare
+      --             Str0 : constant String :=
+      --                      "contract cases overlap for subprogram ABC";
+      --             Str1 : constant String :=
+      --                      (if Flag_1 then
+      --                         Str0 & "case guard at xxx evaluates to True"
+      --                       else Str0);
+      --             StrN : constant String :=
+      --                      (if Flag_N then
+      --                         StrN-1 & "case guard at xxx evaluates to True"
+      --                       else StrN-1);
+      --          begin
+      --             raise Assertion_Error with StrN;
+      --          end;
+      --       end if;
+
+      --       procedure _Postconditions is
+      --       begin
+      --          <postconditions (if any)>
+
+      --          if Flag_1 and then not Consequence_1 then
+      --             raise Assertion_Error with "failed contract case at xxx";
+      --          end if;
+      --          . . .
+      --          if Flag_N[+1] and then not Consequence_N[+1] then
+      --             raise Assertion_Error with "failed contract case at xxx";
+      --          end if;
+      --       end _Postconditions;
+      --    begin
+      --       . . .
+      --    end S;
+
+      procedure Expand_Contract_Cases (CCs : Node_Id; Subp_Id : Entity_Id) is
+         Loc : constant Source_Ptr := Sloc (CCs);
+
+         procedure Case_Guard_Error
+           (Decls     : List_Id;
+            Flag      : Entity_Id;
+            Error_Loc : Source_Ptr;
+            Msg       : in out Entity_Id);
+         --  Given a declarative list Decls, status flag Flag, the location of
+         --  the error and a string Msg, construct the following check:
+         --    Msg : constant String :=
+         --            (if Flag then
+         --                Msg & "case guard at Error_Loc evaluates to True"
+         --             else Msg);
+         --  The resulting code is added to Decls
+
+         procedure Consequence_Error
+           (Checks : in out Node_Id;
+            Flag   : Entity_Id;
+            Conseq : Node_Id);
+         --  Given an if statement Checks, status flag Flag and a consequence
+         --  Conseq, construct the following check:
+         --    [els]if Flag and then not Conseq then
+         --       raise Assertion_Error
+         --         with "failed contract case at Sloc (Conseq)";
+         --    [end if;]
+         --  The resulting code is added to Checks
+
+         function Declaration_Of (Id : Entity_Id) return Node_Id;
+         --  Given the entity Id of a boolean flag, generate:
+         --    Id : Boolean := False;
+
+         function Increment (Id : Entity_Id) return Node_Id;
+         --  Given the entity Id of a numerical variable, generate:
+         --    Id := Id + 1;
+
+         function Set (Id : Entity_Id) return Node_Id;
+         --  Given the entity Id of a boolean variable, generate:
+         --    Id := True;
+
+         ----------------------
+         -- Case_Guard_Error --
+         ----------------------
+
+         procedure Case_Guard_Error
+           (Decls     : List_Id;
+            Flag      : Entity_Id;
+            Error_Loc : Source_Ptr;
+            Msg       : in out Entity_Id)
+         is
+            New_Line : constant Character := Character'Val (10);
+            New_Msg  : constant Entity_Id := Make_Temporary (Loc, 'S');
+
+         begin
+            Start_String;
+            Store_String_Char  (New_Line);
+            Store_String_Chars ("  case guard at ");
+            Store_String_Chars (Build_Location_String (Error_Loc));
+            Store_String_Chars (" evaluates to True");
+
+            --  Generate:
+            --    New_Msg : constant String :=
+            --      (if Flag then
+            --          Msg & "case guard at Error_Loc evaluates to True"
+            --       else Msg);
+
+            Append_To (Decls,
+              Make_Object_Declaration (Loc,
+                Defining_Identifier => New_Msg,
+                Constant_Present    => True,
+                Object_Definition   => New_Reference_To (Standard_String, Loc),
+                Expression          =>
+                  Make_If_Expression (Loc,
+                    Expressions => New_List (
+                      New_Reference_To (Flag, Loc),
+
+                      Make_Op_Concat (Loc,
+                        Left_Opnd  => New_Reference_To (Msg, Loc),
+                        Right_Opnd => Make_String_Literal (Loc, End_String)),
+
+                      New_Reference_To (Msg, Loc)))));
+
+            Msg := New_Msg;
+         end Case_Guard_Error;
+
+         -----------------------
+         -- Consequence_Error --
+         -----------------------
+
+         procedure Consequence_Error
+           (Checks : in out Node_Id;
+            Flag   : Entity_Id;
+            Conseq : Node_Id)
+         is
+            Cond  : Node_Id;
+            Error : Node_Id;
+
+         begin
+            --  Generate:
+            --    Flag and then not Conseq
+
+            Cond :=
+              Make_And_Then (Loc,
+                Left_Opnd  => New_Reference_To (Flag, Loc),
+                Right_Opnd =>
+                  Make_Op_Not (Loc,
+                    Right_Opnd => Relocate_Node (Conseq)));
+
+            --  Generate:
+            --    raise Assertion_Error
+            --      with "failed contract case at Sloc (Conseq)";
+
+            Start_String;
+            Store_String_Chars ("failed contract case at ");
+            Store_String_Chars (Build_Location_String (Sloc (Conseq)));
+
+            Error :=
+              Make_Procedure_Call_Statement (Loc,
+                Name                   =>
+                  New_Reference_To (RTE (RE_Raise_Assert_Failure), Loc),
+                Parameter_Associations => New_List (
+                  Make_String_Literal (Loc, End_String)));
+
+            if No (Checks) then
+               Checks :=
+                 Make_If_Statement (Loc,
+                   Condition       => Cond,
+                   Then_Statements => New_List (Error));
+
+            else
+               if No (Elsif_Parts (Checks)) then
+                  Set_Elsif_Parts (Checks, New_List);
+               end if;
+
+               Append_To (Elsif_Parts (Checks),
+                 Make_Elsif_Part (Loc,
+                   Condition       => Cond,
+                   Then_Statements => New_List (Error)));
+            end if;
+         end Consequence_Error;
+
+         --------------------
+         -- Declaration_Of --
+         --------------------
+
+         function Declaration_Of (Id : Entity_Id) return Node_Id is
+         begin
+            return
+              Make_Object_Declaration (Loc,
+                Defining_Identifier => Id,
+                Object_Definition   =>
+                  New_Reference_To (Standard_Boolean, Loc),
+                Expression          =>
+                  New_Reference_To (Standard_False, Loc));
+         end Declaration_Of;
+
+         ---------------
+         -- Increment --
+         ---------------
+
+         function Increment (Id : Entity_Id) return Node_Id is
+         begin
+            return
+              Make_Assignment_Statement (Loc,
+                Name       => New_Reference_To (Id, Loc),
+                Expression =>
+                  Make_Op_Add (Loc,
+                    Left_Opnd  => New_Reference_To (Id, Loc),
+                    Right_Opnd => Make_Integer_Literal (Loc, 1)));
+         end Increment;
+
+         ---------
+         -- Set --
+         ---------
+
+         function Set (Id : Entity_Id) return Node_Id is
+         begin
+            return
+              Make_Assignment_Statement (Loc,
+                Name       => New_Reference_To (Id, Loc),
+                Expression => New_Reference_To (Standard_True, Loc));
+         end Set;
+
+         --  Local variables
+
+         Aggr          : constant Node_Id :=
+                           Expression (First
+                             (Pragma_Argument_Associations (CCs)));
+         Decls         : constant List_Id := Declarations (N);
+         Multiple_PCs  : constant Boolean :=
+                           List_Length (Component_Associations (Aggr)) > 1;
+         Case_Guard    : Node_Id;
+         CG_Checks     : Node_Id;
+         CG_Stmts      : List_Id;
+         Conseq        : Node_Id;
+         Conseq_Checks : Node_Id := Empty;
+         Count         : Entity_Id;
+         Error_Decls   : List_Id;
+         Flag          : Entity_Id;
+         Msg_Str       : Entity_Id;
+         Others_Flag   : Entity_Id := Empty;
+         Post_Case     : Node_Id;
+
+      --  Start of processing for Expand_Contract_Cases
+
+      begin
+         --  Create the counter which tracks the number of case guards that
+         --  evaluate to True.
+
+         --    Count : Natural := 0;
+
+         Count := Make_Temporary (Loc, 'C');
+
+         Prepend_To (Decls,
+           Make_Object_Declaration (Loc,
+             Defining_Identifier => Count,
+             Object_Definition   => New_Reference_To (Standard_Natural, Loc),
+             Expression          => Make_Integer_Literal (Loc, 0)));
+
+         --  Create the base error message for multiple overlapping case
+         --  guards.
+
+         --    Msg_Str : constant String :=
+         --                "contract cases overlap for subprogram Subp_Id";
+
+         if Multiple_PCs then
+            Msg_Str := Make_Temporary (Loc, 'S');
+
+            Start_String;
+            Store_String_Chars ("contract cases overlap for subprogram ");
+            Store_String_Chars (Get_Name_String (Chars (Subp_Id)));
+
+            Error_Decls := New_List (
+              Make_Object_Declaration (Loc,
+                Defining_Identifier => Msg_Str,
+                Constant_Present    => True,
+                Object_Definition   => New_Reference_To (Standard_String, Loc),
+                Expression          => Make_String_Literal (Loc, End_String)));
+         end if;
+
+         --  Process individual post cases
+
+         Post_Case := First (Component_Associations (Aggr));
+         while Present (Post_Case) loop
+            Case_Guard := First (Choices (Post_Case));
+            Conseq     := Expression (Post_Case);
+
+            --  The "others" choice requires special processing
+
+            if Nkind (Case_Guard) = N_Others_Choice then
+               Others_Flag := Make_Temporary (Loc, 'F');
+               Prepend_To (Decls, Declaration_Of (Others_Flag));
+
+               --  Check possible overlap between a case guard and "others"
+
+               if Multiple_PCs then
+                  Case_Guard_Error
+                    (Decls     => Error_Decls,
+                     Flag      => Others_Flag,
+                     Error_Loc => Sloc (Case_Guard),
+                     Msg       => Msg_Str);
+               end if;
+
+               --  Check the corresponding consequence of "others"
+
+               Consequence_Error
+                 (Checks => Conseq_Checks,
+                  Flag   => Others_Flag,
+                  Conseq => Conseq);
+
+            --  Regular post case
+
+            else
+               --  Create the flag which tracks the state of its associated
+               --  case guard.
+
+               Flag := Make_Temporary (Loc, 'F');
+               Prepend_To (Decls, Declaration_Of (Flag));
+
+               --  The flag is set when the case guard is evaluated to True
+               --    if Case_Guard then
+               --       Flag  := True;
+               --       Count := Count + 1;
+               --    end if;
+
+               Append_To (Decls,
+                 Make_If_Statement (Loc,
+                   Condition       => Relocate_Node (Case_Guard),
+                   Then_Statements => New_List (
+                     Set (Flag),
+                     Increment (Count))));
+
+               --  Check whether this case guard overlaps with another case
+               --  guard.
+
+               if Multiple_PCs then
+                  Case_Guard_Error
+                    (Decls     => Error_Decls,
+                     Flag      => Flag,
+                     Error_Loc => Sloc (Case_Guard),
+                     Msg       => Msg_Str);
+               end if;
+
+               --  The corresponding consequence of the case guard which
+               --  evaluated to True must hold on exit from the subprogram.
+
+               Consequence_Error (Conseq_Checks, Flag, Conseq);
+            end if;
+
+            Next (Post_Case);
+         end loop;
+
+         --  Raise Assertion_Error when none of the case guards evaluate to
+         --  True. The only exception is when we have "others", in which case
+         --  there is no error because "others" acts as a default True.
+
+         --  Generate:
+         --    Flag := True;
+
+         if Present (Others_Flag) then
+            CG_Stmts := New_List (Set (Others_Flag));
+
+         --  Generate:
+         --    raise Assetion_Error with "contract cases incomplete";
+
+         else
+            Start_String;
+            Store_String_Chars ("contract cases incomplete");
+
+            CG_Stmts := New_List (
+              Make_Procedure_Call_Statement (Loc,
+                Name                   =>
+                  New_Reference_To (RTE (RE_Raise_Assert_Failure), Loc),
+                Parameter_Associations => New_List (
+                  Make_String_Literal (Loc, End_String))));
+         end if;
+
+         CG_Checks :=
+           Make_If_Statement (Loc,
+             Condition       =>
+               Make_Op_Eq (Loc,
+                 Left_Opnd  => New_Reference_To (Count, Loc),
+                 Right_Opnd => Make_Integer_Literal (Loc, 0)),
+             Then_Statements => CG_Stmts);
+
+         --  Detect a possible failure due to several case guards evaluating to
+         --  True.
+
+         --  Generate:
+         --    elsif Count > 0 then
+         --       declare
+         --          <Error_Decls>
+         --       begin
+         --          raise Assertion_Error with <Msg_Str>;
+         --    end if;
+
+         if Multiple_PCs then
+            Set_Elsif_Parts (CG_Checks, New_List (
+              Make_Elsif_Part (Loc,
+                Condition       =>
+                  Make_Op_Gt (Loc,
+                    Left_Opnd  => New_Reference_To (Count, Loc),
+                    Right_Opnd => Make_Integer_Literal (Loc, 1)),
+
+                Then_Statements => New_List (
+                  Make_Block_Statement (Loc,
+                    Declarations               => Error_Decls,
+                    Handled_Statement_Sequence =>
+                      Make_Handled_Sequence_Of_Statements (Loc,
+                        Statements => New_List (
+                          Make_Procedure_Call_Statement (Loc,
+                            Name                   =>
+                              New_Reference_To
+                                (RTE (RE_Raise_Assert_Failure), Loc),
+                            Parameter_Associations => New_List (
+                              New_Reference_To (Msg_Str, Loc))))))))));
+         end if;
+
+         Append_To (Decls, CG_Checks);
+
+         --  Raise Assertion_Error when the corresponding consequence of a case
+         --  guard that evaluated to True fails.
+
+         if No (Plist) then
+            Plist := New_List;
+         end if;
+
+         Append_To (Plist, Conseq_Checks);
+      end Expand_Contract_Cases;
+
       -------------
       -- Grab_CC --
       -------------
@@ -11254,7 +11765,7 @@ package body Sem_Ch6 is
          if not Expander_Active then
             CP :=
               Make_Pragma (Loc,
-                Chars => Name_Postcondition,
+                Chars                        => Name_Postcondition,
                 Pragma_Argument_Associations => New_List (
                   Make_Pragma_Argument_Association (Loc,
                     Chars      => Name_Check,
@@ -11736,6 +12247,9 @@ package body Sem_Ch6 is
                      else
                         Append (Grab_CC, Plist);
                      end if;
+
+                  elsif Pragma_Name (Prag) = Name_Contract_Cases then
+                     Expand_Contract_Cases (Prag, Spec_Id);
                   end if;
 
                   Prag := Next_Pragma (Prag);
@@ -11850,7 +12364,7 @@ package body Sem_Ch6 is
                     Make_Invariant_Call (New_Occurrence_Of (Rent, Loc)));
                end if;
 
-               --  Same if return value is an access to type with invariants.
+               --  Same if return value is an access to type with invariants
 
                Check_Access_Invariants (Rent);
             end;

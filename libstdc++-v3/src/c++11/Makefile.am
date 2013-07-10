@@ -1,8 +1,6 @@
 ## Makefile for the C++03 sources of the GNU C++ Standard library.
 ##
-## Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005
-## 2006, 2007, 2008, 2009, 2010, 2011, 2012
-## Free Software Foundation, Inc.
+## Copyright (C) 1997-2013 Free Software Foundation, Inc.
 ##
 ## This file is part of the libstdc++ version 3 distribution.
 ## Process this file with automake to produce Makefile.in.
@@ -61,6 +59,13 @@ endif
 vpath % $(top_srcdir)/src/c++11
 
 libc__11convenience_la_SOURCES = $(sources)  $(inst_sources)
+
+# Use special rules for the hashtable.cc file so that all
+# the generated template functions are also instantiated. 
+hashtable_c++0x.lo: hashtable_c++0x.cc
+	$(LTCXXCOMPILE) -fimplicit-templates -c $<
+hashtable_c++0x.o: hashtable_c++0x.cc
+	$(CXXCOMPILE) -fimplicit-templates -c $<
 
 # AM_CXXFLAGS needs to be in each subdirectory so that it can be
 # modified in a per-library or per-sub-library way.  Need to manually

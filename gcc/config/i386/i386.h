@@ -1,7 +1,5 @@
 /* Definitions of target machine for GCC for IA-32.
-   Copyright (C) 1988, 1992, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -248,6 +246,7 @@ extern const struct processor_costs ix86_size_cost;
 #define TARGET_NOCONA (ix86_tune == PROCESSOR_NOCONA)
 #define TARGET_CORE2 (ix86_tune == PROCESSOR_CORE2)
 #define TARGET_COREI7 (ix86_tune == PROCESSOR_COREI7)
+#define TARGET_HASWELL (ix86_tune == PROCESSOR_HASWELL)
 #define TARGET_GENERIC32 (ix86_tune == PROCESSOR_GENERIC32)
 #define TARGET_GENERIC64 (ix86_tune == PROCESSOR_GENERIC64)
 #define TARGET_GENERIC (TARGET_GENERIC32 || TARGET_GENERIC64)
@@ -331,6 +330,7 @@ enum ix86_tune_indices {
   X86_TUNE_REASSOC_INT_TO_PARALLEL,
   X86_TUNE_REASSOC_FP_TO_PARALLEL,
   X86_TUNE_GENERAL_REGS_SSE_SPILL,
+  X86_TUNE_AVOID_MEM_OPND_FOR_CMOVE,
 
   X86_TUNE_LAST
 };
@@ -436,6 +436,8 @@ extern unsigned char ix86_tune_features[X86_TUNE_LAST];
 	ix86_tune_features[X86_TUNE_REASSOC_FP_TO_PARALLEL]
 #define TARGET_GENERAL_REGS_SSE_SPILL \
 	ix86_tune_features[X86_TUNE_GENERAL_REGS_SSE_SPILL]
+#define TARGET_AVOID_MEM_OPND_FOR_CMOVE \
+	ix86_tune_features[X86_TUNE_AVOID_MEM_OPND_FOR_CMOVE]
 
 /* Feature tests against the various architecture variations.  */
 enum ix86_arch_indices {
@@ -515,6 +517,9 @@ extern tree x86_mfence;
 #define MACHO_DYNAMIC_NO_PIC_P 0
 #define MACHOPIC_INDIRECT 0
 #define MACHOPIC_PURE 0
+
+/* For the RDOS  */
+#define TARGET_RDOS 0
 
 /* For the Windows 64-bit ABI.  */
 #define TARGET_64BIT_MS_ABI (TARGET_64BIT && ix86_cfun_abi () == MS_ABI)
@@ -603,6 +608,7 @@ enum target_cpu_default
   TARGET_CPU_DEFAULT_nocona,
   TARGET_CPU_DEFAULT_core2,
   TARGET_CPU_DEFAULT_corei7,
+  TARGET_CPU_DEFAULT_haswell,
   TARGET_CPU_DEFAULT_atom,
 
   TARGET_CPU_DEFAULT_geode,
@@ -1614,7 +1620,8 @@ typedef struct ix86_args {
    They give nonzero only if REGNO is a hard reg of the suitable class
    or a pseudo reg currently allocated to a suitable hard reg.
    Since they use reg_renumber, they are safe only once reg_renumber
-   has been allocated, which happens in local-alloc.c.  */
+   has been allocated, which happens in reginfo.c during register
+   allocation.  */
 
 #define REGNO_OK_FOR_INDEX_P(REGNO) 					\
   ((REGNO) < STACK_POINTER_REGNUM 					\
@@ -2077,6 +2084,10 @@ do {									\
    asm (SECTION_OP "\n\t"					\
 	"call " CRT_MKSTR(__USER_LABEL_PREFIX__) #FUNC "\n"	\
 	TEXT_SECTION_ASM_OP);
+
+/* Default threshold for putting data in large sections
+   with x86-64 medium memory model */
+#define DEFAULT_LARGE_SECTION_THRESHOLD 65536
 
 /* Which processor to tune code generation for.  */
 
@@ -2094,6 +2105,7 @@ enum processor_type
   PROCESSOR_NOCONA,
   PROCESSOR_CORE2,
   PROCESSOR_COREI7,
+  PROCESSOR_HASWELL,
   PROCESSOR_GENERIC32,
   PROCESSOR_GENERIC64,
   PROCESSOR_AMDFAM10,

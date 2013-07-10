@@ -1,6 +1,5 @@
 /* Interprocedural analyses.
-   Copyright (C) 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -387,6 +386,8 @@ struct GTY(()) ipa_agg_replacement_value
   tree value;
   /* The paramter index.  */
   int index;
+  /* Whether the value was passed by reference.  */
+  bool by_ref;
 };
 
 typedef struct ipa_agg_replacement_value *ipa_agg_replacement_value_p;

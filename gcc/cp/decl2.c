@@ -1,7 +1,5 @@
 /* Process declarations and variables for C++ compiler.
-   Copyright (C) 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
    Hacked by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -111,7 +109,8 @@ int at_eof;
    that apply to the function).  */
 
 tree
-build_memfn_type (tree fntype, tree ctype, cp_cv_quals quals)
+build_memfn_type (tree fntype, tree ctype, cp_cv_quals quals,
+		  cp_ref_qualifier rqual)
 {
   tree raises;
   tree attrs;
@@ -131,10 +130,12 @@ build_memfn_type (tree fntype, tree ctype, cp_cv_quals quals)
 				       (TREE_CODE (fntype) == METHOD_TYPE
 					? TREE_CHAIN (TYPE_ARG_TYPES (fntype))
 					: TYPE_ARG_TYPES (fntype)));
-  if (raises)
-    fntype = build_exception_variant (fntype, raises);
   if (attrs)
     fntype = cp_build_type_attribute_variant (fntype, attrs);
+  if (rqual)
+    fntype = build_ref_qualified_type (fntype, rqual);
+  if (raises)
+    fntype = build_exception_variant (fntype, raises);
 
   return fntype;
 }
@@ -159,7 +160,9 @@ change_return_type (tree new_ret, tree fntype)
   if (TREE_CODE (fntype) == FUNCTION_TYPE)
     {
       newtype = build_function_type (new_ret, args);
-      newtype = apply_memfn_quals (newtype, type_memfn_quals (fntype));
+      newtype = apply_memfn_quals (newtype,
+				   type_memfn_quals (fntype),
+				   type_memfn_rqual (fntype));
     }
   else
     newtype = build_method_type_directly
@@ -332,10 +335,11 @@ grokclassfn (tree ctype, tree function, enum overload_flags flags)
 }
 
 /* Create an ARRAY_REF, checking for the user doing things backwards
-   along the way.  */
+   along the way.  DECLTYPE_P is for N3276, as in the parser.  */
 
 tree
-grok_array_decl (location_t loc, tree array_expr, tree index_exp)
+grok_array_decl (location_t loc, tree array_expr, tree index_exp,
+		 bool decltype_p)
 {
   tree type;
   tree expr;
@@ -361,8 +365,13 @@ grok_array_decl (location_t loc, tree array_expr, tree index_exp)
 
   /* If they have an `operator[]', use that.  */
   if (MAYBE_CLASS_TYPE_P (type) || MAYBE_CLASS_TYPE_P (TREE_TYPE (index_exp)))
-    expr = build_new_op (loc, ARRAY_REF, LOOKUP_NORMAL, array_expr, index_exp,
-			 NULL_TREE, /*overload=*/NULL, tf_warning_or_error);
+    {
+      tsubst_flags_t complain = tf_warning_or_error;
+      if (decltype_p)
+	complain |= tf_decltype;
+      expr = build_new_op (loc, ARRAY_REF, LOOKUP_NORMAL, array_expr,
+			   index_exp, NULL_TREE, /*overload=*/NULL, complain);
+    }
   else
     {
       tree p1, p2, i1, i2;
@@ -672,6 +681,11 @@ check_classfn (tree ctype, tree function, tree template_parms)
 	  /* A member template definition only matches a member template
 	     declaration.  */
 	  if (is_template != (TREE_CODE (fndecl) == TEMPLATE_DECL))
+	    continue;
+
+	  /* ref-qualifier or absence of same must match.  */
+	  if (type_memfn_rqual (TREE_TYPE (function))
+	      != type_memfn_rqual (TREE_TYPE (fndecl)))
 	    continue;
 
 	  /* While finding a match, same types and params are not enough
@@ -1030,7 +1044,7 @@ grokbitfield (const cp_declarator *declarator,
   if (TREE_CODE (value) == VOID_TYPE)
     return void_type_node;
 
-  if (!INTEGRAL_OR_UNSCOPED_ENUMERATION_TYPE_P (TREE_TYPE (value))
+  if (!INTEGRAL_OR_ENUMERATION_TYPE_P (TREE_TYPE (value))
       && (POINTER_TYPE_P (value)
           || !dependent_type_p (TREE_TYPE (value))))
     {
@@ -1263,7 +1277,9 @@ cp_reconstruct_complex_type (tree type, tree bottom)
     {
       inner = cp_reconstruct_complex_type (TREE_TYPE (type), bottom);
       outer = build_function_type (inner, TYPE_ARG_TYPES (type));
-      outer = apply_memfn_quals (outer, type_memfn_quals (type));
+      outer = apply_memfn_quals (outer,
+				 type_memfn_quals (type),
+				 type_memfn_rqual (type));
     }
   else if (TREE_CODE (type) == METHOD_TYPE)
     {
@@ -1926,16 +1942,15 @@ min_vis_r (tree *tp, int *walk_subtrees, void *data)
     {
       *walk_subtrees = 0;
     }
-  else if (CLASS_TYPE_P (*tp))
+  else if (TAGGED_TYPE_P (*tp)
+	   && !TREE_PUBLIC (TYPE_MAIN_DECL (*tp)))
     {
-      if (!TREE_PUBLIC (TYPE_MAIN_DECL (*tp)))
-	{
-	  *vis_p = VISIBILITY_ANON;
-	  return *tp;
-	}
-      else if (CLASSTYPE_VISIBILITY (*tp) > *vis_p)
-	*vis_p = CLASSTYPE_VISIBILITY (*tp);
+      *vis_p = VISIBILITY_ANON;
+      return *tp;
     }
+  else if (CLASS_TYPE_P (*tp)
+	   && CLASSTYPE_VISIBILITY (*tp) > *vis_p)
+    *vis_p = CLASSTYPE_VISIBILITY (*tp);
   return NULL;
 }
 
@@ -2198,9 +2213,6 @@ determine_visibility (tree decl)
 	      && !lookup_attribute ("visibility", attribs))
 	    {
 	      int depth = TMPL_ARGS_DEPTH (args);
-	      int class_depth = 0;
-	      if (class_type && CLASSTYPE_TEMPLATE_INFO (class_type))
-		class_depth = TMPL_ARGS_DEPTH (CLASSTYPE_TI_ARGS (class_type));
 	      if (DECL_VISIBILITY_SPECIFIED (decl))
 		{
 		  /* A class template member with explicit visibility
@@ -2213,7 +2225,7 @@ determine_visibility (tree decl)
 		      constrain_visibility_for_template (decl, lev);
 		    }
 		}
-	      else if (depth > class_depth)
+	      else if (PRIMARY_TEMPLATE_P (TI_TEMPLATE (tinfo)))
 		/* Limit visibility based on its template arguments.  */
 		constrain_visibility_for_template (decl, args);
 	    }
@@ -2808,10 +2820,33 @@ var_defined_without_dynamic_init (tree var)
 static bool
 var_needs_tls_wrapper (tree var)
 {
-  return (DECL_THREAD_LOCAL_P (var)
+  return (!error_operand_p (var)
+	  && DECL_THREAD_LOCAL_P (var)
 	  && !DECL_GNU_TLS_P (var)
 	  && !DECL_FUNCTION_SCOPE_P (var)
 	  && !var_defined_without_dynamic_init (var));
+}
+
+/* Get the FUNCTION_DECL for the shared TLS init function for this
+   translation unit.  */
+
+static tree
+get_local_tls_init_fn (void)
+{
+  tree sname = get_identifier ("__tls_init");
+  tree fn = IDENTIFIER_GLOBAL_VALUE (sname);
+  if (!fn)
+    {
+      fn = build_lang_decl (FUNCTION_DECL, sname,
+			     build_function_type (void_type_node,
+						  void_list_node));
+      SET_DECL_LANGUAGE (fn, lang_c);
+      TREE_PUBLIC (fn) = false;
+      DECL_ARTIFICIAL (fn) = true;
+      mark_used (fn);
+      SET_IDENTIFIER_GLOBAL_VALUE (sname, fn);
+    }
+  return fn;
 }
 
 /* Get a FUNCTION_DECL for the init function for the thread_local
@@ -2825,6 +2860,18 @@ get_tls_init_fn (tree var)
   /* Only C++11 TLS vars need this init fn.  */
   if (!var_needs_tls_wrapper (var))
     return NULL_TREE;
+
+  /* If -fno-extern-tls-init, assume that we don't need to call
+     a tls init function for a variable defined in another TU.  */
+  if (!flag_extern_tls_init && DECL_EXTERNAL (var))
+    return NULL_TREE;
+
+#ifdef ASM_OUTPUT_DEF
+  /* If the variable is internal, or if we can't generate aliases,
+     call the local init function directly.  */
+  if (!TREE_PUBLIC (var))
+#endif
+    return get_local_tls_init_fn ();
 
   tree sname = mangle_tls_init_fn (var);
   tree fn = IDENTIFIER_GLOBAL_VALUE (sname);
@@ -2843,11 +2890,12 @@ get_tls_init_fn (tree var)
       if (TREE_PUBLIC (var))
 	{
 	  tree obtype = strip_array_types (non_reference (TREE_TYPE (var)));
-	  /* If the variable might have static initialization, make the
-	     init function a weak reference.  */
+	  /* If the variable is defined somewhere else and might have static
+	     initialization, make the init function a weak reference.  */
 	  if ((!TYPE_NEEDS_CONSTRUCTING (obtype)
 	       || TYPE_HAS_CONSTEXPR_CTOR (obtype))
-	      && TARGET_SUPPORTS_WEAK)
+	      && TYPE_HAS_TRIVIAL_DESTRUCTOR (obtype)
+	      && DECL_EXTERNAL (var))
 	    declare_weak (fn);
 	  else
 	    DECL_WEAK (fn) = DECL_WEAK (var);
@@ -2958,6 +3006,9 @@ generate_tls_wrapper (tree fn)
 	  finish_if_stmt (if_stmt);
 	}
     }
+  else
+    /* If there's no initialization, the wrapper is a constant function.  */
+    TREE_READONLY (fn) = true;
   finish_return_stmt (convert_from_reference (var));
   finish_function_body (body);
   expand_or_defer_fn (finish_function (0));
@@ -3863,15 +3914,6 @@ handle_tls_init (void)
 
   location_t loc = DECL_SOURCE_LOCATION (TREE_VALUE (vars));
 
-  #ifndef ASM_OUTPUT_DEF
-  /* This currently requires alias support.  FIXME other targets could use
-     small thunks instead of aliases.  */
-  input_location = loc;
-  sorry ("dynamic initialization of non-function-local thread_local "
-	 "variables not supported on this target");
-  return;
-  #endif
-
   write_out_vars (vars);
 
   tree guard = build_decl (loc, VAR_DECL, get_identifier ("__tls_guard"),
@@ -3884,14 +3926,7 @@ handle_tls_init (void)
   DECL_TLS_MODEL (guard) = decl_default_tls_model (guard);
   pushdecl_top_level_and_finish (guard, NULL_TREE);
 
-  tree fn = build_lang_decl (FUNCTION_DECL,
-			     get_identifier ("__tls_init"),
-			     build_function_type (void_type_node,
-						  void_list_node));
-  SET_DECL_LANGUAGE (fn, lang_c);
-  TREE_PUBLIC (fn) = false;
-  DECL_ARTIFICIAL (fn) = true;
-  mark_used (fn);
+  tree fn = get_local_tls_init_fn ();
   start_preparsed_function (fn, NULL_TREE, SF_PRE_PARSED);
   tree body = begin_function_body ();
   tree if_stmt = begin_if_stmt ();
@@ -3906,11 +3941,17 @@ handle_tls_init (void)
       tree init = TREE_PURPOSE (vars);
       one_static_initialization_or_destruction (var, init, true);
 
-      tree single_init_fn = get_tls_init_fn (var);
-      cgraph_node *alias
-	= cgraph_same_body_alias (cgraph_get_create_node (fn),
-				  single_init_fn, fn);
-      gcc_assert (alias != NULL);
+#ifdef ASM_OUTPUT_DEF
+      /* Output init aliases even with -fno-extern-tls-init.  */
+      if (TREE_PUBLIC (var))
+	{
+          tree single_init_fn = get_tls_init_fn (var);
+	  cgraph_node *alias
+	    = cgraph_same_body_alias (cgraph_get_create_node (fn),
+				      single_init_fn, fn);
+	  gcc_assert (alias != NULL);
+	}
+#endif
     }
 
   finish_then_clause (if_stmt);
@@ -3944,8 +3985,13 @@ cp_write_global_declarations (void)
       || !vec_safe_is_empty (decl_namespace_list))
     return;
 
+  /* This is the point to write out a PCH if we're doing that.
+     In that case we do not want to do anything else.  */
   if (pch_file)
-    c_common_write_pch ();
+    {
+      c_common_write_pch ();
+      return;
+    }
 
   cgraph_process_same_body_aliases ();
 

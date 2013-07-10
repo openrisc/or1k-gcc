@@ -1,7 +1,5 @@
 /* Maintain binary trees of symbols.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -99,21 +97,10 @@ gfc_namespace *gfc_global_ns_list;
 
 gfc_gsymbol *gfc_gsym_root = NULL;
 
-static gfc_symbol *changed_syms = NULL;
-
 gfc_dt_list *gfc_derived_types;
 
-
-/* List of tentative typebound-procedures.  */
-
-typedef struct tentative_tbp
-{
-  gfc_typebound_proc *proc;
-  struct tentative_tbp *next;
-}
-tentative_tbp;
-
-static tentative_tbp *tentative_tbp_list = NULL;
+static gfc_undo_change_set default_undo_chgset_var = { vNULL, vNULL, NULL };
+static gfc_undo_change_set *latest_undo_chgset = &default_undo_chgset_var;
 
 
 /*********** IMPLICIT NONE and IMPLICIT statement handlers ***********/
@@ -1955,6 +1942,9 @@ gfc_use_derived (gfc_symbol *sym)
   if (!sym)
     return NULL;
 
+  if (sym->attr.unlimited_polymorphic)
+    return sym;
+
   if (sym->attr.generic)
     sym = gfc_find_dt_in_generic (sym);
 
@@ -2075,9 +2065,7 @@ free_components (gfc_component *p)
 
       gfc_free_array_spec (p->as);
       gfc_free_expr (p->initializer);
-
-      gfc_free_formal_arglist (p->formal);
-      gfc_free_namespace (p->formal_ns);
+      free (p->tb);
 
       free (p);
     }
@@ -2304,7 +2292,7 @@ done:
    undo changes made to a symbol table if the current interpretation
    of a statement is found to be incorrect.  Whenever a symbol is
    looked up, we make a copy of it and link to it.  All of these
-   symbols are kept in a singly linked list so that we can commit or
+   symbols are kept in a vector so that we can commit or
    undo the changes at a later time.
 
    A symtree may point to a symbol node outside of its namespace.  In
@@ -2676,6 +2664,11 @@ gfc_find_sym_tree (const char *name, gfc_namespace *ns, int parent_flag,
       if (!parent_flag)
 	break;
 
+      /* Don't escape an interface block.  */
+      if (ns && !ns->has_import_set
+          && ns->proc_name && ns->proc_name->attr.if_source == IFSRC_IFBODY)
+	break;
+
       ns = ns->parent;
     }
   while (ns != NULL);
@@ -2705,20 +2698,51 @@ gfc_find_symbol (const char *name, gfc_namespace *ns, int parent_flag,
 }
 
 
+/* Tells whether there is only one set of changes in the stack.  */
+
+static bool
+single_undo_checkpoint_p (void)
+{
+  if (latest_undo_chgset == &default_undo_chgset_var)
+    {
+      gcc_assert (latest_undo_chgset->previous == NULL);
+      return true;
+    }
+  else
+    {
+      gcc_assert (latest_undo_chgset->previous != NULL);
+      return false;
+    }
+}
+
 /* Save symbol with the information necessary to back it out.  */
 
 static void
 save_symbol_data (gfc_symbol *sym)
 {
+  gfc_symbol *s;
+  unsigned i;
 
-  if (sym->gfc_new || sym->old_symbol != NULL)
+  if (!single_undo_checkpoint_p ())
+    {
+      /* If there is more than one change set, look for the symbol in the
+         current one.  If it is found there, we can reuse it.  */
+      FOR_EACH_VEC_ELT (latest_undo_chgset->syms, i, s)
+	if (s == sym)
+	  {
+	    gcc_assert (sym->gfc_new || sym->old_symbol != NULL);
+	    return;
+	  }
+    }
+  else if (sym->gfc_new || sym->old_symbol != NULL)
     return;
 
-  sym->old_symbol = XCNEW (gfc_symbol);
-  *(sym->old_symbol) = *sym;
+  s = XCNEW (gfc_symbol);
+  *s = *sym;
+  sym->old_symbol = s;
+  sym->gfc_new = 0;
 
-  sym->tlink = changed_syms;
-  changed_syms = sym;
+  latest_undo_chgset->syms.safe_push (sym);
 }
 
 
@@ -2754,10 +2778,9 @@ gfc_get_sym_tree (const char *name, gfc_namespace *ns, gfc_symtree **result,
 
       /* Add to the list of tentative symbols.  */
       p->old_symbol = NULL;
-      p->tlink = changed_syms;
       p->mark = 1;
       p->gfc_new = 1;
-      changed_syms = p;
+      latest_undo_chgset->syms.safe_push (p);
 
       st = gfc_new_symtree (&ns->sym_root, name);
       st->n.sym = p;
@@ -2834,17 +2857,14 @@ gfc_get_ha_sym_tree (const char *name, gfc_symtree **result)
       return i;
     }
 
-  if (gfc_current_ns->parent != NULL)
-    {
-      i = gfc_find_sym_tree (name, gfc_current_ns->parent, 1, &st);
-      if (i)
-	return i;
+  i = gfc_find_sym_tree (name, gfc_current_ns, 1, &st);
+  if (i)
+    return i;
 
-      if (st != NULL)
-	{
-	  *result = st;
-	  return 0;
-	}
+  if (st != NULL)
+    {
+      *result = st;
+      return 0;
     }
 
   return gfc_get_sym_tree (name, gfc_current_ns, result, false);
@@ -2891,20 +2911,164 @@ find_common_symtree (gfc_symtree *st, gfc_common_head *head)
 }
 
 
-/* Undoes all the changes made to symbols in the current statement.
+/* Clear the given storage, and make it the current change set for registering
+   changed symbols.  Its contents are freed after a call to
+   gfc_restore_last_undo_checkpoint or gfc_drop_last_undo_checkpoint, but
+   it is up to the caller to free the storage itself.  It is usually a local
+   variable, so there is nothing to do anyway.  */
+
+void
+gfc_new_undo_checkpoint (gfc_undo_change_set &chg_syms)
+{
+  chg_syms.syms = vNULL;
+  chg_syms.tbps = vNULL;
+  chg_syms.previous = latest_undo_chgset;
+  latest_undo_chgset = &chg_syms;
+}
+
+
+/* Restore previous state of symbol.  Just copy simple stuff.  */
+  
+static void
+restore_old_symbol (gfc_symbol *p)
+{
+  gfc_symbol *old;
+
+  p->mark = 0;
+  old = p->old_symbol;
+
+  p->ts.type = old->ts.type;
+  p->ts.kind = old->ts.kind;
+
+  p->attr = old->attr;
+
+  if (p->value != old->value)
+    {
+      gcc_checking_assert (old->value == NULL);
+      gfc_free_expr (p->value);
+      p->value = NULL;
+    }
+
+  if (p->as != old->as)
+    {
+      if (p->as)
+	gfc_free_array_spec (p->as);
+      p->as = old->as;
+    }
+
+  p->generic = old->generic;
+  p->component_access = old->component_access;
+
+  if (p->namelist != NULL && old->namelist == NULL)
+    {
+      gfc_free_namelist (p->namelist);
+      p->namelist = NULL;
+    }
+  else
+    {
+      if (p->namelist_tail != old->namelist_tail)
+	{
+	  gfc_free_namelist (old->namelist_tail->next);
+	  old->namelist_tail->next = NULL;
+	}
+    }
+
+  p->namelist_tail = old->namelist_tail;
+
+  if (p->formal != old->formal)
+    {
+      gfc_free_formal_arglist (p->formal);
+      p->formal = old->formal;
+    }
+
+  p->old_symbol = old->old_symbol;
+  free (old);
+}
+
+
+/* Frees the internal data of a gfc_undo_change_set structure.  Doesn't free
+   the structure itself.  */
+
+static void
+free_undo_change_set_data (gfc_undo_change_set &cs)
+{
+  cs.syms.release ();
+  cs.tbps.release ();
+}
+
+
+/* Given a change set pointer, free its target's contents and update it with
+   the address of the previous change set.  Note that only the contents are
+   freed, not the target itself (the contents' container).  It is not a problem
+   as the latter will be a local variable usually.  */
+
+static void
+pop_undo_change_set (gfc_undo_change_set *&cs)
+{
+  free_undo_change_set_data (*cs);
+  cs = cs->previous;
+}
+
+
+static void free_old_symbol (gfc_symbol *sym);
+
+
+/* Merges the current change set into the previous one.  The changes themselves
+   are left untouched; only one checkpoint is forgotten.  */
+
+void
+gfc_drop_last_undo_checkpoint (void)
+{
+  gfc_symbol *s, *t;
+  unsigned i, j;
+
+  FOR_EACH_VEC_ELT (latest_undo_chgset->syms, i, s)
+    {
+      /* No need to loop in this case.  */
+      if (s->old_symbol == NULL)
+        continue;
+
+      /* Remove the duplicate symbols.  */
+      FOR_EACH_VEC_ELT (latest_undo_chgset->previous->syms, j, t)
+	if (t == s)
+	  {
+	    latest_undo_chgset->previous->syms.unordered_remove (j);
+
+	    /* S->OLD_SYMBOL is the backup symbol for S as it was at the
+	       last checkpoint.  We drop that checkpoint, so S->OLD_SYMBOL
+	       shall contain from now on the backup symbol for S as it was
+	       at the checkpoint before.  */
+	    if (s->old_symbol->gfc_new)
+	      {
+		gcc_assert (s->old_symbol->old_symbol == NULL);
+		s->gfc_new = s->old_symbol->gfc_new;
+		free_old_symbol (s);
+	      }
+	    else
+	      restore_old_symbol (s->old_symbol);
+	    break;
+	  }
+    }
+
+  latest_undo_chgset->previous->syms.safe_splice (latest_undo_chgset->syms);
+  latest_undo_chgset->previous->tbps.safe_splice (latest_undo_chgset->tbps);
+
+  pop_undo_change_set (latest_undo_chgset);
+}
+
+
+/* Undoes all the changes made to symbols since the previous checkpoint.
    This subroutine is made simpler due to the fact that attributes are
    never removed once added.  */
 
 void
-gfc_undo_symbols (void)
+gfc_restore_last_undo_checkpoint (void)
 {
-  gfc_symbol *p, *q, *old;
-  tentative_tbp *tbp, *tbq;
+  gfc_symbol *p;
+  unsigned i;
 
-  for (p = changed_syms; p; p = q)
+  FOR_EACH_VEC_ELT (latest_undo_chgset->syms, i, p)
     {
-      q = p->tlink;
-
       if (p->gfc_new)
 	{
 	  /* Symbol was new.  */
@@ -2959,70 +3123,37 @@ gfc_undo_symbols (void)
 	    gfc_delete_symtree (&p->ns->sym_root, p->name);
 
 	  gfc_release_symbol (p);
-	  continue;
-	}
-
-      /* Restore previous state of symbol.  Just copy simple stuff.  */
-      p->mark = 0;
-      old = p->old_symbol;
-
-      p->ts.type = old->ts.type;
-      p->ts.kind = old->ts.kind;
-
-      p->attr = old->attr;
-
-      if (p->value != old->value)
-	{
-	  gfc_free_expr (old->value);
-	  p->value = NULL;
-	}
-
-      if (p->as != old->as)
-	{
-	  if (p->as)
-	    gfc_free_array_spec (p->as);
-	  p->as = old->as;
-	}
-
-      p->generic = old->generic;
-      p->component_access = old->component_access;
-
-      if (p->namelist != NULL && old->namelist == NULL)
-	{
-	  gfc_free_namelist (p->namelist);
-	  p->namelist = NULL;
 	}
       else
-	{
-	  if (p->namelist_tail != old->namelist_tail)
-	    {
-	      gfc_free_namelist (old->namelist_tail->next);
-	      old->namelist_tail->next = NULL;
-	    }
-	}
-
-      p->namelist_tail = old->namelist_tail;
-
-      if (p->formal != old->formal)
-	{
-	  gfc_free_formal_arglist (p->formal);
-	  p->formal = old->formal;
-	}
-
-      free (p->old_symbol);
-      p->old_symbol = NULL;
-      p->tlink = NULL;
+	restore_old_symbol (p);
     }
 
-  changed_syms = NULL;
+  latest_undo_chgset->syms.truncate (0);
+  latest_undo_chgset->tbps.truncate (0);
 
-  for (tbp = tentative_tbp_list; tbp; tbp = tbq)
-    {
-      tbq = tbp->next;
-      /* Procedure is already marked `error' by default.  */
-      free (tbp);
-    }
-  tentative_tbp_list = NULL;
+  if (!single_undo_checkpoint_p ())
+    pop_undo_change_set (latest_undo_chgset);
+}
+
+
+/* Makes sure that there is only one set of changes; in other words we haven't
+   forgotten to pair a call to gfc_new_checkpoint with a call to either
+   gfc_drop_last_undo_checkpoint or gfc_restore_last_undo_checkpoint.  */
+
+static void
+enforce_single_undo_checkpoint (void)
+{
+  gcc_checking_assert (single_undo_checkpoint_p ());
+}
+
+
+/* Undoes all the changes made to symbols in the current statement.  */
+
+void
+gfc_undo_symbols (void)
+{
+  enforce_single_undo_checkpoint ();
+  gfc_restore_last_undo_checkpoint ();
 }
 
 
@@ -3059,26 +3190,23 @@ free_old_symbol (gfc_symbol *sym)
 void
 gfc_commit_symbols (void)
 {
-  gfc_symbol *p, *q;
-  tentative_tbp *tbp, *tbq;
+  gfc_symbol *p;
+  gfc_typebound_proc *tbp;
+  unsigned i;
 
-  for (p = changed_syms; p; p = q)
+  enforce_single_undo_checkpoint ();
+
+  FOR_EACH_VEC_ELT (latest_undo_chgset->syms, i, p)
     {
-      q = p->tlink;
-      p->tlink = NULL;
       p->mark = 0;
       p->gfc_new = 0;
       free_old_symbol (p);
     }
-  changed_syms = NULL;
+  latest_undo_chgset->syms.truncate (0);
 
-  for (tbp = tentative_tbp_list; tbp; tbp = tbq)
-    {
-      tbq = tbp->next;
-      tbp->proc->error = 0;
-      free (tbp);
-    }
-  tentative_tbp_list = NULL;
+  FOR_EACH_VEC_ELT (latest_undo_chgset->tbps, i, tbp)
+    tbp->error = 0;
+  latest_undo_chgset->tbps.truncate (0);
 }
 
 
@@ -3089,20 +3217,17 @@ void
 gfc_commit_symbol (gfc_symbol *sym)
 {
   gfc_symbol *p;
+  unsigned i;
 
-  if (changed_syms == sym)
-    changed_syms = sym->tlink;
-  else
-    {
-      for (p = changed_syms; p; p = p->tlink)
-        if (p->tlink == sym)
-          {
-            p->tlink = sym->tlink;
-            break;
-          }
-    }
+  enforce_single_undo_checkpoint ();
 
-  sym->tlink = NULL;
+  FOR_EACH_VEC_ELT (latest_undo_chgset->syms, i, p)
+    if (p == sym)
+      {
+	latest_undo_chgset->syms.unordered_remove (i);
+	break;
+      }
+
   sym->mark = 0;
   sym->gfc_new = 0;
 
@@ -3379,10 +3504,12 @@ gfc_symbol_init_2 (void)
 void
 gfc_symbol_done_2 (void)
 {
-
   gfc_free_namespace (gfc_current_ns);
   gfc_current_ns = NULL;
   gfc_free_dt_list ();
+
+  enforce_single_undo_checkpoint ();
+  free_undo_change_set_data (*latest_undo_chgset);
 }
 
 
@@ -3547,7 +3674,8 @@ gfc_save_all (gfc_namespace *ns)
 void
 gfc_enforce_clean_symbol_state(void)
 {
-  gcc_assert (changed_syms == NULL);
+  enforce_single_undo_checkpoint ();
+  gcc_assert (latest_undo_chgset->syms.is_empty ());
 }
 
 
@@ -4126,64 +4254,6 @@ add_proc_interface (gfc_symbol *sym, ifsrc source, gfc_formal_arglist *formal)
    args based on the args of a given named interface.  */
 
 void
-gfc_copy_formal_args (gfc_symbol *dest, gfc_symbol *src, ifsrc if_src)
-{
-  gfc_formal_arglist *head = NULL;
-  gfc_formal_arglist *tail = NULL;
-  gfc_formal_arglist *formal_arg = NULL;
-  gfc_formal_arglist *curr_arg = NULL;
-  gfc_formal_arglist *formal_prev = NULL;
-  /* Save current namespace so we can change it for formal args.  */
-  gfc_namespace *parent_ns = gfc_current_ns;
-
-  /* Create a new namespace, which will be the formal ns (namespace
-     of the formal args).  */
-  gfc_current_ns = gfc_get_namespace (parent_ns, 0);
-  gfc_current_ns->proc_name = dest;
-  dest->formal_ns = gfc_current_ns;
-
-  for (curr_arg = src->formal; curr_arg; curr_arg = curr_arg->next)
-    {
-      formal_arg = gfc_get_formal_arglist ();
-      gfc_get_symbol (curr_arg->sym->name, gfc_current_ns, &(formal_arg->sym));
-
-      /* May need to copy more info for the symbol.  */
-      formal_arg->sym->attr = curr_arg->sym->attr;
-      formal_arg->sym->ts = curr_arg->sym->ts;
-      formal_arg->sym->as = gfc_copy_array_spec (curr_arg->sym->as);
-      gfc_copy_formal_args (formal_arg->sym, curr_arg->sym,
-			    curr_arg->sym->attr.if_source);
-
-      /* If this isn't the first arg, set up the next ptr.  For the
-        last arg built, the formal_arg->next will never get set to
-        anything other than NULL.  */
-      if (formal_prev != NULL)
-	formal_prev->next = formal_arg;
-      else
-	formal_arg->next = NULL;
-
-      formal_prev = formal_arg;
-
-      /* Add arg to list of formal args.  */
-      add_formal_arg (&head, &tail, formal_arg, formal_arg->sym);
-
-      /* Validate changes.  */
-      gfc_commit_symbol (formal_arg->sym);
-    }
-
-  /* Add the interface to the symbol.  */
-  add_proc_interface (dest, if_src, head);
-
-  /* Store the formal namespace information.  */
-  if (dest->formal != NULL)
-    /* The current ns should be that for the dest proc.  */
-    dest->formal_ns = gfc_current_ns;
-  /* Restore the current namespace to what it was on entry.  */
-  gfc_current_ns = parent_ns;
-}
-
-
-void
 gfc_copy_formal_args_intr (gfc_symbol *dest, gfc_intrinsic_sym *src)
 {
   gfc_formal_arglist *head = NULL;
@@ -4234,65 +4304,6 @@ gfc_copy_formal_args_intr (gfc_symbol *dest, gfc_intrinsic_sym *src)
 
   /* Add the interface to the symbol.  */
   add_proc_interface (dest, IFSRC_DECL, head);
-
-  /* Store the formal namespace information.  */
-  if (dest->formal != NULL)
-    /* The current ns should be that for the dest proc.  */
-    dest->formal_ns = gfc_current_ns;
-  /* Restore the current namespace to what it was on entry.  */
-  gfc_current_ns = parent_ns;
-}
-
-
-void
-gfc_copy_formal_args_ppc (gfc_component *dest, gfc_symbol *src, ifsrc if_src)
-{
-  gfc_formal_arglist *head = NULL;
-  gfc_formal_arglist *tail = NULL;
-  gfc_formal_arglist *formal_arg = NULL;
-  gfc_formal_arglist *curr_arg = NULL;
-  gfc_formal_arglist *formal_prev = NULL;
-  /* Save current namespace so we can change it for formal args.  */
-  gfc_namespace *parent_ns = gfc_current_ns;
-
-  /* Create a new namespace, which will be the formal ns (namespace
-     of the formal args).  */
-  gfc_current_ns = gfc_get_namespace (parent_ns, 0);
-  /* TODO: gfc_current_ns->proc_name = dest;*/
-
-  for (curr_arg = src->formal; curr_arg; curr_arg = curr_arg->next)
-    {
-      formal_arg = gfc_get_formal_arglist ();
-      gfc_get_symbol (curr_arg->sym->name, gfc_current_ns, &(formal_arg->sym));
-
-      /* May need to copy more info for the symbol.  */
-      formal_arg->sym->attr = curr_arg->sym->attr;
-      formal_arg->sym->ts = curr_arg->sym->ts;
-      formal_arg->sym->as = gfc_copy_array_spec (curr_arg->sym->as);
-      gfc_copy_formal_args (formal_arg->sym, curr_arg->sym,
-			    curr_arg->sym->attr.if_source);
-
-      /* If this isn't the first arg, set up the next ptr.  For the
-        last arg built, the formal_arg->next will never get set to
-        anything other than NULL.  */
-      if (formal_prev != NULL)
-	formal_prev->next = formal_arg;
-      else
-	formal_arg->next = NULL;
-
-      formal_prev = formal_arg;
-
-      /* Add arg to list of formal args.  */
-      add_formal_arg (&head, &tail, formal_arg, formal_arg->sym);
-
-      /* Validate changes.  */
-      gfc_commit_symbol (formal_arg->sym);
-    }
-
-  /* Add the interface to the symbol.  */
-  gfc_free_formal_arglist (dest->formal);
-  dest->formal = head;
-  dest->attr.if_source = if_src;
 
   /* Store the formal namespace information.  */
   if (dest->formal != NULL)
@@ -4825,17 +4836,13 @@ gfc_typebound_proc*
 gfc_get_typebound_proc (gfc_typebound_proc *tb0)
 {
   gfc_typebound_proc *result;
-  tentative_tbp *list_node;
 
   result = XCNEW (gfc_typebound_proc);
   if (tb0)
     *result = *tb0;
   result->error = 1;
 
-  list_node = XCNEW (tentative_tbp);
-  list_node->next = tentative_tbp_list;
-  list_node->proc = result;
-  tentative_tbp_list = list_node;
+  latest_undo_chgset->tbps.safe_push (result);
 
   return result;
 }
@@ -4904,6 +4911,11 @@ gfc_type_compatible (gfc_typespec *ts1, gfc_typespec *ts2)
   bool is_class2 = (ts2->type == BT_CLASS);
   bool is_derived1 = (ts1->type == BT_DERIVED);
   bool is_derived2 = (ts2->type == BT_DERIVED);
+
+  if (is_class1
+      && ts1->u.derived->components
+      && ts1->u.derived->components->ts.u.derived->attr.unlimited_polymorphic)
+    return 1;
 
   if (!is_derived1 && !is_derived2 && !is_class1 && !is_class2)
     return (ts1->type == ts2->type);
@@ -4974,4 +4986,21 @@ gfc_find_dt_in_generic (gfc_symbol *sym)
       if (intr->sym->attr.flavor == FL_DERIVED)
         break;
   return intr ? intr->sym : NULL;
+}
+
+
+/* Get the dummy arguments from a procedure symbol. If it has been declared
+   via a PROCEDURE statement with a named interface, ts.interface will be set
+   and the arguments need to be taken from there.  */
+
+gfc_formal_arglist *
+gfc_sym_get_dummy_args (gfc_symbol *sym)
+{
+  gfc_formal_arglist *dummies;
+
+  dummies = sym->formal;
+  if (dummies == NULL && sym->ts.interface != NULL)
+    dummies = sym->ts.interface->formal;
+
+  return dummies;
 }

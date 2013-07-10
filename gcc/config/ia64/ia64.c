@@ -1,7 +1,5 @@
 /* Definitions of target machine for GNU compiler.
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
    Contributed by James E. Wilson <wilson@cygnus.com> and
 		  David Mosberger <davidm@hpl.hp.com>.
 
@@ -2885,8 +2883,10 @@ ia64_compute_frame_size (HOST_WIDE_INT size)
 
   /* We always use the 16-byte scratch area provided by the caller, but
      if we are a leaf function, there's no one to which we need to provide
-     a scratch area.  */
-  if (crtl->is_leaf)
+     a scratch area.  However, if the function allocates dynamic stack space,
+     the dynamic offset is computed early and contains STACK_POINTER_OFFSET,
+     so we need to cope.  */
+  if (crtl->is_leaf && !cfun->calls_alloca)
     total_size = MAX (0, total_size - 16);
 
   current_frame_info.total_size = total_size;
@@ -2920,18 +2920,15 @@ ia64_initial_elimination_offset (int from, int to)
       switch (to)
 	{
 	case HARD_FRAME_POINTER_REGNUM:
-	  if (crtl->is_leaf)
-	    offset = -current_frame_info.total_size;
-	  else
-	    offset = -(current_frame_info.total_size
-		       - crtl->outgoing_args_size - 16);
+	  offset = -current_frame_info.total_size;
+	  if (!crtl->is_leaf || cfun->calls_alloca)
+	    offset += 16 + crtl->outgoing_args_size;
 	  break;
 
 	case STACK_POINTER_REGNUM:
-	  if (crtl->is_leaf)
-	    offset = 0;
-	  else
-	    offset = 16 + crtl->outgoing_args_size;
+	  offset = 0;
+	  if (!crtl->is_leaf || cfun->calls_alloca)
+	    offset += 16 + crtl->outgoing_args_size;
 	  break;
 
 	default:
@@ -5846,19 +5843,16 @@ ia64_secondary_reload_class (enum reg_class rclass,
 static int
 ia64_unspec_may_trap_p (const_rtx x, unsigned flags)
 {
-  if (GET_CODE (x) == UNSPEC)
+  switch (XINT (x, 1))
     {
-      switch (XINT (x, 1))
-	{
-	case UNSPEC_LDA:
-	case UNSPEC_LDS:
-	case UNSPEC_LDSA:
-	case UNSPEC_LDCCLR:
-	case UNSPEC_CHKACLR:
-	case UNSPEC_CHKS:
-	  /* These unspecs are just wrappers.  */
-	  return may_trap_p_1 (XVECEXP (x, 0, 0), flags);
-	}
+    case UNSPEC_LDA:
+    case UNSPEC_LDS:
+    case UNSPEC_LDSA:
+    case UNSPEC_LDCCLR:
+    case UNSPEC_CHKACLR:
+    case UNSPEC_CHKS:
+      /* These unspecs are just wrappers.  */
+      return may_trap_p_1 (XVECEXP (x, 0, 0), flags);
     }
 
   return default_unspec_may_trap_p (x, flags);

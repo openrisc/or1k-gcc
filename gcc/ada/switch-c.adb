@@ -51,9 +51,9 @@ package body Switch.C is
       new Ada.Unchecked_Deallocation (String_List, String_List_Access);
    --  Avoid using System.Strings.Free, which also frees the designated strings
 
-   function Get_Overflow_Mode (C : Character) return Overflow_Check_Type;
+   function Get_Overflow_Mode (C : Character) return Overflow_Mode_Type;
    --  Given a digit in the range 0 .. 3, returns the corresponding value of
-   --  Overflow_Check_Type. Raises Program_Error if C is outside this range.
+   --  Overflow_Mode_Type. Raises Program_Error if C is outside this range.
 
    function Switch_Subsequently_Cancelled
      (C        : String;
@@ -94,7 +94,7 @@ package body Switch.C is
    -- Get_Overflow_Mode --
    -----------------------
 
-   function Get_Overflow_Mode (C : Character) return Overflow_Check_Type is
+   function Get_Overflow_Mode (C : Character) return Overflow_Mode_Type is
    begin
       case C is
          when '1' =>
@@ -514,6 +514,12 @@ package body Switch.C is
                      Ptr := Ptr + 1;
                      Full_Path_Name_For_Brief_Errors := True;
 
+                  --  -gnateF (Check_Float_Overflow)
+
+                  when 'F' =>
+                     Ptr := Ptr + 1;
+                     Check_Float_Overflow := True;
+
                   --  -gnateG (save preprocessor output)
 
                   when 'G' =>
@@ -612,6 +618,13 @@ package body Switch.C is
 
                   when 'S' =>
                      Generate_SCO := True;
+                     Generate_SCO_Instance_Table := True;
+                     Ptr := Ptr + 1;
+
+                  --  -gnatet (generate target dependent information)
+
+                  when 't' =>
+                     Generate_Target_Dependent_Info := True;
                      Ptr := Ptr + 1;
 
                   --  -gnateV (validity checks on parameters)
@@ -619,6 +632,12 @@ package body Switch.C is
                   when 'V' =>
                      Ptr := Ptr + 1;
                      Check_Validity_Of_Parameters := True;
+
+                  --  -gnateY (ignore Style_Checks pragmas)
+
+                  when 'Y' =>
+                     Ignore_Style_Checks_Pragmas := True;
+                     Ptr := Ptr + 1;
 
                   --  -gnatez (final delimiter of explicit switches)
 
@@ -803,15 +822,15 @@ package body Switch.C is
                --  Case of no digits after the -gnato
 
                if Ptr > Max or else Switch_Chars (Ptr) not in '1' .. '3' then
-                  Suppress_Options.Overflow_Checks_General    := Strict;
-                  Suppress_Options.Overflow_Checks_Assertions := Strict;
+                  Suppress_Options.Overflow_Mode_General    := Strict;
+                  Suppress_Options.Overflow_Mode_Assertions := Strict;
 
                --  At least one digit after the -gnato
 
                else
                   --  Handle first digit after -gnato
 
-                  Suppress_Options.Overflow_Checks_General :=
+                  Suppress_Options.Overflow_Mode_General :=
                     Get_Overflow_Mode (Switch_Chars (Ptr));
                   Ptr := Ptr + 1;
 
@@ -821,13 +840,13 @@ package body Switch.C is
                   if Ptr > Max
                     or else Switch_Chars (Ptr) not in '1' .. '3'
                   then
-                     Suppress_Options.Overflow_Checks_Assertions :=
-                       Suppress_Options.Overflow_Checks_General;
+                     Suppress_Options.Overflow_Mode_Assertions :=
+                       Suppress_Options.Overflow_Mode_General;
 
                   --  Process second digit after -gnato
 
                   else
-                     Suppress_Options.Overflow_Checks_Assertions :=
+                     Suppress_Options.Overflow_Mode_Assertions :=
                        Get_Overflow_Mode (Switch_Chars (Ptr));
                      Ptr := Ptr + 1;
                   end if;

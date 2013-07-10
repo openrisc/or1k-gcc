@@ -1,7 +1,5 @@
 ;; Machine description for DEC Alpha for GNU C compiler
-;; Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-;; 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011, 2012
-;; Free Software Foundation, Inc.
+;; Copyright (C) 1992-2013 Free Software Foundation, Inc.
 ;; Contributed by Richard Kenner (kenner@vlsi1.ultra.nyu.edu)
 ;;
 ;; This file is part of GCC.
@@ -721,6 +719,21 @@
   "umulh %1,%2,%0"
   [(set_attr "type" "imul")
    (set_attr "opsize" "udi")])
+
+(define_expand "umulditi3"
+  [(set (match_operand:TI 0 "register_operand")
+       (mult:TI
+	 (zero_extend:TI (match_operand:DI 1 "reg_no_subreg_operand"))
+	 (zero_extend:TI (match_operand:DI 2 "reg_no_subreg_operand"))))]
+  ""
+{
+  rtx l = gen_reg_rtx (DImode), h = gen_reg_rtx (DImode);
+  emit_insn (gen_muldi3 (l, operands[1], operands[2]));
+  emit_insn (gen_umuldi3_highpart (h, operands[1], operands[2]));
+  emit_move_insn (gen_lowpart (DImode, operands[0]), l);
+  emit_move_insn (gen_highpart (DImode, operands[0]), h);
+  DONE;
+})
 
 ;; The divide and remainder operations take their inputs from r24 and
 ;; r25, put their output in r27, and clobber r23 and r28 on all systems.

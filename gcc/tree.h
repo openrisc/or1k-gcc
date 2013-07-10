@@ -1,7 +1,5 @@
 /* Definitions for the ubiquitous 'tree' type for GNU compilers.
-   Copyright (C) 1989, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1989-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -3200,13 +3198,14 @@ struct GTY(()) tree_decl_with_vis {
  /* Belong to VAR_DECL exclusively.  */
  unsigned defer_output : 1;
  unsigned hard_register : 1;
- unsigned thread_local : 1;
  unsigned common_flag : 1;
  unsigned in_text_section : 1;
  unsigned in_constant_pool : 1;
  unsigned dllimport_flag : 1;
  /* Don't belong to VAR_DECL exclusively.  */
  unsigned weak_flag : 1;
+ /* When SECTION_NAME is implied by -ffunction-section.  */
+ unsigned implicit_section_name_p : 1;
 
  unsigned seen_in_bind_expr : 1;
  unsigned comdat_flag : 1;
@@ -3219,9 +3218,7 @@ struct GTY(()) tree_decl_with_vis {
  unsigned init_priority_p : 1;
  /* Used by C++ only.  Might become a generic decl flag.  */
  unsigned shadowed_for_var_p : 1;
- /* When SECTION_NAME is implied by -ffunsection-section.  */
- unsigned implicit_section_name_p : 1;
- /* 13 unused bits. */
+ /* 14 unused bits. */
 };
 
 extern tree decl_debug_expr_lookup (tree);
@@ -3589,13 +3586,29 @@ struct GTY(()) tree_optimization_option {
 
   /* The optimization options used by the user.  */
   struct cl_optimization opts;
+
+  /* Target optabs for this set of optimization options.  This is of
+     type `struct target_optabs *'.  */
+  unsigned char *GTY ((atomic)) optabs;
+
+  /* The value of this_target_optabs against which the optabs above were
+     generated.  */
+  struct target_optabs *GTY ((skip)) base_optabs;
 };
 
 #define TREE_OPTIMIZATION(NODE) \
   (&OPTIMIZATION_NODE_CHECK (NODE)->optimization.opts)
 
+#define TREE_OPTIMIZATION_OPTABS(NODE) \
+  (OPTIMIZATION_NODE_CHECK (NODE)->optimization.optabs)
+
+#define TREE_OPTIMIZATION_BASE_OPTABS(NODE) \
+  (OPTIMIZATION_NODE_CHECK (NODE)->optimization.base_optabs)
+
 /* Return a tree node that encapsulates the current optimization options.  */
 extern tree build_optimization_node (void);
+
+extern void init_tree_optimization_optabs (tree);
 
 /* Target options used by a function.  */
 
@@ -5606,6 +5619,7 @@ extern void change_decl_assembler_name (tree, tree);
 
 /* In gimplify.c */
 extern tree unshare_expr (tree);
+extern tree unshare_expr_without_location (tree);
 
 /* In stmt.c */
 
@@ -5935,6 +5949,7 @@ extern tree block_ultimate_origin (const_tree);
 extern tree get_binfo_at_offset (tree, HOST_WIDE_INT, tree);
 extern tree get_ref_base_and_extent (tree, HOST_WIDE_INT *,
 				     HOST_WIDE_INT *, HOST_WIDE_INT *);
+extern bool contains_bitfld_component_ref_p (const_tree);
 
 /* In tree-nested.c */
 extern tree build_addr (tree, tree);
@@ -6303,6 +6318,9 @@ extern unsigned HOST_WIDE_INT compute_builtin_object_size (tree, int);
    instructions.  Return nonzero if a call to move_by_pieces should
    succeed.  */
 extern int can_move_by_pieces (unsigned HOST_WIDE_INT, unsigned int);
+
+/* Is it an ADDR_EXPR of a DECL that's not in memory?  */
+extern bool addr_expr_of_non_mem_decl_p (tree);
 
 extern unsigned HOST_WIDE_INT highest_pow2_factor (const_tree);
 extern tree build_personality_function (const char *);

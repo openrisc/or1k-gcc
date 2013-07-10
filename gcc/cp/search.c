@@ -1,9 +1,6 @@
 /* Breadth-first and depth-first routines for
    searching multiple-inheritance lattice for GNU C++.
-   Copyright (C) 1987, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011,
-   2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -190,6 +187,14 @@ lookup_base (tree t, tree base, base_access access,
   tree binfo;
   tree t_binfo;
   base_kind bk;
+
+  /* "Nothing" is definitely not derived from Base.  */
+  if (t == NULL_TREE)
+    {
+      if (kind_ptr)
+	*kind_ptr = bk_not_base;
+      return NULL_TREE;
+    }
 
   if (t == error_mark_node || base == error_mark_node)
     {
@@ -830,6 +835,19 @@ dfs_accessible_post (tree binfo, void * /*data*/)
     }
 
   return NULL_TREE;
+}
+
+/* Like accessible_p below, but within a template returns true iff DECL is
+   accessible in TYPE to all possible instantiations of the template.  */
+
+int
+accessible_in_template_p (tree type, tree decl)
+{
+  int save_ptd = processing_template_decl;
+  processing_template_decl = 0;
+  int val = accessible_p (type, decl, false);
+  processing_template_decl = save_ptd;
+  return val;
 }
 
 /* DECL is a declaration from a base class of TYPE, which was the

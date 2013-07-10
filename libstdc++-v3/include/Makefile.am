@@ -1,8 +1,6 @@
 ## Makefile for the include subdirectory of the GNU C++ Standard library.
 ##
-## Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-## 2011, 2012
-## Free Software Foundation, Inc.
+## Copyright (C) 2001-2013 Free Software Foundation, Inc.
 ##
 ## This file is part of the libstdc++ version 3 distribution.
 ## Process this file with automake to produce Makefile.in.
@@ -115,6 +113,7 @@ bits_headers = \
 	${bits_srcdir}/locale_facets_nonio.tcc \
 	${bits_srcdir}/localefwd.h \
 	${bits_srcdir}/mask_array.h \
+	${bits_srcdir}/memoryfwd.h \
 	${bits_srcdir}/move.h \
 	${bits_srcdir}/ostream.tcc \
 	${bits_srcdir}/ostream_insert.h \
@@ -313,8 +312,7 @@ pb_headers2 = \
 	${pb_srcdir}/detail/cc_hash_table_map_/resize_fn_imps.hpp \
 	${pb_srcdir}/detail/cc_hash_table_map_/resize_no_store_hash_fn_imps.hpp \
 	${pb_srcdir}/detail/cc_hash_table_map_/resize_store_hash_fn_imps.hpp \
-	${pb_srcdir}/detail/cc_hash_table_map_/size_fn_imps.hpp \
-	${pb_srcdir}/detail/cc_hash_table_map_/standard_policies.hpp
+	${pb_srcdir}/detail/cc_hash_table_map_/size_fn_imps.hpp
 
 pb_headers3 = \
 	${pb_srcdir}/detail/cc_hash_table_map_/trace_fn_imps.hpp \
@@ -344,7 +342,6 @@ pb_headers3 = \
 	${pb_srcdir}/detail/gp_hash_table_map_/resize_fn_imps.hpp \
 	${pb_srcdir}/detail/gp_hash_table_map_/resize_no_store_hash_fn_imps.hpp \
 	${pb_srcdir}/detail/gp_hash_table_map_/resize_store_hash_fn_imps.hpp \
-	${pb_srcdir}/detail/gp_hash_table_map_/standard_policies.hpp \
 	${pb_srcdir}/detail/gp_hash_table_map_/trace_fn_imps.hpp \
 	${pb_srcdir}/detail/hash_fn/direct_mask_range_hashing_imp.hpp \
 	${pb_srcdir}/detail/hash_fn/direct_mod_range_hashing_imp.hpp \
@@ -503,6 +500,7 @@ ext_headers = \
 	${ext_srcdir}/array_allocator.h \
 	${ext_srcdir}/bitmap_allocator.h \
 	${ext_srcdir}/cast.h \
+	${ext_srcdir}/cmath \
 	${ext_srcdir}/codecvt_specializations.h \
 	${ext_srcdir}/concurrence.h \
 	${ext_srcdir}/debug_allocator.h \
@@ -1107,7 +1105,7 @@ ${host_builddir}/c++config.h: ${CONFIG_HEADER} \
 	visibility=`cat stamp-visibility` ;\
 	externtemplate=`cat stamp-extern-template` ;\
 	ldbl_compat='s,g,g,' ;\
-	grep "^[ 	]*#[ 	]*define[ 	][ 	]*_GLIBCXX_LONG_DOUBLE_COMPAT[ 	][ 	]*1[ 	]*$$" \
+	grep "^[	 ]*#[	 ]*define[	 ][	 ]*_GLIBCXX_LONG_DOUBLE_COMPAT[	 ][	 ]*1[	 ]*$$" \
 	${CONFIG_HEADER} > /dev/null 2>&1 \
 	&& ldbl_compat='s,^#undef _GLIBCXX_LONG_DOUBLE_COMPAT$$,#define _GLIBCXX_LONG_DOUBLE_COMPAT 1,' ;\
 	sed -e "s,define __GLIBCXX__,define __GLIBCXX__ $$date," \
@@ -1121,7 +1119,7 @@ ${host_builddir}/c++config.h: ${CONFIG_HEADER} \
 	    -e 's/VERSION/_GLIBCXX_VERSION/g' \
 	    -e 's/WORDS_/_GLIBCXX_WORDS_/g' \
 	    -e 's/ICONV_CONST/_GLIBCXX_ICONV_CONST/g' \
-	    -e '/[ 	]_GLIBCXX_LONG_DOUBLE_COMPAT[ 	]/d' \
+	    -e '/[	 ]_GLIBCXX_LONG_DOUBLE_COMPAT[	 ]/d' \
 	    < ${CONFIG_HEADER} >> $@ ;\
 	echo "" >> $@ ;\
 	echo "#endif // _GLIBCXX_CXX_CONFIG_H" >> $@
@@ -1133,6 +1131,7 @@ ${host_builddir}/gthr.h: ${toplevel_srcdir}/libgcc/gthr.h stamp-${host_alias}
 	sed -e '/^#pragma/b' \
 	    -e '/^#/s/\(${uppercase}${uppercase}*\)/_GLIBCXX_\1/g' \
 	    -e 's/_GLIBCXX_SUPPORTS_WEAK/__GXX_WEAK__/g' \
+	    -e 's/_GLIBCXX___MINGW32_GLIBCXX___/__MINGW32__/g' \
 	    -e 's,^#include "\(.*\)",#include <bits/\1>,g' \
 	    < $< > $@
 

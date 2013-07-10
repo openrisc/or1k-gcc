@@ -96,7 +96,7 @@ type SI struct {
 	I interface{}
 }
 
-// A type with a String method with pointer receiver for testing %p
+// P is a type with a String method with pointer receiver for testing %p.
 type P int
 
 var pValue P
@@ -476,6 +476,11 @@ var fmttests = []struct {
 
 	// Used to crash because nByte didn't allow for a sign.
 	{"%b", int64(-1 << 63), "-1000000000000000000000000000000000000000000000000000000000000000"},
+
+	// Complex fmt used to leave the plus flag set for future entries in the array
+	// causing +2+0i and +3+0i instead of 2+0i and 3+0i.
+	{"%v", []complex64{1, 2, 3}, "[(1+0i) (2+0i) (3+0i)]"},
+	{"%v", []complex128{1, 2, 3}, "[(1+0i) (2+0i) (3+0i)]"},
 }
 
 func TestSprintf(t *testing.T) {
@@ -583,6 +588,7 @@ var mallocTest = []struct {
 var _ bytes.Buffer
 
 func TestCountMallocs(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	for _, mt := range mallocTest {
 		const N = 100
 		memstats := new(runtime.MemStats)
@@ -670,7 +676,8 @@ func TestStructPrinter(t *testing.T) {
 	}
 }
 
-// Check map printing using substrings so we don't depend on the print order.
+// presentInMap checks map printing using substrings so we don't depend on the
+// print order.
 func presentInMap(s string, a []string, t *testing.T) {
 	for i := 0; i < len(a); i++ {
 		loc := strings.Index(s, a[i])
@@ -711,8 +718,8 @@ func TestEmptyMap(t *testing.T) {
 	}
 }
 
-// Check that Sprint (and hence Print, Fprint) puts spaces in the right places,
-// that is, between arg pairs in which neither is a string.
+// TestBlank checks that Sprint (and hence Print, Fprint) puts spaces in the
+// right places, that is, between arg pairs in which neither is a string.
 func TestBlank(t *testing.T) {
 	got := Sprint("<", 1, ">:", 1, 2, 3, "!")
 	expect := "<1>:1 2 3!"
@@ -721,8 +728,8 @@ func TestBlank(t *testing.T) {
 	}
 }
 
-// Check that Sprintln (and hence Println, Fprintln) puts spaces in the right places,
-// that is, between all arg pairs.
+// TestBlankln checks that Sprintln (and hence Println, Fprintln) puts spaces in
+// the right places, that is, between all arg pairs.
 func TestBlankln(t *testing.T) {
 	got := Sprintln("<", 1, ">:", 1, 2, 3, "!")
 	expect := "< 1 >: 1 2 3 !\n"
@@ -731,7 +738,7 @@ func TestBlankln(t *testing.T) {
 	}
 }
 
-// Check Formatter with Sprint, Sprintln, Sprintf
+// TestFormatterPrintln checks Formatter with Sprint, Sprintln, Sprintf.
 func TestFormatterPrintln(t *testing.T) {
 	f := F(1)
 	expect := "<v=F(1)>\n"
@@ -780,7 +787,7 @@ func TestWidthAndPrecision(t *testing.T) {
 	}
 }
 
-// A type that panics in String.
+// Panic is a type that panics in String.
 type Panic struct {
 	message interface{}
 }
@@ -795,7 +802,7 @@ func (p Panic) String() string {
 	panic(p.message)
 }
 
-// A type that panics in Format.
+// PanicF is a type that panics in Format.
 type PanicF struct {
 	message interface{}
 }
@@ -833,7 +840,7 @@ func TestPanics(t *testing.T) {
 	}
 }
 
-// Test that erroneous String routine doesn't cause fatal recursion.
+// recurCount tests that erroneous String routine doesn't cause fatal recursion.
 var recurCount = 0
 
 type Recur struct {

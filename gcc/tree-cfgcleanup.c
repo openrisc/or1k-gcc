@@ -1,6 +1,5 @@
 /* CFG cleanup for trees.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -413,7 +412,8 @@ remove_forwarder_block (basic_block bb)
 	    {
 	      gimple phi = gsi_stmt (gsi);
 	      source_location l = gimple_phi_arg_location_from_edge (phi, succ);
-	      add_phi_arg (phi, gimple_phi_arg_def (phi, succ->dest_idx), s, l);
+	      tree def = gimple_phi_arg_def (phi, succ->dest_idx);
+	      add_phi_arg (phi, unshare_expr (def), s, l);
 	    }
 	}
     }
@@ -707,18 +707,22 @@ static void
 repair_loop_structures (void)
 {
   bitmap changed_bbs;
+  unsigned n_new_loops;
 
   calculate_dominance_info (CDI_DOMINATORS);
 
   timevar_push (TV_REPAIR_LOOPS);
   changed_bbs = BITMAP_ALLOC (NULL);
-  fix_loop_structure (changed_bbs);
+  n_new_loops = fix_loop_structure (changed_bbs);
 
   /* This usually does nothing.  But sometimes parts of cfg that originally
      were inside a loop get out of it due to edge removal (since they
-     become unreachable by back edges from latch).  */
+     become unreachable by back edges from latch).  Also a former
+     irreducible loop can become reducible - in this case force a full
+     rewrite into loop-closed SSA form.  */
   if (loops_state_satisfies_p (LOOP_CLOSED_SSA))
-    rewrite_into_loop_closed_ssa (changed_bbs, TODO_update_ssa);
+    rewrite_into_loop_closed_ssa (n_new_loops ? NULL : changed_bbs,
+				  TODO_update_ssa);
 
   BITMAP_FREE (changed_bbs);
 
@@ -818,7 +822,7 @@ remove_forwarder_block_with_phi (basic_block bb)
 		 redirection, replace it with the PHI argument that used
 		 to be on E.  */
 	      head = redirect_edge_var_map_vector (e);
-	      FOR_EACH_VEC_ELT (*head, i, vm)
+	      FOR_EACH_VEC_SAFE_ELT (head, i, vm)
 		{
 		  tree old_arg = redirect_edge_var_map_result (vm);
 		  tree new_arg = redirect_edge_var_map_def (vm);

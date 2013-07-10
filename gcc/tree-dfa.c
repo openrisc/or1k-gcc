@@ -1,6 +1,5 @@
 /* Data flow functions for trees.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@redhat.com>
 
 This file is part of GCC.
@@ -363,8 +362,8 @@ get_or_create_ssa_default_def (struct function *fn, tree var)
   tree ddef = ssa_default_def (fn, var);
   if (ddef == NULL_TREE)
     {
-      ddef = make_ssa_name (var, gimple_build_nop ());
-      set_ssa_default_def (cfun, var, ddef);
+      ddef = make_ssa_name_fn (fn, var, gimple_build_nop ());
+      set_ssa_default_def (fn, var, ddef);
     }
   return ddef;
 }

@@ -1,7 +1,6 @@
 /* This file contains the definitions and documentation for the
    builtins used in the GNU compiler.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -156,7 +155,7 @@ along with GCC; see the file COPYING3.  If not see
 #define DEF_SANITIZER_BUILTIN(ENUM, NAME, TYPE, ATTRS) \
   DEF_BUILTIN (ENUM, "__builtin_" NAME, BUILT_IN_NORMAL, TYPE, TYPE,    \
 	       true, true, true, ATTRS, true, \
-	       flag_tsan)
+	       (flag_asan || flag_tsan))
 
 /* Define an attribute list for math functions that are normally
    "impure" because some of them may write into global memory for

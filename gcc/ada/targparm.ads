@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1999-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1999-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -388,7 +388,7 @@ package Targparm is
    --  used at the source level, and the corresponding flag is false, then an
    --  error message will be issued saying the feature is not supported.
 
-   Atomic_Sync_Default : Boolean := True;
+   Atomic_Sync_Default_On_Target : Boolean := True;
    --  Access to atomic variables requires memory barrier synchronization in
    --  the general case to ensure proper behavior when such accesses are used
    --  on a multi-processor to synchronize tasks (e.g. by using spin locks).
@@ -435,6 +435,11 @@ package Targparm is
    --  If True, the back end supports 64-bit shift operations. If False, then
    --  the source program may not contain explicit 64-bit shifts. In addition,
    --  the code generated for packed arrays will avoid the use of long shifts.
+
+   Support_Nondefault_SSO_On_Target : Boolean := False;
+   --  If True, the back end supports the non-default Scalar_Storage_Order
+   --  (i.e. allows non-confirming Scalar_Storage_Order attribute definition
+   --  clauses).
 
    --------------------
    -- Indirect Calls --

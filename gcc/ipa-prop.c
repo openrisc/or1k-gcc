@@ -1,6 +1,5 @@
 /* Interprocedural analyses.
-   Copyright (C) 2005, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -295,31 +294,6 @@ ipa_print_all_jump_functions (FILE *f)
     }
 }
 
-/* Worker for prune_expression_for_jf.  */
-
-static tree
-prune_expression_for_jf_1 (tree *tp, int *walk_subtrees, void *)
-{
-  if (EXPR_P (*tp))
-    SET_EXPR_LOCATION (*tp, UNKNOWN_LOCATION);
-  else
-    *walk_subtrees = 0;
-  return NULL_TREE;
-}
-
-/* Return the expression tree EXPR unshared and with location stripped off.  */
-
-static tree
-prune_expression_for_jf (tree exp)
-{
-  if (EXPR_P (exp))
-    {
-      exp = unshare_expr (exp);
-      walk_tree (&exp, prune_expression_for_jf_1, NULL, NULL);
-    }
-  return exp;
-}
-
 /* Set JFUNC to be a known type jump function.  */
 
 static void
@@ -341,7 +315,7 @@ ipa_set_jf_constant (struct ipa_jump_func *jfunc, tree constant)
   if (constant && EXPR_P (constant))
     SET_EXPR_LOCATION (constant, UNKNOWN_LOCATION);
   jfunc->type = IPA_JF_CONST;
-  jfunc->value.constant = prune_expression_for_jf (constant);
+  jfunc->value.constant = unshare_expr_without_location (constant);
 }
 
 /* Set JFUNC to be a simple pass-through jump function.  */
@@ -363,7 +337,7 @@ ipa_set_jf_arith_pass_through (struct ipa_jump_func *jfunc, int formal_id,
 			       tree operand, enum tree_code operation)
 {
   jfunc->type = IPA_JF_PASS_THROUGH;
-  jfunc->value.pass_through.operand = prune_expression_for_jf (operand);
+  jfunc->value.pass_through.operand = unshare_expr_without_location (operand);
   jfunc->value.pass_through.formal_id = formal_id;
   jfunc->value.pass_through.operation = operation;
   jfunc->value.pass_through.agg_preserved = false;
@@ -1294,7 +1268,9 @@ determine_known_aggregate_parts (gimple call, tree arg,
 
       lhs = gimple_assign_lhs (stmt);
       rhs = gimple_assign_rhs1 (stmt);
-      if (!is_gimple_reg_type (rhs))
+      if (!is_gimple_reg_type (rhs)
+	  || TREE_CODE (lhs) == BIT_FIELD_REF
+	  || contains_bitfld_component_ref_p (lhs))
 	break;
 
       lhs_base = get_ref_base_and_extent (lhs, &lhs_offset, &lhs_size,
@@ -1385,7 +1361,8 @@ determine_known_aggregate_parts (gimple call, tree arg,
 	    {
 	      struct ipa_agg_jf_item item;
 	      item.offset = list->offset - arg_offset;
-	      item.value = prune_expression_for_jf (list->constant);
+	      gcc_assert ((item.offset % BITS_PER_UNIT) == 0);
+	      item.value = unshare_expr_without_location (list->constant);
 	      jfunc->agg.items->quick_push (item);
 	    }
 	  list = list->next;
@@ -2126,10 +2103,65 @@ ipa_make_edge_direct_to_target (struct cgraph_edge *ie, tree target)
   if (TREE_CODE (target) == ADDR_EXPR)
     target = TREE_OPERAND (target, 0);
   if (TREE_CODE (target) != FUNCTION_DECL)
-    return NULL;
+    {
+      target = canonicalize_constructor_val (target, NULL);
+      if (!target || TREE_CODE (target) != FUNCTION_DECL)
+	{
+	  if (dump_file)
+	    fprintf (dump_file, "ipa-prop: Discovered direct call to non-function"
+				" in (%s/%i).\n",
+		     cgraph_node_name (ie->caller), ie->caller->uid);
+	  return NULL;
+	}
+    }
   callee = cgraph_get_node (target);
-  if (!callee)
-    return NULL;
+
+  /* Because may-edges are not explicitely represented and vtable may be external,
+     we may create the first reference to the object in the unit.  */
+  if (!callee || callee->global.inlined_to)
+    {
+      struct cgraph_node *first_clone = callee;
+
+      /* We are better to ensure we can refer to it.
+	 In the case of static functions we are out of luck, since we already	
+	 removed its body.  In the case of public functions we may or may
+	 not introduce the reference.  */
+      if (!canonicalize_constructor_val (target, NULL)
+	  || !TREE_PUBLIC (target))
+	{
+	  if (dump_file)
+	    fprintf (dump_file, "ipa-prop: Discovered call to a known target "
+		     "(%s/%i -> %s/%i) but can not refer to it. Giving up.\n",
+		     xstrdup (cgraph_node_name (ie->caller)), ie->caller->uid,
+		     xstrdup (cgraph_node_name (ie->callee)), ie->callee->uid);
+	  return NULL;
+	}
+
+      /* Create symbol table node.  Even if inline clone exists, we can not take
+	 it as a target of non-inlined call.  */
+      callee = cgraph_create_node (target);
+
+      /* OK, we previously inlined the function, then removed the offline copy and
+	 now we want it back for external call.  This can happen when devirtualizing
+	 while inlining function called once that happens after extern inlined and
+	 virtuals are already removed.  In this case introduce the external node
+	 and make it available for call.  */
+      if (first_clone)
+	{
+	  first_clone->clone_of = callee;
+	  callee->clones = first_clone;
+	  symtab_prevail_in_asm_name_hash ((symtab_node)callee);
+	  symtab_insert_node_to_hashtable ((symtab_node)callee);
+	  if (dump_file)
+	    fprintf (dump_file, "ipa-prop: Introduced new external node "
+		     "(%s/%i) and turned into root of the clone tree.\n",
+		     xstrdup (cgraph_node_name (callee)), callee->uid);
+	}
+      else if (dump_file)
+	fprintf (dump_file, "ipa-prop: Introduced new external node "
+		 "(%s/%i).\n",
+		 xstrdup (cgraph_node_name (callee)), callee->uid);
+    }
   ipa_check_create_node_params ();
 
   /* We can not make edges to inline clones.  It is bug that someone removed
@@ -2187,49 +2219,53 @@ ipa_find_agg_cst_for_param (struct ipa_agg_jump_function *agg,
 /* Try to find a destination for indirect edge IE that corresponds to a simple
    call or a call of a member function pointer and where the destination is a
    pointer formal parameter described by jump function JFUNC.  If it can be
-   determined, return the newly direct edge, otherwise return NULL.  */
+   determined, return the newly direct edge, otherwise return NULL.
+   NEW_ROOT_INFO is the node info that JFUNC lattices are relative to.  */
 
 static struct cgraph_edge *
 try_make_edge_direct_simple_call (struct cgraph_edge *ie,
-				  struct ipa_jump_func *jfunc)
+				  struct ipa_jump_func *jfunc,
+				  struct ipa_node_params *new_root_info)
 {
   tree target;
 
   if (ie->indirect_info->agg_contents)
-    {
-      target = ipa_find_agg_cst_for_param (&jfunc->agg,
-					   ie->indirect_info->offset,
-					   ie->indirect_info->by_ref);
-      if (!target)
-	return NULL;
-    }
+    target = ipa_find_agg_cst_for_param (&jfunc->agg,
+					 ie->indirect_info->offset,
+					 ie->indirect_info->by_ref);
   else
-    {
-      if (jfunc->type != IPA_JF_CONST)
-	return NULL;
-      target = ipa_get_jf_constant (jfunc);
-    }
+    target = ipa_value_from_jfunc (new_root_info, jfunc);
+  if (!target)
+    return NULL;
   return ipa_make_edge_direct_to_target (ie, target);
 }
 
-/* Try to find a destination for indirect edge IE that corresponds to a
-   virtual call based on a formal parameter which is described by jump
-   function JFUNC and if it can be determined, make it direct and return the
-   direct edge.  Otherwise, return NULL.  */
+/* Try to find a destination for indirect edge IE that corresponds to a virtual
+   call based on a formal parameter which is described by jump function JFUNC
+   and if it can be determined, make it direct and return the direct edge.
+   Otherwise, return NULL.  NEW_ROOT_INFO is the node info that JFUNC lattices
+   are relative to.  */
 
 static struct cgraph_edge *
 try_make_edge_direct_virtual_call (struct cgraph_edge *ie,
-				   struct ipa_jump_func *jfunc)
+				   struct ipa_jump_func *jfunc,
+				   struct ipa_node_params *new_root_info)
 {
   tree binfo, target;
 
-  if (jfunc->type != IPA_JF_KNOWN_TYPE)
+  binfo = ipa_value_from_jfunc (new_root_info, jfunc);
+
+  if (!binfo)
     return NULL;
 
-  binfo = TYPE_BINFO (ipa_get_jf_known_type_base_type (jfunc));
-  gcc_checking_assert (binfo);
-  binfo = get_binfo_at_offset (binfo, ipa_get_jf_known_type_offset (jfunc)
-			       + ie->indirect_info->offset,
+  if (TREE_CODE (binfo) != TREE_BINFO)
+    {
+      binfo = gimple_extract_devirt_binfo_from_cst (binfo);
+      if (!binfo)
+        return NULL;
+    }
+
+  binfo = get_binfo_at_offset (binfo, ie->indirect_info->offset,
 			       ie->indirect_info->otr_type);
   if (binfo)
     target = gimple_get_virt_method_for_binfo (ie->indirect_info->otr_token,
@@ -2256,10 +2292,14 @@ update_indirect_edges_after_inlining (struct cgraph_edge *cs,
 {
   struct ipa_edge_args *top;
   struct cgraph_edge *ie, *next_ie, *new_direct_edge;
+  struct ipa_node_params *new_root_info;
   bool res = false;
 
   ipa_check_create_edge_args ();
   top = IPA_EDGE_REF (cs);
+  new_root_info = IPA_NODE_REF (cs->caller->global.inlined_to
+				? cs->caller->global.inlined_to
+				: cs->caller);
 
   for (ie = node->indirect_calls; ie; ie = next_ie)
     {
@@ -2281,8 +2321,31 @@ update_indirect_edges_after_inlining (struct cgraph_edge *cs,
 
       param_index = ici->param_index;
       jfunc = ipa_get_ith_jump_func (top, param_index);
-      if (jfunc->type == IPA_JF_PASS_THROUGH
-	  && ipa_get_jf_pass_through_operation (jfunc) == NOP_EXPR)
+
+      if (!flag_indirect_inlining)
+	new_direct_edge = NULL;
+      else if (ici->polymorphic)
+	new_direct_edge = try_make_edge_direct_virtual_call (ie, jfunc,
+							     new_root_info);
+      else
+	new_direct_edge = try_make_edge_direct_simple_call (ie, jfunc,
+							    new_root_info);
+      if (new_direct_edge)
+	{
+	  new_direct_edge->indirect_inlining_edge = 1;
+	  if (new_direct_edge->call_stmt)
+	    new_direct_edge->call_stmt_cannot_inline_p
+	      = !gimple_check_call_matching_types (new_direct_edge->call_stmt,
+						   new_direct_edge->callee->symbol.decl);
+	  if (new_edges)
+	    {
+	      new_edges->safe_push (new_direct_edge);
+	      top = IPA_EDGE_REF (cs);
+	      res = true;
+	    }
+	}
+      else if (jfunc->type == IPA_JF_PASS_THROUGH
+	       && ipa_get_jf_pass_through_operation (jfunc) == NOP_EXPR)
 	{
 	  if (ici->agg_contents
 	      && !ipa_get_jf_pass_through_agg_preserved (jfunc))
@@ -2304,29 +2367,6 @@ update_indirect_edges_after_inlining (struct cgraph_edge *cs,
       else
 	/* Either we can find a destination for this edge now or never. */
 	ici->param_index = -1;
-
-      if (!flag_indirect_inlining)
-	continue;
-
-      if (ici->polymorphic)
-	new_direct_edge = try_make_edge_direct_virtual_call (ie, jfunc);
-      else
-	new_direct_edge = try_make_edge_direct_simple_call (ie, jfunc);
-
-      if (new_direct_edge)
-	{
-	  new_direct_edge->indirect_inlining_edge = 1;
-	  if (new_direct_edge->call_stmt)
-	    new_direct_edge->call_stmt_cannot_inline_p
-	      = !gimple_check_call_matching_types (new_direct_edge->call_stmt,
-						   new_direct_edge->callee->symbol.decl);
-	  if (new_edges)
-	    {
-	      new_edges->safe_push (new_direct_edge);
-	      top = IPA_EDGE_REF (cs);
-	      res = true;
-	    }
-	}
     }
 
   return res;
@@ -2888,6 +2928,8 @@ ipa_modify_call_arguments (struct cgraph_edge *cs, gimple stmt,
 	{
 	  tree expr, base, off;
 	  location_t loc;
+	  unsigned int deref_align;
+	  bool deref_base = false;
 
 	  /* We create a new parameter out of the value of the old one, we can
 	     do the following kind of transformations:
@@ -2921,9 +2963,15 @@ ipa_modify_call_arguments (struct cgraph_edge *cs, gimple stmt,
 	    {
 	      HOST_WIDE_INT base_offset;
 	      tree prev_base;
+	      bool addrof;
 
 	      if (TREE_CODE (base) == ADDR_EXPR)
-		base = TREE_OPERAND (base, 0);
+		{
+		  base = TREE_OPERAND (base, 0);
+		  addrof = true;
+		}
+	      else
+		addrof = false;
 	      prev_base = base;
 	      base = get_addr_base_and_unit_offset (base, &base_offset);
 	      /* Aggregate arguments can have non-invariant addresses.  */
@@ -2935,6 +2983,11 @@ ipa_modify_call_arguments (struct cgraph_edge *cs, gimple stmt,
 		}
 	      else if (TREE_CODE (base) == MEM_REF)
 		{
+		  if (!addrof)
+		    {
+		      deref_base = true;
+		      deref_align = TYPE_ALIGN (TREE_TYPE (base));
+		    }
 		  off = build_int_cst (adj->alias_ptr_type,
 				       base_offset
 				       + adj->offset / BITS_PER_UNIT);
@@ -2957,7 +3010,17 @@ ipa_modify_call_arguments (struct cgraph_edge *cs, gimple stmt,
 	      unsigned int align;
 	      unsigned HOST_WIDE_INT misalign;
 
-	      get_pointer_alignment_1 (base, &align, &misalign);
+	      if (deref_base)
+		{
+		  align = deref_align;
+		  misalign = 0;
+		}
+	      else
+		{
+		  get_pointer_alignment_1 (base, &align, &misalign);
+		  if (TYPE_ALIGN (type) > align)
+		    align = TYPE_ALIGN (type);
+		}
 	      misalign += (tree_to_double_int (off)
 			   .sext (TYPE_PRECISION (TREE_TYPE (off))).low
 			   * BITS_PER_UNIT);
@@ -3614,9 +3677,15 @@ write_agg_replacement_chain (struct output_block *ob, struct cgraph_node *node)
 
   for (av = aggvals; av; av = av->next)
     {
+      struct bitpack_d bp;
+
       streamer_write_uhwi (ob, av->offset);
       streamer_write_uhwi (ob, av->index);
       stream_write_tree (ob, av->value, true);
+
+      bp = bitpack_create (ob->main_stream);
+      bp_pack_value (&bp, av->by_ref, 1);
+      streamer_write_bitpack (&bp);
     }
 }
 
@@ -3634,11 +3703,14 @@ read_agg_replacement_chain (struct lto_input_block *ib,
   for (i = 0; i <count; i++)
     {
       struct ipa_agg_replacement_value *av;
+      struct bitpack_d bp;
 
       av = ggc_alloc_ipa_agg_replacement_value ();
       av->offset = streamer_read_uhwi (ib);
       av->index = streamer_read_uhwi (ib);
       av->value = stream_read_tree (ib, data_in);
+      bp = streamer_read_bitpack (ib);
+      av->by_ref = bp_unpack_value (&bp, 1);
       av->next = aggvals;
       aggvals = av;
     }
@@ -3857,7 +3929,7 @@ ipcp_transform_function (struct cgraph_node *node)
 	  if (v->index == index
 	      && v->offset == offset)
 	    break;
-	if (!v)
+	if (!v || v->by_ref != by_ref)
 	  continue;
 
 	gcc_checking_assert (is_gimple_ip_invariant (v->value));

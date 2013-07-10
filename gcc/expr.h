@@ -1,7 +1,5 @@
 /* Definitions for code generation pass of GNU compiler.
-   Copyright (C) 1987, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -333,6 +331,8 @@ extern rtx emit_group_move_into_temps (rtx);
 /* Store a BLKmode value from non-consecutive registers represented by a
    PARALLEL.  */
 extern void emit_group_store (rtx, rtx, tree, int);
+
+extern rtx maybe_emit_group_store (rtx, tree);
 
 /* Copy BLKmode object from a set of registers.  */
 extern void copy_blkmode_from_reg (rtx, rtx, tree);
@@ -718,7 +718,7 @@ extern bool split_comparison (enum rtx_code, enum machine_mode,
 /* Call this once to initialize the contents of the optabs
    appropriately for the current target machine.  */
 extern void init_optabs (void);
-extern void init_all_optabs (void);
+extern void init_all_optabs (struct target_optabs *);
 
 /* Call this to initialize an optab function entry.  */
 extern rtx init_one_libfunc (const char *);

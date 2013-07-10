@@ -1,6 +1,6 @@
 /* Gimple IR definitions.
 
-   Copyright 2007, 2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2007-2013 Free Software Foundation, Inc.
    Contributed by Aldy Hernandez <aldyh@redhat.com>
 
 This file is part of GCC.
@@ -661,6 +661,9 @@ struct GTY(()) gimple_statement_omp_atomic_store {
    tell the runtime that it should begin the transaction in
    serial-irrevocable mode.  */
 #define GTMA_DOES_GO_IRREVOCABLE	(1u << 6)
+/* The transaction contains no instrumentation code whatsover, most
+   likely because it is guaranteed to go irrevocable upon entry.  */
+#define GTMA_HAS_NO_INSTRUMENTATION	(1u << 7)
 
 struct GTY(()) gimple_statement_transaction
 {
@@ -893,6 +896,7 @@ extern bool walk_stmt_load_store_ops (gimple, void *,
 				      bool (*)(gimple, tree, void *),
 				      bool (*)(gimple, tree, void *));
 extern bool gimple_ior_addresses_taken (bitmap, gimple);
+extern bool gimple_call_builtin_p (gimple, enum built_in_class);
 extern bool gimple_call_builtin_p (gimple, enum built_in_function);
 extern bool gimple_asm_clobbers_memory_p (const_gimple);
 

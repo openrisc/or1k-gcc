@@ -1,6 +1,5 @@
 /* Induction variable optimizations.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -2575,26 +2574,20 @@ record_important_candidates (struct ivopts_data *data)
 static void
 alloc_use_cost_map (struct ivopts_data *data)
 {
-  unsigned i, size, s, j;
+  unsigned i, size, s;
 
   for (i = 0; i < n_iv_uses (data); i++)
     {
       struct iv_use *use = iv_use (data, i);
-      bitmap_iterator bi;
 
       if (data->consider_all_candidates)
 	size = n_iv_cands (data);
       else
 	{
-	  s = 0;
-	  EXECUTE_IF_SET_IN_BITMAP (use->related_cands, 0, j, bi)
-	    {
-	      s++;
-	    }
+	  s = bitmap_count_bits (use->related_cands);
 
 	  /* Round up to the power of two, so that moduling by it is fast.  */
-	  for (size = 1; size < s; size <<= 1)
-	    continue;
+	  size = s ? (1 << ceil_log2 (s)) : 1;
 	}
 
       use->n_map_members = size;
@@ -2732,10 +2725,13 @@ get_use_iv_cost (struct ivopts_data *data, struct iv_use *use,
   for (i = s; i < use->n_map_members; i++)
     if (use->cost_map[i].cand == cand)
       return use->cost_map + i;
-
+    else if (use->cost_map[i].cand == NULL)
+      return NULL;
   for (i = 0; i < s; i++)
     if (use->cost_map[i].cand == cand)
       return use->cost_map + i;
+    else if (use->cost_map[i].cand == NULL)
+      return NULL;
 
   return NULL;
 }
@@ -2806,7 +2802,7 @@ prepare_decl_rtl (tree *expr_p, int *ws, void *data)
 	   expr_p = &TREE_OPERAND (*expr_p, 0))
 	continue;
       obj = *expr_p;
-      if (DECL_P (obj) && !DECL_RTL_SET_P (obj))
+      if (DECL_P (obj) && HAS_RTL_P (obj) && !DECL_RTL_SET_P (obj))
         x = produce_memory_decl_rtl (obj, regno);
       break;
 
@@ -6088,35 +6084,24 @@ rewrite_use_nonlinear_expr (struct ivopts_data *data,
   if (cand->pos == IP_ORIGINAL
       && cand->incremented_at == use->stmt)
     {
-      tree step, ctype, utype;
-      enum tree_code incr_code = PLUS_EXPR, old_code;
+      enum tree_code stmt_code;
 
       gcc_assert (is_gimple_assign (use->stmt));
       gcc_assert (gimple_assign_lhs (use->stmt) == cand->var_after);
-
-      step = cand->iv->step;
-      ctype = TREE_TYPE (step);
-      utype = TREE_TYPE (cand->var_after);
-      if (TREE_CODE (step) == NEGATE_EXPR)
-	{
-	  incr_code = MINUS_EXPR;
-	  step = TREE_OPERAND (step, 0);
-	}
 
       /* Check whether we may leave the computation unchanged.
 	 This is the case only if it does not rely on other
 	 computations in the loop -- otherwise, the computation
 	 we rely upon may be removed in remove_unused_ivs,
 	 thus leading to ICE.  */
-      old_code = gimple_assign_rhs_code (use->stmt);
-      if (old_code == PLUS_EXPR
-	  || old_code == MINUS_EXPR
-	  || old_code == POINTER_PLUS_EXPR)
+      stmt_code = gimple_assign_rhs_code (use->stmt);
+      if (stmt_code == PLUS_EXPR
+	  || stmt_code == MINUS_EXPR
+	  || stmt_code == POINTER_PLUS_EXPR)
 	{
 	  if (gimple_assign_rhs1 (use->stmt) == cand->var_before)
 	    op = gimple_assign_rhs2 (use->stmt);
-	  else if (old_code != MINUS_EXPR
-		   && gimple_assign_rhs2 (use->stmt) == cand->var_before)
+	  else if (gimple_assign_rhs2 (use->stmt) == cand->var_before)
 	    op = gimple_assign_rhs1 (use->stmt);
 	  else
 	    op = NULL_TREE;
@@ -6124,23 +6109,12 @@ rewrite_use_nonlinear_expr (struct ivopts_data *data,
       else
 	op = NULL_TREE;
 
-      if (op
-	  && (TREE_CODE (op) == INTEGER_CST
-	      || operand_equal_p (op, step, 0)))
+      if (op && expr_invariant_in_loop_p (data->current_loop, op))
 	return;
+    }
 
-      /* Otherwise, add the necessary computations to express
-	 the iv.  */
-      op = fold_convert (ctype, cand->var_before);
-      comp = fold_convert (utype,
-			   build2 (incr_code, ctype, op,
-				   unshare_expr (step)));
-    }
-  else
-    {
-      comp = get_computation (data->current_loop, use, cand);
-      gcc_assert (comp != NULL_TREE);
-    }
+  comp = get_computation (data->current_loop, use, cand);
+  gcc_assert (comp != NULL_TREE);
 
   switch (gimple_code (use->stmt))
     {

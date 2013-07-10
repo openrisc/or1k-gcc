@@ -1,6 +1,5 @@
 /* File format for coverage information
-   Copyright (C) 1996, 1997, 1998, 2000, 2002,
-   2003, 2004, 2005, 2008, 2009 Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
    Contributed by Bob Manson <manson@cygnus.com>.
    Completely remangled by Nathan Sidwell <nathan@codesourcery.com>.
 
@@ -612,6 +611,7 @@ GCOV_LINKAGE void gcov_write_unsigned (gcov_unsigned_t) ATTRIBUTE_HIDDEN;
 
 #if !IN_GCOV && !IN_LIBGCOV
 /* Available only in compiler */
+GCOV_LINKAGE unsigned gcov_histo_index (gcov_type value);
 GCOV_LINKAGE void gcov_write_string (const char *);
 GCOV_LINKAGE gcov_position_t gcov_write_tag (gcov_unsigned_t);
 GCOV_LINKAGE void gcov_write_length (gcov_position_t /*position*/);

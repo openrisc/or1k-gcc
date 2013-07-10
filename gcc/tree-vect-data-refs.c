@@ -1,6 +1,5 @@
 /* Data References Analysis and Manipulation Utilities for Vectorization.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Dorit Naishlos <dorit@il.ibm.com>
    and Ira Rosen <irar@il.ibm.com>
 
@@ -1616,18 +1615,6 @@ vect_enhance_data_refs_alignment (loop_vec_info loop_vinfo)
           && GROUP_FIRST_ELEMENT (stmt_info) != stmt)
         continue;
 
-      /* FORNOW: Any strided load prevents peeling.  The induction
-         variable analysis will fail when the prologue loop is generated,
-	 and so we can't generate the new base for the pointer.  */
-      if (STMT_VINFO_STRIDE_LOAD_P (stmt_info))
-	{
-	  if (dump_enabled_p ())
-	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
-                             "strided load prevents peeling");
-	  do_peeling = false;
-	  break;
-	}
-
       /* For invariant accesses there is nothing to enhance.  */
       if (integer_zerop (DR_STEP (dr)))
 	continue;
@@ -2891,9 +2878,8 @@ vect_check_gather (gimple stmt, loop_vec_info loop_vinfo, tree *basep,
    This handles ARRAY_REFs (with variant index) and MEM_REFs (with variant
    base pointer) only.  */
 
-bool
-vect_check_strided_load (gimple stmt, loop_vec_info loop_vinfo, tree *basep,
-			 tree *stepp)
+static bool
+vect_check_strided_load (gimple stmt, loop_vec_info loop_vinfo)
 {
   struct loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
   stmt_vec_info stmt_info = vinfo_for_stmt (stmt);
@@ -2926,10 +2912,6 @@ vect_check_strided_load (gimple stmt, loop_vec_info loop_vinfo, tree *basep,
       || !simple_iv (loop, loop_containing_stmt (stmt), off, &iv, true))
     return false;
 
-  if (basep)
-    *basep = iv.base;
-  if (stepp)
-    *stepp = iv.step;
   return true;
 }
 
@@ -3474,8 +3456,7 @@ vect_analyze_data_refs (loop_vec_info loop_vinfo,
 	{
 	  bool strided_load = false;
 	  if (!nested_in_vect_loop_p (loop, stmt))
-	    strided_load
-	      = vect_check_strided_load (stmt, loop_vinfo, NULL, NULL);
+	    strided_load = vect_check_strided_load (stmt, loop_vinfo);
 	  if (!strided_load)
 	    {
 	      if (dump_enabled_p ())
@@ -3576,7 +3557,7 @@ vect_create_addr_base_for_vector_ref (gimple stmt,
   stmt_vec_info stmt_info = vinfo_for_stmt (stmt);
   struct data_reference *dr = STMT_VINFO_DATA_REF (stmt_info);
   tree data_ref_base = unshare_expr (DR_BASE_ADDRESS (dr));
-  tree base_name;
+  const char *base_name;
   tree data_ref_base_var;
   tree vec_stmt;
   tree addr_base, addr_expr;
@@ -3601,12 +3582,12 @@ vect_create_addr_base_for_vector_ref (gimple stmt,
     }
 
   if (loop_vinfo)
-    base_name = build_fold_indirect_ref (data_ref_base);
+    base_name = get_name (data_ref_base);
   else
     {
       base_offset = ssize_int (0);
       init = ssize_int (0);
-      base_name = build_fold_indirect_ref (unshare_expr (DR_REF (dr)));
+      base_name = get_name (DR_REF (dr));
     }
 
   data_ref_base_var = create_tmp_var (TREE_TYPE (data_ref_base), "batmp");
@@ -3654,7 +3635,7 @@ vect_create_addr_base_for_vector_ref (gimple stmt,
 
   vec_stmt = fold_convert (vect_ptr_type, addr_base);
   addr_expr = vect_get_new_vect_var (vect_ptr_type, vect_pointer_var,
-                                     get_name (base_name));
+                                     base_name);
   vec_stmt = force_gimple_operand (vec_stmt, &seq, false, addr_expr);
   gimple_seq_add_seq (new_stmt_list, seq);
 
@@ -3729,7 +3710,7 @@ vect_create_data_ref_ptr (gimple stmt, tree aggr_type, struct loop *at_loop,
 			  gimple_stmt_iterator *gsi, gimple *ptr_incr,
 			  bool only_init, bool *inv_p)
 {
-  tree base_name;
+  const char *base_name;
   stmt_vec_info stmt_info = vinfo_for_stmt (stmt);
   loop_vec_info loop_vinfo = STMT_VINFO_LOOP_VINFO (stmt_info);
   struct loop *loop = NULL;
@@ -3786,23 +3767,22 @@ vect_create_data_ref_ptr (gimple stmt, tree aggr_type, struct loop *at_loop,
 
   /* Create an expression for the first address accessed by this load
      in LOOP.  */
-  base_name = build_fold_indirect_ref (unshare_expr (DR_BASE_ADDRESS (dr)));
+  base_name = get_name (DR_BASE_ADDRESS (dr));
 
   if (dump_enabled_p ())
     {
-      tree data_ref_base = base_name;
+      tree dr_base_type = TREE_TYPE (DR_BASE_OBJECT (dr));
       dump_printf_loc (MSG_NOTE, vect_location,
                        "create %s-pointer variable to type: ",
                        tree_code_name[(int) TREE_CODE (aggr_type)]);
       dump_generic_expr (MSG_NOTE, TDF_SLIM, aggr_type);
-      if (TREE_CODE (data_ref_base) == VAR_DECL
-          || TREE_CODE (data_ref_base) == ARRAY_REF)
+      if (TREE_CODE (dr_base_type) == ARRAY_TYPE)
         dump_printf (MSG_NOTE, "  vectorizing an array ref: ");
-      else if (TREE_CODE (data_ref_base) == COMPONENT_REF)
+      else if (TREE_CODE (dr_base_type) == RECORD_TYPE)
         dump_printf (MSG_NOTE, "  vectorizing a record based array ref: ");
-      else if (TREE_CODE (data_ref_base) == SSA_NAME)
+      else
         dump_printf (MSG_NOTE, "  vectorizing a pointer ref: ");
-      dump_generic_expr (MSG_NOTE, TDF_SLIM, base_name);
+      dump_generic_expr (MSG_NOTE, TDF_SLIM, DR_BASE_OBJECT (dr));
     }
 
   /* (1) Create the new aggregate-pointer variable.  */
@@ -3813,8 +3793,7 @@ vect_create_data_ref_ptr (gimple stmt, tree aggr_type, struct loop *at_loop,
     aggr_ptr_type
       = build_qualified_type (aggr_ptr_type,
 			      TYPE_QUALS (TREE_TYPE (TREE_OPERAND (base, 0))));
-  aggr_ptr = vect_get_new_vect_var (aggr_ptr_type, vect_pointer_var,
-                                    get_name (base_name));
+  aggr_ptr = vect_get_new_vect_var (aggr_ptr_type, vect_pointer_var, base_name);
 
   /* Vector and array types inherit the alias set of their component
      type by default so we need to use a ref-all pointer if the data
@@ -3827,7 +3806,7 @@ vect_create_data_ref_ptr (gimple stmt, tree aggr_type, struct loop *at_loop,
 	= build_pointer_type_for_mode (aggr_type,
 				       TYPE_MODE (aggr_ptr_type), true);
       aggr_ptr = vect_get_new_vect_var (aggr_ptr_type, vect_pointer_var,
-					get_name (base_name));
+					base_name);
     }
 
   /* Likewise for any of the data references in the stmt group.  */
@@ -3845,7 +3824,7 @@ vect_create_data_ref_ptr (gimple stmt, tree aggr_type, struct loop *at_loop,
 					       TYPE_MODE (aggr_ptr_type), true);
 	      aggr_ptr
 		= vect_get_new_vect_var (aggr_ptr_type, vect_pointer_var,
-					 get_name (base_name));
+					 base_name);
 	      break;
 	    }
 
@@ -4239,7 +4218,9 @@ vect_permute_store_chain (vec<tree> dr_chain,
   unsigned int j, nelt = TYPE_VECTOR_SUBPARTS (vectype);
   unsigned char *sel = XALLOCAVEC (unsigned char, nelt);
 
-  *result_chain = dr_chain.copy ();
+  result_chain->quick_grow (length);
+  memcpy (result_chain->address (), dr_chain.address (),
+	  length * sizeof (tree));
 
   for (i = 0, n = nelt / 2; i < n; i++)
     {
@@ -4280,7 +4261,8 @@ vect_permute_store_chain (vec<tree> dr_chain,
 	  vect_finish_stmt_generation (stmt, perm_stmt, gsi);
 	  (*result_chain)[2*j+1] = low;
 	}
-      dr_chain = result_chain->copy ();
+      memcpy (dr_chain.address (), result_chain->address (),
+	      length * sizeof (tree));
     }
 }
 
@@ -4694,7 +4676,9 @@ vect_permute_load_chain (vec<tree> dr_chain,
   unsigned nelt = TYPE_VECTOR_SUBPARTS (vectype);
   unsigned char *sel = XALLOCAVEC (unsigned char, nelt);
 
-  *result_chain = dr_chain.copy ();
+  result_chain->quick_grow (length);
+  memcpy (result_chain->address (), dr_chain.address (),
+	  length * sizeof (tree));
 
   for (i = 0; i < nelt; ++i)
     sel[i] = i * 2;
@@ -4729,7 +4713,8 @@ vect_permute_load_chain (vec<tree> dr_chain,
 	  vect_finish_stmt_generation (stmt, perm_stmt, gsi);
 	  (*result_chain)[j/2+length/2] = data_ref;
 	}
-      dr_chain = result_chain->copy ();
+      memcpy (dr_chain.address (), result_chain->address (),
+	      length * sizeof (tree));
     }
 }
 
@@ -4844,9 +4829,12 @@ vect_can_force_dr_alignment_p (const_tree decl, unsigned int alignment)
   /* We cannot change alignment of common or external symbols as another
      translation unit may contain a definition with lower alignment.  
      The rules of common symbol linking mean that the definition
-     will override the common symbol.  */
+     will override the common symbol.  The same is true for constant
+     pool entries which may be shared and are not properly merged
+     by LTO.  */
   if (DECL_EXTERNAL (decl)
-      || DECL_COMMON (decl))
+      || DECL_COMMON (decl)
+      || DECL_IN_CONSTANT_POOL (decl))
     return false;
 
   if (TREE_ASM_WRITTEN (decl))

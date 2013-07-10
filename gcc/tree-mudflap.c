@@ -1,6 +1,5 @@
 /* Mudflap: narrow-pointer bounds-checking by tree rewriting.
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Frank Ch. Eigler <fche@redhat.com>
    and Graydon Hoare <graydon@redhat.com>
 
@@ -877,6 +876,9 @@ mf_xform_derefs_1 (gimple_stmt_iterator *iter, tree *tp,
       break;
 
     case MEM_REF:
+      if (addr_expr_of_non_mem_decl_p (TREE_OPERAND (t, 0)))
+	return;
+
       addr = fold_build_pointer_plus_loc (location, TREE_OPERAND (t, 0),
 					  TREE_OPERAND (t, 1));
       base = addr;
@@ -886,6 +888,9 @@ mf_xform_derefs_1 (gimple_stmt_iterator *iter, tree *tp,
       break;
 
     case TARGET_MEM_REF:
+      if (addr_expr_of_non_mem_decl_p (TMR_BASE (t)))
+	return;
+
       addr = tree_mem_ref_addr (ptr_type_node, t);
       base = addr;
       limit = fold_build_pointer_plus_hwi_loc (location,
@@ -1328,6 +1333,16 @@ mudflap_finish_file (void)
              from other compilation units.  */
           if (! TREE_PUBLIC (obj) && ! TREE_ADDRESSABLE (obj))
             continue;
+
+	  /* If we're neither emitting nor referencing the symbol,
+	     don't register it.  We have to register external symbols
+	     if they happen to be in other files not compiled with
+	     mudflap (say system libraries), and we must not register
+	     internal symbols that we don't emit or they'll become
+	     dangling references or force symbols to be emitted that
+	     didn't have to.  */
+	  if (!symtab_get_node (obj))
+	    continue;
 
           if (! COMPLETE_TYPE_P (TREE_TYPE (obj)))
             {

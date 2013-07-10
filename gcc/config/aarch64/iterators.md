@@ -1,5 +1,5 @@
 ;; Machine description for AArch64 architecture.
-;; Copyright (C) 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2013 Free Software Foundation, Inc.
 ;; Contributed by ARM Ltd.
 ;;
 ;; This file is part of GCC.
@@ -88,6 +88,9 @@
 
 ;; All modes.
 (define_mode_iterator VALL [V8QI V16QI V4HI V8HI V2SI V4SI V2DI V2SF V4SF V2DF])
+
+;; All vector modes and DI.
+(define_mode_iterator VALLDI [V8QI V16QI V4HI V8HI V2SI V4SI V2DI V2SF V4SF V2DF DI])
 
 ;; Vector modes for Integer reduction across lanes.
 (define_mode_iterator VDQV [V8QI V16QI V4HI V8HI V4SI])
@@ -228,6 +231,14 @@
     UNSPEC_FMAX		; Used in aarch64-simd.md.
     UNSPEC_FMIN		; Used in aarch64-simd.md.
     UNSPEC_BSL		; Used in aarch64-simd.md.
+    UNSPEC_TBL		; Used in vector permute patterns.
+    UNSPEC_CONCAT	; Used in vector permute patterns.
+    UNSPEC_ZIP1		; Used in vector permute patterns.
+    UNSPEC_ZIP2		; Used in vector permute patterns.
+    UNSPEC_UZP1		; Used in vector permute patterns.
+    UNSPEC_UZP2		; Used in vector permute patterns.
+    UNSPEC_TRN1		; Used in vector permute patterns.
+    UNSPEC_TRN2		; Used in vector permute patterns.
 ])
 
 ;; -------------------------------------------------------------------
@@ -329,6 +340,22 @@
 			(QI   "QI")])
 
 ;; Define container mode for lane selection.
+(define_mode_attr VCOND [(V4HI "V4HI") (V8HI "V4HI")
+			 (V2SI "V2SI") (V4SI "V2SI")
+			 (DI   "DI") (V2DI "DI")
+			 (V2SF "V2SF") (V4SF "V2SF")
+			 (V2DF "DF")])
+
+;; Define container mode for lane selection.
+(define_mode_attr VCONQ [(V8QI "V16QI") (V16QI "V16QI")
+			 (V4HI "V8HI") (V8HI "V8HI")
+			 (V2SI "V4SI") (V4SI "V4SI")
+			 (DI   "V2DI") (V2DI "V2DI")
+			 (V2SF "V2SF") (V4SF "V4SF")
+			 (V2DF "V2DF") (SI   "V4SI")
+			 (HI   "V8HI") (QI   "V16QI")])
+
+;; Define container mode for lane selection.
 (define_mode_attr VCON [(V8QI "V16QI") (V16QI "V16QI")
 			(V4HI "V8HI") (V8HI "V8HI")
 			(V2SI "V4SI") (V4SI "V4SI")
@@ -415,8 +442,17 @@
 (define_mode_attr V_cmp_result [(V8QI "V8QI") (V16QI "V16QI")
 				(V4HI "V4HI") (V8HI  "V8HI")
 				(V2SI "V2SI") (V4SI  "V4SI")
+				(DI   "DI")   (V2DI  "V2DI")
 				(V2SF "V2SI") (V4SF  "V4SI")
-				(DI   "DI")   (V2DI  "V2DI")])
+				(V2DF "V2DI")])
+
+;; Lower case mode of results of comparison operations.
+(define_mode_attr v_cmp_result [(V8QI "v8qi") (V16QI "v16qi")
+				(V4HI "v4hi") (V8HI  "v8hi")
+				(V2SI "v2si") (V4SI  "v4si")
+				(DI   "di")   (V2DI  "v2di")
+				(V2SF "v2si") (V4SF  "v4si")
+				(V2DF "v2di")])
 
 ;; Vm for lane instructions is restricted to FP_LO_REGS.
 (define_mode_attr vwx [(V4HI "x") (V8HI "x") (HI "x")
@@ -452,6 +488,9 @@
 ;; Mode for atomic operation suffixes
 (define_mode_attr atomic_sfx
   [(QI "b") (HI "h") (SI "") (DI "")])
+
+(define_mode_attr fcvt_target [(V2DF "v2di") (V4SF "v4si") (V2SF "v2si")])
+(define_mode_attr FCVT_TARGET [(V2DF "V2DI") (V4SF "V4SI") (V2SF "V2SI")])
 
 ;; -------------------------------------------------------------------
 ;; Code Iterators
@@ -646,6 +685,15 @@
 
 (define_int_iterator VCMP_U [UNSPEC_CMHS UNSPEC_CMHI UNSPEC_CMTST])
 
+(define_int_iterator PERMUTE [UNSPEC_ZIP1 UNSPEC_ZIP2
+			      UNSPEC_TRN1 UNSPEC_TRN2
+			      UNSPEC_UZP1 UNSPEC_UZP2])
+
+(define_int_iterator FRINT [UNSPEC_FRINTZ UNSPEC_FRINTP UNSPEC_FRINTM
+			     UNSPEC_FRINTI UNSPEC_FRINTX UNSPEC_FRINTA])
+
+(define_int_iterator FCVT [UNSPEC_FRINTZ UNSPEC_FRINTP UNSPEC_FRINTM
+			    UNSPEC_FRINTA])
 
 ;; -------------------------------------------------------------------
 ;; Int Iterators Attributes.
@@ -729,3 +777,26 @@
 (define_int_attr offsetlr [(UNSPEC_SSLI	"1") (UNSPEC_USLI "1")
 			   (UNSPEC_SSRI	"0") (UNSPEC_USRI "0")])
 
+;; Standard pattern names for floating-point rounding instructions.
+(define_int_attr frint_pattern [(UNSPEC_FRINTZ "btrunc")
+				(UNSPEC_FRINTP "ceil")
+				(UNSPEC_FRINTM "floor")
+				(UNSPEC_FRINTI "nearbyint")
+				(UNSPEC_FRINTX "rint")
+				(UNSPEC_FRINTA "round")])
+
+;; frint suffix for floating-point rounding instructions.
+(define_int_attr frint_suffix [(UNSPEC_FRINTZ "z") (UNSPEC_FRINTP "p")
+			       (UNSPEC_FRINTM "m") (UNSPEC_FRINTI "i")
+			       (UNSPEC_FRINTX "x") (UNSPEC_FRINTA "a")])
+
+(define_int_attr fcvt_pattern [(UNSPEC_FRINTZ "btrunc") (UNSPEC_FRINTA "round")
+			       (UNSPEC_FRINTP "ceil") (UNSPEC_FRINTM "floor")])
+
+(define_int_attr perm_insn [(UNSPEC_ZIP1 "zip") (UNSPEC_ZIP2 "zip")
+			    (UNSPEC_TRN1 "trn") (UNSPEC_TRN2 "trn")
+			    (UNSPEC_UZP1 "uzp") (UNSPEC_UZP2 "uzp")])
+
+(define_int_attr perm_hilo [(UNSPEC_ZIP1 "1") (UNSPEC_ZIP2 "2")
+			    (UNSPEC_TRN1 "1") (UNSPEC_TRN2 "2")
+			    (UNSPEC_UZP1 "1") (UNSPEC_UZP2 "2")])

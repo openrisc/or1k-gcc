@@ -488,7 +488,7 @@ write_gcc_func_header(char *package, char *name, struct params *params,
 	printf(" %s_%s(", package, name);
 	first = 1;
 	write_params(params, &first);
-	printf(") asm (\"");
+	printf(") __asm__ (GOSYM_PREFIX \"");
 	if (pkgpath != NULL)
 	  printf("%s", pkgpath);
 	else if (prefix != NULL)
@@ -633,7 +633,7 @@ usage(void)
 	sysfatal("Usage: goc2c [--go-pkgpath PKGPATH] [--go-prefix PREFIX] [file]\n");
 }
 
-void
+int
 main(int argc, char **argv)
 {
 	char *goarch;

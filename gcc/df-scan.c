@@ -1,6 +1,5 @@
 /* Scanning of rtl for dataflow analysis.
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
-   2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
    Originally contributed by Michael P. Hayes
              (m.hayes@elec.canterbury.ac.nz, mhayes@redhat.com)
    Major rewrite contributed by Danny Berlin (dberlin@dberlin.org)
@@ -1154,6 +1153,7 @@ df_insn_delete (basic_block bb, unsigned int uid)
 	  df_ref_chain_delete (insn_info->defs);
 	  df_ref_chain_delete (insn_info->uses);
 	  df_ref_chain_delete (insn_info->eq_uses);
+	  df_scan_free_mws_vec (insn_info->mw_hardregs);
 	}
       pool_free (problem_data->insn_pool, insn_info);
       DF_INSN_UID_SET (uid, NULL);
@@ -1333,6 +1333,7 @@ df_insn_rescan_debug_internal (rtx insn)
   df_ref_chain_delete (insn_info->defs);
   df_ref_chain_delete (insn_info->uses);
   df_ref_chain_delete (insn_info->eq_uses);
+  df_scan_free_mws_vec (insn_info->mw_hardregs);
 
   insn_info->defs = df_null_ref_rec;
   insn_info->uses = df_null_ref_rec;

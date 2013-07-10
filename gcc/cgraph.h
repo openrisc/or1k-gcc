@@ -1,6 +1,5 @@
 /* Callgraph handling code.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
-   2012 Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Jan Hubicka
 
 This file is part of GCC.
@@ -1165,6 +1164,7 @@ cgraph_only_called_directly_or_aliased_p (struct cgraph_node *node)
   gcc_assert (!node->global.inlined_to);
   return (!node->symbol.force_output && !node->symbol.address_taken
 	  && !node->symbol.used_from_other_partition
+	  && !DECL_VIRTUAL_P (node->symbol.decl)
 	  && !DECL_STATIC_CONSTRUCTOR (node->symbol.decl)
 	  && !DECL_STATIC_DESTRUCTOR (node->symbol.decl)
 	  && !node->symbol.externally_visible);
@@ -1357,7 +1357,6 @@ static inline bool
 symtab_real_symbol_p (symtab_node node)
 {
   struct cgraph_node *cnode;
-  struct ipa_ref *ref;
 
   if (!is_a <cgraph_node> (node))
     return true;
@@ -1366,11 +1365,6 @@ symtab_real_symbol_p (symtab_node node)
     return false;
   if (cnode->abstract_and_needed)
     return false;
-  /* We keep virtual clones in symtab.  */
-  if (!cnode->analyzed
-      || DECL_EXTERNAL (cnode->symbol.decl))
-    return (cnode->callers
-	    || ipa_ref_list_referring_iterate (&cnode->symbol.ref_list, 0, ref));
   return true;
 }
 #endif  /* GCC_CGRAPH_H  */

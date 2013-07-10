@@ -1,5 +1,5 @@
 # Makefile.am -- Backtrace Makefile.
-# Copyright (C) 2012 Free Software Foundation, Inc.
+# Copyright (C) 2012-2013 Free Software Foundation, Inc.
 
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -32,7 +32,7 @@
 ACLOCAL_AMFLAGS = -I .. -I ../config
 
 AM_CPPFLAGS = -I $(top_srcdir)/../include -I $(top_srcdir)/../libgcc \
-	-I ../libgcc -I ../gcc/include -I $(MULTIBUILDTOP)../../gcc/include
+	-I ../libgcc
 
 AM_CFLAGS = $(EXTRA_FLAGS) $(WARN_FLAGS) $(PIC_FLAG)
 

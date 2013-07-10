@@ -1,6 +1,5 @@
 /* Loop Vectorization
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Dorit Naishlos <dorit@il.ibm.com> and
    Ira Rosen <irar@il.ibm.com>
 
@@ -906,22 +905,8 @@ destroy_loop_vec_info (loop_vec_info loop_vinfo, bool clean_stmts)
   loop = LOOP_VINFO_LOOP (loop_vinfo);
 
   bbs = LOOP_VINFO_BBS (loop_vinfo);
-  nbbs = loop->num_nodes;
+  nbbs = clean_stmts ? loop->num_nodes : 0;
   swapped = LOOP_VINFO_OPERANDS_SWAPPED (loop_vinfo);
-
-  if (!clean_stmts)
-    {
-      free (LOOP_VINFO_BBS (loop_vinfo));
-      free_data_refs (LOOP_VINFO_DATAREFS (loop_vinfo));
-      free_dependence_relations (LOOP_VINFO_DDRS (loop_vinfo));
-      LOOP_VINFO_LOOP_NEST (loop_vinfo).release ();
-      LOOP_VINFO_MAY_MISALIGN_STMTS (loop_vinfo).release ();
-      LOOP_VINFO_MAY_ALIAS_DDRS (loop_vinfo).release ();
-
-      free (loop_vinfo);
-      loop->aux = NULL;
-      return;
-    }
 
   for (j = 0; j < nbbs; j++)
     {
@@ -1167,11 +1152,11 @@ vect_analyze_loop_form (struct loop *loop)
      before the loop if needed), where the loop header contains all the
      executable statements, and the latch is empty.  */
   if (!empty_block_p (loop->latch)
-        || !gimple_seq_empty_p (phi_nodes (loop->latch)))
+      || !gimple_seq_empty_p (phi_nodes (loop->latch)))
     {
       if (dump_enabled_p ())
 	dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
-			 "not vectorized: unexpected loop form.");
+			 "not vectorized: latch block not empty.");
       if (inner_loop_vinfo)
 	destroy_loop_vec_info (inner_loop_vinfo, true);
       return NULL;
@@ -1245,7 +1230,7 @@ vect_analyze_loop_form (struct loop *loop)
 	dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
 			 "not vectorized: number of iterations = 0.");
       if (inner_loop_vinfo)
-        destroy_loop_vec_info (inner_loop_vinfo, false);
+        destroy_loop_vec_info (inner_loop_vinfo, true);
       return NULL;
     }
 
@@ -3204,6 +3189,21 @@ get_initial_def_for_induction (gimple iv_phi)
       tree iv_def = PHI_ARG_DEF_FROM_EDGE (iv_phi,
                                            loop_preheader_edge (iv_loop));
       vec_init = vect_get_vec_def_for_operand (iv_def, iv_phi, NULL);
+      /* If the initial value is not of proper type, convert it.  */
+      if (!useless_type_conversion_p (vectype, TREE_TYPE (vec_init)))
+	{
+	  new_stmt = gimple_build_assign_with_ops
+	      (VIEW_CONVERT_EXPR,
+	       vect_get_new_vect_var (vectype, vect_simple_var, "vec_iv_"),
+	       build1 (VIEW_CONVERT_EXPR, vectype, vec_init), NULL_TREE);
+	  vec_init = make_ssa_name (gimple_assign_lhs (new_stmt), new_stmt);
+	  gimple_assign_set_lhs (new_stmt, vec_init);
+	  new_bb = gsi_insert_on_edge_immediate (loop_preheader_edge (iv_loop),
+						 new_stmt);
+	  gcc_assert (!new_bb);
+	  set_vinfo_for_stmt (new_stmt,
+			      new_stmt_vec_info (new_stmt, loop_vinfo, NULL));
+	}
     }
   else
     {
@@ -3406,7 +3406,7 @@ get_initial_def_for_induction (gimple iv_phi)
 	  build1 (VIEW_CONVERT_EXPR, resvectype, induc_def), NULL_TREE);
       induc_def = make_ssa_name (gimple_assign_lhs (new_stmt), new_stmt);
       gimple_assign_set_lhs (new_stmt, induc_def);
-      si = gsi_start_bb (bb);
+      si = gsi_after_labels (bb);
       gsi_insert_before (&si, new_stmt, GSI_SAME_STMT);
       set_vinfo_for_stmt (new_stmt,
 			  new_stmt_vec_info (new_stmt, loop_vinfo, NULL));
@@ -4487,8 +4487,9 @@ vect_finalize_reduction:
     }
 
   scalar_results.release ();
+  inner_phis.release ();
   new_phis.release ();
-} 
+}
 
 
 /* Function vectorizable_reduction.
@@ -4693,7 +4694,7 @@ vectorizable_reduction (gimple stmt, gimple_stmt_iterator *gsi,
      The last use is the reduction variable.  In case of nested cycle this
      assumption is not true: we use reduc_index to record the index of the
      reduction variable.  */
-  for (i = 0; i < op_type-1; i++)
+  for (i = 0; i < op_type - 1; i++)
     {
       /* The condition of COND_EXPR is checked in vectorizable_condition().  */
       if (i == 0 && code == COND_EXPR)
@@ -4725,11 +4726,18 @@ vectorizable_reduction (gimple stmt, gimple_stmt_iterator *gsi,
   if (!vectype_in)
     vectype_in = tem;
   gcc_assert (is_simple_use);
-  gcc_assert (dt == vect_reduction_def
-              || dt == vect_nested_cycle
-              || ((dt == vect_internal_def || dt == vect_external_def
-                   || dt == vect_constant_def || dt == vect_induction_def)
-                   && nested_cycle && found_nested_cycle_def));
+  if (!(dt == vect_reduction_def
+	|| dt == vect_nested_cycle
+	|| ((dt == vect_internal_def || dt == vect_external_def
+	     || dt == vect_constant_def || dt == vect_induction_def)
+	    && nested_cycle && found_nested_cycle_def)))
+    {
+      /* For pattern recognized stmts, orig_stmt might be a reduction,
+	 but some helper statements for the pattern might not, or
+	 might be COND_EXPRs with reduction uses in the condition.  */
+      gcc_assert (orig_stmt);
+      return false;
+    }
   if (!found_nested_cycle_def)
     reduc_def_stmt = def_stmt;
 
@@ -4776,6 +4784,17 @@ vectorizable_reduction (gimple stmt, gimple_stmt_iterator *gsi,
   else
     {
       /* 4. Supportable by target?  */
+
+      if (code == LSHIFT_EXPR || code == RSHIFT_EXPR
+	  || code == LROTATE_EXPR || code == RROTATE_EXPR)
+	{
+	  /* Shifts and rotates are only supported by vectorizable_shifts,
+	     not vectorizable_reduction.  */
+          if (dump_enabled_p ())
+	    dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
+			     "unsupported shift or rotation.");
+	  return false;
+	}
 
       /* 4.1. check support for the operation in the loop  */
       optab = optab_for_tree_code (code, vectype_in, optab_default);
@@ -5177,6 +5196,7 @@ vectorizable_reduction (gimple stmt, gimple_stmt_iterator *gsi,
                                     double_reduc, slp_node);
 
   phis.release ();
+  vect_defs.release ();
   vec_oprnds0.release ();
   vec_oprnds1.release ();
 

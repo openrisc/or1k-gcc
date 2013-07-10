@@ -1,6 +1,5 @@
 /* Liveness for SSA trees.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Andrew MacLeod <amacleod@redhat.com>
 
 This file is part of GCC.
@@ -890,7 +889,10 @@ remove_unused_locals (void)
       dstidx++;
     }
   if (dstidx != num)
-    cfun->local_decls->truncate (dstidx);
+    {
+      statistics_counter_event (cfun, "unused VAR_DECLs removed", num - dstidx);
+      cfun->local_decls->truncate (dstidx);
+    }
 
   remove_unused_scope_block_p (DECL_INITIAL (current_function_decl));
   clear_unused_block_pointer ();

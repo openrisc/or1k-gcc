@@ -13,6 +13,7 @@
 #define ASAN_INTERNAL_H
 
 #include "asan_flags.h"
+#include "asan_interface_internal.h"
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_internal_defs.h"
 #include "sanitizer_common/sanitizer_stacktrace.h"
@@ -51,7 +52,7 @@
 
 #define ASAN_POSIX (ASAN_LINUX || ASAN_MAC)
 
-#if __has_feature(address_sanitizer)
+#if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
 # error "The AddressSanitizer run-time should not be"
         " instrumented by AddressSanitizer"
 #endif
@@ -81,11 +82,15 @@
 // If set, values like allocator chunk size, as well as defaults for some flags
 // will be changed towards less memory overhead.
 #ifndef ASAN_LOW_MEMORY
-# ifdef ASAN_ANDROID
+#if SANITIZER_WORDSIZE == 32
 #  define ASAN_LOW_MEMORY 1
-# else
+#else
 #  define ASAN_LOW_MEMORY 0
 # endif
+#endif
+
+#ifndef ASAN_USE_PREINIT_ARRAY
+# define ASAN_USE_PREINIT_ARRAY (ASAN_LINUX && !ASAN_ANDROID)
 #endif
 
 // All internal functions in asan reside inside the __asan namespace
@@ -114,7 +119,7 @@ bool AsanInterceptsSignal(int signum);
 void SetAlternateSignalStack();
 void UnsetAlternateSignalStack();
 void InstallSignalHandlers();
-void ClearShadowMemoryForContext(void *context);
+void ReadContextStack(void *context, uptr *stack, uptr *ssize);
 void AsanPlatformThreadInit();
 
 // Wrapper for TLS/TSD.
@@ -143,6 +148,15 @@ bool PlatformHasDifferentMemcpyAndMemmove();
 # define PLATFORM_HAS_DIFFERENT_MEMCPY_AND_MEMMOVE true
 #endif  // __APPLE__
 
+// Add convenient macro for interface functions that may be represented as
+// weak hooks.
+#define ASAN_MALLOC_HOOK(ptr, size) \
+  if (&__asan_malloc_hook) __asan_malloc_hook(ptr, size)
+#define ASAN_FREE_HOOK(ptr) \
+  if (&__asan_free_hook) __asan_free_hook(ptr)
+#define ASAN_ON_ERROR() \
+  if (&__asan_on_error) __asan_on_error()
+
 extern int asan_inited;
 // Used to avoid infinite recursion in __asan_init().
 extern bool asan_init_is_running;
@@ -159,6 +173,7 @@ const int kAsanStackPartialRedzoneMagic = 0xf4;
 const int kAsanStackAfterReturnMagic = 0xf5;
 const int kAsanInitializationOrderMagic = 0xf6;
 const int kAsanUserPoisonedMemoryMagic = 0xf7;
+const int kAsanStackUseAfterScopeMagic = 0xf8;
 const int kAsanGlobalRedzoneMagic = 0xf9;
 const int kAsanInternalHeapMagic = 0xfe;
 

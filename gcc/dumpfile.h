@@ -1,6 +1,5 @@
 /* Definitions for the shared dumpfile.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -35,8 +34,6 @@ enum tree_dump_index
   TDI_original,			/* dump each function before optimizing it */
   TDI_generic,			/* dump each function after genericizing it */
   TDI_nested,			/* dump each function after unnesting it */
-  TDI_vcg,			/* create a VCG graph file for each
-				   function's flowgraph.  */
   TDI_tree_all,                 /* enable all the GENERIC/GIMPLE dumps.  */
   TDI_rtl_all,                  /* enable all the RTL dumps.  */
   TDI_ipa_all,                  /* enable all the IPA dumps.  */
