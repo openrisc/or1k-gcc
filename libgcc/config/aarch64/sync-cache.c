@@ -1,5 +1,5 @@
 /* Machine description for AArch64 architecture.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GCC.
@@ -17,6 +17,8 @@
    You should have received a copy of the GNU General Public License
    along with GCC; see the file COPYING3.  If not see
    <http://www.gnu.org/licenses/>.  */
+
+void __aarch64_sync_cache_range (const void *, const void *);
 
 void
 __aarch64_sync_cache_range (const void *base, const void *end)
@@ -39,7 +41,11 @@ __aarch64_sync_cache_range (const void *base, const void *end)
      instruction cache fetches the updated data.  'end' is exclusive,
      as per the GNU definition of __clear_cache.  */
 
-  for (address = base; address < (const char *) end; address += dcache_lsize)
+  /* Make the start address of the loop cache aligned.  */
+  address = (const char*) ((__UINTPTR_TYPE__) base
+			   & ~ (__UINTPTR_TYPE__) (dcache_lsize - 1));
+
+  for (; address < (const char *) end; address += dcache_lsize)
     asm volatile ("dc\tcvau, %0"
 		  :
 		  : "r" (address)
@@ -47,7 +53,11 @@ __aarch64_sync_cache_range (const void *base, const void *end)
 
   asm volatile ("dsb\tish" : : : "memory");
 
-  for (address = base; address < (const char *) end; address += icache_lsize)
+  /* Make the start address of the loop cache aligned.  */
+  address = (const char*) ((__UINTPTR_TYPE__) base
+			   & ~ (__UINTPTR_TYPE__) (icache_lsize - 1));
+
+  for (; address < (const char *) end; address += icache_lsize)
     asm volatile ("ic\tivau, %0"
 		  :
 		  : "r" (address)

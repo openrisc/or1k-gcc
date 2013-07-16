@@ -1,7 +1,6 @@
 ; Options for the IA-32 and AMD64 ports of the compiler.
 
-; Copyright (C) 2005, 2006, 2007, 2008, 2009,
-; 2010, 2011 Free Software Foundation, Inc.
+; Copyright (C) 2005-2013 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -141,7 +140,7 @@ Target RejectNegative Joined UInteger Var(ix86_branch_cost)
 Branches are this expensive (1-5, arbitrary units)
 
 mlarge-data-threshold=
-Target RejectNegative Joined UInteger Var(ix86_section_threshold) Init(65536)
+Target RejectNegative Joined UInteger Var(ix86_section_threshold) Init(DEFAULT_LARGE_SECTION_THRESHOLD)
 Data greater than given threshold will go into .ldata section in x86-64 medium model
 
 mcmodel=
@@ -345,6 +344,9 @@ Enum(stringop_alg) String(loop) Value(loop)
 
 EnumValue
 Enum(stringop_alg) String(unrolled_loop) Value(unrolled_loop)
+
+EnumValue
+Enum(stringop_alg) String(vector_loop) Value(vector_loop)
 
 mtls-dialect=
 Target RejectNegative Joined Var(ix86_tls_dialect) Enum(tls_dialect) Init(TLS_DIALECT_GNU)
@@ -627,3 +629,17 @@ Split 32-byte AVX unaligned store
 mrtm
 Target Report Mask(ISA_RTM) Var(ix86_isa_flags) Save
 Support RTM built-in functions and code generation
+
+mstack-protector-guard=
+Target RejectNegative Joined Enum(stack_protector_guard) Var(ix86_stack_protector_guard) Init(SSP_TLS)
+Use given stack-protector guard
+
+Enum
+Name(stack_protector_guard) Type(enum stack_protector_guard)
+Known stack protector guard (for use with the -mstack-protector-guard= option):
+
+EnumValue
+Enum(stack_protector_guard) String(tls) Value(SSP_TLS)
+
+EnumValue
+Enum(stack_protector_guard) String(global) Value(SSP_GLOBAL)

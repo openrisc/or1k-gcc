@@ -1,6 +1,6 @@
 /* Routines for emitting GIMPLE to a file stream.
 
-   Copyright 2011 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@google.com>
 
 This file is part of GCC.
@@ -28,6 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-streamer.h"
 #include "lto-streamer.h"
 #include "tree-streamer.h"
+#include "value-prof.h"
 
 /* Output PHI function PHI to the main stream in OB.  */
 
@@ -59,6 +60,7 @@ output_gimple_stmt (struct output_block *ob, gimple stmt)
   enum gimple_code code;
   enum LTO_tags tag;
   struct bitpack_d bp;
+  histogram_value hist;
 
   /* Emit identifying tag.  */
   code = gimple_code (stmt);
@@ -72,6 +74,8 @@ output_gimple_stmt (struct output_block *ob, gimple stmt)
   if (is_gimple_assign (stmt))
     bp_pack_value (&bp, gimple_assign_nontemporal_move_p (stmt), 1);
   bp_pack_value (&bp, gimple_has_volatile_ops (stmt), 1);
+  hist = gimple_histogram_value (cfun, stmt);
+  bp_pack_value (&bp, hist != NULL, 1);
   bp_pack_var_len_unsigned (&bp, stmt->gsbase.subcode);
 
   /* Emit location information for the statement.  */
@@ -116,13 +120,14 @@ output_gimple_stmt (struct output_block *ob, gimple stmt)
       for (i = 0; i < gimple_num_ops (stmt); i++)
 	{
 	  tree op = gimple_op (stmt, i);
+	  tree *basep = NULL;
 	  /* Wrap all uses of non-automatic variables inside MEM_REFs
 	     so that we do not have to deal with type mismatches on
 	     merged symbols during IL read in.  The first operand
 	     of GIMPLE_DEBUG must be a decl, not MEM_REF, though.  */
 	  if (op && (i || !is_gimple_debug (stmt)))
 	    {
-	      tree *basep = &op;
+	      basep = &op;
 	      while (handled_component_p (*basep))
 		basep = &TREE_OPERAND (*basep, 0);
 	      if (TREE_CODE (*basep) == VAR_DECL
@@ -136,8 +141,13 @@ output_gimple_stmt (struct output_block *ob, gimple stmt)
 						  (TREE_TYPE (*basep)), 0));
 		  TREE_THIS_VOLATILE (*basep) = volatilep;
 		}
+	      else
+		basep = NULL;
 	    }
 	  stream_write_tree (ob, op, true);
+	  /* Restore the original base if we wrapped it inside a MEM_REF.  */
+	  if (basep)
+	    *basep = TREE_OPERAND (TREE_OPERAND (*basep, 0), 0);
 	}
       if (is_gimple_call (stmt))
 	{
@@ -161,6 +171,8 @@ output_gimple_stmt (struct output_block *ob, gimple stmt)
     default:
       gcc_unreachable ();
     }
+  if (hist)
+    stream_out_histogram_value (ob, hist);
 }
 
 
@@ -177,7 +189,7 @@ output_bb (struct output_block *ob, basic_block bb, struct function *fn)
 				: LTO_bb0);
 
   streamer_write_uhwi (ob, bb->index);
-  streamer_write_hwi (ob, bb->count);
+  streamer_write_gcov_count (ob, bb->count);
   streamer_write_hwi (ob, bb->frequency);
   streamer_write_hwi (ob, bb->flags);
 

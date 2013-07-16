@@ -1,5 +1,5 @@
 /* Get CPU type and Features for x86 processors.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Contributed by Sriraman Tallam (tmsriram@google.com)
 
 This file is part of GCC.
@@ -47,6 +47,8 @@ enum processor_vendor
   VENDOR_MAX
 };
 
+/* Any new types or subtypes have to be inserted at the end. */
+
 enum processor_types
 {
   INTEL_ATOM = 1,
@@ -54,6 +56,7 @@ enum processor_types
   INTEL_COREI7,
   AMDFAM10H,
   AMDFAM15H,
+  INTEL_SLM,
   CPU_TYPE_MAX
 };
 
@@ -178,6 +181,7 @@ get_intel_cpu (unsigned int family, unsigned int model, unsigned int brand_id)
 	      __cpu_model.__cpu_subtype = INTEL_COREI7_WESTMERE;
 	      break;
 	    case 0x2a:
+	    case 0x2d:
 	      /* Sandy Bridge.  */
 	      __cpu_model.__cpu_type = INTEL_COREI7;
 	      __cpu_model.__cpu_subtype = INTEL_COREI7_SANDYBRIDGE;

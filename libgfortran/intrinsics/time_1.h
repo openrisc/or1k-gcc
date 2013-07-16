@@ -1,5 +1,5 @@
 /* Wrappers for platform timing functions.
-   Copyright (C) 2003, 2007, 2009, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of the GNU Fortran runtime library (libgfortran).
 
@@ -101,7 +101,7 @@ localtime_r (const time_t * timep, struct tm * result)
    CPU_TIME intrinsics.  Returns 0 for success or -1 if no
    CPU time could be computed.  */
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(__CYGWIN__)
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

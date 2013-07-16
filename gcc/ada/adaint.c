@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 1992-2012, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2013, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -33,10 +33,6 @@
    packages in the GNAT hierarchy (especially GNAT.OS_Lib) and in
    package Osint.  Many of the subprograms in OS_Lib import standard
    library calls directly. This file contains all other routines.  */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #ifdef __vxworks
 
@@ -105,6 +101,10 @@ extern "C" {
 #include "config.h"
 #include "system.h"
 #include "version.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 #if defined (__MINGW32__)
@@ -213,6 +213,8 @@ struct vstring
 
 #define SYI$_ACTIVECPU_CNT 0x111e
 extern int LIB$GETSYI (int *, unsigned int *);
+extern unsigned int LIB$CALLG_64
+ ( unsigned long long argument_list [], int (*user_procedure)(void));
 
 #else
 #include <utime.h>
@@ -820,7 +822,8 @@ __gnat_rmdir (char *path)
 }
 
 FILE *
-__gnat_fopen (char *path, char *mode, int encoding ATTRIBUTE_UNUSED)
+__gnat_fopen (char *path, char *mode, int encoding ATTRIBUTE_UNUSED,
+              char *vms_form ATTRIBUTE_UNUSED)
 {
 #if defined (_WIN32) && ! defined (__vxworks) && ! defined (IS_CROSS)
   TCHAR wpath[GNAT_MAX_PATH_LEN];
@@ -837,7 +840,37 @@ __gnat_fopen (char *path, char *mode, int encoding ATTRIBUTE_UNUSED)
 
   return _tfopen (wpath, wmode);
 #elif defined (VMS)
-  return decc$fopen (path, mode);
+  if (vms_form == 0)
+    return decc$fopen (path, mode);
+  else
+    {
+       char *local_form = (char *) alloca (strlen (vms_form) + 1);
+       /* Allocate an argument list of guaranteed ample length.  */
+       unsigned long long *arg_list =
+        (unsigned long long *) alloca (strlen (vms_form) + 3);
+       char *ptrb, *ptre;
+       int i;
+
+       arg_list [1] = (unsigned long long) path;
+       arg_list [2] = (unsigned long long) mode;
+       strcpy (local_form, vms_form);
+
+       /* Given a string such as "\"rfm=udf\",\"rat=cr\""
+          Split it into an argument list as "rfm=udf","rat=cr".  */
+       ptrb = local_form;
+       for (i = 0; *ptrb; i++)
+         {
+            ptrb = strchr (ptrb, '"');
+            ptre = strchr (ptrb + 1, '"');
+            *ptre = 0;
+            arg_list [i + 3] = (unsigned long long) (ptrb + 1);
+            ptrb = ptre + 1;
+         }
+       arg_list [0] = i + 2;
+       /* CALLG_64 returns int , fortunately (FILE *) on VMS is a
+          always a 32bit pointer.   */
+       return LIB$CALLG_64 (arg_list, &decc$fopen);
+    }
 #else
   return GNAT_FOPEN (path, mode);
 #endif
@@ -847,7 +880,8 @@ FILE *
 __gnat_freopen (char *path,
 		char *mode,
 		FILE *stream,
-		int encoding ATTRIBUTE_UNUSED)
+		int encoding ATTRIBUTE_UNUSED,
+                char *vms_form ATTRIBUTE_UNUSED)
 {
 #if defined (_WIN32) && ! defined (__vxworks) && ! defined (IS_CROSS)
   TCHAR wpath[GNAT_MAX_PATH_LEN];
@@ -864,7 +898,38 @@ __gnat_freopen (char *path,
 
   return _tfreopen (wpath, wmode, stream);
 #elif defined (VMS)
-  return decc$freopen (path, mode, stream);
+  if (vms_form == 0)
+    return decc$freopen (path, mode, stream);
+  else
+    {
+       char *local_form = (char *) alloca (strlen (vms_form) + 1);
+       /* Allocate an argument list of guaranteed ample length.  */
+       unsigned long long *arg_list =
+        (unsigned long long *) alloca (strlen (vms_form) + 4);
+       char *ptrb, *ptre;
+       int i;
+
+       arg_list [1] = (unsigned long long) path;
+       arg_list [2] = (unsigned long long) mode;
+       arg_list [3] = (unsigned long long) stream;
+       strcpy (local_form, vms_form);
+
+       /* Given a string such as "\"rfm=udf\",\"rat=cr\""
+          Split it into an argument list as "rfm=udf","rat=cr".  */
+       ptrb = local_form;
+       for (i = 0; *ptrb; i++)
+         {
+            ptrb = strchr (ptrb, '"');
+            ptre = strchr (ptrb + 1, '"');
+            *ptre = 0;
+            arg_list [i + 4] = (unsigned long long) (ptrb + 1);
+            ptrb = ptre + 1;
+         }
+       arg_list [0] = i + 3;
+       /* CALLG_64 returns int , fortunately (FILE *) on VMS is a
+          always a 32bit pointer.   */
+       return LIB$CALLG_64 (arg_list, &decc$freopen);
+    }
 #else
   return freopen (path, mode, stream);
 #endif
@@ -1982,7 +2047,7 @@ __gnat_check_OWNER_ACL
      GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
      NULL, 0, &nLength);
 
-  if ((pSD = (PSECURITY_DESCRIPTOR) HeapAlloc
+  if ((pSD = (SECURITY_DESCRIPTOR *) HeapAlloc
        (GetProcessHeap (), HEAP_ZERO_MEMORY, nLength)) == NULL)
     return 0;
 
@@ -2059,7 +2124,7 @@ __gnat_set_OWNER_ACL
     return;
 
   BuildExplicitAccessWithName
-    (&ea, username, AccessPermissions, AccessMode, NO_INHERITANCE);
+    (&ea, username, AccessPermissions, (ACCESS_MODE) AccessMode, NO_INHERITANCE);
 
   if (AccessMode == SET_ACCESS)
     {
@@ -2384,7 +2449,7 @@ __gnat_portable_spawn (char *args[])
   strcat (args[0], args_0);
   strcat (args[0], "\"");
 
-  status = spawnvp (P_WAIT, args_0, (const char* const*)args);
+  status = spawnvp (P_WAIT, args_0, (char* const*)args);
 
   /* restore previous value */
   free (args[0]);
@@ -2540,9 +2605,9 @@ add_handle (HANDLE h, int pid)
     {
       plist_max_length += 1000;
       HANDLES_LIST =
-        xrealloc (HANDLES_LIST, sizeof (HANDLE) * plist_max_length);
+        (void **) xrealloc (HANDLES_LIST, sizeof (HANDLE) * plist_max_length);
       PID_LIST =
-        xrealloc (PID_LIST, sizeof (int) * plist_max_length);
+        (int *) xrealloc (PID_LIST, sizeof (int) * plist_max_length);
     }
 
   HANDLES_LIST[plist_length] = h;
@@ -2931,7 +2996,7 @@ __gnat_locate_exec_on_path (char *exec_name)
 
   #define EXPAND_BUFFER_SIZE 32767
 
-  wapath_val = alloca (EXPAND_BUFFER_SIZE);
+  wapath_val = (TCHAR *) alloca (EXPAND_BUFFER_SIZE);
 
   wapath_val [0] = '.';
   wapath_val [1] = ';';
@@ -2941,7 +3006,7 @@ __gnat_locate_exec_on_path (char *exec_name)
 
   if (!res) wapath_val [0] = _T('\0');
 
-  apath_val = alloca (EXPAND_BUFFER_SIZE);
+  apath_val = (char *) alloca (EXPAND_BUFFER_SIZE);
 
   WS2SC (apath_val, wapath_val, EXPAND_BUFFER_SIZE);
   return __gnat_locate_exec (exec_name, apath_val);

@@ -1,6 +1,5 @@
 /* Default target hook functions.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -71,6 +70,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "opts.h"
 #include "tree-flow.h"
 #include "tree-ssa-alias.h"
+#include "insn-codes.h"
 
 
 bool
@@ -102,10 +102,8 @@ default_unspec_may_trap_p (const_rtx x, unsigned flags)
 {
   int i;
 
-  if (GET_CODE (x) == UNSPEC_VOLATILE
-      /* Any floating arithmetic may trap.  */
-      || (SCALAR_FLOAT_MODE_P (GET_MODE (x))
-	  && flag_trapping_math))
+  /* Any floating arithmetic may trap.  */
+  if ((SCALAR_FLOAT_MODE_P (GET_MODE (x)) && flag_trapping_math))
     return 1;
 
   for (i = 0; i < XVECLEN (x, 0); ++i)
@@ -453,6 +451,14 @@ default_fixed_point_supported_p (void)
   return ENABLE_FIXED_POINT;
 }
 
+/* True if the target supports GNU indirect functions.  */
+
+bool
+default_has_ifunc_p (void)
+{
+  return HAVE_GNU_INDIRECT_FUNCTION;
+}
+
 /* NULL if INSN insn is valid within a low-overhead loop, otherwise returns
    an error message.
 
@@ -469,7 +475,7 @@ default_invalid_within_doloop (const_rtx insn)
   if (CALL_P (insn))
     return "Function call in loop.";
 
-  if (JUMP_TABLE_DATA_P (insn))
+  if (tablejump_p (insn, NULL, NULL) || computed_jump_p (insn))
     return "Computed branch in the loop.";
 
   return NULL;
@@ -850,6 +856,12 @@ int
 default_register_priority (int hard_regno ATTRIBUTE_UNUSED)
 {
   return 0;
+}
+
+extern bool
+default_register_usage_leveling_p (void)
+{
+  return false;
 }
 
 extern bool
@@ -1532,12 +1544,27 @@ default_pch_valid_p (const void *data_p, size_t len)
   return NULL;
 }
 
+/* Default version of cstore_mode.  */
+
+enum machine_mode
+default_cstore_mode (enum insn_code icode)
+{
+  return insn_data[(int) icode].operand[0].mode;
+}
+
 /* Default version of member_type_forces_blk.  */
 
 bool
 default_member_type_forces_blk (const_tree, enum machine_mode)
 {
   return false;
+}
+
+/* Default version of canonicalize_comparison.  */
+
+void
+default_canonicalize_comparison (int *, rtx *, rtx *, bool)
+{
 }
 
 #include "gt-targhooks.h"

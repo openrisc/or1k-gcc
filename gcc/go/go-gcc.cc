@@ -1,5 +1,5 @@
 // go-gcc.cc -- Go frontend to gcc IR.
-// Copyright (C) 2011, 2012 Free Software Foundation, Inc.
+// Copyright (C) 2011-2013 Free Software Foundation, Inc.
 // Contributed by Ian Lance Taylor, Google.
 
 // This file is part of GCC.
@@ -28,6 +28,7 @@
 #include "tree-iterator.h"
 #include "gimple.h"
 #include "toplev.h"
+#include "output.h"
 
 #include "go-c.h"
 
@@ -267,6 +268,7 @@ class Gcc_backend : public Backend
 		  Btype* btype,
 		  bool is_external,
 		  bool is_hidden,
+		  bool in_unique_section,
 		  Location location);
 
   void
@@ -285,10 +287,10 @@ class Gcc_backend : public Backend
 		     Location, Bstatement**);
 
   Bvariable*
-  immutable_struct(const std::string&, bool, Btype*, Location);
+  immutable_struct(const std::string&, bool, bool, Btype*, Location);
 
   void
-  immutable_struct_set_init(Bvariable*, const std::string&, bool, Btype*,
+  immutable_struct_set_init(Bvariable*, const std::string&, bool, bool, Btype*,
 			    Location, Bexpression*);
 
   Bvariable*
@@ -1277,6 +1279,7 @@ Gcc_backend::global_variable(const std::string& package_name,
 			     Btype* btype,
 			     bool is_external,
 			     bool is_hidden,
+			     bool in_unique_section,
 			     Location location)
 {
   tree type_tree = btype->get_tree();
@@ -1308,6 +1311,9 @@ Gcc_backend::global_variable(const std::string& package_name,
     }
   TREE_USED(decl) = 1;
 
+  if (in_unique_section)
+    resolve_unique_section (decl, 0, 1);
+
   go_preserve_from_gc(decl);
 
   return new Bvariable(decl);
@@ -1326,6 +1332,16 @@ Gcc_backend::global_variable_set_init(Bvariable* var, Bexpression* expr)
   if (var_decl == error_mark_node)
     return;
   DECL_INITIAL(var_decl) = expr_tree;
+
+  // If this variable goes in a unique section, it may need to go into
+  // a different one now that DECL_INITIAL is set.
+  if (DECL_HAS_IMPLICIT_SECTION_NAME_P (var_decl))
+    {
+      DECL_SECTION_NAME (var_decl) = NULL_TREE;
+      resolve_unique_section (var_decl,
+			      compute_reloc_for_constant (expr_tree),
+			      1);
+    }
 }
 
 // Make a local variable.
@@ -1438,8 +1454,8 @@ Gcc_backend::temporary_variable(Bfunction* function, Bblock* bblock,
 // Create a named immutable initialized data structure.
 
 Bvariable*
-Gcc_backend::immutable_struct(const std::string& name, bool, Btype* btype,
-			      Location location)
+Gcc_backend::immutable_struct(const std::string& name, bool, bool,
+			      Btype* btype, Location location)
 {
   tree type_tree = btype->get_tree();
   if (type_tree == error_mark_node)
@@ -1466,7 +1482,7 @@ Gcc_backend::immutable_struct(const std::string& name, bool, Btype* btype,
 
 void
 Gcc_backend::immutable_struct_set_init(Bvariable* var, const std::string&,
-				       bool is_common, Btype*,
+				       bool is_hidden, bool is_common, Btype*,
 				       Location,
 				       Bexpression* initializer)
 {
@@ -1479,7 +1495,10 @@ Gcc_backend::immutable_struct_set_init(Bvariable* var, const std::string&,
 
   // We can't call make_decl_one_only until we set DECL_INITIAL.
   if (!is_common)
-    TREE_PUBLIC(decl) = 1;
+    {
+      if (!is_hidden)
+	TREE_PUBLIC(decl) = 1;
+    }
   else
     {
       make_decl_one_only(decl, DECL_ASSEMBLER_NAME(decl));

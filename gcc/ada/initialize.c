@@ -34,10 +34,6 @@
     in a separate file/object so that users can replace it easily.
     The default implementation should be null on most targets.  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* The following include is here to meet the published VxWorks requirement
    that the __vxworks header appear before any other include.  */
 #ifdef __vxworks
@@ -56,6 +52,10 @@ extern "C" {
 #endif
 
 #include "raise.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /******************************************/
 /* __gnat_initialize (NT-mingw32 Version) */
@@ -88,14 +88,14 @@ append_arg (int *index, LPWSTR dir, LPWSTR value,
     {
       /* no dir prefix */
       dirlen = 0;
-      fullvalue = xmalloc ((vallen + 1) * sizeof(TCHAR));
+      fullvalue = (LPWSTR) xmalloc ((vallen + 1) * sizeof(TCHAR));
     }
   else
     {
       /* Add dir first */
       dirlen = _tcslen (dir);
 
-      fullvalue = xmalloc ((dirlen + vallen + 1) * sizeof(TCHAR));
+      fullvalue = (LPWSTR) xmalloc ((dirlen + vallen + 1) * sizeof(TCHAR));
       _tcscpy (fullvalue, dir);
     }
 
@@ -203,7 +203,7 @@ __gnat_initialize (void *eh ATTRIBUTE_UNUSED)
 		     if (ldir != NULL)
 		       {
 			 int n = ldir - wargv[k] + 1;
-			 dir = xmalloc ((n + 1) * sizeof (TCHAR));
+			 dir = (LPWSTR) xmalloc ((n + 1) * sizeof (TCHAR));
 			 _tcsncpy (dir, wargv[k], n);
 			 dir[n] = _T('\0');
 		       }

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -704,6 +704,7 @@ package body Make is
    Output_Flag       : constant String_Access := new String'("-o");
    Ada_Flag_1        : constant String_Access := new String'("-x");
    Ada_Flag_2        : constant String_Access := new String'("ada");
+   AdaSCIL_Flag      : constant String_Access := new String'("adascil");
    No_gnat_adc       : constant String_Access := new String'("-gnatA");
    GNAT_Flag         : constant String_Access := new String'("-gnatpg");
    Do_Not_Check_Flag : constant String_Access := new String'("-x");
@@ -1320,8 +1321,8 @@ package body Make is
                      then
                         Errutil.Error_Msg
                           ('"' & Argv &
-                           """ is not a gnatmake switch. Consider moving " &
-                           "it to Global_Compilation_Switches.",
+                           """ is not a gnatmake switch. Consider moving "
+                           & "it to Global_Compilation_Switches.",
                            Element.Location);
                         Make_Failed ("*** illegal switch """ & Argv & """");
                      end if;
@@ -2745,7 +2746,8 @@ package body Make is
                              File    => Sfile,
                              Unit    => No_Unit_Name,
                              Project => No_Project,
-                             Index   => 0))
+                             Index   => 0,
+                             Sid     => No_Source))
                   then
                      if Is_In_Obsoleted (Sfile) then
                         Executable_Obsolete := True;
@@ -2980,8 +2982,8 @@ package body Make is
                   Make_Failed
                     ("not allowed to compile """ &
                      Get_Name_String (Fname) &
-                     """; use -a switch, or compile file with " &
-                     """-gnatg"" switch");
+                     """; use -a switch, or use the compiler directly with "
+                     & "the ""-gnatg"" switch");
                end if;
             end if;
          end;
@@ -2989,8 +2991,16 @@ package body Make is
          --  Now check if the file name has one of the suffixes familiar to
          --  the gcc driver. If this is not the case then add the ada flag
          --  "-x ada".
+         --  Append systematically "-x adascil" in CodePeer mode instead, to
+         --  force the use of gnat1scil instead of gnat1.
 
-         if not Ada_File_Name (S) and then not Targparm.AAMP_On_Target then
+         if CodePeer_Mode then
+            Comp_Last := Comp_Last + 1;
+            Comp_Args (Comp_Last) := Ada_Flag_1;
+            Comp_Last := Comp_Last + 1;
+            Comp_Args (Comp_Last) := AdaSCIL_Flag;
+
+         elsif not Ada_File_Name (S) and then not Targparm.AAMP_On_Target then
             Comp_Last := Comp_Last + 1;
             Comp_Args (Comp_Last) := Ada_Flag_1;
             Comp_Last := Comp_Last + 1;
@@ -3082,6 +3092,7 @@ package body Make is
          ALI          : ALI_Id;
          Source_Index : Int;
          Sfile        : File_Name_Type;
+         Sid          : Prj.Source_Id;
          Uname        : Unit_Name_Type;
          Unit_Name    : Name_Id;
          Uid          : Prj.Unit_Index;
@@ -3128,6 +3139,7 @@ package body Make is
                   loop
                      Sfile := Withs.Table (K).Sfile;
                      Uname := Withs.Table (K).Uname;
+                     Sid   := No_Source;
 
                      --  If project files are used, find the proper source to
                      --  compile in case Sfile is the spec but there is a body.
@@ -3145,12 +3157,14 @@ package body Make is
                            then
                               Sfile        := Uid.File_Names (Impl).File;
                               Source_Index := Uid.File_Names (Impl).Index;
+                              Sid          := Uid.File_Names (Impl);
 
                            elsif Uid.File_Names (Spec) /= null
                              and then not Uid.File_Names (Spec).Locally_Removed
                            then
                               Sfile        := Uid.File_Names (Spec).File;
                               Source_Index := Uid.File_Names (Spec).Index;
+                              Sid          := Uid.File_Names (Spec);
                            end if;
                         end if;
                      end if;
@@ -3178,7 +3192,8 @@ package body Make is
                                File    => Sfile,
                                Project => ALI_P.Project,
                                Unit    => Withs.Table (K).Uname,
-                               Index   => Source_Index));
+                               Index   => Source_Index,
+                               Sid     => Sid));
                         end if;
                      end if;
                   end loop;
@@ -3299,16 +3314,16 @@ package body Make is
       is
          In_Lib_Dir      : Boolean;
          Need_To_Compile : Boolean;
-         Pid             : Process_Id;
+         Pid             : Process_Id := Invalid_Pid;
          Process_Created : Boolean;
 
          Source           : Queue.Source_Info;
-         Full_Source_File : File_Name_Type;
+         Full_Source_File : File_Name_Type := No_File;
          Source_File_Attr : aliased File_Attributes;
          --  The full name of the source file and its attributes (size, ...)
 
          Lib_File      : File_Name_Type;
-         Full_Lib_File : File_Name_Type;
+         Full_Lib_File : File_Name_Type := No_File;
          Lib_File_Attr : aliased File_Attributes;
          Read_Only     : Boolean := False;
          ALI           : ALI_Id;
@@ -3326,23 +3341,49 @@ package body Make is
          then
             Queue.Extract (Found, Source);
 
-            Osint.Full_Source_Name
-              (Source.File,
-               Full_File => Full_Source_File,
-               Attr      => Source_File_Attr'Access);
+            --  If it is a source in a project, first look for the ALI file
+            --  in the object directory. When the project is extending another
+            --  the ALI file may not be found, but the source does not
+            --  necessarily need to be compiled, as it may already be up to
+            --  date in the project being extended. In this case, look for an
+            --  ALI file in all the object directories, as is done when
+            --  gnatmake is not invoked with a project file.
 
-            Lib_File := Osint.Lib_File_Name (Source.File, Source.Index);
+            if Source.Sid /= No_Source then
+               Initialize_Source_Record (Source.Sid);
+               Full_Source_File :=
+                 File_Name_Type (Source.Sid.Path.Display_Name);
+               Lib_File      := Source.Sid.Dep_Name;
+               Full_Lib_File := File_Name_Type (Source.Sid.Dep_Path);
+               Lib_File_Attr := Unknown_Attributes;
 
-            --  ??? This call could be avoided when using projects, since we
-            --  know where the ALI file is supposed to be. That would avoid
-            --  searches in the object directories, including in the runtime
-            --  dir. However, that would require getting access to the
-            --  Source_Id.
+               if Full_Lib_File /= No_File then
+                  declare
+                     FLF : constant String :=
+                       Get_Name_String (Full_Lib_File) & ASCII.NUL;
+                  begin
+                     if not Is_Regular_File
+                       (FLF'Address, Lib_File_Attr'Access)
+                     then
+                        Full_Lib_File := No_File;
+                     end if;
+                  end;
+               end if;
+            end if;
 
-            Osint.Full_Lib_File_Name
-              (Lib_File,
-               Lib_File => Full_Lib_File,
-               Attr     => Lib_File_Attr);
+            if Full_Lib_File = No_File then
+               Osint.Full_Source_Name
+                 (Source.File,
+                  Full_File => Full_Source_File,
+                  Attr      => Source_File_Attr'Access);
+
+               Lib_File := Osint.Lib_File_Name (Source.File, Source.Index);
+
+               Osint.Full_Lib_File_Name
+                 (Lib_File,
+                  Lib_File => Full_Lib_File,
+                  Attr     => Lib_File_Attr);
+            end if;
 
             --  If source has already been compiled, executable is obsolete
 
@@ -3408,8 +3449,8 @@ package body Make is
                   Fail
                     ("not allowed to compile """ &
                      Get_Name_String (Source.File) &
-                     """; use -a switch, or compile file with " &
-                     """-gnatg"" switch");
+                     """; use -a switch, or use the compiler directly with "
+                     & "the ""-gnatg"" switch");
                end if;
 
                Verbose_Msg
@@ -3725,7 +3766,8 @@ package body Make is
           File    => Main_Source,
           Project => Main_Project,
           Unit    => No_Unit_Name,
-          Index   => Main_Index));
+          Index   => Main_Index,
+          Sid     => No_Source));
 
       First_Compiled_File   := No_File;
       Most_Recent_Obj_File  := No_File;
@@ -3799,7 +3841,7 @@ package body Make is
          Last := 1;
          Result (1) :=
            new String'
-                 ("-gnatec=" & Get_Name_String (For_Project.Config_File_Name));
+             ("-gnatec=" & Get_Name_String (For_Project.Config_File_Name));
 
       else
          Temporary_Config_File := False;
@@ -4191,8 +4233,7 @@ package body Make is
                                    (Index).Library_Dir.Display_Name) &
                           "lib" &
                           Get_Name_String
-                            (Library_Projs.Table
-                               (Index).Library_Name) &
+                            (Library_Projs.Table (Index).Library_Name) &
                           "." &
                           MLib.Tgt.Archive_Ext);
 
@@ -4202,9 +4243,8 @@ package body Make is
                      Linker_Switches.Increment_Last;
                      Linker_Switches.Table (Linker_Switches.Last) :=
                        new String'("-L" &
-                         Get_Name_String
-                           (Library_Projs.Table (Index).
-                              Library_Dir.Display_Name));
+                         Get_Name_String (Library_Projs.Table (Index).
+                                            Library_Dir.Display_Name));
 
                      --  Add the -l switch
 
@@ -4212,8 +4252,7 @@ package body Make is
                      Linker_Switches.Table (Linker_Switches.Last) :=
                        new String'("-l" &
                          Get_Name_String
-                           (Library_Projs.Table (Index).
-                              Library_Name));
+                           (Library_Projs.Table (Index).Library_Name));
                   end if;
                end if;
             end loop;
@@ -5436,7 +5475,6 @@ package body Make is
       --  is invoked with the -F switch to force checking of elaboration flags.
 
       Project_Node_Tree : Project_Node_Tree_Ref;
-      Root_Environment  : Prj.Tree.Environment;
 
       Stop_Compile : Boolean;
 
@@ -5550,8 +5588,8 @@ package body Make is
          --  No main program may be specified on the command line
 
          elsif Osint.Number_Of_Files /= 0 then
-            Make_Failed ("-B cannot be used with a main specified on " &
-                         "the command line");
+            Make_Failed
+              ("-B cannot be used with a main specified on the command line");
 
          --  And the project file cannot be a library project file
 
@@ -5599,8 +5637,9 @@ package body Make is
               and then not Unique_Compile
               and then ((not Make_Steps) or else Bind_Only or else Link_Only)
             then
-               Make_Failed ("cannot specify a main program " &
-                            "on the command line for a library project file");
+               Make_Failed
+                 ("cannot specify a main program "
+                  & "on the command line for a library project file");
             end if;
 
          --  If no mains have been specified on the command line, and we are
@@ -5610,8 +5649,8 @@ package body Make is
 
          else
             if Main_Index /= 0 then
-               Make_Failed ("cannot specify a multi-unit index but no main " &
-                            "on the command line");
+               Make_Failed ("cannot specify a multi-unit index but no main "
+                            & "on the command line");
             end if;
 
             declare
@@ -5837,9 +5876,10 @@ package body Make is
             Add_Switch
               ("-I" &
                Normalize_Directory_Name
-               (Get_Primary_Src_Search_Directory.all).all,
-               Compiler, Append_Switch => False,
-               And_Save => False);
+                 (Get_Primary_Src_Search_Directory.all).all,
+                  Compiler,
+                  Append_Switch => False,
+                  And_Save      => False);
 
          end if;
 
@@ -5853,7 +5893,6 @@ package body Make is
          --  projects.
 
          Look_In_Primary_Dir := False;
-         Add_Switch ("-I-", Binder, And_Save => True);
       end if;
 
       --  If the user wants a program without a main subprogram, add the
@@ -6352,8 +6391,6 @@ package body Make is
       --  the command line switches
 
       Prj.Tree.Initialize (Env, Gnatmake_Flags);
-      Prj.Env.Initialize_Default_Project_Path
-        (Env.Project_Path, Target_Name => Sdefault.Target_Name.all);
 
       Project_Node_Tree := new Project_Node_Tree_Data;
       Prj.Tree.Initialize (Project_Node_Tree);
@@ -6399,9 +6436,8 @@ package body Make is
             if Prefix'Length > 0 then
                declare
                   PATH : constant String :=
-                           Prefix & Directory_Separator & "bin" &
-                           Path_Separator &
-                           Getenv ("PATH").all;
+                    Prefix & Directory_Separator & "bin" & Path_Separator &
+                      Getenv ("PATH").all;
                begin
                   Setenv ("PATH", PATH);
                end;
@@ -6452,6 +6488,12 @@ package body Make is
       if Usage_Requested then
          Usage;
       end if;
+
+      --  Add the default project search directories now, after the directories
+      --  that have been specified by switches -aP<dir>.
+
+      Prj.Env.Initialize_Default_Project_Path
+        (Env.Project_Path, Target_Name => Sdefault.Target_Name.all);
 
       --  Test for trailing -P switch
 
@@ -6641,6 +6683,7 @@ package body Make is
       Put_In_Q : Boolean := Into_Q;
       Unit     : Unit_Index;
       Sfile    : File_Name_Type;
+      Sid      : Prj.Source_Id;
       Index    : Int;
       Project  : Project_Id;
 
@@ -6650,6 +6693,7 @@ package body Make is
       Unit := Units_Htable.Get_First (Project_Tree.Units_HT);
       while Unit /= null loop
          Sfile   := No_File;
+         Sid     := No_Source;
          Index   := 0;
          Project := No_Project;
 
@@ -6695,15 +6739,18 @@ package body Make is
                      if Sinput.P.Source_File_Is_Subunit (Src_Ind) then
                         Sfile := No_File;
                         Index := 0;
+                        Sid   := No_Source;
                      else
                         Sfile := Unit.File_Names (Impl).Display_File;
                         Index := Unit.File_Names (Impl).Index;
+                        Sid   := Unit.File_Names (Impl);
                      end if;
                   end;
 
                else
                   Sfile := Unit.File_Names (Impl).Display_File;
                   Index := Unit.File_Names (Impl).Index;
+                  Sid   := Unit.File_Names (Impl);
                end if;
             end if;
 
@@ -6719,6 +6766,7 @@ package body Make is
 
             Sfile := Unit.File_Names (Spec).Display_File;
             Index := Unit.File_Names (Spec).Index;
+            Sid   := Unit.File_Names (Spec);
             Project := Unit.File_Names (Spec).Project;
          end if;
 
@@ -6735,7 +6783,8 @@ package body Make is
                 File     => Sfile,
                 Project  => Project,
                 Unit     => No_Unit_Name,
-                Index    => Index));
+                Index    => Index,
+                Sid      => Sid));
          end if;
 
          if not Put_In_Q and then Sfile /= No_File then
@@ -7375,8 +7424,8 @@ package body Make is
       elsif Program_Args = Linker
         and then Argv = "-o"
       then
-         Make_Failed ("switch -o not allowed within a -largs. " &
-                      "Use -o directly.");
+         Make_Failed
+           ("switch -o not allowed within a -largs. Use -o directly.");
 
       --  Check to see if we are reading switches after a -cargs, -bargs or
       --  -largs switch. If so, save it.
@@ -7525,16 +7574,16 @@ package body Make is
                   elsif Src_Path_Name = null
                     and then Lib_Path_Name = null
                   then
-                     Make_Failed ("RTS path not valid: missing " &
-                                  "adainclude and adalib directories");
+                     Make_Failed ("RTS path not valid: missing "
+                                  & "adainclude and adalib directories");
 
                   elsif Src_Path_Name = null then
-                     Make_Failed ("RTS path not valid: missing adainclude " &
-                                  "directory");
+                     Make_Failed ("RTS path not valid: missing adainclude "
+                                  & "directory");
 
                   elsif  Lib_Path_Name = null then
-                     Make_Failed ("RTS path not valid: missing adalib " &
-                                  "directory");
+                     Make_Failed ("RTS path not valid: missing adalib "
+                                  & "directory");
                   end if;
                end;
             end if;
@@ -7772,8 +7821,8 @@ package body Make is
                --  or a -P switch inside a project file.
 
                Fail
-                 ("either the tool is not ""project-aware"" or " &
-                  "a project file is specified inside a project file");
+                 ("either the tool is not ""project-aware"" or "
+                  & "a project file is specified inside a project file");
 
             elsif Argv'Last = 2 then
 
@@ -7832,12 +7881,8 @@ package body Make is
             Operating_Mode           := Check_Semantics;
             Check_Object_Consistency := False;
 
-            --  Except in CodePeer mode, where we do want to call bind/link
-            --  in CodePeer mode (-P switch).
-
-            --  This is testing for -gnatcC, what is that??? Also why do we
-            --  want to call bind/link in the codepeer case with -gnatc
-            --  specified, seems odd.
+            --  Except in CodePeer mode (set by -gnatcC), where we do want to
+            --  call bind/link in CodePeer mode (-P switch).
 
             if Argv'Last >= 7 and then Argv (7) = 'C' then
                CodePeer_Mode := True;

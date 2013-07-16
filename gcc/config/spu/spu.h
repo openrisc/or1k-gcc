@@ -1,5 +1,4 @@
-/* Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+/* Copyright (C) 2006-2013 Free Software Foundation, Inc.
 
    This file is free software; you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free
@@ -519,18 +518,6 @@ do {									\
 #define FUNCTION_MODE QImode
 
 #define NO_IMPLICIT_EXTERN_C 1
-
-/* Canonicalize a comparison from one we don't have to one we do have.  */
-#define CANONICALIZE_COMPARISON(CODE,OP0,OP1) \
-  do {                                                                    \
-    if (((CODE) == LE || (CODE) == LT || (CODE) == LEU || (CODE) == LTU)) \
-      {                                                                   \
-        rtx tem = (OP0);                                                  \
-        (OP0) = (OP1);                                                    \
-        (OP1) = tem;                                                      \
-        (CODE) = swap_condition (CODE);                                   \
-      }                                                                   \
-  } while (0)
 
 
 /* Address spaces.  */

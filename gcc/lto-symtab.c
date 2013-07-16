@@ -1,5 +1,5 @@
 /* LTO symbol table.
-   Copyright 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -46,9 +46,9 @@ lto_cgraph_replace_node (struct cgraph_node *node,
     {
       fprintf (cgraph_dump_file, "Replacing cgraph node %s/%i by %s/%i"
  	       " for symbol %s\n",
-	       cgraph_node_name (node), node->uid,
+	       cgraph_node_name (node), node->symbol.order,
 	       cgraph_node_name (prevailing_node),
-	       prevailing_node->uid,
+	       prevailing_node->symbol.order,
 	       IDENTIFIER_POINTER ((*targetm.asm_out.mangle_assembler_name)
 		 (IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (node->symbol.decl)))));
     }
@@ -91,13 +91,14 @@ static void
 lto_varpool_replace_node (struct varpool_node *vnode,
 			  struct varpool_node *prevailing_node)
 {
-  gcc_assert (!vnode->finalized || prevailing_node->finalized);
-  gcc_assert (!vnode->analyzed || prevailing_node->analyzed);
+  gcc_assert (!vnode->symbol.definition || prevailing_node->symbol.definition);
+  gcc_assert (!vnode->symbol.analyzed || prevailing_node->symbol.analyzed);
 
   ipa_clone_referring ((symtab_node)prevailing_node, &vnode->symbol.ref_list);
 
   /* Be sure we can garbage collect the initializer.  */
-  if (DECL_INITIAL (vnode->symbol.decl))
+  if (DECL_INITIAL (vnode->symbol.decl)
+      && vnode->symbol.decl != prevailing_node->symbol.decl)
     DECL_INITIAL (vnode->symbol.decl) = error_mark_node;
   /* Finally remove the replaced node.  */
   varpool_remove_node (vnode);
@@ -226,12 +227,24 @@ lto_symtab_resolve_replaceable_p (symtab_node e)
   return false;
 }
 
+/* Return true, if the symbol E should be resolved by lto-symtab.
+   Those are all external symbols and all real symbols that are not static (we
+   handle renaming of static later in partitioning).  */
+
+static bool
+lto_symtab_symbol_p (symtab_node e)
+{
+  if (!TREE_PUBLIC (e->symbol.decl) && !DECL_EXTERNAL (e->symbol.decl))
+    return false;
+  return symtab_real_symbol_p (e);
+}
+
 /* Return true if the symtab entry E can be the prevailing one.  */
 
 static bool
 lto_symtab_resolve_can_prevail_p (symtab_node e)
 {
-  if (!symtab_real_symbol_p (e))
+  if (!lto_symtab_symbol_p (e))
     return false;
 
   /* The C++ frontend ends up neither setting TREE_STATIC nor
@@ -240,14 +253,7 @@ lto_symtab_resolve_can_prevail_p (symtab_node e)
   if (DECL_EXTERNAL (e->symbol.decl))
     return false;
 
-  /* For functions we need a non-discarded body.  */
-  if (TREE_CODE (e->symbol.decl) == FUNCTION_DECL)
-    return (cgraph (e)->analyzed);
-
-  else if (TREE_CODE (e->symbol.decl) == VAR_DECL)
-    return varpool (e)->finalized;
-
-  gcc_unreachable ();
+  return e->symbol.definition;
 }
 
 /* Resolve the symbol with the candidates in the chain *SLOT and store
@@ -261,7 +267,7 @@ lto_symtab_resolve_symbols (symtab_node first)
 
   /* Always set e->node so that edges are updated to reflect decl merging. */
   for (e = first; e; e = e->symbol.next_sharing_asm_name)
-    if (symtab_real_symbol_p (e)
+    if (lto_symtab_symbol_p (e)
 	&& (e->symbol.resolution == LDPR_PREVAILING_DEF_IRONLY
 	    || e->symbol.resolution == LDPR_PREVAILING_DEF_IRONLY_EXP
 	    || e->symbol.resolution == LDPR_PREVAILING_DEF))
@@ -275,7 +281,7 @@ lto_symtab_resolve_symbols (symtab_node first)
     {
       /* Assert it's the only one.  */
       for (e = prevailing->symbol.next_sharing_asm_name; e; e = e->symbol.next_sharing_asm_name)
-	if (symtab_real_symbol_p (e)
+	if (lto_symtab_symbol_p (e)
 	    && (e->symbol.resolution == LDPR_PREVAILING_DEF_IRONLY
 		|| e->symbol.resolution == LDPR_PREVAILING_DEF_IRONLY_EXP
 		|| e->symbol.resolution == LDPR_PREVAILING_DEF))
@@ -310,8 +316,7 @@ lto_symtab_resolve_symbols (symtab_node first)
   /* Do a second round choosing one from the replaceable prevailing decls.  */
   for (e = first; e; e = e->symbol.next_sharing_asm_name)
     {
-      if (!lto_symtab_resolve_can_prevail_p (e)
-	  || !symtab_real_symbol_p (e))
+      if (!lto_symtab_resolve_can_prevail_p (e))
 	continue;
 
       /* Choose the first function that can prevail as prevailing.  */
@@ -365,11 +370,12 @@ lto_symtab_merge_decls_2 (symtab_node first, bool diagnosed_p)
   /* Try to merge each entry with the prevailing one.  */
   for (e = prevailing->symbol.next_sharing_asm_name;
        e; e = e->symbol.next_sharing_asm_name)
-    {
-      if (!lto_symtab_merge (prevailing, e)
-	  && !diagnosed_p)
-	mismatches.safe_push (e->symbol.decl);
-    }
+    if (TREE_PUBLIC (e->symbol.decl))
+      {
+	if (!lto_symtab_merge (prevailing, e)
+	    && !diagnosed_p)
+	  mismatches.safe_push (e->symbol.decl);
+      }
   if (mismatches.is_empty ())
     return;
 
@@ -411,7 +417,8 @@ lto_symtab_merge_decls_1 (symtab_node first)
       fprintf (cgraph_dump_file, "Merging nodes for %s. Candidates:\n",
 	       symtab_node_asm_name (first));
       for (e = first; e; e = e->symbol.next_sharing_asm_name)
-	dump_symtab_node (cgraph_dump_file, e);
+	if (TREE_PUBLIC (e->symbol.decl))
+	  dump_symtab_node (cgraph_dump_file, e);
     }
 
   /* Compute the symbol resolutions.  This is a no-op when using the
@@ -436,16 +443,25 @@ lto_symtab_merge_decls_1 (symtab_node first)
 	  for (e = prevailing->symbol.next_sharing_asm_name;
 	       e; e = e->symbol.next_sharing_asm_name)
 	    if (!COMPLETE_TYPE_P (TREE_TYPE (prevailing->symbol.decl))
-		&& COMPLETE_TYPE_P (TREE_TYPE (e->symbol.decl)))
+		&& COMPLETE_TYPE_P (TREE_TYPE (e->symbol.decl))
+		&& lto_symtab_symbol_p (e))
 	      prevailing = e;
+	}
+      /* For variables prefer the non-builtin if one is available.  */
+      else if (TREE_CODE (prevailing->symbol.decl) == FUNCTION_DECL)
+	{
+	  for (e = first; e; e = e->symbol.next_sharing_asm_name)
+	    if (TREE_CODE (e->symbol.decl) == FUNCTION_DECL
+		&& !DECL_BUILT_IN (e->symbol.decl)
+		&& lto_symtab_symbol_p (e))
+	      {
+		prevailing = e;
+		break;
+	      }
 	}
     }
 
   symtab_prevail_in_asm_name_hash (prevailing);
-
-  /* Record the prevailing variable.  */
-  if (TREE_CODE (prevailing->symbol.decl) == VAR_DECL)
-    vec_safe_push (lto_global_var_decls, prevailing->symbol.decl);
 
   /* Diagnose mismatched objects.  */
   for (e = prevailing->symbol.next_sharing_asm_name;
@@ -453,6 +469,8 @@ lto_symtab_merge_decls_1 (symtab_node first)
     {
       if (TREE_CODE (prevailing->symbol.decl)
 	  == TREE_CODE (e->symbol.decl))
+	continue;
+      if (!lto_symtab_symbol_p (e))
 	continue;
 
       switch (TREE_CODE (prevailing->symbol.decl))
@@ -500,26 +518,19 @@ lto_symtab_merge_decls (void)
 {
   symtab_node node;
 
-  /* In ltrans mode we read merged cgraph, we do not really need to care
-     about resolving symbols again, we only need to replace duplicated declarations
-     read from the callgraph and from function sections.  */
-  if (flag_ltrans)
-    return;
-
   /* Populate assembler name hash.   */
   symtab_initialize_asm_name_hash ();
 
   FOR_EACH_SYMBOL (node)
-    if (TREE_PUBLIC (node->symbol.decl)
-	&& node->symbol.next_sharing_asm_name
-	&& !node->symbol.previous_sharing_asm_name)
-    lto_symtab_merge_decls_1 (node);
+    if (!node->symbol.previous_sharing_asm_name
+	&& node->symbol.next_sharing_asm_name)
+      lto_symtab_merge_decls_1 (node);
 }
 
 /* Helper to process the decl chain for the symbol table entry *SLOT.  */
 
 static void
-lto_symtab_merge_cgraph_nodes_1 (symtab_node prevailing)
+lto_symtab_merge_symbols_1 (symtab_node prevailing)
 {
   symtab_node e, next;
 
@@ -529,7 +540,7 @@ lto_symtab_merge_cgraph_nodes_1 (symtab_node prevailing)
     {
       next = e->symbol.next_sharing_asm_name;
 
-      if (!symtab_real_symbol_p (e))
+      if (!lto_symtab_symbol_p (e))
 	continue;
       cgraph_node *ce = dyn_cast <cgraph_node> (e);
       if (ce && !DECL_BUILT_IN (e->symbol.decl))
@@ -545,34 +556,49 @@ lto_symtab_merge_cgraph_nodes_1 (symtab_node prevailing)
    lto_symtab_merge_decls.  */
 
 void
-lto_symtab_merge_cgraph_nodes (void)
+lto_symtab_merge_symbols (void)
 {
-  struct cgraph_node *cnode;
-  struct varpool_node *vnode;
   symtab_node node;
 
-  /* Populate assembler name hash.   */
-  symtab_initialize_asm_name_hash ();
-
   if (!flag_ltrans)
-    FOR_EACH_SYMBOL (node)
-      if (TREE_PUBLIC (node->symbol.decl)
-	  && node->symbol.next_sharing_asm_name
-	  && !node->symbol.previous_sharing_asm_name)
-        lto_symtab_merge_cgraph_nodes_1 (node);
+    {
+      symtab_initialize_asm_name_hash ();
 
-  FOR_EACH_FUNCTION (cnode)
-    {
-      if ((cnode->thunk.thunk_p || cnode->alias)
-	  && cnode->thunk.alias)
-        cnode->thunk.alias = lto_symtab_prevailing_decl (cnode->thunk.alias);
-      cnode->symbol.aux = NULL;
-    }
-  FOR_EACH_VARIABLE (vnode)
-    {
-      if (vnode->alias_of)
-        vnode->alias_of = lto_symtab_prevailing_decl (vnode->alias_of);
-      vnode->symbol.aux = NULL;
+      /* Do the actual merging.  
+         At this point we invalidate hash translating decls into symtab nodes
+	 because after removing one of duplicate decls the hash is not correcly
+	 updated to the ohter dupliate.  */
+      FOR_EACH_SYMBOL (node)
+	if (lto_symtab_symbol_p (node)
+	    && node->symbol.next_sharing_asm_name
+	    && !node->symbol.previous_sharing_asm_name)
+	  lto_symtab_merge_symbols_1 (node);
+
+      /* Resolve weakref aliases whose target are now in the compilation unit.  
+	 also re-populate the hash translating decls into symtab nodes*/
+      FOR_EACH_SYMBOL (node)
+	{
+	  cgraph_node *cnode, *cnode2;
+	  if (!node->symbol.analyzed && node->symbol.alias_target)
+	    {
+	      symtab_node tgt = symtab_node_for_asm (node->symbol.alias_target);
+	      gcc_assert (node->symbol.weakref);
+	      if (tgt)
+		symtab_resolve_alias (node, tgt);
+	    }
+	  node->symbol.aux = NULL;
+	  
+	  if (!(cnode = dyn_cast <cgraph_node> (node))
+	      || !cnode->clone_of
+	      || cnode->clone_of->symbol.decl != cnode->symbol.decl)
+	    {
+	      if (cnode && DECL_BUILT_IN (node->symbol.decl)
+		  && (cnode2 = cgraph_get_node (node->symbol.decl))
+		  && cnode2 != cnode)
+		lto_cgraph_replace_node (cnode2, cnode);
+	      symtab_insert_node_to_hashtable ((symtab_node)node);
+	    }
+	}
     }
 }
 
@@ -584,11 +610,16 @@ lto_symtab_prevailing_decl (tree decl)
   symtab_node ret;
 
   /* Builtins and local symbols are their own prevailing decl.  */
-  if (!TREE_PUBLIC (decl) || is_builtin_fn (decl))
+  if ((!TREE_PUBLIC (decl) && !DECL_EXTERNAL (decl)) || is_builtin_fn (decl))
     return decl;
 
   /* DECL_ABSTRACTs are their own prevailng decl.  */
   if (TREE_CODE (decl) == FUNCTION_DECL && DECL_ABSTRACT (decl))
+    return decl;
+
+  /* Likewise builtins are their own prevailing decl.  This preserves
+     non-builtin vs. builtin uses from compile-time.  */
+  if (TREE_CODE (decl) == FUNCTION_DECL && DECL_BUILT_IN (decl))
     return decl;
 
   /* Ensure DECL_ASSEMBLER_NAME will not set assembler name.  */

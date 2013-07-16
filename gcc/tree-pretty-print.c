@@ -1,6 +1,5 @@
 /* Pretty formatting of GENERIC trees in C syntax.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011  Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Adapted from c-pretty-print.c by Diego Novillo <dnovillo@redhat.com>
 
 This file is part of GCC.
@@ -161,6 +160,7 @@ print_generic_expr (FILE *file, tree t, int flags)
 {
   maybe_init_pretty_print (file);
   dump_generic_node (&buffer, t, 0, flags, false);
+  pp_flush (&buffer);
 }
 
 /* Dump the name of a _DECL node and its DECL_UID if TDF_UID is set
@@ -2410,11 +2410,6 @@ dump_generic_node (pretty_printer *buffer, tree node, int spc, int flags,
   if (is_stmt && is_expr)
     pp_semicolon (buffer);
 
-  /* If we're building a diagnostic, the formatted text will be written
-     into BUFFER's stream by the caller; otherwise, write it now.  */
-  if (!(flags & TDF_DIAGNOSTIC))
-    pp_write_text_to_stream (buffer);
-
   return spc;
 }
 
@@ -3154,7 +3149,7 @@ dump_function_header (FILE *dump_file, tree fdecl, int flags)
     fprintf (dump_file, ", decl_uid=%d", DECL_UID (fdecl));
   if (node)
     {
-      fprintf (dump_file, ", cgraph_uid=%d)%s\n\n", node->uid,
+      fprintf (dump_file, ", symbol_order=%d)%s\n\n", node->symbol.order,
                node->frequency == NODE_FREQUENCY_HOT
                ? " (hot)"
                : node->frequency == NODE_FREQUENCY_UNLIKELY_EXECUTED

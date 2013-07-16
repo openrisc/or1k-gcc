@@ -1,7 +1,7 @@
 (* Common code for ARM NEON header file, documentation and test case
    generators.
 
-   Copyright (C) 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery.
 
    This file is part of GCC.
@@ -21,7 +21,7 @@
    <http://www.gnu.org/licenses/>.  *)
 
 (* Shorthand types for vector elements.  *)
-type elts = S8 | S16 | S32 | S64 | F32 | U8 | U16 | U32 | U64 | P8 | P16
+type elts = S8 | S16 | S32 | S64 | F16 | F32 | U8 | U16 | U32 | U64 | P8 | P16
           | I8 | I16 | I32 | I64 | B8 | B16 | B32 | B64 | Conv of elts * elts
           | Cast of elts * elts | NoElts
 
@@ -37,6 +37,7 @@ type vectype = T_int8x8    | T_int8x16
 	     | T_uint16x4  | T_uint16x8
 	     | T_uint32x2  | T_uint32x4
 	     | T_uint64x1  | T_uint64x2
+	     | T_float16x4
 	     | T_float32x2 | T_float32x4
 	     | T_poly8x8   | T_poly8x16
 	     | T_poly16x4  | T_poly16x8
@@ -46,11 +47,13 @@ type vectype = T_int8x8    | T_int8x16
              | T_uint8     | T_uint16
              | T_uint32    | T_uint64
              | T_poly8     | T_poly16
-             | T_float32   | T_arrayof of int * vectype
+             | T_float16   | T_float32
+             | T_arrayof of int * vectype
              | T_ptrto of vectype | T_const of vectype
              | T_void      | T_intQI
              | T_intHI     | T_intSI
-             | T_intDI     | T_floatSF
+             | T_intDI     | T_floatHF
+             | T_floatSF
 
 (* The meanings of the following are:
      TImode : "Tetra", two registers (four words).
@@ -92,7 +95,7 @@ type arity = Arity0 of vectype
 	   | Arity3 of vectype * vectype * vectype * vectype
            | Arity4 of vectype * vectype * vectype * vectype * vectype
 
-type vecmode = V8QI | V4HI | V2SI | V2SF | DI
+type vecmode = V8QI | V4HI | V4HF |V2SI | V2SF | DI
              | V16QI | V8HI | V4SI | V4SF | V2DI
              | QI | HI | SI | SF
 
@@ -152,6 +155,11 @@ type opcode =
   | Vqdmulh_n
   | Vqdmulh_lane
   (* Unary ops.  *)
+  | Vrintn
+  | Vrinta
+  | Vrintp
+  | Vrintm
+  | Vrintz
   | Vabs
   | Vneg
   | Vcls
@@ -279,17 +287,22 @@ type features =
   | Fixed_core_reg
     (* Mark that the intrinsic requires __ARM_FEATURE_string to be defined.  *)
   | Requires_feature of string
+    (* Mark that the intrinsic requires a particular architecture version.  *)
+  | Requires_arch of int
+    (* Mark that the intrinsic requires a particular bit in __ARM_FP to
+    be set.   *)
+  | Requires_FP_bit of int
 
 exception MixedMode of elts * elts
 
 let rec elt_width = function
     S8 | U8 | P8 | I8 | B8 -> 8
-  | S16 | U16 | P16 | I16 | B16 -> 16
+  | S16 | U16 | P16 | I16 | B16 | F16 -> 16
   | S32 | F32 | U32 | I32 | B32 -> 32
   | S64 | U64 | I64 | B64 -> 64
   | Conv (a, b) ->
       let wa = elt_width a and wb = elt_width b in
-      if wa = wb then wa else failwith "element width?"
+      if wa = wb then wa else raise (MixedMode (a, b))
   | Cast (a, b) -> raise (MixedMode (a, b))
   | NoElts -> failwith "No elts"
 
@@ -297,7 +310,7 @@ let rec elt_class = function
     S8 | S16 | S32 | S64 -> Signed
   | U8 | U16 | U32 | U64 -> Unsigned
   | P8 | P16 -> Poly
-  | F32 -> Float
+  | F16 | F32 -> Float
   | I8 | I16 | I32 | I64 -> Int
   | B8 | B16 | B32 | B64 -> Bits
   | Conv (a, b) | Cast (a, b) -> ConvClass (elt_class a, elt_class b)
@@ -309,6 +322,7 @@ let elt_of_class_width c w =
   | Signed, 16 -> S16
   | Signed, 32 -> S32
   | Signed, 64 -> S64
+  | Float, 16 -> F16
   | Float, 32 -> F32
   | Unsigned, 8 -> U8
   | Unsigned, 16 -> U16
@@ -378,7 +392,12 @@ let find_key_operand operands =
   in
     scan ((Array.length operands) - 1)
 
-let rec mode_of_elt elt shape =
+(* Find a vecmode from a shape_elt ELT for an instruction with shape_form
+   SHAPE.  For a Use_operands shape, if ARGPOS is passed then return the mode
+   for the given argument position, else determine which argument to return a
+   mode for automatically.  *)
+
+let rec mode_of_elt ?argpos elt shape =
   let flt = match elt_class elt with
     Float | ConvClass(_, Float) -> true | _ -> false in
   let idx =
@@ -388,7 +407,10 @@ let rec mode_of_elt elt shape =
   in match shape with
     All (_, Dreg) | By_scalar Dreg | Pair_result Dreg | Unary_scalar Dreg
   | Binary_imm Dreg | Long_noreg Dreg | Wide_noreg Dreg ->
-      [| V8QI; V4HI; if flt then V2SF else V2SI; DI |].(idx)
+      if flt then
+        [| V8QI; V4HF; V2SF; DI |].(idx)
+      else
+        [| V8QI; V4HI; V2SI; DI |].(idx)
   | All (_, Qreg) | By_scalar Qreg | Pair_result Qreg | Unary_scalar Qreg
   | Binary_imm Qreg | Long_noreg Qreg | Wide_noreg Qreg ->
       [| V16QI; V8HI; if flt then V4SF else V4SI; V2DI |].(idx)
@@ -398,7 +420,11 @@ let rec mode_of_elt elt shape =
   | Long_imm ->
       [| V8QI; V4HI; V2SI; DI |].(idx)
   | Narrow | Narrow_imm -> [| V16QI; V8HI; V4SI; V2DI |].(idx)
-  | Use_operands ops -> mode_of_elt elt (All (0, (find_key_operand ops)))
+  | Use_operands ops ->
+      begin match argpos with
+        None -> mode_of_elt ?argpos elt (All (0, (find_key_operand ops)))
+      | Some pos -> mode_of_elt ?argpos elt (All (0, ops.(pos)))
+      end
   | _ -> failwith "invalid shape"
 
 (* Modify an element type dependent on the shape of the instruction and the
@@ -448,10 +474,11 @@ let type_for_elt shape elt no =
         | U16 -> T_uint16x4
         | U32 -> T_uint32x2
         | U64 -> T_uint64x1
+        | F16 -> T_float16x4
         | F32 -> T_float32x2
         | P8 -> T_poly8x8
         | P16 -> T_poly16x4
-        | _ -> failwith "Bad elt type"
+        | _ -> failwith "Bad elt type for Dreg"
         end
     | Qreg ->
         begin match elt with
@@ -466,7 +493,7 @@ let type_for_elt shape elt no =
         | F32 -> T_float32x4
         | P8 -> T_poly8x16
         | P16 -> T_poly16x8
-        | _ -> failwith "Bad elt type"
+        | _ -> failwith "Bad elt type for Qreg"
         end
     | Corereg ->
         begin match elt with
@@ -481,7 +508,7 @@ let type_for_elt shape elt no =
         | P8 -> T_poly8
         | P16 -> T_poly16
         | F32 -> T_float32
-        | _ -> failwith "Bad elt type"
+        | _ -> failwith "Bad elt type for Corereg"
         end
     | Immed ->
         T_immediate (0, 0)
@@ -500,7 +527,7 @@ let type_for_elt shape elt no =
 let vectype_size = function
     T_int8x8 | T_int16x4 | T_int32x2 | T_int64x1
   | T_uint8x8 | T_uint16x4 | T_uint32x2 | T_uint64x1
-  | T_float32x2 | T_poly8x8 | T_poly16x4 -> 64
+  | T_float32x2 | T_poly8x8 | T_poly16x4 | T_float16x4 -> 64
   | T_int8x16 | T_int16x8 | T_int32x4 | T_int64x2
   | T_uint8x16 | T_uint16x8  | T_uint32x4  | T_uint64x2
   | T_float32x4 | T_poly8x16 | T_poly16x8 -> 128
@@ -812,6 +839,27 @@ let ops =
     Vfms, [Requires_feature "FMA"], All (3, Dreg), "vfms", elts_same_io, [F32];
     Vfms, [Requires_feature "FMA"], All (3, Qreg), "vfmsQ", elts_same_io, [F32];
 
+    (* Round to integral. *)
+    Vrintn, [Builtin_name "vrintn"; Requires_arch 8], Use_operands [| Dreg; Dreg |],
+            "vrndn", elts_same_1, [F32];
+    Vrintn, [Builtin_name "vrintn"; Requires_arch 8], Use_operands [| Qreg; Qreg |],
+            "vrndqn", elts_same_1, [F32];
+    Vrinta, [Builtin_name "vrinta"; Requires_arch 8], Use_operands [| Dreg; Dreg |],
+            "vrnda", elts_same_1, [F32];
+    Vrinta, [Builtin_name "vrinta"; Requires_arch 8], Use_operands [| Qreg; Qreg |],
+            "vrndqa", elts_same_1, [F32];
+    Vrintp, [Builtin_name "vrintp"; Requires_arch 8], Use_operands [| Dreg; Dreg |],
+            "vrndp", elts_same_1, [F32];
+    Vrintp, [Builtin_name "vrintp"; Requires_arch 8], Use_operands [| Qreg; Qreg |],
+            "vrndqp", elts_same_1, [F32];
+    Vrintm, [Builtin_name "vrintm"; Requires_arch 8], Use_operands [| Dreg; Dreg |],
+            "vrndm", elts_same_1, [F32];
+    Vrintm, [Builtin_name "vrintm"; Requires_arch 8], Use_operands [| Qreg; Qreg |],
+            "vrndqm", elts_same_1, [F32];
+    Vrintz, [Builtin_name "vrintz"; Requires_arch 8], Use_operands [| Dreg; Dreg |],
+            "vrnd", elts_same_1, [F32];
+    Vrintz, [Builtin_name "vrintz"; Requires_arch 8], Use_operands [| Qreg; Qreg |],
+            "vrndq", elts_same_1, [F32];
     (* Subtraction.  *)
     Vsub, [], All (3, Dreg), "vsub", sign_invar_2, F32 :: su_8_32;
     Vsub, [No_op], All (3, Dreg), "vsub", sign_invar_2,  [S64; U64];
@@ -1190,6 +1238,10 @@ let ops =
       [Conv (S32, F32); Conv (U32, F32); Conv (F32, S32); Conv (F32, U32)];
     Vcvt, [InfoWord], All (2, Qreg), "vcvtQ", conv_1,
       [Conv (S32, F32); Conv (U32, F32); Conv (F32, S32); Conv (F32, U32)];
+    Vcvt, [Builtin_name "vcvt" ; Requires_FP_bit 1],
+          Use_operands [| Dreg; Qreg; |], "vcvt", conv_1, [Conv (F16, F32)];
+    Vcvt, [Builtin_name "vcvt" ; Requires_FP_bit 1],
+          Use_operands [| Qreg; Dreg; |], "vcvt", conv_1, [Conv (F32, F16)];
     Vcvt_n, [InfoWord], Use_operands [| Dreg; Dreg; Immed |], "vcvt_n", conv_2,
       [Conv (S32, F32); Conv (U32, F32); Conv (F32, S32); Conv (F32, U32)];
     Vcvt_n, [InfoWord], Use_operands [| Qreg; Qreg; Immed |], "vcvtQ_n", conv_2,
@@ -1755,7 +1807,7 @@ let rec string_of_elt = function
   | U8 -> "u8" | U16 -> "u16" | U32 -> "u32" | U64 -> "u64"
   | I8 -> "i8" | I16 -> "i16" | I32 -> "i32" | I64 -> "i64"
   | B8 -> "8" | B16 -> "16" | B32 -> "32" | B64 -> "64"
-  | F32 -> "f32" | P8 -> "p8" | P16 -> "p16"
+  | F16 -> "f16" | F32 -> "f32" | P8 -> "p8" | P16 -> "p16"
   | Conv (a, b) | Cast (a, b) -> string_of_elt a ^ "_" ^ string_of_elt b
   | NoElts -> failwith "No elts"
 
@@ -1782,6 +1834,7 @@ let string_of_vectype vt =
   | T_uint32x4 -> affix "uint32x4"
   | T_uint64x1 -> affix "uint64x1"
   | T_uint64x2 -> affix "uint64x2"
+  | T_float16x4 -> affix "float16x4"
   | T_float32x2 -> affix "float32x2"
   | T_float32x4 -> affix "float32x4"
   | T_poly8x8 -> affix "poly8x8"
@@ -1798,6 +1851,7 @@ let string_of_vectype vt =
   | T_uint64 -> affix "uint64"
   | T_poly8 -> affix "poly8"
   | T_poly16 -> affix "poly16"
+  | T_float16 -> affix "float16"
   | T_float32 -> affix "float32"
   | T_immediate _ -> "const int"
   | T_void -> "void"
@@ -1805,6 +1859,7 @@ let string_of_vectype vt =
   | T_intHI -> "__builtin_neon_hi"
   | T_intSI -> "__builtin_neon_si"
   | T_intDI -> "__builtin_neon_di"
+  | T_floatHF -> "__builtin_neon_hf"
   | T_floatSF -> "__builtin_neon_sf"
   | T_arrayof (num, base) ->
       let basename = name (fun x -> x) base in
@@ -1826,10 +1881,10 @@ let string_of_inttype = function
   | B_XImode -> "__builtin_neon_xi"
 
 let string_of_mode = function
-    V8QI -> "v8qi" | V4HI  -> "v4hi"  | V2SI -> "v2si" | V2SF -> "v2sf"
-  | DI   -> "di"   | V16QI -> "v16qi" | V8HI -> "v8hi" | V4SI -> "v4si"
-  | V4SF -> "v4sf" | V2DI  -> "v2di"  | QI -> "qi" | HI -> "hi" | SI -> "si"
-  | SF -> "sf"
+    V8QI -> "v8qi" | V4HI -> "v4hi" | V4HF  -> "v4hf"  | V2SI -> "v2si"
+  | V2SF -> "v2sf" | DI   -> "di"   | V16QI -> "v16qi" | V8HI -> "v8hi"
+  | V4SI -> "v4si" | V4SF -> "v4sf" | V2DI  -> "v2di"  | QI   -> "qi"
+  | HI -> "hi" | SI -> "si" | SF -> "sf"
 
 (* Use uppercase chars for letters which form part of the intrinsic name, but
    should be omitted from the builtin name (the info is passed in an extra

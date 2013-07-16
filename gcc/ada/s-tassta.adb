@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2012, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2013, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -806,8 +806,9 @@ package body System.Tasking.Stages is
    procedure Finalize_Global_Tasks is
       Self_ID : constant Task_Id := STPO.Self;
 
-      Ignore  : Boolean;
-      pragma Unreferenced (Ignore);
+      Ignore_1 : Boolean;
+      Ignore_2 : Boolean;
+      pragma Unreferenced (Ignore_1, Ignore_2);
 
       function State
         (Int : System.Interrupt_Management.Interrupt_ID) return Character;
@@ -877,7 +878,7 @@ package body System.Tasking.Stages is
 
             Timed_Sleep
               (Self_ID, 0.01, System.OS_Primitives.Relative,
-               Self_ID.Common.State, Ignore, Ignore);
+               Self_ID.Common.State, Ignore_1, Ignore_2);
          end loop;
       end if;
 
@@ -886,7 +887,7 @@ package body System.Tasking.Stages is
 
       Timed_Sleep
         (Self_ID, 0.01, System.OS_Primitives.Relative,
-         Self_ID.Common.State, Ignore, Ignore);
+         Self_ID.Common.State, Ignore_1, Ignore_2);
 
       Unlock (Self_ID);
 
@@ -1074,7 +1075,7 @@ package body System.Tasking.Stages is
       procedure Search_Fall_Back_Handler (ID : Task_Id);
       --  Procedure that searches recursively a fall-back handler through the
       --  master relationship. If the handler is found, its pointer is stored
-      --  in TH.
+      --  in TH. It stops when the handler is found or when the ID is null.
 
       ------------------------------
       -- Search_Fall_Back_Handler --
@@ -1082,21 +1083,22 @@ package body System.Tasking.Stages is
 
       procedure Search_Fall_Back_Handler (ID : Task_Id) is
       begin
+         --  A null Task_Id indicates that we have reached the root of the
+         --  task hierarchy and no handler has been found.
+
+         if ID = null then
+            return;
+
          --  If there is a fall back handler, store its pointer for later
          --  execution.
 
-         if ID.Common.Fall_Back_Handler /= null then
+         elsif ID.Common.Fall_Back_Handler /= null then
             TH := ID.Common.Fall_Back_Handler;
 
          --  Otherwise look for a fall back handler in the parent
 
-         elsif ID.Common.Parent /= null then
-            Search_Fall_Back_Handler (ID.Common.Parent);
-
-         --  Otherwise, do nothing
-
          else
-            return;
+            Search_Fall_Back_Handler (ID.Common.Parent);
          end if;
       end Search_Fall_Back_Handler;
 
@@ -1330,9 +1332,12 @@ package body System.Tasking.Stages is
          TH := Self_ID.Common.Specific_Handler;
       else
          --  Look for a fall-back handler following the master relationship
-         --  for the task.
+         --  for the task. As specified in ARM C.7.3 par. 9/2, "the fall-back
+         --  handler applies only to the dependent tasks of the task". Hence,
+         --  if the terminating tasks (Self_ID) had a fall-back handler, it
+         --  would not apply to itself, so we start the search with the parent.
 
-         Search_Fall_Back_Handler (Self_ID);
+         Search_Fall_Back_Handler (Self_ID.Common.Parent);
       end if;
 
       Unlock (Self_ID);

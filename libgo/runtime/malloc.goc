@@ -20,10 +20,12 @@ package runtime
 
 MHeap runtime_mheap;
 
+int32	runtime_checking;
+
 extern MStats mstats;	// defined in zruntime_def_$GOOS_$GOARCH.go
 
 extern volatile intgo runtime_MemProfileRate
-  __asm__ ("runtime.MemProfileRate");
+  __asm__ (GOSYM_PREFIX "runtime.MemProfileRate");
 
 // Allocate an object of at least size bytes.
 // Small objects are allocated from the per-thread cache's free lists.
@@ -308,7 +310,7 @@ runtime_purgecachedstats(MCache *c)
 }
 
 extern uintptr runtime_sizeof_C_MStats
-  __asm__ ("runtime.Sizeof_C_MStats");
+  __asm__ (GOSYM_PREFIX "runtime.Sizeof_C_MStats");
 
 #define MaxArena32 (2U<<30)
 
@@ -491,7 +493,7 @@ runtime_MHeap_SysAlloc(MHeap *h, uintptr n)
 static Lock settype_lock;
 
 void
-runtime_settype_flush(M *m, bool sysalloc)
+runtime_settype_flush(M *mp, bool sysalloc)
 {
 	uintptr *buf, *endbuf;
 	uintptr size, ofs, j, t;
@@ -503,8 +505,8 @@ runtime_settype_flush(M *m, bool sysalloc)
 	uintptr typ, p;
 	MSpan *s;
 
-	buf = m->settype_buf;
-	endbuf = buf + m->settype_bufsize;
+	buf = mp->settype_buf;
+	endbuf = buf + mp->settype_bufsize;
 
 	runtime_lock(&settype_lock);
 	while(buf < endbuf) {
@@ -602,7 +604,7 @@ runtime_settype_flush(M *m, bool sysalloc)
 	}
 	runtime_unlock(&settype_lock);
 
-	m->settype_bufsize = 0;
+	mp->settype_bufsize = 0;
 }
 
 // It is forbidden to use this function if it is possible that
@@ -610,7 +612,7 @@ runtime_settype_flush(M *m, bool sysalloc)
 void
 runtime_settype(void *v, uintptr t)
 {
-	M *m1;
+	M *mp;
 	uintptr *buf;
 	uintptr i;
 	MSpan *s;
@@ -618,16 +620,16 @@ runtime_settype(void *v, uintptr t)
 	if(t == 0)
 		runtime_throw("settype: zero type");
 
-	m1 = runtime_m();
-	buf = m1->settype_buf;
-	i = m1->settype_bufsize;
+	mp = runtime_m();
+	buf = mp->settype_buf;
+	i = mp->settype_bufsize;
 	buf[i+0] = (uintptr)v;
 	buf[i+1] = t;
 	i += 2;
-	m1->settype_bufsize = i;
+	mp->settype_bufsize = i;
 
-	if(i == nelem(m1->settype_buf)) {
-		runtime_settype_flush(m1, false);
+	if(i == nelem(mp->settype_buf)) {
+		runtime_settype_flush(mp, false);
 	}
 
 	if(DebugTypeAtBlockEnd) {
@@ -718,14 +720,22 @@ runtime_new(const Type *typ)
 
 	if(raceenabled)
 		runtime_m()->racepc = runtime_getcallerpc(&typ);
-	flag = typ->__code&GO_NO_POINTERS ? FlagNoPointers : 0;
-	ret = runtime_mallocgc(typ->__size, flag, 1, 1);
 
-	if(UseSpanType && !flag) {
-		if(false) {
-			runtime_printf("new %S: %p\n", *typ->__reflection, ret);
+	if(typ->__size == 0) {
+		// All 0-length allocations use this pointer.
+		// The language does not require the allocations to
+		// have distinct values.
+		ret = (uint8*)&runtime_zerobase;
+	} else {
+		flag = typ->__code&GO_NO_POINTERS ? FlagNoPointers : 0;
+		ret = runtime_mallocgc(typ->__size, flag, 1, 1);
+
+		if(UseSpanType && !flag) {
+			if(false) {
+				runtime_printf("new %S: %p\n", *typ->__reflection, ret);
+			}
+			runtime_settype(ret, (uintptr)typ | TypeInfo_SingleObject);
 		}
-		runtime_settype(ret, (uintptr)typ | TypeInfo_SingleObject);
 	}
 
 	return ret;

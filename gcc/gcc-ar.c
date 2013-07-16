@@ -1,5 +1,5 @@
 /* Wrapper for ar/ranlib/nm to pass the LTO plugin.
-   Copyright (C) 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
    Contributed by Andi Kleen.
 
 This file is part of GCC.
@@ -136,7 +136,7 @@ main(int ac, char **av)
   setup_prefixes (av[0]);
 
   /* Find the GCC LTO plugin */
-  plugin = find_a_file (&target_path, LTOPLUGINSONAME);
+  plugin = find_a_file (&target_path, LTOPLUGINSONAME, R_OK);
   if (!plugin)
     {
       fprintf (stderr, "%s: Cannot find plugin '%s'\n", av[0], LTOPLUGINSONAME);
@@ -144,24 +144,20 @@ main(int ac, char **av)
     }
 
   /* Find the wrapped binutils program.  */
-  exe_name = find_a_file (&target_path, PERSONALITY);
+  exe_name = find_a_file (&target_path, PERSONALITY, X_OK);
   if (!exe_name)
     {
+      const char *real_exe_name = PERSONALITY;
 #ifdef CROSS_DIRECTORY_STRUCTURE
-      const char *cross_exe_name;
-
-      cross_exe_name = concat (target_machine, "-", PERSONALITY, NULL);
-      exe_name = find_a_file (&path, cross_exe_name);
+      real_exe_name = concat (target_machine, "-", PERSONALITY, NULL);
+#endif
+      exe_name = find_a_file (&path, real_exe_name, X_OK);
       if (!exe_name)
 	{
 	  fprintf (stderr, "%s: Cannot find binary '%s'\n", av[0],
-		   cross_exe_name);
+		   real_exe_name);
 	  exit (1);
 	}
-#else
-      fprintf (stderr, "%s: Cannot find binary '%s'\n", av[0], PERSONALITY);
-      exit (1);
-#endif
     }
 
   /* Create new command line with plugin */

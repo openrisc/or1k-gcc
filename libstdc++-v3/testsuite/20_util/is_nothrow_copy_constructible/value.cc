@@ -1,7 +1,7 @@
 // { dg-options "-std=gnu++0x" }
 // 2004-12-30  Paolo Carlini  <pcarlini@suse.de>
 //
-// Copyright (C) 2004, 2005, 2007, 2009, 2011 Free Software Foundation, Inc.
+// Copyright (C) 2004-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -58,6 +58,14 @@ void test01()
 	   int (ClassType::*[2][3])>(false)) );
   VERIFY( (test_category<is_nothrow_copy_constructible,
 	   int (ClassType::*[][2][3]) (int)>(false)) );
+  VERIFY( (test_category<is_nothrow_copy_constructible, 
+       ClassType(unsigned) const &>(false)) );
+  VERIFY( (test_category<is_nothrow_copy_constructible, 
+       bool(ClassType) const>(false)) );
+  VERIFY( (test_category<is_nothrow_copy_constructible, 
+       bool(...) &&>(false)) );
+  VERIFY( (test_category<is_nothrow_copy_constructible, 
+       EnumType(int, ...)>(false)) );
 
   VERIFY( (test_property<is_nothrow_copy_constructible,
 	   volatile NoexceptCopyConsClass>(false)) );

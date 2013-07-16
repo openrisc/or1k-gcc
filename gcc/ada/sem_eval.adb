@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -293,7 +293,7 @@ package body Sem_Eval is
            and then Is_Out_Of_Range (N, Base_Type (T), Assume_Valid => True)
          then
             Error_Msg_N
-              ("?float value out of range, infinity will be generated", N);
+              ("??float value out of range, infinity will be generated", N);
          end if;
 
          return;
@@ -369,7 +369,7 @@ package body Sem_Eval is
            Intval (N) > Expr_Value (Type_High_Bound (Universal_Integer)))
       then
          Apply_Compile_Time_Constraint_Error
-           (N, "non-static universal integer value out of range?",
+           (N, "non-static universal integer value out of range??",
             CE_Range_Check_Failed);
 
       --  Check out of range of base type
@@ -390,7 +390,7 @@ package body Sem_Eval is
 
          elsif Is_Out_Of_Range (N, T, Assume_Valid => True) then
             Apply_Compile_Time_Constraint_Error
-              (N, "value not in range of}?", CE_Range_Check_Failed);
+              (N, "value not in range of}??", CE_Range_Check_Failed);
 
          elsif Checks_On then
             Enable_Range_Check (N);
@@ -407,14 +407,12 @@ package body Sem_Eval is
 
    procedure Check_String_Literal_Length (N : Node_Id; Ttype : Entity_Id) is
    begin
-      if not Raises_Constraint_Error (N)
-        and then Is_Constrained (Ttype)
-      then
+      if not Raises_Constraint_Error (N) and then Is_Constrained (Ttype) then
          if
            UI_From_Int (String_Length (Strval (N))) /= String_Type_Len (Ttype)
          then
             Apply_Compile_Time_Constraint_Error
-              (N, "string length wrong for}?",
+              (N, "string length wrong for}??",
                CE_Length_Check_Failed,
                Ent => Ttype,
                Typ => Ttype);
@@ -530,9 +528,7 @@ package body Sem_Eval is
          --  Fixup only required for First/Last attribute reference
 
          if Nkind (N) = N_Attribute_Reference
-           and then (Attribute_Name (N) = Name_First
-                       or else
-                     Attribute_Name (N) = Name_Last)
+           and then Nam_In (Attribute_Name (N), Name_First, Name_Last)
          then
             Xtyp := Etype (Prefix (N));
 
@@ -699,9 +695,7 @@ package body Sem_Eval is
 
          elsif Nkind (Lf) = N_Attribute_Reference
            and then Attribute_Name (Lf) = Attribute_Name (Rf)
-           and then (Attribute_Name (Lf) = Name_First
-                       or else
-                     Attribute_Name (Lf) = Name_Last)
+           and then Nam_In (Attribute_Name (Lf), Name_First, Name_Last)
            and then Nkind_In (Prefix (Lf), N_Identifier, N_Expanded_Name)
            and then Nkind_In (Prefix (Rf), N_Identifier, N_Expanded_Name)
            and then Entity (Prefix (Lf)) = Entity (Prefix (Rf))
@@ -744,13 +738,18 @@ package body Sem_Eval is
    begin
       Diff.all := No_Uint;
 
-      --  In preanalysis mode, always return Unknown, it is too early to be
-      --  thinking we know the result of a comparison, save that judgment for
-      --  the full analysis. This is particularly important in the case of
-      --  pre and postconditions, which otherwise can be prematurely collapsed
-      --  into having True or False conditions when this is inappropriate.
+      --  In preanalysis mode, always return Unknown unless the expression
+      --  is static. It is too early to be thinking we know the result of a
+      --  comparison, save that judgment for the full analysis. This is
+      --  particularly important in the case of pre and postconditions, which
+      --  otherwise can be prematurely collapsed into having True or False
+      --  conditions when this is inappropriate.
 
-      if not Full_Analysis then
+      if not (Full_Analysis
+               or else (Is_Static_Expression (L)
+                          and then
+                        Is_Static_Expression (R)))
+      then
          return Unknown;
       end if;
 
@@ -1318,7 +1317,19 @@ package body Sem_Eval is
         and then K /= N_Null
         and then not Is_Static_Expression (Op)
       then
-         return False;
+         --  We make an exception for expressions that evaluate to True/False,
+         --  to suppress spurious checks in ZFP mode. So far we have not seen
+         --  any negative consequences of this exception.
+
+         if Is_Entity_Name (Op)
+           and then Ekind (Entity (Op)) = E_Enumeration_Literal
+           and then Etype (Entity (Op)) = Standard_Boolean
+         then
+            null;
+
+         else
+            return False;
+         end if;
       end if;
 
       --  If we have an entity name, then see if it is the name of a constant
@@ -1342,13 +1353,13 @@ package body Sem_Eval is
             if Ekind (E) = E_Enumeration_Literal then
                return True;
 
-            --  In Alfa mode, the value of deferred constants should be ignored
-            --  outside the scope of their full view. This allows parameterized
-            --  formal verification, in which a deferred constant value if not
-            --  known from client units.
+            --  In SPARK mode, the value of deferred constants should be
+            --  ignored outside the scope of their full view. This allows
+            --  parameterized formal verification, in which a deferred constant
+            --  value if not known from client units.
 
             elsif Ekind (E) = E_Constant
-              and then not (Alfa_Mode
+              and then not (SPARK_Mode
                              and then Present (Full_View (E))
                              and then not In_Open_Scopes (Scope (E)))
             then
@@ -1638,7 +1649,7 @@ package body Sem_Eval is
                begin
                   if Result < Lo or else Result > Hi then
                      Apply_Compile_Time_Constraint_Error
-                       (N, "value not in range of }?",
+                       (N, "value not in range of }??",
                         CE_Overflow_Check_Failed,
                         Ent => BT);
                      return;
@@ -1917,20 +1928,17 @@ package body Sem_Eval is
 
          Set_Is_Static_Expression (N, Stat);
 
-         if Stat then
+         --  If left operand is the empty string, the result is the
+         --  right operand, including its bounds if anomalous.
 
-            --  If left operand is the empty string, the result is the
-            --  right operand, including its bounds if anomalous.
-
-            if Left_Len = 0
-              and then Is_Array_Type (Etype (Right))
-              and then Etype (Right) /= Any_String
-            then
-               Set_Etype (N, Etype (Right));
-            end if;
-
-            Fold_Str (N, Folded_Val, Static => True);
+         if Left_Len = 0
+           and then Is_Array_Type (Etype (Right))
+           and then Etype (Right) /= Any_String
+         then
+            Set_Etype (N, Etype (Right));
          end if;
+
+         Fold_Str (N, Folded_Val, Static => Stat);
       end;
    end Eval_Concatenation;
 
@@ -3241,7 +3249,7 @@ package body Sem_Eval is
       Left_Int := Expr_Value (Left);
 
       if (Kind = N_And_Then and then Is_False (Left_Int))
-            or else
+           or else
          (Kind = N_Or_Else  and then Is_True  (Left_Int))
       then
          Fold_Uint (N, Left_Int, Rstat);
@@ -3299,10 +3307,10 @@ package body Sem_Eval is
                     = Entity (Drange)
                then
                   if Warn_On_Redundant_Constructs then
-                     Error_Msg_N ("redundant slice denotes whole array?", N);
+                     Error_Msg_N ("redundant slice denotes whole array?r?", N);
                   end if;
 
-                  --  The following might be a useful optimization????
+                  --  The following might be a useful optimization???
 
                   --  Rewrite (N, New_Occurrence_Of (E, Sloc (N)));
                end if;
@@ -3396,11 +3404,12 @@ package body Sem_Eval is
       --  is too long, or it is null, and the lower bound is type'First. In
       --  either case it is the upper bound that is out of range of the index
       --  type.
-
       if Ada_Version >= Ada_95 then
          if Root_Type (Bas) = Standard_String
               or else
             Root_Type (Bas) = Standard_Wide_String
+              or else
+            Root_Type (Bas) = Standard_Wide_Wide_String
          then
             Xtp := Standard_Positive;
          else
@@ -3413,24 +3422,54 @@ package body Sem_Eval is
             Lo := Type_Low_Bound (Etype (First_Index (Typ)));
          end if;
 
+         --  Check for string too long
+
          Len := String_Length (Strval (N));
 
          if UI_From_Int (Len) > String_Type_Len (Bas) then
-            Apply_Compile_Time_Constraint_Error
-              (N, "string literal too long for}", CE_Length_Check_Failed,
-               Ent => Bas,
-               Typ => First_Subtype (Bas));
+
+            --  Issue message. Note that this message is a warning if the
+            --  string literal is not marked as static (happens in some cases
+            --  of folding strings known at compile time, but not static).
+            --  Furthermore in such cases, we reword the message, since there
+            --  is no string literal in the source program!
+
+            if Is_Static_Expression (N) then
+               Apply_Compile_Time_Constraint_Error
+                 (N, "string literal too long for}", CE_Length_Check_Failed,
+                  Ent => Bas,
+                  Typ => First_Subtype (Bas));
+            else
+               Apply_Compile_Time_Constraint_Error
+                 (N, "string value too long for}", CE_Length_Check_Failed,
+                  Ent  => Bas,
+                  Typ  => First_Subtype (Bas),
+                  Warn => True);
+            end if;
+
+         --  Test for null string not allowed
 
          elsif Len = 0
            and then not Is_Generic_Type (Xtp)
            and then
              Expr_Value (Lo) = Expr_Value (Type_Low_Bound (Base_Type (Xtp)))
          then
-            Apply_Compile_Time_Constraint_Error
-              (N, "null string literal not allowed for}",
-               CE_Length_Check_Failed,
-               Ent => Bas,
-               Typ => First_Subtype (Bas));
+            --  Same specialization of message
+
+            if Is_Static_Expression (N) then
+               Apply_Compile_Time_Constraint_Error
+                 (N, "null string literal not allowed for}",
+                  CE_Length_Check_Failed,
+                  Ent => Bas,
+                  Typ => First_Subtype (Bas));
+            else
+               Apply_Compile_Time_Constraint_Error
+                 (N, "null string value not allowed for}",
+                  CE_Length_Check_Failed,
+                  Ent  => Bas,
+                  Typ  => First_Subtype (Bas),
+                  Warn => True);
+            end if;
          end if;
       end if;
    end Eval_String_Literal;
@@ -4076,7 +4115,7 @@ package body Sem_Eval is
       --  Note that we have to reset Is_Static_Expression both after the
       --  analyze step (because Resolve will evaluate the literal, which
       --  will cause semantic errors if it is marked as static), and after
-      --  the Resolve step (since Resolve in some cases sets this flag).
+      --  the Resolve step (since Resolve in some cases resets this flag).
 
       Analyze (N);
       Set_Is_Static_Expression (N, Static);
@@ -4639,7 +4678,7 @@ package body Sem_Eval is
 
       else
          Apply_Compile_Time_Constraint_Error
-           (N, "value not in range of}?", CE_Range_Check_Failed);
+           (N, "value not in range of}??", CE_Range_Check_Failed);
       end if;
    end Out_Of_Range;
 
@@ -5452,8 +5491,8 @@ package body Sem_Eval is
 
          if Raises_Constraint_Error (Expr) then
             Error_Msg_N
-              ("expression raises exception, cannot be static " &
-               "(RM 4.9(34))!", N);
+              ("\expression raises exception, cannot be static " &
+               "(RM 4.9(34))", N);
             return;
          end if;
 
@@ -5473,8 +5512,8 @@ package body Sem_Eval is
            and then not Is_RTE (Typ, RE_Bignum)
          then
             Error_Msg_N
-              ("static expression must have scalar or string type " &
-               "(RM 4.9(2))!", N);
+              ("\static expression must have scalar or string type " &
+               "(RM 4.9(2))", N);
             return;
          end if;
       end if;
@@ -5482,6 +5521,9 @@ package body Sem_Eval is
       --  If we got through those checks, test particular node kind
 
       case Nkind (N) is
+
+         --  Entity name
+
          when N_Expanded_Name | N_Identifier | N_Operator_Symbol =>
             E := Entity (N);
 
@@ -5489,29 +5531,83 @@ package body Sem_Eval is
                null;
 
             elsif Ekind (E) = E_Constant then
-               if not Is_Static_Expression (Constant_Value (E)) then
-                  Error_Msg_NE
-                    ("& is not a static constant (RM 4.9(5))!", N, E);
-               end if;
+
+               --  One case we can give a metter message is when we have a
+               --  string literal created by concatenating an aggregate with
+               --  an others expression.
+
+               Entity_Case : declare
+                  CV : constant Node_Id := Constant_Value (E);
+                  CO : constant Node_Id := Original_Node (CV);
+
+                  function Is_Aggregate (N : Node_Id) return Boolean;
+                  --  See if node N came from an others aggregate, if so
+                  --  return True and set Error_Msg_Sloc to aggregate.
+
+                  ------------------
+                  -- Is_Aggregate --
+                  ------------------
+
+                  function Is_Aggregate (N : Node_Id) return Boolean is
+                  begin
+                     if Nkind (Original_Node (N)) = N_Aggregate then
+                        Error_Msg_Sloc := Sloc (Original_Node (N));
+                        return True;
+                     elsif Is_Entity_Name (N)
+                       and then Ekind (Entity (N)) = E_Constant
+                       and then
+                         Nkind (Original_Node (Constant_Value (Entity (N)))) =
+                                                                  N_Aggregate
+                     then
+                        Error_Msg_Sloc :=
+                          Sloc (Original_Node (Constant_Value (Entity (N))));
+                        return True;
+                     else
+                        return False;
+                     end if;
+                  end Is_Aggregate;
+
+               --  Start of processing for Entity_Case
+
+               begin
+                  if Is_Aggregate (CV)
+                    or else (Nkind (CO) = N_Op_Concat
+                              and then (Is_Aggregate (Left_Opnd (CO))
+                                          or else
+                                        Is_Aggregate (Right_Opnd (CO))))
+                  then
+                     Error_Msg_N ("\aggregate (#) is never static", N);
+
+                  elsif not Is_Static_Expression (CV) then
+                     Error_Msg_NE
+                       ("\& is not a static constant (RM 4.9(5))", N, E);
+                  end if;
+               end Entity_Case;
 
             else
                Error_Msg_NE
-                 ("& is not static constant or named number " &
-                  "(RM 4.9(5))!", N, E);
+                 ("\& is not static constant or named number "
+                  & "(RM 4.9(5))", N, E);
             end if;
+
+         --  Binary operator
 
          when N_Binary_Op | N_Short_Circuit | N_Membership_Test =>
             if Nkind (N) in N_Op_Shift then
                Error_Msg_N
-                ("shift functions are never static (RM 4.9(6,18))!", N);
+                ("\shift functions are never static (RM 4.9(6,18))", N);
 
             else
                Why_Not_Static (Left_Opnd (N));
                Why_Not_Static (Right_Opnd (N));
             end if;
 
+         --  Unary operator
+
          when N_Unary_Op =>
             Why_Not_Static (Right_Opnd (N));
+
+         --  Attribute reference
 
          when N_Attribute_Reference =>
             Why_Not_Static_List (Expressions (N));
@@ -5526,8 +5622,8 @@ package body Sem_Eval is
 
             if Attribute_Name (N) = Name_Size then
                Error_Msg_N
-                 ("size attribute is only static for static scalar type " &
-                  "(RM 4.9(7,8))", N);
+                 ("\size attribute is only static for static scalar type "
+                  & "(RM 4.9(7,8))", N);
 
             --  Flag array cases
 
@@ -5539,15 +5635,15 @@ package body Sem_Eval is
                   Attribute_Name (N) /= Name_Length
                then
                   Error_Msg_N
-                    ("static array attribute must be Length, First, or Last " &
-                     "(RM 4.9(8))!", N);
+                    ("\static array attribute must be Length, First, or Last "
+                     & "(RM 4.9(8))", N);
 
                --  Since we know the expression is not-static (we already
                --  tested for this, must mean array is not static).
 
                else
                   Error_Msg_N
-                    ("prefix is non-static array (RM 4.9(8))!", Prefix (N));
+                    ("\prefix is non-static array (RM 4.9(8))", Prefix (N));
                end if;
 
                return;
@@ -5560,30 +5656,36 @@ package body Sem_Eval is
                   Is_Generic_Type (E)
             then
                Error_Msg_N
-                 ("attribute of generic type is never static " &
-                  "(RM 4.9(7,8))!", N);
+                 ("\attribute of generic type is never static "
+                  & "(RM 4.9(7,8))", N);
 
             elsif Is_Static_Subtype (E) then
                null;
 
             elsif Is_Scalar_Type (E) then
                Error_Msg_N
-                 ("prefix type for attribute is not static scalar subtype " &
-                  "(RM 4.9(7))!", N);
+                 ("\prefix type for attribute is not static scalar subtype "
+                  & "(RM 4.9(7))", N);
 
             else
                Error_Msg_N
-                 ("static attribute must apply to array/scalar type " &
-                  "(RM 4.9(7,8))!", N);
+                 ("\static attribute must apply to array/scalar type "
+                  & "(RM 4.9(7,8))", N);
             end if;
+
+         --  String literal
 
          when N_String_Literal =>
             Error_Msg_N
-              ("subtype of string literal is non-static (RM 4.9(4))!", N);
+              ("\subtype of string literal is non-static (RM 4.9(4))", N);
+
+         --  Explicit dereference
 
          when N_Explicit_Dereference =>
             Error_Msg_N
-              ("explicit dereference is never static (RM 4.9)!", N);
+              ("\explicit dereference is never static (RM 4.9)", N);
+
+         --  Function call
 
          when N_Function_Call =>
             Why_Not_Static_List (Parameter_Associations (N));
@@ -5593,44 +5695,59 @@ package body Sem_Eval is
             --  scalar arithmetic operation.
 
             if not Is_RTE (Typ, RE_Bignum) then
-               Error_Msg_N ("non-static function call (RM 4.9(6,18))!", N);
+               Error_Msg_N ("\non-static function call (RM 4.9(6,18))", N);
             end if;
+
+         --  Parameter assocation (test actual parameter)
 
          when N_Parameter_Association =>
             Why_Not_Static (Explicit_Actual_Parameter (N));
 
+         --  Indexed component
+
          when N_Indexed_Component =>
-            Error_Msg_N
-              ("indexed component is never static (RM 4.9)!", N);
+            Error_Msg_N ("\indexed component is never static (RM 4.9)", N);
+
+         --  Procedure call
 
          when N_Procedure_Call_Statement =>
-            Error_Msg_N
-              ("procedure call is never static (RM 4.9)!", N);
+            Error_Msg_N ("\procedure call is never static (RM 4.9)", N);
+
+         --  Qualified expression (test expression)
 
          when N_Qualified_Expression =>
             Why_Not_Static (Expression (N));
 
+         --  Aggregate
+
          when N_Aggregate | N_Extension_Aggregate =>
-            Error_Msg_N
-              ("an aggregate is never static (RM 4.9)!", N);
+            Error_Msg_N ("\an aggregate is never static (RM 4.9)", N);
+
+         --  Range
 
          when N_Range =>
             Why_Not_Static (Low_Bound (N));
             Why_Not_Static (High_Bound (N));
 
+         --  Range constraint, test range expression
+
          when N_Range_Constraint =>
             Why_Not_Static (Range_Expression (N));
+
+         --  Subtype indication, test constraint
 
          when N_Subtype_Indication =>
             Why_Not_Static (Constraint (N));
 
+         --  Selected component
+
          when N_Selected_Component =>
-            Error_Msg_N
-              ("selected component is never static (RM 4.9)!", N);
+            Error_Msg_N ("\selected component is never static (RM 4.9)", N);
+
+         --  Slice
 
          when N_Slice =>
-            Error_Msg_N
-              ("slice is never static (RM 4.9)!", N);
+            Error_Msg_N ("\slice is never static (RM 4.9)", N);
 
          when N_Type_Conversion =>
             Why_Not_Static (Expression (N));
@@ -5639,13 +5756,17 @@ package body Sem_Eval is
               or else not Is_Static_Subtype (Entity (Subtype_Mark (N)))
             then
                Error_Msg_N
-                 ("static conversion requires static scalar subtype result " &
-                  "(RM 4.9(9))!", N);
+                 ("\static conversion requires static scalar subtype result "
+                  & "(RM 4.9(9))", N);
             end if;
+
+         --  Unchecked type conversion
 
          when N_Unchecked_Type_Conversion =>
             Error_Msg_N
-              ("unchecked type conversion is never static (RM 4.9)!", N);
+              ("\unchecked type conversion is never static (RM 4.9)", N);
+
+         --  All other cases, no reason to give
 
          when others =>
             null;

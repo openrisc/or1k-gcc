@@ -1,8 +1,6 @@
 # libstdc++ "tool init file" for DejaGNU
 
-# Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-# 2009, 2010, 2011, 2012
-# Free Software Foundation, Inc.
+# Copyright (C) 2001-2013 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -163,7 +161,9 @@ proc libstdc++_init { testfile } {
     set v3-sharedlib 0
     set sharedlibdir [lookfor_file $blddir src/.libs/libstdc++.$shlib_ext]
     if {$sharedlibdir != ""} {
-	if { [string match "*-*-linux*" $target_triplet] && [isnative] } {
+	if { ([string match "*-*-linux*" $target_triplet]
+	      || [string match "*-*-gnu*" $target_triplet])
+	     && [isnative] } then {
 	    set v3-sharedlib 1
 	    verbose -log "shared library support detected"
 	} 
@@ -389,15 +389,22 @@ if { [info procs saved-dg-test] == [list] } {
     proc dg-test { args } {
 	global additional_prunes
 	global errorInfo
+	global testname_with_flags
 
 	if { [ catch { eval saved-dg-test $args } errmsg ] } {
 	    set saved_info $errorInfo
 	    set additional_prunes ""
+	    if [info exists testname_with_flags] {
+		unset testname_with_flags
+	    }
 	    unset_timeout_vars
 	    error $errmsg $saved_info
 	}
 	set additional_prunes ""
 	unset_timeout_vars
+	if [info exists testname_with_flags] {
+	    unset testname_with_flags
+	}
     }
 }
 
@@ -621,7 +628,7 @@ proc v3-build_support { } {
 	    # Compile with "-w" so that warnings issued by the compiler
 	    # do not prevent compilation.
 	    if { [v3_target_compile $srcdir/util/$f $object_file "sharedlib" \
-	     [list "incdir=$srcdir" "additional_flags=-w -shared -fPIC -DPIC"]]
+	     [list "incdir=$srcdir" "additional_flags=-fno-inline -w -shared -fPIC -DPIC"]]
 		 != "" } {
 		error "could not compile $f"
 	    }

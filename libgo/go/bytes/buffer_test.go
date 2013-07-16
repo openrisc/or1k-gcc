@@ -260,7 +260,7 @@ func TestWriteTo(t *testing.T) {
 
 func TestRuneIO(t *testing.T) {
 	const NRune = 1000
-	// Built a test array while we write the data
+	// Built a test slice while we write the data
 	b := make([]byte, utf8.UTFMax*NRune)
 	var buf Buffer
 	n := 0
@@ -375,6 +375,41 @@ func TestReadBytes(t *testing.T) {
 	}
 }
 
+func TestReadString(t *testing.T) {
+	for _, test := range readBytesTests {
+		buf := NewBufferString(test.buffer)
+		var err error
+		for _, expected := range test.expected {
+			var s string
+			s, err = buf.ReadString(test.delim)
+			if s != expected {
+				t.Errorf("expected %q, got %q", expected, s)
+			}
+			if err != nil {
+				break
+			}
+		}
+		if err != test.err {
+			t.Errorf("expected error %v, got %v", test.err, err)
+		}
+	}
+}
+
+func BenchmarkReadString(b *testing.B) {
+	const n = 32 << 10
+
+	data := make([]byte, n)
+	data[n-1] = 'x'
+	b.SetBytes(int64(n))
+	for i := 0; i < b.N; i++ {
+		buf := NewBuffer(data)
+		_, err := buf.ReadString('x')
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestGrow(t *testing.T) {
 	x := []byte{'x'}
 	y := []byte{'y'}
@@ -416,5 +451,27 @@ func TestReadEmptyAtEOF(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("wrong count; got %d want 0", n)
+	}
+}
+
+func TestUnreadByte(t *testing.T) {
+	b := new(Buffer)
+	b.WriteString("abcdefghijklmnopqrstuvwxyz")
+
+	_, err := b.ReadBytes('m')
+	if err != nil {
+		t.Fatalf("ReadBytes: %v", err)
+	}
+
+	err = b.UnreadByte()
+	if err != nil {
+		t.Fatalf("UnreadByte: %v", err)
+	}
+	c, err := b.ReadByte()
+	if err != nil {
+		t.Fatalf("ReadByte: %v", err)
+	}
+	if c != 'm' {
+		t.Errorf("ReadByte = %q; want %q", c, 'm')
 	}
 }

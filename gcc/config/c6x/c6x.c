@@ -1,5 +1,5 @@
 /* Target Code for TI C6X
-   Copyright (C) 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Andrew Jenner <andrew@codesourcery.com>
    Contributed by Bernd Schmidt <bernds@codesourcery.com>
 
@@ -183,7 +183,7 @@ typedef int unit_req_table[2][UNIT_REQ_MAX];
 static unit_req_table unit_reqs;
 
 /* Register map for debugging.  */
-int const dbx_register_map[FIRST_PSEUDO_REGISTER] =
+unsigned const dbx_register_map[FIRST_PSEUDO_REGISTER] =
 {
   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,	/* A0 - A15.  */
   37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,	/* A16 - A32.  */
@@ -4848,7 +4848,7 @@ reorg_split_calls (rtx *call_labels)
 {
   unsigned int reservation_mask = 0;
   rtx insn = get_insns ();
-  gcc_assert (GET_CODE (insn) == NOTE);
+  gcc_assert (NOTE_P (insn));
   insn = next_real_insn (insn);
   while (insn)
     {
@@ -5052,9 +5052,7 @@ reorg_emit_nops (rtx *call_labels)
 	  || GET_CODE (PATTERN (insn)) == USE
 	  || GET_CODE (PATTERN (insn)) == CLOBBER
 	  || shadow_or_blockage_p (insn)
-	  || (JUMP_P (insn)
-	      && (GET_CODE (PATTERN (insn)) == ADDR_DIFF_VEC
-		  || GET_CODE (PATTERN (insn)) == ADDR_VEC)))
+	  || JUMP_TABLE_DATA_P (insn))
 	goto next_insn;
 
       if (!c6x_flag_schedule_insns2)

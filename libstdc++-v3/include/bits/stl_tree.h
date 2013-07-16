@@ -1,8 +1,6 @@
 // RB tree implementation -*- C++ -*-
 
-// Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-// 2009, 2010, 2011
-// Free Software Foundation, Inc.
+// Copyright (C) 2001-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -64,6 +62,9 @@
 #include <bits/allocator.h>
 #include <bits/stl_function.h>
 #include <bits/cpp_type_traits.h>
+#if __cplusplus >= 201103L
+#include <bits/alloc_traits.h>
+#endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -335,21 +336,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
               _Node_allocator;
 
     protected:
-      typedef _Rb_tree_node_base* _Base_ptr;
-      typedef const _Rb_tree_node_base* _Const_Base_ptr;
+      typedef _Rb_tree_node_base* 		_Base_ptr;
+      typedef const _Rb_tree_node_base* 	_Const_Base_ptr;
 
     public:
-      typedef _Key key_type;
-      typedef _Val value_type;
-      typedef value_type* pointer;
-      typedef const value_type* const_pointer;
-      typedef value_type& reference;
-      typedef const value_type& const_reference;
-      typedef _Rb_tree_node<_Val>* _Link_type;
-      typedef const _Rb_tree_node<_Val>* _Const_Link_type;
-      typedef size_t size_type;
-      typedef ptrdiff_t difference_type;
-      typedef _Alloc allocator_type;
+      typedef _Key 				key_type;
+      typedef _Val 				value_type;
+      typedef value_type* 			pointer;
+      typedef const value_type* 		const_pointer;
+      typedef value_type& 			reference;
+      typedef const value_type& 		const_reference;
+      typedef _Rb_tree_node<_Val>* 		_Link_type;
+      typedef const _Rb_tree_node<_Val>*	_Const_Link_type;
+      typedef size_t 				size_type;
+      typedef ptrdiff_t 			difference_type;
+      typedef _Alloc 				allocator_type;
 
       _Node_allocator&
       _M_get_Node_allocator() _GLIBCXX_NOEXCEPT
@@ -402,8 +403,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  _Link_type __tmp = _M_get_node();
 	  __try
 	    {
-	      _M_get_Node_allocator().construct(__tmp,
-					     std::forward<_Args>(__args)...);
+	      allocator_traits<_Node_allocator>::
+		construct(_M_get_Node_allocator(), __tmp,
+			  std::forward<_Args>(__args)...);
 	    }
 	  __catch(...)
 	    {
@@ -798,6 +800,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #if __cplusplus >= 201103L
       // _GLIBCXX_RESOLVE_LIB_DEFECTS
       // DR 130. Associative erase should return an iterator.
+      _GLIBCXX_ABI_TAG_CXX11
       iterator
       erase(const_iterator __position)
       {
@@ -808,6 +811,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       }
 
       // LWG 2059.
+      _GLIBCXX_ABI_TAG_CXX11
       iterator
       erase(iterator __position)
       {
@@ -831,6 +835,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #if __cplusplus >= 201103L
       // _GLIBCXX_RESOLVE_LIB_DEFECTS
       // DR 130. Associative erase should return an iterator.
+      _GLIBCXX_ABI_TAG_CXX11
       iterator
       erase(const_iterator __first, const_iterator __last)
       {

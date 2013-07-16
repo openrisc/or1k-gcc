@@ -1,8 +1,6 @@
 /* Collect static initialization info into data structures that can be
    traversed by C++ initialization and finalization routines.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
    Contributed by Chris Smith (csmith@convex.com).
    Heavily modified by Michael Meissner (meissner@cygnus.com),
    Per Bothner (bothner@cygnus.com), and John Gilmore (gnu@cygnus.com).
@@ -368,8 +366,8 @@ static void scan_prog_file (const char *, scanpass, scanfilter);
 
 /* Delete tempfiles and exit function.  */
 
-void
-collect_exit (int status)
+static void
+collect_atexit (void)
 {
   if (c_file != 0 && c_file[0])
     maybe_unlink (c_file);
@@ -397,13 +395,8 @@ collect_exit (int status)
       maybe_unlink (lderrout);
     }
 
-  if (status != 0 && output_file != 0 && output_file[0])
-    maybe_unlink (output_file);
-
   if (response_file)
     maybe_unlink (response_file);
-
-  exit (status);
 }
 
 
@@ -842,8 +835,21 @@ maybe_run_lto_and_relink (char **lto_ld_argv, char **object_lst,
 int
 main (int argc, char **argv)
 {
-  static const char *const ld_suffix	= "ld";
-  static const char *const plugin_ld_suffix = PLUGIN_LD_SUFFIX;
+  enum linker_select
+    {
+      USE_DEFAULT_LD,
+      USE_PLUGIN_LD,
+      USE_GOLD_LD,
+      USE_BFD_LD,
+      USE_LD_MAX
+    } selected_linker = USE_DEFAULT_LD;
+  static const char *const ld_suffixes[USE_LD_MAX] =
+    {
+      "ld",
+      PLUGIN_LD_SUFFIX,
+      "ld.gold",
+      "ld.bfd"
+    };
   static const char *const real_ld_suffix = "real-ld";
   static const char *const collect_ld_suffix = "collect-ld";
   static const char *const nm_suffix	= "nm";
@@ -854,16 +860,13 @@ main (int argc, char **argv)
   static const char *const strip_suffix = "strip";
   static const char *const gstrip_suffix = "gstrip";
 
+  const char *full_ld_suffixes[USE_LD_MAX];
 #ifdef CROSS_DIRECTORY_STRUCTURE
   /* If we look for a program in the compiler directories, we just use
      the short name, since these directories are already system-specific.
      But it we look for a program in the system directories, we need to
      qualify the program name with the target machine.  */
 
-  const char *const full_ld_suffix =
-    concat(target_machine, "-", ld_suffix, NULL);
-  const char *const full_plugin_ld_suffix =
-    concat(target_machine, "-", plugin_ld_suffix, NULL);
   const char *const full_nm_suffix =
     concat (target_machine, "-", nm_suffix, NULL);
   const char *const full_gnm_suffix =
@@ -877,13 +880,11 @@ main (int argc, char **argv)
   const char *const full_gstrip_suffix =
     concat (target_machine, "-", gstrip_suffix, NULL);
 #else
-  const char *const full_ld_suffix	= ld_suffix;
-  const char *const full_plugin_ld_suffix = plugin_ld_suffix;
-  const char *const full_nm_suffix	= nm_suffix;
-  const char *const full_gnm_suffix	= gnm_suffix;
 #ifdef LDD_SUFFIX
   const char *const full_ldd_suffix	= ldd_suffix;
 #endif
+  const char *const full_nm_suffix	= nm_suffix;
+  const char *const full_gnm_suffix	= gnm_suffix;
   const char *const full_strip_suffix	= strip_suffix;
   const char *const full_gstrip_suffix	= gstrip_suffix;
 #endif /* CROSS_DIRECTORY_STRUCTURE */
@@ -900,6 +901,7 @@ main (int argc, char **argv)
   char **ld1_argv;
   const char **ld1;
   bool use_plugin = false;
+  bool use_collect_ld = false;
 
   /* The kinds of symbols we will have to consider when scanning the
      outcome of a first pass link.  This is ALL to start with, then might
@@ -919,6 +921,15 @@ main (int argc, char **argv)
   int first_file;
   int num_c_args;
   char **old_argv;
+  int i;
+
+  for (i = 0; i < USE_LD_MAX; i++)
+    full_ld_suffixes[i]
+#ifdef CROSS_DIRECTORY_STRUCTURE
+      = concat (target_machine, "-", ld_suffixes[i], NULL);
+#else
+      = ld_suffixes[i];
+#endif
 
   p = argv[0] + strlen (argv[0]);
   while (p != argv[0] && !IS_DIR_SEPARATOR (p[-1]))
@@ -954,6 +965,9 @@ main (int argc, char **argv)
   signal (SIGCHLD, SIG_DFL);
 #endif
 
+  if (atexit (collect_atexit) != 0)
+    fatal_error ("atexit failed");
+
   /* Unlock the stdio streams.  */
   unlock_std_streams ();
 
@@ -980,7 +994,6 @@ main (int argc, char **argv)
      are called.  We also look for the -flto or -flto-partition=none flag to know
      what LTO mode we are in.  */
   {
-    int i;
     bool no_partition = false;
 
     for (i = 1; argv[i] != NULL; i ++)
@@ -998,22 +1011,29 @@ main (int argc, char **argv)
 	  {
 	    use_plugin = true;
 	    lto_mode = LTO_MODE_NONE;
+	    if (selected_linker == USE_DEFAULT_LD)
+	      selected_linker = USE_PLUGIN_LD;
 	  }
+	else if (strcmp (argv[i], "-fuse-ld=bfd") == 0)
+	  selected_linker = USE_BFD_LD;
+	else if (strcmp (argv[i], "-fuse-ld=gold") == 0)
+	  selected_linker = USE_GOLD_LD;
+
 #ifdef COLLECT_EXPORT_LIST
-	/* since -brtl, -bexport, -b64 are not position dependent
-	   also check for them here */
-	if ((argv[i][0] == '-') && (argv[i][1] == 'b'))
-  	  {
-	    arg = argv[i];
-	    /* We want to disable automatic exports on AIX when user
-	       explicitly puts an export list in command line */
-	    if (arg[2] == 'E' || strncmp (&arg[2], "export", 6) == 0)
-	      export_flag = 1;
-	    else if (arg[2] == '6' && arg[3] == '4')
-	      aix64_flag = 1;
-	    else if (arg[2] == 'r' && arg[3] == 't' && arg[4] == 'l')
-	      aixrtl_flag = 1;
-	  }
+	/* These flags are position independent, although their order
+	   is important - subsequent flags override earlier ones. */
+	else if (strcmp (argv[i], "-b64") == 0)
+	    aix64_flag = 1;
+	/* -bexport:filename always needs the :filename */
+	else if (strncmp (argv[i], "-bE:", 4) == 0
+	      || strncmp (argv[i], "-bexport:", 9) == 0)
+	    export_flag = 1;
+	else if (strcmp (argv[i], "-brtl") == 0
+	      || strcmp (argv[i], "-bsvr4") == 0
+	      || strcmp (argv[i], "-G") == 0)
+	    aixrtl_flag = 1;
+	else if (strcmp (argv[i], "-bnortl") == 0)
+	    aixrtl_flag = 0;
 #endif
       }
     vflag = debug;
@@ -1088,58 +1108,55 @@ main (int argc, char **argv)
   if (ld_file_name == 0)
 #endif
 #ifdef REAL_LD_FILE_NAME
-  ld_file_name = find_a_file (&path, REAL_LD_FILE_NAME);
+  ld_file_name = find_a_file (&path, REAL_LD_FILE_NAME, X_OK);
   if (ld_file_name == 0)
 #endif
   /* Search the (target-specific) compiler dirs for ld'.  */
-  ld_file_name = find_a_file (&cpath, real_ld_suffix);
+  ld_file_name = find_a_file (&cpath, real_ld_suffix, X_OK);
   /* Likewise for `collect-ld'.  */
   if (ld_file_name == 0)
-    ld_file_name = find_a_file (&cpath, collect_ld_suffix);
+    {
+      ld_file_name = find_a_file (&cpath, collect_ld_suffix, X_OK);
+      use_collect_ld = ld_file_name != 0;
+    }
   /* Search the compiler directories for `ld'.  We have protection against
      recursive calls in find_a_file.  */
   if (ld_file_name == 0)
-    ld_file_name = find_a_file (&cpath,
-				use_plugin
-				? plugin_ld_suffix
-				: ld_suffix);
+    ld_file_name = find_a_file (&cpath, ld_suffixes[selected_linker], X_OK);
   /* Search the ordinary system bin directories
      for `ld' (if native linking) or `TARGET-ld' (if cross).  */
   if (ld_file_name == 0)
-    ld_file_name = find_a_file (&path,
-				use_plugin
-				? full_plugin_ld_suffix
-				: full_ld_suffix);
+    ld_file_name = find_a_file (&path, full_ld_suffixes[selected_linker], X_OK);
 
 #ifdef REAL_NM_FILE_NAME
-  nm_file_name = find_a_file (&path, REAL_NM_FILE_NAME);
+  nm_file_name = find_a_file (&path, REAL_NM_FILE_NAME, X_OK);
   if (nm_file_name == 0)
 #endif
-  nm_file_name = find_a_file (&cpath, gnm_suffix);
+  nm_file_name = find_a_file (&cpath, gnm_suffix, X_OK);
   if (nm_file_name == 0)
-    nm_file_name = find_a_file (&path, full_gnm_suffix);
+    nm_file_name = find_a_file (&path, full_gnm_suffix, X_OK);
   if (nm_file_name == 0)
-    nm_file_name = find_a_file (&cpath, nm_suffix);
+    nm_file_name = find_a_file (&cpath, nm_suffix, X_OK);
   if (nm_file_name == 0)
-    nm_file_name = find_a_file (&path, full_nm_suffix);
+    nm_file_name = find_a_file (&path, full_nm_suffix, X_OK);
 
 #ifdef LDD_SUFFIX
-  ldd_file_name = find_a_file (&cpath, ldd_suffix);
+  ldd_file_name = find_a_file (&cpath, ldd_suffix, X_OK);
   if (ldd_file_name == 0)
-    ldd_file_name = find_a_file (&path, full_ldd_suffix);
+    ldd_file_name = find_a_file (&path, full_ldd_suffix, X_OK);
 #endif
 
 #ifdef REAL_STRIP_FILE_NAME
-  strip_file_name = find_a_file (&path, REAL_STRIP_FILE_NAME);
+  strip_file_name = find_a_file (&path, REAL_STRIP_FILE_NAME, X_OK);
   if (strip_file_name == 0)
 #endif
-  strip_file_name = find_a_file (&cpath, gstrip_suffix);
+  strip_file_name = find_a_file (&cpath, gstrip_suffix, X_OK);
   if (strip_file_name == 0)
-    strip_file_name = find_a_file (&path, full_gstrip_suffix);
+    strip_file_name = find_a_file (&path, full_gstrip_suffix, X_OK);
   if (strip_file_name == 0)
-    strip_file_name = find_a_file (&cpath, strip_suffix);
+    strip_file_name = find_a_file (&cpath, strip_suffix, X_OK);
   if (strip_file_name == 0)
-    strip_file_name = find_a_file (&path, full_strip_suffix);
+    strip_file_name = find_a_file (&path, full_strip_suffix, X_OK);
 
   /* Determine the full path name of the C compiler to use.  */
   c_file_name = getenv ("COLLECT_GCC");
@@ -1152,12 +1169,12 @@ main (int argc, char **argv)
 #endif
     }
 
-  p = find_a_file (&cpath, c_file_name);
+  p = find_a_file (&cpath, c_file_name, X_OK);
 
   /* Here it should be safe to use the system search path since we should have
      already qualified the name of the compiler when it is needed.  */
   if (p == 0)
-    p = find_a_file (&path, c_file_name);
+    p = find_a_file (&path, c_file_name, X_OK);
 
   if (p)
     c_file_name = p;
@@ -1170,8 +1187,11 @@ main (int argc, char **argv)
 #ifdef COLLECT_EXPORT_LIST
   export_file = make_temp_file (".x");
 #endif
-  ldout = make_temp_file (".ld");
-  lderrout = make_temp_file (".le");
+  if (!debug)
+    {
+      ldout = make_temp_file (".ld");
+      lderrout = make_temp_file (".le");
+    }
   *c_ptr++ = c_file_name;
   *c_ptr++ = "-x";
   *c_ptr++ = "c";
@@ -1265,6 +1285,13 @@ main (int argc, char **argv)
 		  error ("LTO support has not been enabled in this "
 			 "configuration");
 #endif
+		}
+	      else if (!use_collect_ld
+		       && strncmp (arg, "-fuse-ld=", 9) == 0)
+		{
+		  /* Do not pass -fuse-ld={bfd|gold} to the linker. */
+		  ld1--;
+		  ld2--;
 		}
 #ifdef TARGET_AIX_VERSION
 	      else
@@ -1787,7 +1814,7 @@ collect_wait (const char *prog, struct pex_obj *pex)
 	  error ("%s terminated with signal %d [%s]%s",
 		 prog, sig, strsignal(sig),
 		 WCOREDUMP(status) ? ", core dumped" : "");
-	  collect_exit (FATAL_EXIT_CODE);
+	  exit (FATAL_EXIT_CODE);
 	}
 
       if (WIFEXITED (status))
@@ -1803,7 +1830,7 @@ do_wait (const char *prog, struct pex_obj *pex)
   if (ret != 0)
     {
       error ("%s returned %d exit status", prog, ret);
-      collect_exit (ret);
+      exit (ret);
     }
 
   if (response_file)
@@ -2737,12 +2764,14 @@ scan_libraries (const char *prog_name)
 /* 0757 = U803XTOCMAGIC (AIX 4.3) and 0767 = U64_TOCMAGIC (AIX V5) */
 #if TARGET_AIX_VERSION >= 51
 #   define GCC_CHECK_HDR(X) \
-     ((HEADER (X).f_magic == U802TOCMAGIC && ! aix64_flag) \
-      || (HEADER (X).f_magic == 0767 && aix64_flag))
+     (((HEADER (X).f_magic == U802TOCMAGIC && ! aix64_flag) \
+       || (HEADER (X).f_magic == 0767 && aix64_flag)) \
+      && !(HEADER (X).f_flags & F_LOADONLY))
 #else
 #   define GCC_CHECK_HDR(X) \
-     ((HEADER (X).f_magic == U802TOCMAGIC && ! aix64_flag) \
-      || (HEADER (X).f_magic == 0757 && aix64_flag))
+     (((HEADER (X).f_magic == U802TOCMAGIC && ! aix64_flag) \
+       || (HEADER (X).f_magic == 0757 && aix64_flag)) \
+      && !(HEADER (X).f_flags & F_LOADONLY))
 #endif
 
 #endif

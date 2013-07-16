@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1925,7 +1925,8 @@ package body Exp_Ch9 is
          P : Node_Id;
 
       begin
-         P := Spec_PPC_List (Contract (E));
+         P := Pre_Post_Conditions (Contract (E));
+
          if No (P) then
             return;
          end if;
@@ -1933,8 +1934,8 @@ package body Exp_Ch9 is
          --  Transfer ppc pragmas to the declarations of the wrapper
 
          while Present (P) loop
-            if Pragma_Name (P) = Name_Precondition
-              or else Pragma_Name (P) = Name_Postcondition
+            if Nam_In (Pragma_Name (P), Name_Precondition,
+                                        Name_Postcondition)
             then
                Append (Relocate_Node (P), Decls);
                Set_Analyzed (Last (Decls), False);
@@ -3346,7 +3347,7 @@ package body Exp_Ch9 is
             if Known_Static_Esize (Comp_Type) then
                Typ_Size := UI_To_Int (Esize (Comp_Type));
 
-            --  If the Esize (Object_Size) is unknown at compile-time, look at
+            --  If the Esize (Object_Size) is unknown at compile time, look at
             --  the RM_Size (Value_Size) since it may have been set by an
             --  explicit representation clause.
 
@@ -6755,6 +6756,40 @@ package body Exp_Ch9 is
       S   : Entity_Id;  --  Primitive operation slot
       T   : Entity_Id;  --  Additional status flag
 
+      procedure Rewrite_Abortable_Part;
+      --  If the trigger is a dispatching call, the expansion inserts multiple
+      --  copies of the abortable part. This is both inefficient, and may lead
+      --  to duplicate definitions that the back-end will reject, when the
+      --  abortable part includes loops. This procedure rewrites the abortable
+      --  part into a call to a generated procedure.
+
+      ----------------------------
+      -- Rewrite_Abortable_Part --
+      ----------------------------
+
+      procedure Rewrite_Abortable_Part is
+         Proc : constant Entity_Id := Make_Defining_Identifier (Loc, Name_uA);
+         Decl : Node_Id;
+
+      begin
+         Decl :=
+           Make_Subprogram_Body (Loc,
+             Specification              =>
+               Make_Procedure_Specification (Loc, Defining_Unit_Name => Proc),
+             Declarations               => New_List,
+             Handled_Statement_Sequence =>
+               Make_Handled_Sequence_Of_Statements (Loc, Astats));
+         Insert_Before (N, Decl);
+         Analyze (Decl);
+
+         --  Rewrite abortable part into a call to this procedure.
+
+         Astats :=
+           New_List (
+             Make_Procedure_Call_Statement (Loc,
+               Name => New_Occurrence_Of (Proc, Loc)));
+      end Rewrite_Abortable_Part;
+
    begin
       Process_Statements_For_Controlled_Objects (Trig);
       Process_Statements_For_Controlled_Objects (Abrt);
@@ -6790,12 +6825,13 @@ package body Exp_Ch9 is
          if Ada_Version >= Ada_2005
            and then
              (No (Original_Node (Ecall))
-                or else not Nkind_In (Original_Node (Ecall),
-                                        N_Delay_Relative_Statement,
-                                        N_Delay_Until_Statement))
+               or else not Nkind_In (Original_Node (Ecall),
+                                     N_Delay_Relative_Statement,
+                                     N_Delay_Until_Statement))
          then
             Extract_Dispatching_Call (Ecall, Call_Ent, Obj, Actuals, Formals);
 
+            Rewrite_Abortable_Part;
             Decls := New_List;
             Stmts := New_List;
 
@@ -6830,9 +6866,9 @@ package body Exp_Ch9 is
               Make_Object_Declaration (Loc,
                 Defining_Identifier =>
                   Make_Defining_Identifier (Loc, Name_uD),
-                Object_Definition =>
-                  New_Reference_To (
-                    RTE (RE_Dummy_Communication_Block), Loc)));
+                Object_Definition   =>
+                  New_Reference_To
+                    (RTE (RE_Dummy_Communication_Block), Loc)));
 
             K := Build_K (Loc, Decls, Obj);
 
@@ -6874,8 +6910,7 @@ package body Exp_Ch9 is
 
             Prepend_To (Cleanup_Stmts,
               Make_Assignment_Statement (Loc,
-                Name =>
-                  New_Reference_To (Bnn, Loc),
+                Name       => New_Reference_To (Bnn, Loc),
                 Expression =>
                   Make_Unchecked_Type_Conversion (Loc,
                     Subtype_Mark =>
@@ -6888,10 +6923,10 @@ package body Exp_Ch9 is
             Prepend_To (Cleanup_Stmts,
               Make_Procedure_Call_Statement (Loc,
                 Name =>
-                  New_Reference_To (
-                    Find_Prim_Op (Etype (Etype (Obj)),
-                      Name_uDisp_Asynchronous_Select),
-                    Loc),
+                  New_Reference_To
+                    (Find_Prim_Op
+                       (Etype (Etype (Obj)), Name_uDisp_Asynchronous_Select),
+                     Loc),
                 Parameter_Associations =>
                   New_List (
                     New_Copy_Tree (Obj),             --  <object>
@@ -7116,10 +7151,10 @@ package body Exp_Ch9 is
             Append_To (Conc_Typ_Stmts,
               Make_Procedure_Call_Statement (Loc,
                 Name =>
-                  New_Reference_To (
-                    Find_Prim_Op (Etype (Etype (Obj)),
-                      Name_uDisp_Get_Prim_Op_Kind),
-                    Loc),
+                  New_Reference_To
+                    (Find_Prim_Op (Etype (Etype (Obj)),
+                                   Name_uDisp_Get_Prim_Op_Kind),
+                     Loc),
                 Parameter_Associations =>
                   New_List (
                     New_Copy_Tree (Obj),
@@ -7239,11 +7274,11 @@ package body Exp_Ch9 is
 
             Abortable_Block :=
               Make_Block_Statement (Loc,
-                Identifier => New_Reference_To (Blk_Ent, Loc),
+                Identifier                 => New_Reference_To (Blk_Ent, Loc),
                 Handled_Statement_Sequence =>
                   Make_Handled_Sequence_Of_Statements (Loc,
                     Statements => Astats),
-                Has_Created_Identifier => True,
+                Has_Created_Identifier     => True,
                 Is_Asynchronous_Call_Block => True);
 
             --  Append call to if Enqueue (When, DB'Unchecked_Access) then
@@ -7291,8 +7326,8 @@ package body Exp_Ch9 is
                   Make_Object_Declaration (Loc,
                     Defining_Identifier => Dblock_Ent,
                     Aliased_Present     => True,
-                    Object_Definition   => New_Reference_To (
-                      RTE (RE_Delay_Block), Loc))),
+                    Object_Definition   =>
+                      New_Reference_To (RTE (RE_Delay_Block), Loc))),
 
                 Handled_Statement_Sequence =>
                   Make_Handled_Sequence_Of_Statements (Loc, Stmts)));
@@ -7317,10 +7352,9 @@ package body Exp_Ch9 is
 
          Decl := First (Decls);
          while Present (Decl)
-           and then
-             (Nkind (Decl) /= N_Object_Declaration
-               or else not Is_RTE (Etype (Object_Definition (Decl)),
-                                   RE_Communication_Block))
+           and then (Nkind (Decl) /= N_Object_Declaration
+                      or else not Is_RTE (Etype (Object_Definition (Decl)),
+                                          RE_Communication_Block))
          loop
             Next (Decl);
          end loop;
@@ -7337,13 +7371,12 @@ package body Exp_Ch9 is
          --    Mode => Asynchronous_Call;
          --    Block => Bnn);
 
-         Stmt := First (Stmts);
-
          --  Skip assignments to temporaries created for in-out parameters
 
          --  This makes unwarranted assumptions about the shape of the expanded
          --  tree for the call, and should be cleaned up ???
 
+         Stmt := First (Stmts);
          while Nkind (Stmt) /= N_Procedure_Call_Statement loop
             Next (Stmt);
          end loop;
@@ -8812,9 +8845,7 @@ package body Exp_Ch9 is
 
       if Present (Private_Declarations (Pdef)) then
          Priv := First (Private_Declarations (Pdef));
-
          while Present (Priv) loop
-
             if Nkind (Priv) = N_Component_Declaration then
                if not Static_Component_Size (Defining_Identifier (Priv)) then
 
@@ -8827,10 +8858,10 @@ package body Exp_Ch9 is
                      Check_Restriction (No_Implicit_Heap_Allocations, Priv);
 
                   elsif Restriction_Active (No_Implicit_Heap_Allocations) then
-                     Error_Msg_N ("component has non-static size?", Priv);
+                     Error_Msg_N ("component has non-static size??", Priv);
                      Error_Msg_NE
                        ("\creation of protected object of type& will violate"
-                        & " restriction No_Implicit_Heap_Allocations?",
+                        & " restriction No_Implicit_Heap_Allocations??",
                         Priv, Prot_Typ);
                   end if;
                end if;
@@ -11842,7 +11873,7 @@ package body Exp_Ch9 is
          Ent := First_Entity (Tasktyp);
          while Present (Ent) loop
             if Ekind_In (Ent, E_Entry, E_Entry_Family)
-              and then Present (Spec_PPC_List (Contract (Ent)))
+              and then Present (Pre_Post_Conditions (Contract (Ent)))
             then
                Build_PPC_Wrapper (Ent, N);
             end if;
@@ -13390,6 +13421,7 @@ package body Exp_Ch9 is
       Args        : List_Id;
       L           : constant List_Id := New_List;
       Has_Entry   : constant Boolean := Has_Entries (Ptyp);
+      Prio_Type   : Entity_Id;
       Restricted  : constant Boolean := Restricted_Profile;
 
    begin
@@ -13458,18 +13490,37 @@ package body Exp_Ch9 is
                     Expression
                      (First (Pragma_Argument_Associations (Prio_Clause)));
 
+                  --  Get_Rep_Item returns either priority pragma.
+
+                  if Pragma_Name (Prio_Clause) = Name_Priority then
+                     Prio_Type := RTE (RE_Any_Priority);
+                  else
+                     Prio_Type := RTE (RE_Interrupt_Priority);
+                  end if;
+
                --  Attribute definition clause Priority
 
                else
+                  if Chars (Prio_Clause) = Name_Priority then
+                     Prio_Type := RTE (RE_Any_Priority);
+                  else
+                     Prio_Type := RTE (RE_Interrupt_Priority);
+                  end if;
+
                   Prio := Expression (Prio_Clause);
                end if;
 
                --  If priority is a static expression, then we can duplicate it
                --  with no problem and simply append it to the argument list.
+               --  However, it has only be pre-analyzed, so we need to check
+               --  now that it is in the bounds of the priority type.
 
                if Is_Static_Expression (Prio) then
+                  Set_Analyzed (Prio, False);
                   Append_To (Args,
-                    Duplicate_Subexpr_No_Checks (Prio));
+                    Make_Type_Conversion (Loc,
+                      Subtype_Mark => New_Occurrence_Of (Prio_Type, Loc),
+                      Expression   => Duplicate_Subexpr (Prio)));
 
                --  Otherwise, the priority may be a per-object expression, if
                --  it depends on a discriminant of the type. In this case,
@@ -13479,18 +13530,13 @@ package body Exp_Ch9 is
                --  appropriate approach, but that could generate declarations
                --  improperly placed in the enclosing scope.
 
-               --  Note: Use System.Any_Priority as the expected type for the
-               --  non-static priority expression, in case the expression has
-               --  not been analyzed yet (as occurs for example with pragma
-               --  Interrupt_Priority).
-
                else
                   Temp := Make_Temporary (Loc, 'R', Prio);
                   Append_To (L,
                      Make_Object_Declaration (Loc,
                         Defining_Identifier => Temp,
                         Object_Definition   =>
-                          New_Occurrence_Of (RTE (RE_Any_Priority), Loc),
+                          New_Occurrence_Of (Prio_Type,  Loc),
                         Expression          => Relocate_Node (Prio)));
 
                   Append_To (Args, New_Occurrence_Of (Temp, Loc));
@@ -14073,11 +14119,10 @@ package body Exp_Ch9 is
         and then (Nkind_In (Stmt, N_Null_Statement, N_Label)
                     or else
                       (Nkind (Stmt) = N_Pragma
-                         and then (Pragma_Name (Stmt) = Name_Unreferenced
-                                     or else
-                                   Pragma_Name (Stmt) = Name_Unmodified
-                                     or else
-                                   Pragma_Name (Stmt) = Name_Warnings)))
+                        and then
+                          Nam_In (Pragma_Name (Stmt), Name_Unreferenced,
+                                                      Name_Unmodified,
+                                                      Name_Warnings)))
       loop
          Next (Stmt);
       end loop;

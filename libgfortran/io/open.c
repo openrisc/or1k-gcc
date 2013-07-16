@@ -1,5 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+/* Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    F2003 I/O support contributed by Jerry DeLisle
 
@@ -27,7 +26,11 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #include "io.h"
 #include "fbuf.h"
 #include "unix.h"
+
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -153,8 +156,12 @@ static const st_option async_opt[] =
 static void
 test_endfile (gfc_unit * u)
 {
-  if (u->endfile == NO_ENDFILE && ssize (u->s) == stell (u->s))
-    u->endfile = AT_ENDFILE;
+  if (u->endfile == NO_ENDFILE)
+    { 
+      gfc_offset sz = ssize (u->s);
+      if (sz == 0 || sz == stell (u->s))
+	u->endfile = AT_ENDFILE;
+    }
 }
 
 
@@ -815,10 +822,6 @@ st_open (st_parameter_open *opp)
 
   flags.convert = conv;
 
-  if (!(opp->common.flags & IOPARM_OPEN_HAS_NEWUNIT) && opp->common.unit < 0)
-    generate_error (&opp->common, LIBERROR_BAD_OPTION,
-		    "Bad unit number in OPEN statement");
-
   if (flags.position != POSITION_UNSPECIFIED
       && flags.access == ACCESS_DIRECT)
     generate_error (&opp->common, LIBERROR_BAD_OPTION,
@@ -844,12 +847,17 @@ st_open (st_parameter_open *opp)
   if ((opp->common.flags & IOPARM_LIBRETURN_MASK) == IOPARM_LIBRETURN_OK)
     {
       if ((opp->common.flags & IOPARM_OPEN_HAS_NEWUNIT))
+	opp->common.unit = get_unique_unit_number(opp);
+      else if (opp->common.unit < 0)
 	{
-	  *opp->newunit = get_unique_unit_number(opp);
-	  opp->common.unit = *opp->newunit;
+	  u = find_unit (opp->common.unit);
+	  if (u == NULL) /* Negative unit and no NEWUNIT-created unit found.  */
+	    generate_error (&opp->common, LIBERROR_BAD_OPTION,
+			    "Bad unit number in OPEN statement");
 	}
 
-      u = find_or_create_unit (opp->common.unit);
+      if (u == NULL)
+	u = find_or_create_unit (opp->common.unit);
       if (u->s == NULL)
 	{
 	  u = new_unit (opp, u, &flags);
@@ -859,6 +867,10 @@ st_open (st_parameter_open *opp)
       else
 	already_open (opp, u, &flags);
     }
-
+    
+  if ((opp->common.flags & IOPARM_OPEN_HAS_NEWUNIT)
+      && (opp->common.flags & IOPARM_LIBRETURN_MASK) == IOPARM_LIBRETURN_OK)
+    *opp->newunit = opp->common.unit;
+  
   library_end ();
 }

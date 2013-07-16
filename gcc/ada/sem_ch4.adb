@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -192,7 +192,9 @@ package body Sem_Ch4 is
    --  of the operand types. If one of the operands has a universal interpre-
    --  tation,  the legality check uses some compatible non-universal
    --  interpretation of the other operand. N can be an operator node, or
-   --  a function call whose name is an operator designator.
+   --  a function call whose name is an operator designator. Any_Access, which
+   --  is the initial type of the literal NULL, is a universal type for the
+   --  purpose of this routine.
 
    function Find_Primitive_Operation (N : Node_Id) return Boolean;
    --  Find candidate interpretations for the name Obj.Proc when it appears
@@ -411,8 +413,8 @@ package body Sem_Ch4 is
       if Comes_From_Source (N) then
          Check_Restriction (No_Allocators, N);
 
-         --  Processing for No_Allocators_After_Elaboration, loop to look at
-         --  enclosing context, checking task case and main subprogram case.
+         --  Processing for No_Standard_Allocators_After_Elaboration, loop to
+         --  look at enclosing context, checking task/main subprogram case.
 
          C := N;
          P := Parent (C);
@@ -429,7 +431,8 @@ package body Sem_Ch4 is
                --  violation of No_Allocators_After_Elaboration we can detect.
 
                if Nkind (Original_Node (Parent (P))) = N_Task_Body then
-                  Check_Restriction (No_Allocators_After_Elaboration, N);
+                  Check_Restriction
+                    (No_Standard_Allocators_After_Elaboration, N);
                   exit;
                end if;
 
@@ -571,19 +574,6 @@ package body Sem_Ch4 is
                   Rewrite (E, New_Copy_Tree (Subtype_Mark (E)));
                   Analyze_Allocator (N);
                   return;
-
-               --  Ada 2005, AI-363: if the designated type has a constrained
-               --  partial view, it cannot receive a discriminant constraint,
-               --  and the allocated object is unconstrained.
-
-               elsif Ada_Version >= Ada_2005
-                 and then Effectively_Has_Constrained_Partial_View
-                            (Typ  => Base_Typ,
-                             Scop => Current_Scope)
-               then
-                  Error_Msg_N
-                    ("constraint not allowed when type " &
-                      "has a constrained partial view", Constraint (E));
                end if;
 
                if Expander_Active then
@@ -629,17 +619,13 @@ package body Sem_Ch4 is
                                        Reason => CE_Null_Not_Allowed);
 
                begin
-                  if Ada_Version >= Ada_2012 then
-                     Error_Msg_N
-                       ("an uninitialized allocator cannot have"
-                         & " a null exclusion", N);
-
-                  elsif Expander_Active then
+                  if Expander_Active then
                      Insert_Action (N, Not_Null_Check);
                      Analyze (Not_Null_Check);
 
-                  else
-                     Error_Msg_N ("null value not allowed here?", E);
+                  elsif Warn_On_Ada_2012_Compatibility then
+                     Error_Msg_N
+                       ("null value not allowed here in Ada 2012?y?", E);
                   end if;
                end;
             end if;
@@ -868,6 +854,11 @@ package body Sem_Ch4 is
       --  Flag indicates whether an interpretation of the prefix is a
       --  parameterless call that returns an access_to_subprogram.
 
+      procedure Check_Ghost_Subprogram_Call;
+      --  Verify the legality of a call to a ghost subprogram. Such calls can
+      --  appear only in assertion expressions except subtype predicates or
+      --  from within another ghost subprogram.
+
       procedure Check_Mixed_Parameter_And_Named_Associations;
       --  Check that parameter and named associations are not mixed. This is
       --  a restriction in SPARK mode.
@@ -881,6 +872,53 @@ package body Sem_Ch4 is
 
       procedure No_Interpretation;
       --  Output error message when no valid interpretation exists
+
+      ---------------------------------
+      -- Check_Ghost_Subprogram_Call --
+      ---------------------------------
+
+      procedure Check_Ghost_Subprogram_Call is
+         S : Entity_Id;
+
+      begin
+         --  Do not perform the check while preanalyzing the enclosing context
+         --  because the call is not in its final place. Premature attempts to
+         --  verify the placement lead to bogus errors.
+
+         if In_Spec_Expression then
+            return;
+
+         --  The ghost subprogram appears inside an assertion expression
+         --  which is one of the allowed cases.
+
+         elsif In_Assertion_Expression (N) then
+            return;
+
+         --  Otherwise see if it inside another ghost subprogram
+
+         else
+            --  Loop to climb scopes
+
+            S := Current_Scope;
+            while Present (S) and then S /= Standard_Standard loop
+
+               --  The call appears inside another ghost subprogram
+
+               if Is_Ghost_Subprogram (S) then
+                  return;
+               end if;
+
+               S := Scope (S);
+            end loop;
+
+            --  If we fall through the loop it was not within another
+            --  ghost subprogram, so we have bad placement.
+
+            Error_Msg_N
+              ("call to ghost subprogram must appear in assertion expression "
+               & "or another ghost subprogram", N);
+         end if;
+      end Check_Ghost_Subprogram_Call;
 
       --------------------------------------------------
       -- Check_Mixed_Parameter_And_Named_Associations --
@@ -968,8 +1006,14 @@ package body Sem_Ch4 is
    --  Start of processing for Analyze_Call
 
    begin
-      if Restriction_Check_Required (SPARK) then
+      if Restriction_Check_Required (SPARK_05) then
          Check_Mixed_Parameter_And_Named_Associations;
+      end if;
+
+      --  Mark a function that appears inside an assertion expression
+
+      if Nkind (N) = N_Function_Call and then In_Assertion_Expr > 0 then
+         Set_In_Assertion_Expression (N);
       end if;
 
       --  Initialize the type of the result of the call to the error type,
@@ -1078,6 +1122,8 @@ package body Sem_Ch4 is
             Set_Etype (Nam_Ent, Etype (N));
          end if;
 
+      --  Overloaded call
+
       else
          --  An overloaded selected component must denote overloaded operations
          --  of a concurrent type. The interpretations are attached to the
@@ -1162,9 +1208,9 @@ package body Sem_Ch4 is
             Get_Next_Interp (X, It);
          end loop;
 
-         --  If the name is the result of a function call, it can only
-         --  be a call to a function returning an access to subprogram.
-         --  Insert explicit dereference.
+         --  If the name is the result of a function call, it can only be a
+         --  call to a function returning an access to subprogram. Insert
+         --  explicit dereference.
 
          if Nkind (Nam) = N_Function_Call then
             Insert_Explicit_Dereference (Nam);
@@ -1243,6 +1289,13 @@ package body Sem_Ch4 is
 
          End_Interp_List;
       end if;
+
+      --  A call to a ghost subprogram is allowed only in assertion expressions
+      --  excluding subtype predicates or from within another ghost subprogram.
+
+      if Is_Ghost_Subprogram (Get_Subprogram_Entity (N)) then
+         Check_Ghost_Subprogram_Call;
+      end if;
    end Analyze_Call;
 
    -----------------------------
@@ -1250,14 +1303,8 @@ package body Sem_Ch4 is
    -----------------------------
 
    procedure Analyze_Case_Expression (N : Node_Id) is
-      Expr      : constant Node_Id := Expression (N);
-      FirstX    : constant Node_Id := Expression (First (Alternatives (N)));
-      Alt       : Node_Id;
-      Exp_Type  : Entity_Id;
-      Exp_Btype : Entity_Id;
-
-      Dont_Care      : Boolean;
-      Others_Present : Boolean;
+      function Has_Static_Predicate (Subtyp : Entity_Id) return Boolean;
+      --  Determine whether subtype Subtyp has aspect Static_Predicate
 
       procedure Non_Static_Choice_Error (Choice : Node_Id);
       --  Error routine invoked by the generic instantiation below when
@@ -1272,6 +1319,28 @@ package body Sem_Ch4 is
            Process_Associated_Node   => No_OP);
       use Case_Choices_Processing;
 
+      --------------------------
+      -- Has_Static_Predicate --
+      --------------------------
+
+      function Has_Static_Predicate (Subtyp : Entity_Id) return Boolean is
+         Item : Node_Id;
+
+      begin
+         Item := First_Rep_Item (Subtyp);
+         while Present (Item) loop
+            if Nkind (Item) = N_Aspect_Specification
+              and then Chars (Identifier (Item)) = Name_Static_Predicate
+            then
+               return True;
+            end if;
+
+            Next_Rep_Item (Item);
+         end loop;
+
+         return False;
+      end Has_Static_Predicate;
+
       -----------------------------
       -- Non_Static_Choice_Error --
       -----------------------------
@@ -1281,6 +1350,17 @@ package body Sem_Ch4 is
          Flag_Non_Static_Expr
            ("choice given in case expression is not static!", Choice);
       end Non_Static_Choice_Error;
+
+      --  Local variables
+
+      Expr      : constant Node_Id := Expression (N);
+      FirstX    : constant Node_Id := Expression (First (Alternatives (N)));
+      Alt       : Node_Id;
+      Exp_Type  : Entity_Id;
+      Exp_Btype : Entity_Id;
+
+      Dont_Care      : Boolean;
+      Others_Present : Boolean;
 
    --  Start of processing for Analyze_Case_Expression
 
@@ -1366,9 +1446,22 @@ package body Sem_Ch4 is
          Exp_Type := Exp_Btype;
       end if;
 
+      --  The case expression alternatives cover the range of a static subtype
+      --  subject to aspect Static_Predicate. Do not check the choices when the
+      --  case expression has not been fully analyzed yet because this may lead
+      --  to bogus errors.
+
+      if Is_Static_Subtype (Exp_Type)
+        and then Has_Static_Predicate (Exp_Type)
+        and then In_Spec_Expression
+      then
+         null;
+
       --  Call instantiated Analyze_Choices which does the rest of the work
 
-      Analyze_Choices (N, Exp_Type, Dont_Care, Others_Present);
+      else
+         Analyze_Choices (N, Exp_Type, Dont_Care, Others_Present);
+      end if;
 
       if Exp_Type = Universal_Integer and then not Others_Present then
          Error_Msg_N
@@ -1723,8 +1816,8 @@ package body Sem_Ch4 is
       --  In formal verification mode, keep track of all reads and writes
       --  through explicit dereferences.
 
-      if Alfa_Mode then
-         Alfa.Generate_Dereference (N);
+      if SPARK_Mode then
+         SPARK_Specific.Generate_Dereference (N);
       end if;
 
       Analyze (P);
@@ -1767,7 +1860,7 @@ package body Sem_Ch4 is
                    (Is_Immediately_Visible (Scope (DT))
                      or else
                        (Is_Child_Unit (Scope (DT))
-                          and then Is_Visible_Child_Unit (Scope (DT))))
+                         and then Is_Visible_Lib_Unit (Scope (DT))))
                then
                   Set_Etype (N, Available_View (DT));
 
@@ -1898,14 +1991,22 @@ package body Sem_Ch4 is
 
    begin
       A := First (Actions (N));
-      loop
+      while Present (A) loop
          Analyze (A);
          Next (A);
-         exit when No (A);
       end loop;
 
-      Analyze_Expression (Expression (N));
-      Set_Etype (N, Etype (Expression (N)));
+      --  We currently hijack Expression_With_Actions with a VOID type and
+      --  a NULL statement in the Expression. This will ultimately be replaced
+      --  by a proper separate N_Compound_Statement node, at which point the
+      --  test below can go away???
+
+      if Nkind (Expression (N)) = N_Null_Statement then
+         Set_Etype (N, Standard_Void_Type);
+      else
+         Analyze_Expression (Expression (N));
+         Set_Etype (N, Etype (Expression (N)));
+      end if;
    end Analyze_Expression_With_Actions;
 
    ---------------------------
@@ -2085,7 +2186,8 @@ package body Sem_Ch4 is
             --  account a possible implicit dereference.
 
             if Is_Access_Type (Array_Type) then
-               Error_Msg_NW (Warn_On_Dereference, "?implicit dereference", N);
+               Error_Msg_NW
+                 (Warn_On_Dereference, "?d?implicit dereference", N);
                Array_Type := Process_Implicit_Dereference_Prefix (Pent, P);
             end if;
 
@@ -2244,7 +2346,8 @@ package body Sem_Ch4 is
 
             if Is_Access_Type (Typ) then
                Typ := Designated_Type (Typ);
-               Error_Msg_NW (Warn_On_Dereference, "?implicit dereference", N);
+               Error_Msg_NW
+                 (Warn_On_Dereference, "?d?implicit dereference", N);
             end if;
 
             if Is_Array_Type (Typ) then
@@ -2300,12 +2403,20 @@ package body Sem_Ch4 is
 
       Analyze (P);
 
+      --  If P is an explicit dereference whose prefix is of a remote access-
+      --  to-subprogram type, then N has already been rewritten as a subprogram
+      --  call and analyzed.
+
       if Nkind (N) in N_Subprogram_Call then
+         return;
 
-         --  If P is an explicit dereference whose prefix is of a
-         --  remote access-to-subprogram type, then N has already
-         --  been rewritten as a subprogram call and analyzed.
+      --  When the prefix is attribute 'Loop_Entry and the sole expression of
+      --  the indexed component denotes a loop name, the indexed form is turned
+      --  into an attribute reference.
 
+      elsif Nkind (N) = N_Attribute_Reference
+        and then Attribute_Name (N) = Name_Loop_Entry
+      then
          return;
       end if;
 
@@ -2376,9 +2487,21 @@ package body Sem_Ch4 is
             Process_Function_Call;
 
          elsif Nkind (P) = N_Selected_Component
+           and then Present (Entity (Selector_Name (P)))
            and then Is_Overloadable (Entity (Selector_Name (P)))
          then
             Process_Function_Call;
+
+         --  In ASIS mode within a generic, a prefixed call is analyzed and
+         --  partially rewritten but the original indexed component has not
+         --  yet been rewritten as a call. Perform the replacement now.
+
+         elsif Nkind (P) = N_Selected_Component
+           and then Nkind (Parent (P)) = N_Function_Call
+           and then ASIS_Mode
+         then
+            Rewrite (N, Parent (P));
+            Analyze (N);
 
          else
             --  Indexed component, slice, or a call to a member of a family
@@ -2673,7 +2796,7 @@ package body Sem_Ch4 is
         and then Intval (Right_Opnd (Parent (N))) <= Uint_64
       then
          Error_Msg_N
-           ("suspicious MOD value, was '*'* intended'??", Parent (N));
+           ("suspicious MOD value, was '*'* intended'??M?", Parent (N));
       end if;
 
       --  Remaining processing is same as for other arithmetic operators
@@ -3238,7 +3361,7 @@ package body Sem_Ch4 is
       while Present (It.Typ) loop
          if Is_Access_Type (It.Typ) then
             T := Designated_Type (It.Typ);
-            Error_Msg_NW (Warn_On_Dereference, "?implicit dereference", N);
+            Error_Msg_NW (Warn_On_Dereference, "?d?implicit dereference", N);
          else
             T := It.Typ;
          end if;
@@ -3321,7 +3444,7 @@ package body Sem_Ch4 is
                   then
                      Insert_Explicit_Dereference (Nam);
                      Error_Msg_NW
-                       (Warn_On_Dereference, "?implicit dereference", N);
+                       (Warn_On_Dereference, "?d?implicit dereference", N);
                   end if;
                end if;
 
@@ -3405,12 +3528,14 @@ package body Sem_Ch4 is
    -----------------------------------
 
    procedure Analyze_Quantified_Expression (N : Node_Id) is
-      QE_Scop : Entity_Id;
-
       function Is_Empty_Range (Typ : Entity_Id) return Boolean;
       --  If the iterator is part of a quantified expression, and the range is
       --  known to be statically empty, emit a warning and replace expression
       --  with its static value. Returns True if the replacement occurs.
+
+      function No_Else_Or_Trivial_True (If_Expr : Node_Id) return Boolean;
+      --  Determine whether if expression If_Expr lacks an else part or if it
+      --  has one, it evaluates to True.
 
       --------------------
       -- Is_Empty_Range --
@@ -3430,13 +3555,13 @@ package body Sem_Ch4 is
 
             if All_Present (N) then
                Error_Msg_N
-                 ("?quantified expression with ALL "
+                 ("??quantified expression with ALL "
                   & "over a null range has value True", N);
                Rewrite (N, New_Occurrence_Of (Standard_True, Loc));
 
             else
                Error_Msg_N
-                 ("?quantified expression with SOME "
+                 ("??quantified expression with SOME "
                   & "over a null range has value False", N);
                Rewrite (N, New_Occurrence_Of (Standard_False, Loc));
             end if;
@@ -3448,6 +3573,26 @@ package body Sem_Ch4 is
             return False;
          end if;
       end Is_Empty_Range;
+
+      -----------------------------
+      -- No_Else_Or_Trivial_True --
+      -----------------------------
+
+      function No_Else_Or_Trivial_True (If_Expr : Node_Id) return Boolean is
+         Else_Expr : constant Node_Id :=
+                       Next (Next (First (Expressions (If_Expr))));
+      begin
+         return
+           No (Else_Expr)
+             or else (Compile_Time_Known_Value (Else_Expr)
+                       and then Is_True (Expr_Value (Else_Expr)));
+      end No_Else_Or_Trivial_True;
+
+      --  Local variables
+
+      Cond    : constant Node_Id := Condition (N);
+      Loop_Id : Entity_Id;
+      QE_Scop : Entity_Id;
 
    --  Start of processing for Analyze_Quantified_Expression
 
@@ -3473,21 +3618,56 @@ package body Sem_Ch4 is
       if Present (Iterator_Specification (N)) then
          Preanalyze (Iterator_Specification (N));
 
+         --  Do not proceed with the analysis when the range of iteration is
+         --  empty. The appropriate error is issued by Is_Empty_Range.
+
          if Is_Entity_Name (Name (Iterator_Specification (N)))
            and then Is_Empty_Range (Etype (Name (Iterator_Specification (N))))
          then
             return;
          end if;
 
-      else
+      else pragma Assert (Present (Loop_Parameter_Specification (N)));
          Preanalyze (Loop_Parameter_Specification (N));
       end if;
 
-      Preanalyze_And_Resolve (Condition (N), Standard_Boolean);
+      Preanalyze_And_Resolve (Cond, Standard_Boolean);
 
       End_Scope;
-
       Set_Etype (N, Standard_Boolean);
+
+      --  Verify that the loop variable is used within the condition of the
+      --  quantified expression.
+
+      if Present (Iterator_Specification (N)) then
+         Loop_Id := Defining_Identifier (Iterator_Specification (N));
+      else
+         Loop_Id := Defining_Identifier (Loop_Parameter_Specification (N));
+      end if;
+
+      if Warn_On_Suspicious_Contract
+        and then not Referenced (Loop_Id, Cond)
+      then
+         Error_Msg_N ("?T?unused variable &", Loop_Id);
+      end if;
+
+      --  Diagnose a possible misuse of the "some" existential quantifier. When
+      --  we have a quantified expression of the form:
+
+      --    for some X => (if P then Q [else True])
+
+      --  the if expression will not hold and render the quantified expression
+      --  trivially True.
+
+      if Formal_Extensions
+        and then not All_Present (N)
+        and then Nkind (Cond) = N_If_Expression
+        and then No_Else_Or_Trivial_True (Cond)
+      then
+         Error_Msg_N ("?suspicious expression", N);
+         Error_Msg_N ("\\did you mean (for all X ='> (if P then Q))", N);
+         Error_Msg_N ("\\or (for some X ='> P and then Q) instead'?", N);
+      end if;
    end Analyze_Quantified_Expression;
 
    -------------------
@@ -3605,6 +3785,8 @@ package body Sem_Ch4 is
          Check_Universal_Expression (L);
          Check_Universal_Expression (H);
       end if;
+
+      Check_Function_Writable_Actuals (N);
    end Analyze_Range;
 
    -----------------------
@@ -3813,7 +3995,7 @@ package body Sem_Ch4 is
          --  Normal case of selected component applied to access type
 
          else
-            Error_Msg_NW (Warn_On_Dereference, "?implicit dereference", N);
+            Error_Msg_NW (Warn_On_Dereference, "?d?implicit dereference", N);
 
             if Is_Entity_Name (Name) then
                Pent := Entity (Name);
@@ -3925,7 +4107,7 @@ package body Sem_Ch4 is
 
          if Is_Access_Type (Etype (Name)) then
             Insert_Explicit_Dereference (Name);
-            Error_Msg_NW (Warn_On_Dereference, "?implicit dereference", N);
+            Error_Msg_NW (Warn_On_Dereference, "?d?implicit dereference", N);
          end if;
 
       elsif Is_Record_Type (Prefix_Type) then
@@ -3936,7 +4118,7 @@ package body Sem_Ch4 is
 
          while Present (Comp) and then not Is_Prefixed_Call (N) loop
             if Chars (Comp) = Chars (Sel)
-              and then Is_Visible_Component (Comp)
+              and then Is_Visible_Component (Comp, N)
             then
                Set_Entity_With_Style_Check (Sel, Comp);
                Set_Etype (Sel, Etype (Comp));
@@ -4008,13 +4190,11 @@ package body Sem_Ch4 is
                        and then Nkind (Name) /= N_Selected_Component)
                      or else
                       (Nkind (Parent_N) = N_Attribute_Reference
-                         and then (Attribute_Name (Parent_N) = Name_First
-                                     or else
-                                   Attribute_Name (Parent_N) = Name_Last
-                                     or else
-                                   Attribute_Name (Parent_N) = Name_Length
-                                     or else
-                                   Attribute_Name (Parent_N) = Name_Range)))
+                        and then
+                          Nam_In (Attribute_Name (Parent_N), Name_First,
+                                                             Name_Last,
+                                                             Name_Length,
+                                                             Name_Range)))
                then
                   Set_Etype (N, Etype (Comp));
 
@@ -4223,7 +4403,7 @@ package body Sem_Ch4 is
                if Is_Access_Type (Etype (Name)) then
                   Insert_Explicit_Dereference (Name);
                   Error_Msg_NW
-                    (Warn_On_Dereference, "?implicit dereference", N);
+                    (Warn_On_Dereference, "?d?implicit dereference", N);
                end if;
             end if;
 
@@ -4396,17 +4576,17 @@ package body Sem_Ch4 is
                      --  Emit appropriate message. Gigi will replace the
                      --  node subsequently with the appropriate Raise.
 
-                     --  In Alfa mode, this is made into an error to simplify
+                     --  In SPARK mode, this is made into an error to simplify
                      --  the processing of the formal verification backend.
 
-                     if Alfa_Mode then
+                     if SPARK_Mode then
                         Apply_Compile_Time_Constraint_Error
                           (N, "component not present in }",
                            CE_Discriminant_Check_Failed,
                            Ent => Prefix_Type, Rep => False);
                      else
                         Apply_Compile_Time_Constraint_Error
-                          (N, "component not present in }?",
+                          (N, "component not present in }??",
                            CE_Discriminant_Check_Failed,
                            Ent => Prefix_Type, Rep => False);
                      end if;
@@ -4540,7 +4720,8 @@ package body Sem_Ch4 is
 
             if Is_Access_Type (Typ) then
                Typ := Designated_Type (Typ);
-               Error_Msg_NW (Warn_On_Dereference, "?implicit dereference", N);
+               Error_Msg_NW
+                 (Warn_On_Dereference, "?d?implicit dereference", N);
             end if;
 
             if Is_Array_Type (Typ)
@@ -4577,7 +4758,7 @@ package body Sem_Ch4 is
 
          if Is_Access_Type (Array_Type) then
             Array_Type := Designated_Type (Array_Type);
-            Error_Msg_NW (Warn_On_Dereference, "?implicit dereference", N);
+            Error_Msg_NW (Warn_On_Dereference, "?d?implicit dereference", N);
          end if;
 
          if not Is_Array_Type (Array_Type) then
@@ -4676,9 +4857,9 @@ package body Sem_Ch4 is
 
       elsif Nkind (Expr) = N_Attribute_Reference
         and then
-          (Attribute_Name (Expr) = Name_Access            or else
-           Attribute_Name (Expr) = Name_Unchecked_Access  or else
-           Attribute_Name (Expr) = Name_Unrestricted_Access)
+          Nam_In (Attribute_Name (Expr), Name_Access,
+                                         Name_Unchecked_Access,
+                                         Name_Unrestricted_Access)
       then
          Error_Msg_N ("argument of conversion cannot be access", N);
          Error_Msg_N ("\use qualified expression instead", N);
@@ -4933,8 +5114,7 @@ package body Sem_Ch4 is
    --  Start of processing for Check_Arithmetic_Pair
 
    begin
-      if Op_Name = Name_Op_Add or else Op_Name = Name_Op_Subtract then
-
+      if Nam_In (Op_Name, Name_Op_Add, Name_Op_Subtract) then
          if Is_Numeric_Type (T1)
            and then Is_Numeric_Type (T2)
            and then (Covers (T1 => T1, T2 => T2)
@@ -4944,11 +5124,9 @@ package body Sem_Ch4 is
             Add_One_Interp (N, Op_Id, Specific_Type (T1, T2));
          end if;
 
-      elsif Op_Name = Name_Op_Multiply or else Op_Name = Name_Op_Divide then
-
+      elsif Nam_In (Op_Name, Name_Op_Multiply, Name_Op_Divide) then
          if Is_Fixed_Point_Type (T1)
-           and then (Is_Fixed_Point_Type (T2)
-                       or else T2 = Universal_Real)
+           and then (Is_Fixed_Point_Type (T2) or else T2 = Universal_Real)
          then
             --  If Treat_Fixed_As_Integer is set then the Etype is already set
             --  and no further processing is required (this is the case of an
@@ -4986,7 +5164,7 @@ package body Sem_Ch4 is
 
          elsif Is_Fixed_Point_Type (T1)
            and then (Base_Type (T2) = Base_Type (Standard_Integer)
-                       or else T2 = Universal_Integer)
+                      or else T2 = Universal_Integer)
          then
             Add_One_Interp (N, Op_Id, T1);
 
@@ -5003,7 +5181,7 @@ package body Sem_Ch4 is
 
          elsif Is_Fixed_Point_Type (T2)
            and then (Base_Type (T1) = Base_Type (Standard_Integer)
-                       or else T1 = Universal_Integer)
+                      or else T1 = Universal_Integer)
            and then Op_Name = Name_Op_Multiply
          then
             Add_One_Interp (N, Op_Id, T2);
@@ -5504,6 +5682,13 @@ package body Sem_Ch4 is
    begin
       if T1 = Universal_Integer
         or else T1 = Universal_Real
+
+        --  If the left operand of an equality operator is null, the visibility
+        --  of the operator must be determined from the interpretation of the
+        --  right operand. This processing must be done for Any_Access, which
+        --  is the internal representation of the type of the literal null.
+
+        or else T1 = Any_Access
       then
          if not Is_Overloaded (R) then
             Add_One_Interp
@@ -6312,13 +6497,12 @@ package body Sem_Ch4 is
           (Is_Immediately_Visible (Scope (Typ))
             or else
               (Is_Child_Unit (Scope (Typ))
-                 and then Is_Visible_Child_Unit (Scope (Typ))))
+                and then Is_Visible_Lib_Unit (Scope (Typ))))
       then
          return Available_View (Typ);
       else
          return Typ;
       end if;
-
    end Process_Implicit_Dereference_Prefix;
 
    --------------------------------
@@ -6607,11 +6791,13 @@ package body Sem_Ch4 is
       Func_Name := Empty;
 
       if Is_Variable (Prefix) then
-         Func_Name := Find_Aspect (Etype (Prefix), Aspect_Variable_Indexing);
+         Func_Name :=
+           Find_Value_Of_Aspect (Etype (Prefix), Aspect_Variable_Indexing);
       end if;
 
       if No (Func_Name) then
-         Func_Name := Find_Aspect (Etype (Prefix), Aspect_Constant_Indexing);
+         Func_Name :=
+           Find_Value_Of_Aspect (Etype (Prefix), Aspect_Constant_Indexing);
       end if;
 
       --  If aspect does not exist the expression is illegal. Error is

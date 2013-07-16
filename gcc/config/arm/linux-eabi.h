@@ -1,6 +1,5 @@
 /* Configuration file for ARM GNU/Linux EABI targets.
-   Copyright (C) 2004, 2005, 2006, 2007, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery, LLC   
 
    This file is part of GCC.
@@ -81,14 +80,18 @@
 /* At this point, bpabi.h will have clobbered LINK_SPEC.  We want to
    use the GNU/Linux version, not the generic BPABI version.  */
 #undef  LINK_SPEC
-#define LINK_SPEC BE8_LINK_SPEC						\
+#define LINK_SPEC EABI_LINK_SPEC					\
   LINUX_OR_ANDROID_LD (LINUX_TARGET_LINK_SPEC,				\
 		       LINUX_TARGET_LINK_SPEC " " ANDROID_LINK_SPEC)
 
+#undef  ASAN_CC1_SPEC
+#define ASAN_CC1_SPEC "%{fsanitize=*:-funwind-tables}"
+
 #undef  CC1_SPEC
 #define CC1_SPEC							\
-  LINUX_OR_ANDROID_CC (GNU_USER_TARGET_CC1_SPEC,			\
-		       GNU_USER_TARGET_CC1_SPEC " " ANDROID_CC1_SPEC)
+  LINUX_OR_ANDROID_CC (GNU_USER_TARGET_CC1_SPEC " " ASAN_CC1_SPEC,	\
+		       GNU_USER_TARGET_CC1_SPEC " " ASAN_CC1_SPEC " "	\
+		       ANDROID_CC1_SPEC)
 
 #define CC1PLUS_SPEC \
   LINUX_OR_ANDROID_CC ("", ANDROID_CC1PLUS_SPEC)

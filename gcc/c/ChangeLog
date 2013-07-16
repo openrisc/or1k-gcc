@@ -1,3 +1,203 @@
+2013-07-13  Jason Merrill  <jason@redhat.com>
+
+	PR c++/57793
+	* c-decl.c (finish_struct): Check for too-large class.
+
+2013-07-04  Joern Rennecke <joern.rennecke@embecosm.com>
+
+	PR c/57821
+	* c-typeck.c (set_init_index): When folding, check for index overflow.
+
+2013-06-28  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-parser.c (c_parser_array_notation): Removed rejection of array
+	notations in an array of function pointers.
+
+2013-06-21  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-array-notation.c (make_triplet_val_inv): New function.
+	(create_cmp_incr): Likewise.
+	(create_array_refs): Likewise.
+	(fix_builtin_array_notation_fn): Replaced all mallocs with tree vec.
+	Also modularized common parts between functions and called the function.
+	(build_array_notation_expr): Likewise.
+	(fix_conditional_array_notations_1): Likewise.
+	(fix_array_notation_expr): Likewise.
+	(fix_array_notation_call_expr): Likewise.
+
+2013-06-18  Marek Polacek  <polacek@redhat.com>
+
+	PR c/57630
+	* c-decl.c (check_for_loop_decls): Improve diagnostics messages.
+
+2013-06-12  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-array-notation.c (build_array_notation_expr): Reject array notation
+	mismatch between LHS and RHS even inside a call_expr.  Also, removed
+	a couple while statements that were dead code.
+
+2013-06-10  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-array-notation.c (fix_builtin_array_notation_fn): Fully folded
+	excessive precision expressions in function parameters.  Also removed
+	couple unwanted while statements.
+
+2013-06-07  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-array-notation.c (expand_array_notation_exprs): Added
+	ARRAY_NOTATION_REF case.
+	
+2013-06-07  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-array-notation.c (length_mismatch_in_expr_p): Moved this
+	function to c-family/array-notation-common.c.
+	(is_cilkplus_reduce_builtin): Likewise.
+	(find_rank): Likewise.
+	(extract_array_notation_exprs): Likewise.
+	(replace_array_notations): Likewise.
+	(find_inv_trees): Likewise.
+	(replace_inv_trees): Likewise.
+	(contains_array_notation_expr): Likewise.
+	(find_correct_array_notation_type): Likewise.
+	(replace_invariant_exprs): Initialized additional_tcodes to NULL.
+	(struct inv_list): Moved this to c-family/array-notation-common.c.
+	* c-tree.h (is_cilkplus_builtin_reduce): Remove prototype.
+	
+2013-06-05  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-typeck.c (convert_arguments): Moved checking of builtin cilkplus
+	reduction functions outside the for-loop.  Added a check if the fundecl
+	is non-NULL.  Finally, removed an unwanted if-statement, and made the
+	body unconditional.
+
+2013-06-03  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-typeck.c (c_finish_if_stmt): Added a check to see if the rank of the
+	condition of the if-statement matches the rank of else-block and then-
+	block when array notations are used.
+	* c-parser.c (c_parser_declaration_or_fndef): Expanded array notation
+	expression after the entire function body is parsed.
+	(c_parser_expr_no_commas): Delayed creating array notation expressions
+	to the end of function parsing.
+	* c-array-notation.c (fix_conditional_array_notations_1): Expanded the
+	whole if-statement instead of just the condition.
+	(expand_array_notation_exprs): Added MODIFY_EXPR case.	
+
+2013-06-03  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	PR c/57474
+	* c-array-notation.c (build_array_notation_expr): Initialized rhs_length
+	array to NULL_TREE if they are unused.  Also added a check for the
+	field to be NULL before its fields are used in future.
+	
+2013-05-29  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR bootstrap/57450
+	* c-array-notation.c (length_mismatch_in_expr_p): Use absu_hwi.
+	(build_array_notation_expr): Likewise.
+
+2013-05-28  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-typeck.c (build_array_ref): Added a check to see if array's
+	index is greater than one.  If true, then emit an error.
+	(build_function_call_vec): Exclude error reporting and checking
+	for builtin array-notation functions.
+	(convert_arguments): Likewise.
+	(c_finish_return): Added a check for array notations as a return
+	expression.  If true, then emit an error.
+	(c_finish_loop): Added a check for array notations in a loop
+	condition.  If true then emit an error.
+	(lvalue_p): Added a ARRAY_NOTATION_REF case.
+	(build_binary_op): Added a check for array notation expr inside
+	op1 and op0.  If present, we call another function to find correct
+	type.
+	* Make-lang.in (C_AND_OBJC_OBJS): Added c-array-notation.o.
+	* c-parser.c (c_parser_compound_statement): Check if array
+	notation code is used in tree, if so, then transform them into
+	appropriate C code.
+	(c_parser_expr_no_commas): Check if array notation is used in LHS
+	or RHS, if so, then build array notation expression instead of
+	regular modify.
+	(c_parser_postfix_expression_after_primary): Added a check for
+	colon(s) after square braces, if so then handle it like an array
+	notation.  Also, break up array notations in unary op if found.
+	(c_parser_direct_declarator_inner): Added a check for array
+	notation.
+	(c_parser_compound_statement): Added a check for array notation in
+	a stmt.  If one is present, then expand array notation expr.
+	(c_parser_if_statement): Likewise.
+	(c_parser_switch_statement): Added a check for array notations in
+	a switch statement's condition.  If true, then output an error.
+	(c_parser_while_statement): Similarly, but for a while.
+	(c_parser_do_statement): Similarly, but for a do-while.
+	(c_parser_for_statement): Similarly, but for a for-loop.
+	(c_parser_unary_expression): Check if array notation is used in a
+	pre-increment or pre-decrement expression.  If true, then expand
+	them.
+	(c_parser_array_notation): New function.
+	* c-array-notation.c: New file.
+	* c-tree.h (is_cilkplus_reduce_builtin): Protoize.
+	
+2013-05-23  Mike Stump  <mikestump@comcast.net>
+
+	* c-typeck.c (convert_for_assignment): Handle references to memory
+	spaces better.
+
+2013-05-16  Jason Merrill  <jason@redhat.com>
+
+	* Make-lang.in (cc1$(exeext)): Use link mutex.
+
+2013-04-24  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* c-typeck.c (pointer_diff): Change -Wpointer-arith pedwarns
+	to simply use OPT_Wpointer_arith.
+	(build_unary_op): Likewise.
+
+2013-04-03  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/19449
+	* c-parser.c (c_parser_get_builtin_args): Add choose_expr_p
+	argument.  If set, or it temporarily for parsing of the first
+	argument into force_folding_builtin_constant_p.
+	(c_parser_postfix_expression): Adjust callers.
+
+2013-03-21  Richard Biener  <rguenther@suse.de>
+
+	* c-objc-common.c (c_tree_printer): Use DECL_HAS_DEBUG_EXPR_P
+	instead of DECL_DEBUG_EXPR_IS_FROM.  Guard properly.
+
+2013-02-12  Marek Polacek  <polacek@redhat.com>
+
+	PR c/44938
+	* c-parser.c (c_parser_postfix_expression_after_primary): Initialize
+	origtypes to NULL.
+
+2013-01-24  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/56078
+	* c-typeck.c (set_nonincremental_init_from_string): If
+	constructor_max_index is NULL, treat it as if tree_int_cst_lt
+	returned false.
+	(process_init_element): Likewise.
+
+2012-12-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/55619
+	* c-parser.c (c_parser_asm_operands): Remove CONVERT_P
+	argument, don't call default_function_array_conversion
+	nor c_fully_fold here.
+	(c_parser_asm_statement): Adjust callers.
+	* c-typeck.c (build_asm_expr): Call c_fully_fold on inputs
+	and outputs here, and call default_function_array_conversion
+	on inputs that don't need to be addressable.
+
+2012-12-18  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/39464
+	* c-typeck.c (convert_for_assignment): For -Wpointer-sign
+	warning require that both c_common_unsigned_type as well as
+	c_common_signed_type is the same for both mvl and mvr types.
+
 2012-11-16  Diego Novillo  <dnovillo@google.com>
 
 	Adjust for new vec API (http://gcc.gnu.org/wiki/cxx-conversion/cxx-vec)
@@ -156,7 +356,7 @@
 	* c-decl.c: Likewise.  Include gt-c-c-decl.h, not gt-c-decl.h.
 	* c-parser.c: Likewise.  Include gt-c-c-parser.h, not gt-c-parser.h.
 
-Copyright (C) 2012 Free Software Foundation, Inc.
+Copyright (C) 2012-2013 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

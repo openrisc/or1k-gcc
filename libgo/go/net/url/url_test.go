@@ -122,14 +122,14 @@ var urltests = []URLTest{
 		},
 		"http:%2f%2fwww.google.com/?q=go+language",
 	},
-	// non-authority
+	// non-authority with path
 	{
 		"mailto:/webmaster@golang.org",
 		&URL{
 			Scheme: "mailto",
 			Path:   "/webmaster@golang.org",
 		},
-		"",
+		"mailto:///webmaster@golang.org", // unfortunate compromise
 	},
 	// non-authority
 	{
@@ -242,6 +242,15 @@ var urltests = []URLTest{
 		},
 		"http://www.google.com/?q=go+language#foo&bar",
 	},
+	{
+		"file:///home/adg/rabbits",
+		&URL{
+			Scheme: "file",
+			Host:   "",
+			Path:   "/home/adg/rabbits",
+		},
+		"file:///home/adg/rabbits",
+	},
 }
 
 // more useful string for debugging than fmt's struct printer
@@ -271,13 +280,37 @@ func DoTest(t *testing.T, parse func(string) (*URL, error), name string, tests [
 	}
 }
 
+func BenchmarkString(b *testing.B) {
+	b.StopTimer()
+	b.ReportAllocs()
+	for _, tt := range urltests {
+		u, err := Parse(tt.in)
+		if err != nil {
+			b.Errorf("Parse(%q) returned error %s", tt.in, err)
+			continue
+		}
+		if tt.roundtrip == "" {
+			continue
+		}
+		b.StartTimer()
+		var g string
+		for i := 0; i < b.N; i++ {
+			g = u.String()
+		}
+		b.StopTimer()
+		if w := tt.roundtrip; g != w {
+			b.Errorf("Parse(%q).String() == %q, want %q", tt.in, g, w)
+		}
+	}
+}
+
 func TestParse(t *testing.T) {
 	DoTest(t, Parse, "Parse", urltests)
 }
 
 const pathThatLooksSchemeRelative = "//not.a.user@not.a.host/just/a/path"
 
-var parseRequestUrlTests = []struct {
+var parseRequestURLTests = []struct {
 	url           string
 	expectedValid bool
 }{
@@ -289,10 +322,11 @@ var parseRequestUrlTests = []struct {
 	{"//not.a.user@%66%6f%6f.com/just/a/path/also", true},
 	{"foo.html", false},
 	{"../dir/", false},
+	{"*", true},
 }
 
 func TestParseRequestURI(t *testing.T) {
-	for _, test := range parseRequestUrlTests {
+	for _, test := range parseRequestURLTests {
 		_, err := ParseRequestURI(test.url)
 		valid := err == nil
 		if valid != test.expectedValid {
@@ -536,6 +570,15 @@ var resolveReferenceTests = []struct {
 	{"http://foo.com/bar/baz", "../../../../../quux", "http://foo.com/quux"},
 	{"http://foo.com/bar", "..", "http://foo.com/"},
 	{"http://foo.com/bar/baz", "./..", "http://foo.com/"},
+	// ".." in the middle (issue 3560)
+	{"http://foo.com/bar/baz", "quux/dotdot/../tail", "http://foo.com/bar/quux/tail"},
+	{"http://foo.com/bar/baz", "quux/./dotdot/../tail", "http://foo.com/bar/quux/tail"},
+	{"http://foo.com/bar/baz", "quux/./dotdot/.././tail", "http://foo.com/bar/quux/tail"},
+	{"http://foo.com/bar/baz", "quux/./dotdot/./../tail", "http://foo.com/bar/quux/tail"},
+	{"http://foo.com/bar/baz", "quux/./dotdot/dotdot/././../../tail", "http://foo.com/bar/quux/tail"},
+	{"http://foo.com/bar/baz", "quux/./dotdot/dotdot/./.././../tail", "http://foo.com/bar/quux/tail"},
+	{"http://foo.com/bar/baz", "quux/./dotdot/dotdot/dotdot/./../../.././././tail", "http://foo.com/bar/quux/tail"},
+	{"http://foo.com/bar/baz", "quux/./dotdot/../dotdot/../dot/./tail/..", "http://foo.com/bar/quux/dot"},
 
 	// "." and ".." in the base aren't special
 	{"http://foo.com/dot/./dotdot/../foo/bar", "../baz", "http://foo.com/dot/./dotdot/../baz"},

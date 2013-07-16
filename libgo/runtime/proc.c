@@ -3,6 +3,7 @@
 // license that can be found in the LICENSE file.
 
 #include <limits.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -166,6 +167,13 @@ runtime_m(void)
 }
 
 int32	runtime_gcwaiting;
+
+G*	runtime_allg;
+G*	runtime_lastg;
+M*	runtime_allm;
+
+int8*	runtime_goos;
+int32	runtime_ncpu;
 
 // The static TLS size.  See runtime_newm.
 static int tlssize;
@@ -503,8 +511,8 @@ runtime_schedinit(void)
 		runtime_raceinit();
 }
 
-extern void main_init(void) __asm__ ("__go_init_main");
-extern void main_main(void) __asm__ ("main.main");
+extern void main_init(void) __asm__ (GOSYM_PREFIX "__go_init_main");
+extern void main_main(void) __asm__ (GOSYM_PREFIX "main.main");
 
 // The main goroutine.
 void
@@ -521,6 +529,7 @@ runtime_main(void)
 	setmcpumax(runtime_gomaxprocs);
 	runtime_sched.init = true;
 	scvg = __go_go(runtime_MHeap_Scavenger, nil);
+	scvg->issystem = true;
 	main_init();
 	runtime_sched.init = false;
 	if(!runtime_sched.lockmain)
@@ -555,13 +564,13 @@ schedlock(void)
 static void
 schedunlock(void)
 {
-	M *m;
+	M *mp;
 
-	m = mwakeup;
+	mp = mwakeup;
 	mwakeup = nil;
 	runtime_unlock(&runtime_sched);
-	if(m != nil)
-		runtime_notewakeup(&m->havenextg);
+	if(mp != nil)
+		runtime_notewakeup(&mp->havenextg);
 }
 
 void
@@ -623,7 +632,7 @@ runtime_goroutinetrailer(G *g)
 struct Traceback
 {
 	G* gp;
-	uintptr pcbuf[100];
+	Location locbuf[100];
 	int32 c;
 };
 
@@ -631,11 +640,15 @@ void
 runtime_tracebackothers(G * volatile me)
 {
 	G * volatile gp;
-	Traceback traceback;
+	Traceback tb;
+	int32 traceback;
 
-	traceback.gp = me;
+	tb.gp = me;
+	traceback = runtime_gotraceback();
 	for(gp = runtime_allg; gp != nil; gp = gp->alllink) {
 		if(gp == me || gp->status == Gdead)
+			continue;
+		if(gp->issystem && traceback < 2)
 			continue;
 		runtime_printf("\n");
 		runtime_goroutineheader(gp);
@@ -654,7 +667,7 @@ runtime_tracebackothers(G * volatile me)
 			continue;
 		}
 
-		gp->traceback = &traceback;
+		gp->traceback = &tb;
 
 #ifdef USING_SPLIT_STACK
 		__splitstack_getcontext(&me->stack_context[0]);
@@ -665,7 +678,7 @@ runtime_tracebackothers(G * volatile me)
 			runtime_gogo(gp);
 		}
 
-		runtime_printtrace(traceback.pcbuf, traceback.c);
+		runtime_printtrace(tb.locbuf, tb.c, false);
 		runtime_goroutinetrailer(gp);
 	}
 }
@@ -680,8 +693,8 @@ gtraceback(G* gp)
 
 	traceback = gp->traceback;
 	gp->traceback = nil;
-	traceback->c = runtime_callers(1, traceback->pcbuf,
-		sizeof traceback->pcbuf / sizeof traceback->pcbuf[0]);
+	traceback->c = runtime_callers(1, traceback->locbuf,
+		sizeof traceback->locbuf / sizeof traceback->locbuf[0]);
 	runtime_gogo(traceback->gp);
 }
 
@@ -968,6 +981,7 @@ top:
 	if((scvg == nil && runtime_sched.grunning == 0) ||
 	   (scvg != nil && runtime_sched.grunning == 1 && runtime_sched.gwait == 0 &&
 	    (scvg->status == Grunning || scvg->status == Gsyscall))) {
+		m->throwing = -1;  // do not dump full stacks
 		runtime_throw("all goroutines are asleep - deadlock!");
 	}
 
@@ -1204,6 +1218,9 @@ runtime_newm(void)
 	pthread_attr_t attr;
 	pthread_t tid;
 	size_t stacksize;
+	sigset_t clear;
+	sigset_t old;
+	int ret;
 
 #if 0
 	static const Type *mtype;  // The Go type M
@@ -1236,7 +1253,21 @@ runtime_newm(void)
 	if(pthread_attr_setstacksize(&attr, stacksize) != 0)
 		runtime_throw("pthread_attr_setstacksize");
 
-	if(pthread_create(&tid, &attr, runtime_mstart, mp) != 0)
+	// Block signals during pthread_create so that the new thread
+	// starts with signals disabled.  It will enable them in minit.
+	sigfillset(&clear);
+
+#ifdef SIGTRAP
+	// Blocking SIGTRAP reportedly breaks gdb on Alpha GNU/Linux.
+	sigdelset(&clear, SIGTRAP);
+#endif
+
+	sigemptyset(&old);
+	sigprocmask(SIG_BLOCK, &clear, &old);
+	ret = pthread_create(&tid, &attr, runtime_mstart, mp);
+	sigprocmask(SIG_SETMASK, &old, nil);
+
+	if (ret != 0)
 		runtime_throw("pthread_create");
 
 	return mp;
@@ -1500,7 +1531,7 @@ runtime_malg(int32 stacksize, byte** ret_stack, size_t* ret_stacksize)
 /* For runtime package testing.  */
 
 void runtime_testing_entersyscall(void)
-  __asm__("runtime.entersyscall");
+  __asm__ (GOSYM_PREFIX "runtime.entersyscall");
 
 void
 runtime_testing_entersyscall()
@@ -1509,7 +1540,7 @@ runtime_testing_entersyscall()
 }
 
 void runtime_testing_exitsyscall(void)
-  __asm__("runtime.exitsyscall");
+  __asm__ (GOSYM_PREFIX "runtime.exitsyscall");
 
 void
 runtime_testing_exitsyscall()
@@ -1609,7 +1640,7 @@ gfget(void)
 	return gp;
 }
 
-void runtime_Gosched (void) asm ("runtime.Gosched");
+void runtime_Gosched (void) __asm__ (GOSYM_PREFIX "runtime.Gosched");
 
 void
 runtime_Gosched(void)
@@ -1688,7 +1719,7 @@ runtime_lockedOSThread(void)
 // for testing of callbacks
 
 _Bool runtime_golockedOSThread(void)
-  asm("runtime.golockedOSThread");
+  __asm__ (GOSYM_PREFIX "runtime.golockedOSThread");
 
 _Bool
 runtime_golockedOSThread(void)
@@ -1704,7 +1735,7 @@ runtime_mid()
 }
 
 intgo runtime_NumGoroutine (void)
-  __asm__ ("runtime.NumGoroutine");
+  __asm__ (GOSYM_PREFIX "runtime.NumGoroutine");
 
 intgo
 runtime_NumGoroutine()
@@ -1729,13 +1760,14 @@ static struct {
 	void (*fn)(uintptr*, int32);
 	int32 hz;
 	uintptr pcbuf[100];
+	Location locbuf[100];
 } prof;
 
 // Called if we receive a SIGPROF signal.
 void
 runtime_sigprof()
 {
-	int32 n;
+	int32 n, i;
 
 	if(prof.fn == nil || prof.hz == 0)
 		return;
@@ -1745,7 +1777,9 @@ runtime_sigprof()
 		runtime_unlock(&prof);
 		return;
 	}
-	n = runtime_callers(0, prof.pcbuf, nelem(prof.pcbuf));
+	n = runtime_callers(0, prof.locbuf, nelem(prof.locbuf));
+	for(i = 0; i < n; i++)
+		prof.pcbuf[i] = prof.locbuf[i].pc;
 	if(n > 0)
 		prof.fn(prof.pcbuf, n);
 	runtime_unlock(&prof);

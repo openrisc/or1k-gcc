@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package regexp_test
+package regexp
 
 import (
-	. "regexp"
-
 	"bufio"
 	"compress/bzip2"
 	"fmt"
@@ -71,8 +69,7 @@ func TestRE2Search(t *testing.T) {
 
 func TestRE2Exhaustive(t *testing.T) {
 	if testing.Short() {
-		t.Log("skipping TestRE2Exhaustive during short test")
-		return
+		t.Skip("skipping TestRE2Exhaustive during short test")
 	}
 	testRE2(t, "testdata/re2-exhaustive.txt.bz2")
 }
@@ -221,22 +218,22 @@ var run = []func(*Regexp, *Regexp, string) ([]int, string){
 }
 
 func runFull(re, refull *Regexp, text string) ([]int, string) {
-	refull.SetLongest(false)
+	refull.longest = false
 	return refull.FindStringSubmatchIndex(text), "[full]"
 }
 
 func runPartial(re, refull *Regexp, text string) ([]int, string) {
-	re.SetLongest(false)
+	re.longest = false
 	return re.FindStringSubmatchIndex(text), ""
 }
 
 func runFullLongest(re, refull *Regexp, text string) ([]int, string) {
-	refull.SetLongest(true)
+	refull.longest = true
 	return refull.FindStringSubmatchIndex(text), "[full,longest]"
 }
 
 func runPartialLongest(re, refull *Regexp, text string) ([]int, string) {
-	re.SetLongest(true)
+	re.longest = true
 	return re.FindStringSubmatchIndex(text), "[longest]"
 }
 
@@ -248,22 +245,22 @@ var match = []func(*Regexp, *Regexp, string) (bool, string){
 }
 
 func matchFull(re, refull *Regexp, text string) (bool, string) {
-	refull.SetLongest(false)
+	refull.longest = false
 	return refull.MatchString(text), "[full]"
 }
 
 func matchPartial(re, refull *Regexp, text string) (bool, string) {
-	re.SetLongest(false)
+	re.longest = false
 	return re.MatchString(text), ""
 }
 
 func matchFullLongest(re, refull *Regexp, text string) (bool, string) {
-	refull.SetLongest(true)
+	refull.longest = true
 	return refull.MatchString(text), "[full,longest]"
 }
 
 func matchPartialLongest(re, refull *Regexp, text string) (bool, string) {
-	re.SetLongest(true)
+	re.longest = true
 	return re.MatchString(text), "[longest]"
 }
 
@@ -543,7 +540,7 @@ Reading:
 				}
 			}
 
-			re, err := CompileInternal(pattern, syn, true)
+			re, err := compile(pattern, syn, true)
 			if err != nil {
 				if shouldCompile {
 					t.Errorf("%s:%d: %#q did not compile", file, lineno, pattern)

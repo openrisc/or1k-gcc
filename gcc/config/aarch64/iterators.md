@@ -1,5 +1,5 @@
 ;; Machine description for AArch64 architecture.
-;; Copyright (C) 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2013 Free Software Foundation, Inc.
 ;; Contributed by ARM Ltd.
 ;;
 ;; This file is part of GCC.
@@ -83,11 +83,20 @@
 ;; Vector Float modes.
 (define_mode_iterator VDQF [V2SF V4SF V2DF])
 
+;; Modes suitable to use as the return type of a vcond expression.
+(define_mode_iterator VDQF_COND [V2SF V2SI V4SF V4SI V2DF V2DI])
+
+;; All Float modes.
+(define_mode_iterator VALLF [V2SF V4SF V2DF SF DF])
+
 ;; Vector Float modes with 2 elements.
 (define_mode_iterator V2F [V2SF V2DF])
 
 ;; All modes.
 (define_mode_iterator VALL [V8QI V16QI V4HI V8HI V2SI V4SI V2DI V2SF V4SF V2DF])
+
+;; All vector modes and DI.
+(define_mode_iterator VALLDI [V8QI V16QI V4HI V8HI V2SI V4SI V2DI V2SF V4SF V2DF DI])
 
 ;; Vector modes for Integer reduction across lanes.
 (define_mode_iterator VDQV [V8QI V16QI V4HI V8HI V4SI])
@@ -157,10 +166,15 @@
  [
     UNSPEC_ASHIFT_SIGNED	; Used in aarch-simd.md.
     UNSPEC_ASHIFT_UNSIGNED	; Used in aarch64-simd.md.
+    UNSPEC_FMAX		; Used in aarch64-simd.md.
+    UNSPEC_FMAXNMV	; Used in aarch64-simd.md.
     UNSPEC_FMAXV	; Used in aarch64-simd.md.
+    UNSPEC_FMIN		; Used in aarch64-simd.md.
+    UNSPEC_FMINNMV	; Used in aarch64-simd.md.
     UNSPEC_FMINV	; Used in aarch64-simd.md.
     UNSPEC_FADDV	; Used in aarch64-simd.md.
-    UNSPEC_ADDV		; Used in aarch64-simd.md.
+    UNSPEC_SADDV	; Used in aarch64-simd.md.
+    UNSPEC_UADDV	; Used in aarch64-simd.md.
     UNSPEC_SMAXV	; Used in aarch64-simd.md.
     UNSPEC_SMINV	; Used in aarch64-simd.md.
     UNSPEC_UMAXV	; Used in aarch64-simd.md.
@@ -210,13 +224,6 @@
     UNSPEC_URSHL	; Used in aarch64-simd.md.
     UNSPEC_SQRSHL	; Used in aarch64-simd.md.
     UNSPEC_UQRSHL	; Used in aarch64-simd.md.
-    UNSPEC_CMEQ		; Used in aarch64-simd.md.
-    UNSPEC_CMLE		; Used in aarch64-simd.md.
-    UNSPEC_CMLT		; Used in aarch64-simd.md.
-    UNSPEC_CMGE		; Used in aarch64-simd.md.
-    UNSPEC_CMGT		; Used in aarch64-simd.md.
-    UNSPEC_CMHS		; Used in aarch64-simd.md.
-    UNSPEC_CMHI		; Used in aarch64-simd.md.
     UNSPEC_SSLI		; Used in aarch64-simd.md.
     UNSPEC_USLI		; Used in aarch64-simd.md.
     UNSPEC_SSRI		; Used in aarch64-simd.md.
@@ -224,10 +231,14 @@
     UNSPEC_SSHLL	; Used in aarch64-simd.md.
     UNSPEC_USHLL	; Used in aarch64-simd.md.
     UNSPEC_ADDP		; Used in aarch64-simd.md.
-    UNSPEC_CMTST	; Used in aarch64-simd.md.
-    UNSPEC_FMAX		; Used in aarch64-simd.md.
-    UNSPEC_FMIN		; Used in aarch64-simd.md.
-    UNSPEC_BSL		; Used in aarch64-simd.md.
+    UNSPEC_TBL		; Used in vector permute patterns.
+    UNSPEC_CONCAT	; Used in vector permute patterns.
+    UNSPEC_ZIP1		; Used in vector permute patterns.
+    UNSPEC_ZIP2		; Used in vector permute patterns.
+    UNSPEC_UZP1		; Used in vector permute patterns.
+    UNSPEC_UZP2		; Used in vector permute patterns.
+    UNSPEC_TRN1		; Used in vector permute patterns.
+    UNSPEC_TRN2		; Used in vector permute patterns.
 ])
 
 ;; -------------------------------------------------------------------
@@ -238,8 +249,12 @@
 ;; 32-bit version and "%x0" in the 64-bit version.
 (define_mode_attr w [(QI "w") (HI "w") (SI "w") (DI "x") (SF "s") (DF "d")])
 
+;; For constraints used in scalar immediate vector moves
+(define_mode_attr hq [(HI "h") (QI "q")])
+
 ;; For scalar usage of vector/FP registers
 (define_mode_attr v [(QI "b") (HI "h") (SI "s") (DI "d")
+		    (SF "s") (DF "d")
 		    (V8QI "") (V16QI "")
 		    (V4HI "") (V8HI "")
 		    (V2SI "") (V4SI  "")
@@ -294,7 +309,8 @@
 			 (V4SF ".4s") (V2DF ".2d")
 			 (DI   "")    (SI   "")
 			 (HI   "")    (QI   "")
-			 (TI   "")])
+			 (TI   "")    (SF   "")
+			 (DF   "")])
 
 ;; Register suffix narrowed modes for VQN.
 (define_mode_attr Vmntype [(V8HI ".8b") (V4SI ".4h")
@@ -329,6 +345,22 @@
 			(QI   "QI")])
 
 ;; Define container mode for lane selection.
+(define_mode_attr VCOND [(V4HI "V4HI") (V8HI "V4HI")
+			 (V2SI "V2SI") (V4SI "V2SI")
+			 (DI   "DI") (V2DI "DI")
+			 (V2SF "V2SF") (V4SF "V2SF")
+			 (V2DF "DF")])
+
+;; Define container mode for lane selection.
+(define_mode_attr VCONQ [(V8QI "V16QI") (V16QI "V16QI")
+			 (V4HI "V8HI") (V8HI "V8HI")
+			 (V2SI "V4SI") (V4SI "V4SI")
+			 (DI   "V2DI") (V2DI "V2DI")
+			 (V2SF "V2SF") (V4SF "V4SF")
+			 (V2DF "V2DF") (SI   "V4SI")
+			 (HI   "V8HI") (QI   "V16QI")])
+
+;; Define container mode for lane selection.
 (define_mode_attr VCON [(V8QI "V16QI") (V16QI "V16QI")
 			(V4HI "V8HI") (V8HI "V8HI")
 			(V2SI "V4SI") (V4SI "V4SI")
@@ -353,7 +385,8 @@
 ;; Double modes of vector modes (lower case).
 (define_mode_attr Vdbl [(V8QI "v16qi") (V4HI "v8hi")
 			(V2SI "v4si")  (V2SF "v4sf")
-			(SI   "v2si")  (DI   "v2di")])
+			(SI   "v2si")  (DI   "v2di")
+			(DF   "v2df")])
 
 ;; Narrowed modes for VDN.
 (define_mode_attr VNARROWD [(V4HI "V8QI") (V2SI "V4HI")
@@ -415,8 +448,19 @@
 (define_mode_attr V_cmp_result [(V8QI "V8QI") (V16QI "V16QI")
 				(V4HI "V4HI") (V8HI  "V8HI")
 				(V2SI "V2SI") (V4SI  "V4SI")
+				(DI   "DI")   (V2DI  "V2DI")
 				(V2SF "V2SI") (V4SF  "V4SI")
-				(DI   "DI")   (V2DI  "V2DI")])
+				(V2DF "V2DI") (DF    "DI")
+				(SF   "SI")])
+
+;; Lower case mode of results of comparison operations.
+(define_mode_attr v_cmp_result [(V8QI "v8qi") (V16QI "v16qi")
+				(V4HI "v4hi") (V8HI  "v8hi")
+				(V2SI "v2si") (V4SI  "v4si")
+				(DI   "di")   (V2DI  "v2di")
+				(V2SF "v2si") (V4SF  "v4si")
+				(V2DF "v2di") (DF    "di")
+				(SF   "si")])
 
 ;; Vm for lane instructions is restricted to FP_LO_REGS.
 (define_mode_attr vwx [(V4HI "x") (V8HI "x") (HI "x")
@@ -452,6 +496,9 @@
 ;; Mode for atomic operation suffixes
 (define_mode_attr atomic_sfx
   [(QI "b") (HI "h") (SI "") (DI "")])
+
+(define_mode_attr fcvt_target [(V2DF "v2di") (V4SF "v4si") (V2SF "v2si")])
+(define_mode_attr FCVT_TARGET [(V2DF "V2DI") (V4SF "V4SI") (V2SF "V2SI")])
 
 ;; -------------------------------------------------------------------
 ;; Code Iterators
@@ -489,8 +536,13 @@
 ;; Iterator for integer conversions
 (define_code_iterator FIXUORS [fix unsigned_fix])
 
+;; Iterator for float conversions
+(define_code_iterator FLOATUORS [float unsigned_float])
+
 ;; Code iterator for variants of vector max and min.
 (define_code_iterator MAXMIN [smax smin umax umin])
+
+(define_code_iterator FMAXMIN [smax smin])
 
 ;; Code iterator for variants of vector max and min.
 (define_code_iterator ADDSUB [plus minus])
@@ -504,6 +556,15 @@
 ;; Code iterator for signed variants of vector saturating binary ops.
 (define_code_iterator SBINQOPS [ss_plus ss_minus])
 
+;; Comparison operators for <F>CM.
+(define_code_iterator COMPARISONS [lt le eq ge gt])
+
+;; Unsigned comparison operators.
+(define_code_iterator UCOMPARISONS [ltu leu geu gtu])
+
+;; Unsigned comparison operators.
+(define_code_iterator FAC_COMPARISONS [lt le ge gt])
+
 ;; -------------------------------------------------------------------
 ;; Code Attributes
 ;; -------------------------------------------------------------------
@@ -516,6 +577,10 @@
 			 (zero_extend "zero_extend")
 			 (sign_extract "extv")
 			 (zero_extract "extzv")
+			 (fix "fix")
+			 (unsigned_fix "fixuns")
+			 (float "float")
+			 (unsigned_float "floatuns")
 			 (and "and")
 			 (ior "ior")
 			 (xor "xor")
@@ -532,12 +597,37 @@
 			 (eq "eq")
 			 (ne "ne")
 			 (lt "lt")
-			 (ge "ge")])
+			 (ge "ge")
+			 (le "le")
+			 (gt "gt")
+			 (ltu "ltu")
+			 (leu "leu")
+			 (geu "geu")
+			 (gtu "gtu")])
+
+;; For comparison operators we use the FCM* and CM* instructions.
+;; As there are no CMLE or CMLT instructions which act on 3 vector
+;; operands, we must use CMGE or CMGT and swap the order of the
+;; source operands.
+
+(define_code_attr n_optab [(lt "gt") (le "ge") (eq "eq") (ge "ge") (gt "gt")
+			   (ltu "hi") (leu "hs") (geu "hs") (gtu "hi")])
+(define_code_attr cmp_1   [(lt "2") (le "2") (eq "1") (ge "1") (gt "1")
+			   (ltu "2") (leu "2") (geu "1") (gtu "1")])
+(define_code_attr cmp_2   [(lt "1") (le "1") (eq "2") (ge "2") (gt "2")
+			   (ltu "1") (leu "1") (geu "2") (gtu "2")])
+
+(define_code_attr CMP [(lt "LT") (le "LE") (eq "EQ") (ge "GE") (gt "GT")
+			   (ltu "LTU") (leu "LEU") (geu "GEU") (gtu "GTU")])
+
+(define_code_attr fix_trunc_optab [(fix "fix_trunc")
+				   (unsigned_fix "fixuns_trunc")])
 
 ;; Optab prefix for sign/zero-extending operations
 (define_code_attr su_optab [(sign_extend "") (zero_extend "u")
 			    (div "") (udiv "u")
 			    (fix "") (unsigned_fix "u")
+			    (float "s") (unsigned_float "u")
 			    (ss_plus "s") (us_plus "u")
 			    (ss_minus "s") (us_minus "u")])
 
@@ -562,7 +652,9 @@
 (define_code_attr su [(sign_extend "s") (zero_extend "u")
 		      (sign_extract "s") (zero_extract "u")
 		      (fix "s") (unsigned_fix "u")
-		      (div "s") (udiv "u")])
+		      (div "s") (udiv "u")
+		      (smax "s") (umax "u")
+		      (smin "s") (umin "u")])
 
 ;; Emit cbz/cbnz depending on comparison type.
 (define_code_attr cbz [(eq "cbz") (ne "cbnz") (lt "cbnz") (ge "cbz")])
@@ -571,10 +663,10 @@
 (define_code_attr tbz [(eq "tbz") (ne "tbnz") (lt "tbnz") (ge "tbz")])
 
 ;; Max/min attributes.
-(define_code_attr maxmin [(smax "smax")
-			  (smin "smin")
-			  (umax "umax")
-			  (umin "umin")])
+(define_code_attr maxmin [(smax "max")
+			  (smin "min")
+			  (umax "max")
+			  (umin "min")])
 
 ;; MLA/MLS attributes.
 (define_code_attr as [(ss_plus "a") (ss_minus "s")])
@@ -596,7 +688,10 @@
 (define_int_iterator MAXMINV [UNSPEC_UMAXV UNSPEC_UMINV
 			      UNSPEC_SMAXV UNSPEC_SMINV])
 
-(define_int_iterator FMAXMINV [UNSPEC_FMAXV UNSPEC_FMINV])
+(define_int_iterator FMAXMINV [UNSPEC_FMAXV UNSPEC_FMINV
+			       UNSPEC_FMAXNMV UNSPEC_FMINNMV])
+
+(define_int_iterator SUADDV [UNSPEC_SADDV UNSPEC_UADDV])
 
 (define_int_iterator HADDSUB [UNSPEC_SHADD UNSPEC_UHADD
 			      UNSPEC_SRHADD UNSPEC_URHADD
@@ -610,7 +705,7 @@
 (define_int_iterator ADDSUBHN2 [UNSPEC_ADDHN2 UNSPEC_RADDHN2
 			        UNSPEC_SUBHN2 UNSPEC_RSUBHN2])
 
-(define_int_iterator FMAXMIN [UNSPEC_FMAX UNSPEC_FMIN])
+(define_int_iterator FMAXMIN_UNS [UNSPEC_FMAX UNSPEC_FMIN])
 
 (define_int_iterator VQDMULH [UNSPEC_SQDMULH UNSPEC_SQRDMULH])
 
@@ -641,25 +736,43 @@
                                UNSPEC_SQSHRN UNSPEC_UQSHRN
                                UNSPEC_SQRSHRN UNSPEC_UQRSHRN])
 
-(define_int_iterator VCMP_S [UNSPEC_CMEQ UNSPEC_CMGE UNSPEC_CMGT
-			     UNSPEC_CMLE UNSPEC_CMLT])
+(define_int_iterator PERMUTE [UNSPEC_ZIP1 UNSPEC_ZIP2
+			      UNSPEC_TRN1 UNSPEC_TRN2
+			      UNSPEC_UZP1 UNSPEC_UZP2])
 
-(define_int_iterator VCMP_U [UNSPEC_CMHS UNSPEC_CMHI UNSPEC_CMTST])
+(define_int_iterator FRINT [UNSPEC_FRINTZ UNSPEC_FRINTP UNSPEC_FRINTM
+			     UNSPEC_FRINTN UNSPEC_FRINTI UNSPEC_FRINTX
+			     UNSPEC_FRINTA])
 
+(define_int_iterator FCVT [UNSPEC_FRINTZ UNSPEC_FRINTP UNSPEC_FRINTM
+			    UNSPEC_FRINTA UNSPEC_FRINTN])
+
+(define_int_iterator FRECP [UNSPEC_FRECPE UNSPEC_FRECPX])
 
 ;; -------------------------------------------------------------------
 ;; Int Iterators Attributes.
 ;; -------------------------------------------------------------------
-(define_int_attr  maxminv [(UNSPEC_UMAXV "umax")
-			   (UNSPEC_UMINV "umin")
-			   (UNSPEC_SMAXV "smax")
-			   (UNSPEC_SMINV "smin")])
+(define_int_attr  maxmin_uns [(UNSPEC_UMAXV "umax")
+			      (UNSPEC_UMINV "umin")
+			      (UNSPEC_SMAXV "smax")
+			      (UNSPEC_SMINV "smin")
+			      (UNSPEC_FMAX  "smax_nan")
+			      (UNSPEC_FMAXNMV "smax")
+			      (UNSPEC_FMAXV "smax_nan")
+			      (UNSPEC_FMIN "smin_nan")
+			      (UNSPEC_FMINNMV "smin")
+			      (UNSPEC_FMINV "smin_nan")])
 
-(define_int_attr  fmaxminv [(UNSPEC_FMAXV "max")
-			    (UNSPEC_FMINV "min")])
-
-(define_int_attr  fmaxmin [(UNSPEC_FMAX "fmax")
-			   (UNSPEC_FMIN "fmin")])
+(define_int_attr  maxmin_uns_op [(UNSPEC_UMAXV "umax")
+				 (UNSPEC_UMINV "umin")
+				 (UNSPEC_SMAXV "smax")
+				 (UNSPEC_SMINV "smin")
+				 (UNSPEC_FMAX "fmax")
+				 (UNSPEC_FMAXNMV "fmaxnm")
+				 (UNSPEC_FMAXV "fmax")
+				 (UNSPEC_FMIN "fmin")
+				 (UNSPEC_FMINNMV "fminnm")
+				 (UNSPEC_FMINV "fmin")])
 
 (define_int_attr sur [(UNSPEC_SHADD "s") (UNSPEC_UHADD "u")
 		      (UNSPEC_SRHADD "sr") (UNSPEC_URHADD "ur")
@@ -671,6 +784,7 @@
 		      (UNSPEC_SUBHN2 "") (UNSPEC_RSUBHN2 "r")
 		      (UNSPEC_SQXTN "s") (UNSPEC_UQXTN "u")
 		      (UNSPEC_USQADD "us") (UNSPEC_SUQADD "su")
+		      (UNSPEC_SADDV "s") (UNSPEC_UADDV "u")
 		      (UNSPEC_SSLI  "s") (UNSPEC_USLI  "u")
 		      (UNSPEC_SSRI  "s") (UNSPEC_USRI  "u")
 		      (UNSPEC_USRA  "u") (UNSPEC_SSRA  "s")
@@ -720,12 +834,34 @@
 			 (UNSPEC_RADDHN2 "add")
 			 (UNSPEC_RSUBHN2 "sub")])
 
-(define_int_attr cmp [(UNSPEC_CMGE "ge") (UNSPEC_CMGT "gt")
-		      (UNSPEC_CMLE "le") (UNSPEC_CMLT "lt")
-                      (UNSPEC_CMEQ "eq")
-		      (UNSPEC_CMHS "hs") (UNSPEC_CMHI "hi")
-		      (UNSPEC_CMTST "tst")])
-
 (define_int_attr offsetlr [(UNSPEC_SSLI	"1") (UNSPEC_USLI "1")
 			   (UNSPEC_SSRI	"0") (UNSPEC_USRI "0")])
 
+;; Standard pattern names for floating-point rounding instructions.
+(define_int_attr frint_pattern [(UNSPEC_FRINTZ "btrunc")
+				(UNSPEC_FRINTP "ceil")
+				(UNSPEC_FRINTM "floor")
+				(UNSPEC_FRINTI "nearbyint")
+				(UNSPEC_FRINTX "rint")
+				(UNSPEC_FRINTA "round")
+				(UNSPEC_FRINTN "frintn")])
+
+;; frint suffix for floating-point rounding instructions.
+(define_int_attr frint_suffix [(UNSPEC_FRINTZ "z") (UNSPEC_FRINTP "p")
+			       (UNSPEC_FRINTM "m") (UNSPEC_FRINTI "i")
+			       (UNSPEC_FRINTX "x") (UNSPEC_FRINTA "a")
+			       (UNSPEC_FRINTN "n")])
+
+(define_int_attr fcvt_pattern [(UNSPEC_FRINTZ "btrunc") (UNSPEC_FRINTA "round")
+			       (UNSPEC_FRINTP "ceil") (UNSPEC_FRINTM "floor")
+			       (UNSPEC_FRINTN "frintn")])
+
+(define_int_attr perm_insn [(UNSPEC_ZIP1 "zip") (UNSPEC_ZIP2 "zip")
+			    (UNSPEC_TRN1 "trn") (UNSPEC_TRN2 "trn")
+			    (UNSPEC_UZP1 "uzp") (UNSPEC_UZP2 "uzp")])
+
+(define_int_attr perm_hilo [(UNSPEC_ZIP1 "1") (UNSPEC_ZIP2 "2")
+			    (UNSPEC_TRN1 "1") (UNSPEC_TRN2 "2")
+			    (UNSPEC_UZP1 "1") (UNSPEC_UZP2 "2")])
+
+(define_int_attr frecp_suffix  [(UNSPEC_FRECPE "e") (UNSPEC_FRECPX "x")])

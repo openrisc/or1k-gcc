@@ -1,7 +1,5 @@
 /* Definitions of target machine for GNU compiler, for ARM.
-   Copyright (C) 1991, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1991-2013 Free Software Foundation, Inc.
    Contributed by Pieter `Tiggr' Schoenmakers (rcpieter@win.tue.nl)
    and Martin Simmons (@harleqn.co.uk).
    More major hacks by Richard Earnshaw (rearnsha@arm.com)
@@ -185,6 +183,11 @@ extern arm_cc arm_current_cc;
 
 #define ARM_INVERSE_CONDITION_CODE(X)  ((arm_cc) (((int)X) ^ 1))
 
+/* The maximaum number of instructions that is beneficial to
+   conditionally execute. */
+#undef MAX_CONDITIONAL_EXECUTE
+#define MAX_CONDITIONAL_EXECUTE arm_max_conditional_execute ()
+
 extern int arm_target_label;
 extern int arm_ccfsm_state;
 extern GTY(()) rtx arm_target_insn;
@@ -352,9 +355,15 @@ extern void (*arm_lang_output_object_attributes_hook)(void);
 #define TARGET_HAVE_LDREXD	(((arm_arch6k && TARGET_ARM) || arm_arch7) \
 				 && arm_arch_notm)
 
+/* Nonzero if this chip supports load-acquire and store-release.  */
+#define TARGET_HAVE_LDACQ	(TARGET_ARM_ARCH >= 8)
+
 /* Nonzero if integer division instructions supported.  */
 #define TARGET_IDIV		((TARGET_ARM && arm_arch_arm_hwdiv) \
 				 || (TARGET_THUMB2 && arm_arch_thumb_hwdiv))
+
+/* Should NEON be used for 64-bits bitops.  */
+#define TARGET_PREFER_NEON_64BITS (prefer_neon_for_64bits)
 
 /* True iff the full BPABI is being used.  If TARGET_BPABI is true,
    then TARGET_AAPCS_BASED must be true -- but the converse does not
@@ -540,6 +549,10 @@ extern int arm_arch_arm_hwdiv;
 
 /* Nonzero if chip supports integer division instruction in Thumb mode.  */
 extern int arm_arch_thumb_hwdiv;
+
+/* Nonzero if we should use Neon to handle 64-bits operations rather
+   than core registers.  */
+extern int prefer_neon_for_64bits;
 
 #ifndef TARGET_DEFAULT
 #define TARGET_DEFAULT  (MASK_APCS_FRAME)
@@ -947,6 +960,8 @@ extern int arm_arch_thumb_hwdiv;
 
 #define FIRST_IWMMXT_REGNUM	(LAST_HI_VFP_REGNUM + 1)
 #define LAST_IWMMXT_REGNUM	(FIRST_IWMMXT_REGNUM + 15)
+
+/* Need to sync with WCGR in iwmmxt.md.  */
 #define FIRST_IWMMXT_GR_REGNUM	(LAST_IWMMXT_REGNUM + 1)
 #define LAST_IWMMXT_GR_REGNUM	(FIRST_IWMMXT_GR_REGNUM + 3)
 
@@ -1042,7 +1057,7 @@ extern int arm_arch_thumb_hwdiv;
 /* Modes valid for Neon D registers.  */
 #define VALID_NEON_DREG_MODE(MODE) \
   ((MODE) == V2SImode || (MODE) == V4HImode || (MODE) == V8QImode \
-   || (MODE) == V2SFmode || (MODE) == DImode)
+   || (MODE) == V4HFmode || (MODE) == V2SFmode || (MODE) == DImode)
 
 /* Modes valid for Neon Q registers.  */
 #define VALID_NEON_QREG_MODE(MODE) \
@@ -1132,6 +1147,7 @@ enum reg_class
   STACK_REG,
   BASE_REGS,
   HI_REGS,
+  CALLER_SAVE_REGS,
   GENERAL_REGS,
   CORE_REGS,
   VFP_D0_D7_REGS,
@@ -1158,6 +1174,7 @@ enum reg_class
   "STACK_REG",		\
   "BASE_REGS",		\
   "HI_REGS",		\
+  "CALLER_SAVE_REGS",	\
   "GENERAL_REGS",	\
   "CORE_REGS",		\
   "VFP_D0_D7_REGS",	\
@@ -1168,7 +1185,9 @@ enum reg_class
   "IWMMXT_GR_REGS",	\
   "CC_REG",		\
   "VFPCC_REG",		\
-  "ALL_REGS",		\
+  "SFP_REG",		\
+  "AFP_REG",		\
+  "ALL_REGS"		\
 }
 
 /* Define which registers fit in which classes.
@@ -1181,6 +1200,7 @@ enum reg_class
   { 0x00002000, 0x00000000, 0x00000000, 0x00000000 }, /* STACK_REG */	\
   { 0x000020FF, 0x00000000, 0x00000000, 0x00000000 }, /* BASE_REGS */	\
   { 0x00005F00, 0x00000000, 0x00000000, 0x00000000 }, /* HI_REGS */	\
+  { 0x0000100F, 0x00000000, 0x00000000, 0x00000000 }, /* CALLER_SAVE_REGS */ \
   { 0x00005FFF, 0x00000000, 0x00000000, 0x00000000 }, /* GENERAL_REGS */ \
   { 0x00007FFF, 0x00000000, 0x00000000, 0x00000000 }, /* CORE_REGS */	\
   { 0xFFFF0000, 0x00000000, 0x00000000, 0x00000000 }, /* VFP_D0_D7_REGS  */ \
@@ -1193,7 +1213,7 @@ enum reg_class
   { 0x00000000, 0x00000000, 0x00000000, 0x00000020 }, /* VFPCC_REG */	\
   { 0x00000000, 0x00000000, 0x00000000, 0x00000040 }, /* SFP_REG */	\
   { 0x00000000, 0x00000000, 0x00000000, 0x00000080 }, /* AFP_REG */	\
-  { 0xFFFF7FFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000000 }  /* ALL_REGS */	\
+  { 0xFFFF7FFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x0000000F }  /* ALL_REGS */	\
 }
 
 /* Any of the VFP register classes.  */
@@ -1639,7 +1659,7 @@ typedef struct
    frame.  */
 #define EXIT_IGNORE_STACK 1
 
-#define EPILOGUE_USES(REGNO) ((REGNO) == LR_REGNUM)
+#define EPILOGUE_USES(REGNO) (epilogue_completed && (REGNO) == LR_REGNUM)
 
 /* Determine if the epilogue should be output as RTL.
    You should override this if you define FUNCTION_EXTRA_EPILOGUE.  */
@@ -1730,7 +1750,8 @@ enum arm_auto_incmodes
    They give nonzero only if REGNO is a hard reg of the suitable class
    or a pseudo reg currently allocated to a suitable hard reg.
    Since they use reg_renumber, they are safe only once reg_renumber
-   has been allocated, which happens in local-alloc.c.  */
+   has been allocated, which happens in reginfo.c during register
+   allocation.  */
 #define TEST_REGNO(R, TEST, VALUE) \
   ((R TEST VALUE) || ((unsigned) reg_renumber[R] TEST VALUE))
 
@@ -2077,9 +2098,6 @@ extern int making_const_table;
    ? reverse_condition_maybe_unordered (code) \
    : reverse_condition (code))
 
-#define CANONICALIZE_COMPARISON(CODE, OP0, OP1)				\
-  (CODE) = arm_canonicalize_comparison (CODE, &(OP0), &(OP1))
-
 /* The arm5 clz instruction returns 32.  */
 #define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE)  ((VALUE) = 32, 1)
 #define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE)  ((VALUE) = 32, 1)
@@ -2133,20 +2151,13 @@ extern int making_const_table;
 	asm_fprintf (STREAM, "\tpop {%r}\n", REGNO);	\
     } while (0)
 
-/* Jump table alignment is explicit in ASM_OUTPUT_CASE_LABEL.  */
-#define ADDR_VEC_ALIGN(JUMPTABLE) 0
+#define ADDR_VEC_ALIGN(JUMPTABLE)	\
+  ((TARGET_THUMB && GET_MODE (PATTERN (JUMPTABLE)) == SImode) ? 2 : 0)
 
-/* This is how to output a label which precedes a jumptable.  Since
-   Thumb instructions are 2 bytes, we may need explicit alignment here.  */
-#undef  ASM_OUTPUT_CASE_LABEL
-#define ASM_OUTPUT_CASE_LABEL(FILE, PREFIX, NUM, JUMPTABLE)		\
-  do									\
-    {									\
-      if (TARGET_THUMB && GET_MODE (PATTERN (JUMPTABLE)) == SImode)	\
-        ASM_OUTPUT_ALIGN (FILE, 2);					\
-      (*targetm.asm_out.internal_label) (FILE, PREFIX, NUM);		\
-    }									\
-  while (0)
+/* Alignment for case labels comes from ADDR_VEC_ALIGN; avoid the
+   default alignment from elfos.h.  */
+#undef ASM_OUTPUT_BEFORE_CASE_LABEL
+#define ASM_OUTPUT_BEFORE_CASE_LABEL(FILE, PREFIX, NUM, TABLE) /* Empty.  */
 
 /* Make sure subsequent insns are aligned after a TBB.  */
 #define ASM_OUTPUT_CASE_END(FILE, NUM, JUMPTABLE)	\

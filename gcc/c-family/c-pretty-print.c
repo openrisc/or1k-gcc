@@ -1,6 +1,5 @@
 /* Subroutines common to both C and C++ pretty-printers.
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -1477,6 +1476,17 @@ pp_c_postfix_expression (c_pretty_printer *pp, tree e)
       pp_c_right_bracket (pp);
       break;
 
+    case ARRAY_NOTATION_REF:
+      pp_postfix_expression (pp, ARRAY_NOTATION_ARRAY (e));
+      pp_c_left_bracket (pp);
+      pp_expression (pp, ARRAY_NOTATION_START (e));
+      pp_colon (pp);
+      pp_expression (pp, ARRAY_NOTATION_LENGTH (e));
+      pp_colon (pp);
+      pp_expression (pp, ARRAY_NOTATION_STRIDE (e));
+      pp_c_right_bracket (pp);
+      break;
+      
     case CALL_EXPR:
       {
 	call_expr_arg_iterator iter;
@@ -2151,6 +2161,7 @@ pp_c_expression (c_pretty_printer *pp, tree e)
     case POSTINCREMENT_EXPR:
     case POSTDECREMENT_EXPR:
     case ARRAY_REF:
+    case ARRAY_NOTATION_REF:
     case CALL_EXPR:
     case COMPONENT_REF:
     case BIT_FIELD_REF:
@@ -2311,6 +2322,8 @@ void
 pp_c_pretty_printer_init (c_pretty_printer *pp)
 {
   pp->offset_list               = 0;
+
+  pp->flags			= 0;
 
   pp->declaration               = pp_c_declaration;
   pp->declaration_specifiers    = pp_c_declaration_specifiers;

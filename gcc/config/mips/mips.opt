@@ -1,6 +1,6 @@
 ; Options for the MIPS port of the compiler
 ;
-; Copyright (C) 2005, 2007, 2008, 2010, 2011 Free Software Foundation, Inc.
+; Copyright (C) 2005-2013 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -54,9 +54,13 @@ mabicalls
 Target Report Mask(ABICALLS)
 Generate code that can be used in SVR4-style dynamic objects
 
-mad
+mmad
 Target Report Var(TARGET_MAD)
 Use PMC-style 'mad' instructions
+
+mimadd
+Target Report Mask(IMADD)
+Use integer madd/msub instructions
 
 march=
 Target RejectNegative Joined Var(mips_arch_option) ToLower Enum(mips_arch_opt_value)
@@ -136,6 +140,10 @@ Use little-endian byte order
 membedded-data
 Target Report Var(TARGET_EMBEDDED_DATA)
 Use ROM instead of RAM
+
+meva
+Target Report Var(TARGET_EVA)
+Use Enhanced Virtual Addressing instructions
 
 mexplicit-relocs
 Target Report Mask(EXPLICIT_RELOCS)
@@ -217,9 +225,13 @@ mhard-float
 Target Report RejectNegative InverseMask(SOFT_FLOAT_ABI, HARD_FLOAT_ABI)
 Allow the use of hardware floating-point ABI and instructions
 
+minterlink-compressed
+Target Report Var(TARGET_INTERLINK_COMPRESSED) Init(0)
+Generate code that is link-compatible with MIPS16 and microMIPS code.
+
 minterlink-mips16
-Target Report Var(TARGET_INTERLINK_MIPS16) Init(0)
-Generate code that can be safely linked with MIPS16 code.
+Target Report Var(TARGET_INTERLINK_COMPRESSED) Init(0)
+An alias for minterlink-compressed provided for backward-compatibility.
 
 mips
 Target RejectNegative Joined ToLower Enum(mips_mips_opt_value) Var(mips_isa_option)
@@ -260,6 +272,10 @@ Pass the address of the ra save location to _mcount in $12
 mmemcpy
 Target Report Mask(MEMCPY)
 Don't optimize block moves
+
+mmicromips
+Target Report Mask(MICROMIPS)
+Use microMIPS instructions
 
 mmt
 Target Report Var(TARGET_MT)

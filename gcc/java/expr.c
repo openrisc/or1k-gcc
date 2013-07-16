@@ -1,6 +1,5 @@
 /* Process expressions for the GNU compiler for the Java(TM) language.
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1532,7 +1531,7 @@ build_java_binop (enum tree_code op, tree type, tree arg1, tree arg2)
       }
     case LSHIFT_EXPR:
     case RSHIFT_EXPR:
-      mask = build_int_cst (NULL_TREE,
+      mask = build_int_cst (int_type_node,
 			    TYPE_PRECISION (TREE_TYPE (arg1)) - 1);
       arg2 = fold_build2 (BIT_AND_EXPR, int_type_node, arg2, mask);
       break;

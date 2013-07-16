@@ -1,6 +1,5 @@
 /* Definitions for computing resource usage of specific insns.
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -176,14 +175,12 @@ next_insn_no_annul (rtx insn)
 	  && NEXT_INSN (PREV_INSN (insn)) != insn)
 	{
 	  rtx next = NEXT_INSN (insn);
-	  enum rtx_code code = GET_CODE (next);
 
-	  while ((code == INSN || code == JUMP_INSN || code == CALL_INSN)
+	  while ((NONJUMP_INSN_P (next) || JUMP_P (next) || CALL_P (next))
 		 && INSN_FROM_TARGET_P (next))
 	    {
 	      insn = next;
 	      next = NEXT_INSN (insn);
-	      code = GET_CODE (next);
 	    }
 	}
 
@@ -243,9 +240,7 @@ mark_referenced_resources (rtx x, struct resources *res,
     case MEM:
       /* If this memory shouldn't change, it really isn't referencing
 	 memory.  */
-      if (MEM_READONLY_P (x))
-	res->unch_memory = 1;
-      else
+      if (! MEM_READONLY_P (x))
 	res->memory = 1;
       res->volatil |= MEM_VOLATILE_P (x);
 
@@ -743,7 +738,6 @@ mark_set_resources (rtx x, struct resources *res, int in_dest,
       if (in_dest)
 	{
 	  res->memory = 1;
-	  res->unch_memory |= MEM_READONLY_P (x);
 	  res->volatil |= MEM_VOLATILE_P (x);
 	}
 
@@ -899,7 +893,7 @@ mark_target_live_regs (rtx insns, rtx target, struct resources *res)
 
   /* We have to assume memory is needed, but the CC isn't.  */
   res->memory = 1;
-  res->volatil = res->unch_memory = 0;
+  res->volatil = 0;
   res->cc = 0;
 
   /* See if we have computed this value already.  */
@@ -993,9 +987,10 @@ mark_target_live_regs (rtx insns, rtx target, struct resources *res)
 
 	  /* If this insn is a USE made by update_block, we care about the
 	     underlying insn.  */
-	  if (code == INSN && GET_CODE (PATTERN (insn)) == USE
+	  if (code == INSN
+	      && GET_CODE (PATTERN (insn)) == USE
 	      && INSN_P (XEXP (PATTERN (insn), 0)))
-	      real_insn = XEXP (PATTERN (insn), 0);
+	    real_insn = XEXP (PATTERN (insn), 0);
 
 	  if (CALL_P (real_insn))
 	    {
@@ -1147,7 +1142,6 @@ init_resource_info (rtx epilogue_insn)
 
   end_of_function_needs.cc = 0;
   end_of_function_needs.memory = 1;
-  end_of_function_needs.unch_memory = 0;
   CLEAR_HARD_REG_SET (end_of_function_needs.regs);
 
   if (frame_pointer_needed)

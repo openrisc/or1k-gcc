@@ -1,5 +1,5 @@
 /* FPU-related code for systems with GNU libc.
-   Copyright 2005, 2007, 2009, 2011 Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
    Contributed by Francois-Xavier Coudert <coudert@clipper.ens.fr>
 
 This file is part of the GNU Fortran runtime library (libgfortran).
@@ -84,4 +84,46 @@ void set_fpu (void)
     estr_write ("Fortran runtime warning: IEEE 'inexact' "
 	        "exception not supported.\n");
 #endif
+}
+
+
+int
+get_fpu_except_flags (void)
+{
+  int result, set_excepts;
+
+  result = 0;
+  set_excepts = fetestexcept (FE_ALL_EXCEPT);
+
+#ifdef FE_INVALID
+  if (set_excepts & FE_INVALID)
+    result |= GFC_FPE_INVALID;
+#endif
+
+#ifdef FE_DIVBYZERO
+  if (set_excepts & FE_DIVBYZERO)
+    result |= GFC_FPE_ZERO;
+#endif
+
+#ifdef FE_OVERFLOW
+  if (set_excepts & FE_OVERFLOW)
+    result |= GFC_FPE_OVERFLOW;
+#endif
+
+#ifdef FE_UNDERFLOW
+  if (set_excepts & FE_UNDERFLOW)
+    result |= GFC_FPE_UNDERFLOW;
+#endif
+
+#ifdef FE_DENORMAL
+  if (set_excepts & FE_DENORMAL)
+    result |= GFC_FPE_DENORMAL;
+#endif
+
+#ifdef FE_INEXACT
+  if (set_excepts & FE_INEXACT)
+    result |= GFC_FPE_INEXACT;
+#endif
+
+  return result;
 }

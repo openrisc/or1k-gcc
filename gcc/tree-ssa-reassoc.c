@@ -1,6 +1,5 @@
 /* Reassociation for trees.
-   Copyright (C) 2005, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
    Contributed by Daniel Berlin <dan@dberlin.org>
 
 This file is part of GCC.
@@ -22,6 +21,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
+#include "hash-table.h"
 #include "tm.h"
 #include "tree.h"
 #include "basic-block.h"
@@ -944,10 +944,23 @@ typedef struct oecount_s {
 /* The heap for the oecount hashtable and the sorted list of operands.  */
 static vec<oecount> cvec;
 
+
+/* Oecount hashtable helpers.  */
+
+struct oecount_hasher : typed_noop_remove <void>
+{
+  /* Note that this hash table stores integers, not pointers.
+     So, observe the casting in the member functions.  */
+  typedef void value_type;
+  typedef void compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
+
 /* Hash function for oecount.  */
 
-static hashval_t
-oecount_hash (const void *p)
+inline hashval_t
+oecount_hasher::hash (const value_type *p)
 {
   const oecount *c = &cvec[(size_t)p - 42];
   return htab_hash_pointer (c->op) ^ (hashval_t)c->oecode;
@@ -955,8 +968,8 @@ oecount_hash (const void *p)
 
 /* Comparison function for oecount.  */
 
-static int
-oecount_eq (const void *p1, const void *p2)
+inline bool
+oecount_hasher::equal (const value_type *p1, const compare_type *p2)
 {
   const oecount *c1 = &cvec[(size_t)p1 - 42];
   const oecount *c2 = &cvec[(size_t)p2 - 42];
@@ -1063,11 +1076,9 @@ propagate_op_to_single_use (tree op, gimple stmt, tree *def)
   if (TREE_CODE (op) != SSA_NAME)
     update_stmt (use_stmt);
   gsi = gsi_for_stmt (stmt);
+  unlink_stmt_vdef (stmt);
   gsi_remove (&gsi, true);
   release_defs (stmt);
-
-  if (is_gimple_call (stmt))
-    unlink_stmt_vdef (stmt);
 }
 
 /* Walks the linear chain with result *DEF searching for an operation
@@ -1110,7 +1121,8 @@ zero_one_operation (tree *def, enum tree_code opcode, tree op)
 	 the operand might be hiding in the rightmost one.  */
       if (opcode == MULT_EXPR
 	  && gimple_assign_rhs_code (stmt) == opcode
-	  && TREE_CODE (gimple_assign_rhs2 (stmt)) == SSA_NAME)
+	  && TREE_CODE (gimple_assign_rhs2 (stmt)) == SSA_NAME
+	  && has_single_use (gimple_assign_rhs2 (stmt)))
 	{
 	  gimple stmt2 = SSA_NAME_DEF_STMT (gimple_assign_rhs2 (stmt));
 	  if (stmt_is_power_of_op (stmt2, op))
@@ -1153,7 +1165,12 @@ build_and_add_sum (tree type, tree op1, tree op2, enum tree_code opcode)
   if ((!op1def || gimple_nop_p (op1def))
       && (!op2def || gimple_nop_p (op2def)))
     {
+      gimple first_stmt;
+      unsigned uid;
       gsi = gsi_after_labels (single_succ (ENTRY_BLOCK_PTR));
+      first_stmt = gsi_stmt (gsi);
+      uid = first_stmt ? gimple_uid (first_stmt) : 1;
+      gimple_set_uid (sum, uid);
       gsi_insert_before (&gsi, sum, GSI_NEW_STMT);
     }
   else if ((!op1def || gimple_nop_p (op1def))
@@ -1163,6 +1180,7 @@ build_and_add_sum (tree type, tree op1, tree op2, enum tree_code opcode)
       if (gimple_code (op2def) == GIMPLE_PHI)
 	{
 	  gsi = gsi_after_labels (gimple_bb (op2def));
+          gimple_set_uid (sum, gimple_uid (gsi_stmt (gsi)));
 	  gsi_insert_before (&gsi, sum, GSI_NEW_STMT);
 	}
       else
@@ -1170,6 +1188,7 @@ build_and_add_sum (tree type, tree op1, tree op2, enum tree_code opcode)
 	  if (!stmt_ends_bb_p (op2def))
 	    {
 	      gsi = gsi_for_stmt (op2def);
+              gimple_set_uid (sum, gimple_uid (op2def));
 	      gsi_insert_after (&gsi, sum, GSI_NEW_STMT);
 	    }
 	  else
@@ -1188,6 +1207,7 @@ build_and_add_sum (tree type, tree op1, tree op2, enum tree_code opcode)
       if (gimple_code (op1def) == GIMPLE_PHI)
 	{
 	  gsi = gsi_after_labels (gimple_bb (op1def));
+          gimple_set_uid (sum, gimple_uid (op1def));
 	  gsi_insert_before (&gsi, sum, GSI_NEW_STMT);
 	}
       else
@@ -1195,6 +1215,7 @@ build_and_add_sum (tree type, tree op1, tree op2, enum tree_code opcode)
 	  if (!stmt_ends_bb_p (op1def))
 	    {
 	      gsi = gsi_for_stmt (op1def);
+              gimple_set_uid (sum, gimple_uid (op1def));
 	      gsi_insert_after (&gsi, sum, GSI_NEW_STMT);
 	    }
 	  else
@@ -1259,7 +1280,7 @@ undistribute_ops_list (enum tree_code opcode,
   unsigned nr_candidates, nr_candidates2;
   sbitmap_iterator sbi0;
   vec<operand_entry_t> *subops;
-  htab_t ctable;
+  hash_table <oecount_hasher> ctable;
   bool changed = false;
   int next_oecount_id = 0;
 
@@ -1307,7 +1328,7 @@ undistribute_ops_list (enum tree_code opcode,
 
   /* Build linearized sub-operand lists and the counting table.  */
   cvec.create (0);
-  ctable = htab_create (15, oecount_hash, oecount_eq, NULL);
+  ctable.create (15);
   /* ??? Macro arguments cannot have multi-argument template types in
      them.  This typedef is needed to workaround that limitation.  */
   typedef vec<operand_entry_t> vec_operand_entry_t_heap;
@@ -1334,7 +1355,7 @@ undistribute_ops_list (enum tree_code opcode,
 	  c.op = oe1->op;
 	  cvec.safe_push (c);
 	  idx = cvec.length () + 41;
-	  slot = htab_find_slot (ctable, (void *)idx, INSERT);
+	  slot = ctable.find_slot ((void *)idx, INSERT);
 	  if (!*slot)
 	    {
 	      *slot = (void *)idx;
@@ -1346,7 +1367,7 @@ undistribute_ops_list (enum tree_code opcode,
 	    }
 	}
     }
-  htab_delete (ctable);
+  ctable.dispose ();
 
   /* Sort the counting table.  */
   cvec.qsort (oecount_cmp);
@@ -2829,6 +2850,164 @@ swap_ops_for_binary_stmt (vec<operand_entry_t> ops,
     }
 }
 
+/* Determine if stmt A is not dominated by stmt B. If A and B are in
+   same basic block, then A's UID has to be less than B. If they are
+   in different BB's, then A's BB must not be dominated by B's BB.  */
+
+static inline bool
+not_dominated_by (gimple a, gimple b)
+{
+  basic_block bb_a, bb_b;
+  bb_a = gimple_bb (a);
+  bb_b = gimple_bb (b);
+  return ((bb_a == bb_b && gimple_uid (a)  < gimple_uid (b))
+          || (bb_a != bb_b
+              && !dominated_by_p (CDI_DOMINATORS, bb_a, bb_b)));
+
+}
+
+/* Among STMT1 and STMT2, return the statement that appears later. Both
+   statements are in same BB and have the same UID.  */
+
+static gimple
+appears_later_in_bb (gimple stmt1, gimple stmt2)
+{
+  unsigned uid = gimple_uid (stmt1);
+  gimple_stmt_iterator gsi = gsi_for_stmt (stmt1);
+  gsi_next (&gsi);
+  if (gsi_end_p (gsi))
+    return stmt1;
+  for (; !gsi_end_p (gsi); gsi_next (&gsi))
+    {
+      gimple stmt = gsi_stmt (gsi);
+
+      /* If STMT has a different UID than STMT1 and we haven't seen
+         STMT2 during traversal, we know STMT1 appears later.  */
+      if (gimple_uid (stmt) != uid)
+        return stmt1;
+      else if (stmt == stmt2)
+        return stmt2;
+    }
+  return stmt1;
+}
+
+/* Find the statement after which STMT must be moved so that the
+   dependency from DEP_STMT to STMT is maintained.  */
+
+static gimple
+find_insert_point (gimple stmt, gimple dep_stmt)
+{
+  gimple insert_stmt = stmt;
+  if (dep_stmt == NULL)
+    return stmt;
+  if (gimple_uid (insert_stmt) == gimple_uid (dep_stmt)
+      && gimple_bb (insert_stmt) == gimple_bb (dep_stmt)
+      && insert_stmt != dep_stmt)
+    insert_stmt = appears_later_in_bb (insert_stmt, dep_stmt);
+  else if (not_dominated_by (insert_stmt, dep_stmt))
+    insert_stmt = dep_stmt;
+  return insert_stmt;
+}
+
+/* Insert STMT after INSERT_POINT.  */
+
+static void
+insert_stmt_after (gimple stmt, gimple insert_point)
+{
+  imm_use_iterator iter;
+  tree lhs;
+  gimple use_stmt;
+  gimple_stmt_iterator gsistmt = gsi_for_stmt (stmt), gsi_insert;
+  basic_block insert_bb = gimple_bb (insert_point);
+  bool insert_bb_different = (insert_bb != gimple_bb (stmt));
+  lhs = gimple_assign_lhs (stmt);
+  /* If there are any debug uses of LHS, reset them.  */
+  FOR_EACH_IMM_USE_STMT (use_stmt, iter, lhs)
+    {
+      if (is_gimple_debug (use_stmt)
+          && not_dominated_by (use_stmt, insert_point))
+        {
+          gimple_debug_bind_reset_value (use_stmt);
+          update_stmt (use_stmt);
+        }
+    }
+  /* If INSERT_STMT is a phi node, then do not insert just after that statement.
+     Instead, find the first non-label gimple statement in BB and insert before
+     that.  */
+  if (gimple_code (insert_point) == GIMPLE_PHI)
+    {
+      gsi_insert = gsi_after_labels (insert_bb);
+      gsi_move_before (&gsistmt, &gsi_insert);
+    }
+  /* Statements marked for throw can not be in the middle of a basic block. So
+     we can not insert a statement (not marked for throw) immediately after.  */
+  else if (stmt_ends_bb_p (insert_point))
+    {
+      edge succ_edge = find_fallthru_edge (insert_bb->succs);
+      insert_bb = succ_edge->dest;
+      insert_bb_different = (insert_bb != gimple_bb (stmt));
+      /* Insert STMT at the beginning of the successor basic block.  */
+      gsi_insert = gsi_after_labels (insert_bb);
+      gsi_move_before (&gsistmt, &gsi_insert);
+    }
+  else
+    {
+      gsi_insert = gsi_for_stmt (insert_point);
+      gsi_move_after (&gsistmt, &gsi_insert);
+    }
+  /* Set the UID of STMT to that of INSERT_POINT so that subsequent comparisons
+     of UIDs to determine dominance within a basic block works.  */
+  gimple_set_uid (stmt, gimple_uid (insert_point));
+  if (dump_file && (dump_flags & TDF_DETAILS))
+    {
+      fprintf (dump_file, "Moved stmt ");
+      print_gimple_stmt (dump_file, stmt, 0, 0);
+      fprintf (dump_file, " %s to satisfy dependences\n",
+               insert_bb_different ? "to a different BB" : "within same BB");
+    }
+
+}
+
+/* If OP is a SSA variable and is not the default definition, return the
+   gimple statement that defines OP. Else return NULL.  */
+
+static inline gimple
+get_def_stmt (tree op)
+{
+  if (TREE_CODE (op) == SSA_NAME
+      && !SSA_NAME_IS_DEFAULT_DEF (op))
+    return SSA_NAME_DEF_STMT (op);
+  else
+    return NULL;
+}
+
+/* Ensure that operands in the OPS vector are available for STMT and all
+   gimple statements on which STMT depends.  */
+
+static void
+ensure_ops_are_available (gimple stmt, vec<operand_entry_t> ops, int opindex)
+{
+  unsigned int len = ops.length ();
+  gimple insert_stmt = stmt;
+  gimple dep_stmts[2];
+  dep_stmts[0] = get_def_stmt (ops[opindex]->op);
+  if (len - opindex == 2)
+    {
+      dep_stmts[1] = get_def_stmt (ops[opindex + 1]->op);
+    }
+  else
+    {
+      gimple stmt1 = SSA_NAME_DEF_STMT (gimple_assign_rhs1 (stmt));
+      ensure_ops_are_available (stmt1, ops, opindex + 1);
+      dep_stmts[1] = stmt1;
+    }
+  for (int i = 0; i < 2; i++)
+    insert_stmt = find_insert_point (insert_stmt, dep_stmts[i]);
+
+  if (insert_stmt != stmt)
+    insert_stmt_after (stmt, insert_stmt);
+}
+
 /* Recursively rewrite our linearized statements so that the operators
    match those in OPS[OPINDEX], putting the computation in rank
    order.  */
@@ -2840,11 +3019,6 @@ rewrite_expr_tree (gimple stmt, unsigned int opindex,
   tree rhs1 = gimple_assign_rhs1 (stmt);
   tree rhs2 = gimple_assign_rhs2 (stmt);
   operand_entry_t oe;
-
-  /* If we have three operands left, then we want to make sure the ones
-     that get the double binary op are chosen wisely.  */
-  if (opindex + 3 == ops.length ())
-    swap_ops_for_binary_stmt (ops, opindex, stmt);
 
   /* The final recursion case for this function is that you have
      exactly two operations left.
@@ -2891,20 +3065,7 @@ rewrite_expr_tree (gimple stmt, unsigned int opindex,
     {
       if (!moved)
 	{
-	  gimple_stmt_iterator gsinow, gsirhs1;
-	  gimple stmt1 = stmt, stmt2;
-	  unsigned int count;
-
-	  gsinow = gsi_for_stmt (stmt);
-	  count = ops.length () - opindex - 2;
-	  while (count-- != 0)
-	    {
-	      stmt2 = SSA_NAME_DEF_STMT (gimple_assign_rhs1 (stmt1));
-	      gsirhs1 = gsi_for_stmt (stmt2);
-	      gsi_move_before (&gsirhs1, &gsinow);
-	      gsi_prev (&gsinow);
-	      stmt1 = stmt2;
-	    }
+          ensure_ops_are_available (stmt, ops, opindex);
 	  moved = true;
 	}
 
@@ -3116,6 +3277,7 @@ linearize_expr (gimple stmt)
   gsinow = gsi_for_stmt (stmt);
   gsirhs = gsi_for_stmt (binrhs);
   gsi_move_before (&gsirhs, &gsinow);
+  gimple_set_uid (binrhs, gimple_uid (stmt));
 
   gimple_assign_set_rhs2 (stmt, gimple_assign_rhs1 (binrhs));
   gimple_assign_set_rhs1 (binrhs, gimple_assign_lhs (binlhs));
@@ -4122,7 +4284,16 @@ reassociate_bb (basic_block bb)
 		      && ops.length () > 3)
 		    rewrite_expr_tree_parallel (stmt, width, ops);
 		  else
-		    rewrite_expr_tree (stmt, 0, ops, false);
+                    {
+                      /* When there are three operands left, we want
+                         to make sure the ones that get the double
+                         binary op are chosen wisely.  */
+                      int len = ops.length ();
+                      if (len >= 3)
+                        swap_ops_for_binary_stmt (ops, len - 3, stmt);
+
+		      rewrite_expr_tree (stmt, 0, ops, false);
+                    }
 
 		  /* If we combined some repeated factors into a 
 		     __builtin_powi call, multiply that result by the
@@ -4183,6 +4354,7 @@ static void
 do_reassoc (void)
 {
   break_up_subtract_bb (ENTRY_BLOCK_PTR);
+  renumber_gimple_stmt_uids ();
   reassociate_bb (EXIT_BLOCK_PTR);
 }
 
@@ -4295,7 +4467,7 @@ struct gimple_opt_pass pass_reassoc =
   0,					/* properties_destroyed */
   0,					/* todo_flags_start */
   TODO_verify_ssa
-    | TODO_verify_flow
-    | TODO_ggc_collect			/* todo_flags_finish */
+  | TODO_update_ssa_only_virtuals
+  | TODO_verify_flow			/* todo_flags_finish */
  }
 };

@@ -1,6 +1,5 @@
 /* Loop unswitching for GNU compiler.
-   Copyright (C) 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -79,7 +78,7 @@ along with GCC; see the file COPYING3.  If not see
   with handling this case.  */
 
 static struct loop *unswitch_loop (struct loop *, basic_block, rtx, rtx);
-static void unswitch_single_loop (struct loop *, rtx, int);
+static bool unswitch_single_loop (struct loop *, rtx, int);
 static rtx may_unswitch_on (basic_block, struct loop *, rtx *);
 
 /* Prepare a sequence comparing OP0 with OP1 using COMP and jumping to LABEL if
@@ -141,18 +140,22 @@ unswitch_loops (void)
 {
   loop_iterator li;
   struct loop *loop;
+  bool changed = false;
 
   /* Go through inner loops (only original ones).  */
 
   FOR_EACH_LOOP (li, loop, LI_ONLY_INNERMOST)
-    {
-      unswitch_single_loop (loop, NULL_RTX, 0);
-#ifdef ENABLE_CHECKING
-      verify_loop_structure ();
-#endif
-    }
+    changed |= unswitch_single_loop (loop, NULL_RTX, 0);
 
   iv_analysis_done ();
+
+  /* If we unswitched any loop discover new loops that are eventually
+     exposed by making irreducible regions reducible.  */
+  if (changed)
+    {
+      calculate_dominance_info (CDI_DOMINATORS);
+      fix_loop_structure (NULL);
+    }
 }
 
 /* Checks whether we can unswitch LOOP on condition at end of BB -- one of its
@@ -247,8 +250,9 @@ reversed_condition (rtx cond)
 /* Unswitch single LOOP.  COND_CHECKED holds list of conditions we already
    unswitched on and are therefore known to be true in this LOOP.  NUM is
    number of unswitchings done; do not allow it to grow too much, it is too
-   easy to create example on that the code would grow exponentially.  */
-static void
+   easy to create example on that the code would grow exponentially.
+   Returns true LOOP was unswitched.  */
+static bool 
 unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
 {
   basic_block *bbs;
@@ -264,7 +268,7 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
     {
       if (dump_file)
 	fprintf (dump_file, ";; Not unswitching anymore, hit max level\n");
-      return;
+      return false;
     }
 
   /* Only unswitch innermost loops.  */
@@ -272,7 +276,7 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
     {
       if (dump_file)
 	fprintf (dump_file, ";; Not unswitching, not innermost loop\n");
-      return;
+      return false;
     }
 
   /* We must be able to duplicate loop body.  */
@@ -280,7 +284,7 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
     {
       if (dump_file)
 	fprintf (dump_file, ";; Not unswitching, can't duplicate loop\n");
-      return;
+      return false;
     }
 
   /* The loop should not be too large, to limit code growth.  */
@@ -288,7 +292,7 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
     {
       if (dump_file)
 	fprintf (dump_file, ";; Not unswitching, loop too big\n");
-      return;
+      return false;
     }
 
   /* Do not unswitch in cold areas.  */
@@ -296,7 +300,7 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
     {
       if (dump_file)
 	fprintf (dump_file, ";; Not unswitching, not hot area\n");
-      return;
+      return false;
     }
 
   /* Nor if the loop usually does not roll.  */
@@ -305,7 +309,7 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
     {
       if (dump_file)
 	fprintf (dump_file, ";; Not unswitching, loop iterations < 1\n");
-      return;
+      return false;
     }
 
   do
@@ -323,7 +327,7 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
       if (i == loop->num_nodes)
 	{
 	  free (bbs);
-	  return;
+	  return false;
 	}
 
       if (cond != const0_rtx
@@ -379,6 +383,8 @@ unswitch_single_loop (struct loop *loop, rtx cond_checked, int num)
     free_EXPR_LIST_node (rconds);
 
   free (bbs);
+
+  return true;
 }
 
 /* Unswitch a LOOP w.r. to given basic block UNSWITCH_ON.  We only support
@@ -430,10 +436,10 @@ unswitch_loop (struct loop *loop, basic_block unswitch_on, rtx cond, rtx cinsn)
   emit_insn_after (seq, BB_END (switch_bb));
   e = make_edge (switch_bb, true_edge->dest, 0);
   e->probability = prob;
-  e->count = latch_edge->count * prob / REG_BR_PROB_BASE;
+  e->count = apply_probability (latch_edge->count, prob);
   e = make_edge (switch_bb, FALLTHRU_EDGE (unswitch_on)->dest, EDGE_FALLTHRU);
   e->probability = false_edge->probability;
-  e->count = latch_edge->count * (false_edge->probability) / REG_BR_PROB_BASE;
+  e->count = apply_probability (latch_edge->count, false_edge->probability);
 
   if (irred_flag)
     {

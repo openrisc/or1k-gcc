@@ -1,5 +1,5 @@
 /* Redundant Extension Elimination pass for the GNU compiler.
-   Copyright (C) 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Ilya Enkovich (ilya.enkovich@intel.com)
 
    Based on the Redundant Zero-extension elimination pass contributed by
@@ -243,7 +243,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* This structure represents a candidate for elimination.  */
 
-typedef struct GTY(()) ext_cand
+typedef struct ext_cand
 {
   /* The expression.  */
   const_rtx expr;
@@ -919,8 +919,6 @@ find_and_remove_re (void)
   if (dump_file && num_re_opportunities > 0)
     fprintf (dump_file, "Elimination opportunities = %d realized = %d\n",
 	     num_re_opportunities, num_realized);
-
-  df_finish_pass (false);
 }
 
 /* Find and remove redundant extensions.  */
@@ -958,7 +956,7 @@ struct rtl_opt_pass pass_ree =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_ggc_collect |
-  TODO_verify_rtl_sharing,              /* todo_flags_finish */
+  TODO_df_finish
+    | TODO_verify_rtl_sharing,          /* todo_flags_finish */
  }
 };

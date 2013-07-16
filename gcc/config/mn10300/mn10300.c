@@ -1,6 +1,5 @@
 /* Subroutines for insn-output.c for Matsushita MN10300 series
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
    Contributed by Jeff Law (law@cygnus.com).
 
    This file is part of GCC.
@@ -623,6 +622,7 @@ mn10300_can_use_rets_insn (void)
 
 /* Returns the set of live, callee-saved registers as a bitmask.  The
    callee-saved extended registers cannot be stored individually, so
+   all of them will be included in the mask if any one of them is used.
    Also returns the number of bytes in the registers in the mask if
    BYTES_SAVED is not NULL.  */
 
@@ -1078,7 +1078,7 @@ mn10300_expand_epilogue (void)
 	      /* Insn: add size + 4 * num_regs_to_save
 				+ reg_save_bytes - 252,sp.  */
 	      this_strategy_size = SIZE_ADD_SP (size + 4 * num_regs_to_save
-						+ reg_save_bytes - 252);
+						+ (int) reg_save_bytes - 252);
 	      /* Insn: fmov (##,sp),fs#, fo each fs# to be restored.  */
 	      this_strategy_size += SIZE_FMOV_SP (252 - reg_save_bytes
 						  - 4 * num_regs_to_save,
@@ -3226,7 +3226,6 @@ mn10300_loop_contains_call_insn (loop_p loop)
 static void
 mn10300_scan_for_setlb_lcc (void)
 {
-  struct loops loops;
   loop_iterator liter;
   loop_p loop;
 
@@ -3236,9 +3235,7 @@ mn10300_scan_for_setlb_lcc (void)
   compute_bb_for_insn ();
 
   /* Find the loops.  */
-  if (flow_loops_find (& loops) < 1)
-    DUMP ("No loops found", NULL_RTX);
-  current_loops = & loops;
+  loop_optimizer_init (AVOID_CFG_MODIFICATIONS);
 
   /* FIXME: For now we only investigate innermost loops.  In practice however
      if an inner loop is not suitable for use with the SETLB/Lcc insns, it may
@@ -3288,15 +3285,7 @@ mn10300_scan_for_setlb_lcc (void)
 		 reason);
     }
 
-#if 0 /* FIXME: We should free the storage we allocated, but
-	 for some unknown reason this leads to seg-faults.  */
-  FOR_EACH_LOOP (liter, loop, 0)
-    free_simple_loop_desc (loop);
-
-  flow_loops_free (current_loops);
-#endif
-
-  current_loops = NULL;
+  loop_optimizer_finalize ();
 
   df_finish_pass (false);  
 

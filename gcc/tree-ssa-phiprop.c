@@ -1,5 +1,5 @@
 /* Backward propagation of indirect loads through PHIs.
-   Copyright (C) 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2007-2013 Free Software Foundation, Inc.
    Contributed by Richard Guenther <rguenther@suse.de>
 
 This file is part of GCC.
@@ -247,7 +247,6 @@ propagate_with_phi (basic_block bb, gimple phi, struct phiprop_d *phivn,
   ssa_op_iter i;
   bool phi_inserted;
   tree type = NULL_TREE;
-  bool one_invariant = false;
 
   if (!POINTER_TYPE_P (TREE_TYPE (ptr))
       || !is_gimple_reg_type (TREE_TYPE (TREE_TYPE (ptr))))
@@ -282,16 +281,7 @@ propagate_with_phi (basic_block bb, gimple phi, struct phiprop_d *phivn,
       if (!type
 	  && TREE_CODE (arg) == SSA_NAME)
 	type = TREE_TYPE (phivn[SSA_NAME_VERSION (arg)].value);
-      if (TREE_CODE (arg) == ADDR_EXPR
-	  && is_gimple_min_invariant (arg))
-	one_invariant = true;
     }
-
-  /* If we neither have an address of a decl nor can reuse a previously
-     inserted load, do not hoist anything.  */
-  if (!one_invariant
-      && !type)
-    return false;
 
   /* Find a dereferencing use.  First follow (single use) ssa
      copy chains for ptr.  */
@@ -420,8 +410,7 @@ struct gimple_opt_pass pass_phiprop =
   0,				/* properties_provided */
   0,				/* properties_destroyed */
   0,				/* todo_flags_start */
-  TODO_ggc_collect
-  | TODO_update_ssa
+  TODO_update_ssa
   | TODO_verify_ssa		/* todo_flags_finish */
  }
 };

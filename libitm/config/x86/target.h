@@ -1,4 +1,4 @@
-/* Copyright (C) 2008, 2009, 2011, 2012 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2013 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>.
 
    This file is part of the GNU Transactional Memory Library (libitm).
@@ -124,6 +124,13 @@ static inline bool
 htm_abort_should_retry (uint32_t begin_ret)
 {
   return begin_ret & _XABORT_RETRY;
+}
+
+/* Returns true iff a hardware transaction is currently being executed.  */
+static inline bool
+htm_transaction_active ()
+{
+  return _xtest() != 0;
 }
 #endif
 

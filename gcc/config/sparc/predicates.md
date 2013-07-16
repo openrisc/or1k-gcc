@@ -1,5 +1,5 @@
 ;; Predicate definitions for SPARC.
-;; Copyright (C) 2005, 2007, 2008, 2010, 2012 Free Software Foundation, Inc.
+;; Copyright (C) 2005-2013 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -264,6 +264,11 @@
 (define_special_predicate "int_register_operand"
   (ior (match_test "register_operand (op, SImode)")
        (match_test "TARGET_ARCH64 && register_operand (op, DImode)")))
+
+;; Return true if OP is an integer register of the appropriate mode
+;; for a cstore result.
+(define_special_predicate "cstore_result_operand"
+  (match_test "register_operand (op, TARGET_ARCH64 ? DImode : SImode)"))
 
 ;; Return true if OP is a floating point condition code register.
 (define_predicate "fcc_register_operand"

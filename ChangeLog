@@ -1,3 +1,189 @@
+2013-07-10  Jack Howarth  <howarth@bromo.med.uc.edu>
+
+	PR target/57792
+	* configure.ac: Use --with-sysroot=\"`xcrun --show-sdk-path`\" on darwin13 and later.
+	* configure: Regenerated.
+
+2013-06-14  Vidya Praveen  <vidyapraveen@arm.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-06-01  Dinar Temirbulatov  <dinar@kugelworks.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-05-17  David Malcolm  <dmalcolm@redhat.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-04-30  Brooks Moses  <bmoses@google.com>
+
+	* MAINTAINERS: Update my email; move myself from Fortran
+	reviewer to Write After Approval.
+
+2013-04-16  Andreas Schwab  <schwab@suse.de>
+
+	* configure.ac (aarch64-*-*): Don't disable java.
+	* configure: Regenerate.
+
+2013-04-10  Chung-Ju Wu  <jasonwucj@gmail.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-03-30  Matthias Klose  <doko@ubuntu.com>
+
+	* Makefile.def (target_modules): Don't install libffi.
+	* Makefile.in: Regenerate.
+
+2013-02-24  Tilo Schwarz  <tilo@tilo-schwarz.de>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-02-20  Andrew Sutton  <andrew.n.sutton@gmail.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-02-15  Yufeng Zhang  <yufeng.zhang@arm.com>
+
+	* configure.ac: Set libgloss_dir for the aarch64*-*-* targets.
+	* configure: Regenerated.
+
+2013-02-04  David Edelsohn  <dje.gcc@gmail.com>
+
+	* MAINTAINERS: Explicitly add myself as AIX maintainer.
+	Remove Geoff Keating as rs6000 port maintainer, at his request.
+
+2013-01-24  Maxim Kuvyrkov  <maxim@kugelworks.com>
+
+	* MAINTAINERS: Update my email.
+
+2013-01-23  Shenghou Ma  <minux.ma@gmail.com>
+
+	* config/isl.m4: don't echo $CFLAGS for ISL_CHECK_VERSION.
+	* configure: Re-generate.
+
+2013-01-15  Richard Biener  <rguenther@suse.de>
+
+	PR other/55973
+	* configure: Re-generate.
+
+2013-01-14  Matthias Klose  <doko@ubuntu.com>
+
+	* Makefile.def (install-target-libsanitizer): Depend on
+	install-target-libstdc++-v3.
+	* Makefile.in: Regenerate.
+
+2013-01-14  Richard Biener  <rguenther@suse.de>
+
+	* configure.ac (cloog/isl): Also allow ISL 0.11.x and CLooG 0.18.0.
+	* configure: Re-generate
+
+2013-01-11  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* config.sub: Update from config repo.
+
+2013-01-11  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* Makefile.tpl (BOOT_ADAFLAGS): Remove -gnata.
+	* Makefile.in: Regenerate.
+
+2013-01-10  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* MAINTAINERS (arc): Add new port maintainership for myself.
+
+2013-01-09  Jason Merrill  <jason@redhat.com>
+
+	* .gitignore: Import from gdb repository.
+
+2013-01-09  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* Makefile.def (configure-gcc): Depend on all-gmp.
+	(all-gcc): Remove dependency on all-gmp.
+	* Makefile.in: Regenerated.
+
+2013-01-08  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* config.sub: Merge from config repo.
+	* config.guess: Ditto.
+
+2013-01-08  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* Makefile.def: Merge from binutils.
+	* Makefile.in: Ditto.
+
+2013-01-01  Maxim Kuvyrkov  <maxim.kuvyrkov@gmail.com>
+
+	* MAINTAINERS: Update my email.
+
+2012-12-29  Ben Elliston  <bje@gnu.org>
+
+	* config.guess: Update to 2012-12-29 version.
+	* config.sub: Likewise.
+
+2012-12-20  Matthias Klose  <doko@ubuntu.com>
+
+	* Makefile.def (install-target-libgfortran): Depend on
+	install-target-libquadmath, install-target-libgcc.
+	(install-target-libsanitizer): Depend on install-target-libgcc.
+	(install-target-libjava): Depend on install-target-libgcc.
+	(install-target-libitm): Depend on install-target-libgcc.
+	(install-target-libobjc): Depend on install-target-libgcc.
+	(install-target-libstdc++-v3): Depend on install-target-libgcc.
+	* Makefile.in: Regenerate.
+
+2012-12-19  Matthias Klose  <doko@ubuntu.com>
+
+	* Makefile.def (install-target-libgo): Depend on
+	install-target-libatomic.
+	* Makefile.in: Regenerate.
+
+2012-12-18  Andreas Schwab  <schwab@linux-m68k.org>
+
+	PR go/55201
+	* Makefile.def (all-target-libgo): Depend on all-target-libatomic.
+	* Makefile.in: Regenerate.
+
+2012-12-16  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* configure.ac (ENABLE_GOLD): Consider *-*-gnu* targets ELF.
+	* configure: Regenerate.
+
+2012-12-12  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* config.sub: Merge from config repo.
+
+2012-12-11  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* Makefile.def (target_modules): Add bootstrap=true and
+	raw_cxx=true to libsanitizer.
+	* configure.ac (bootstrap_target_libs): Add libsanitizer.
+	* Makefile.in: Regenerated.
+	* configure: Likewise.
+
+2012-12-01  Richard Sandiford  <rdsandiford@googlemail.com>
+
+	* MAINTAINERS: Remove self as RTL optimization maintainer.
+
+2012-11-30  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2012-11-28  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* Makefile.def (target_modules): Remove bootstrap=true and
+	raw_cxx=true from libsanitizer.
+	* configure.ac (bootstrap_target_libs): Remove libsanitizer.
+	* Makefile.in: Regenerated.
+	* configure: Likewise.
+
+2012-11-28  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* Makefile.def (target_modules): Add bootstrap=true and
+	raw_cxx=true to libsanitizer.
+	* configure.ac (bootstrap_target_libs): Add libsanitizer.
+	* Makefile.in: Regenerated.
+	* configure: Likewise.
+
 2012-11-28  Andrew Pinski  <apinski@cavium.com>
 
 	PR bootstrap/54279

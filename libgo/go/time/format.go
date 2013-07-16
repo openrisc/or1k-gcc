@@ -9,7 +9,7 @@ import "errors"
 // These are predefined layouts for use in Time.Format.
 // The standard time used in the layouts is:
 //	Mon Jan 2 15:04:05 MST 2006
-// which is Unix time 1136243045. Since MST is GMT-0700,
+// which is Unix time 1136239445. Since MST is GMT-0700,
 // the standard time can be thought of as
 //	01/02 03:04:05PM '06 -0700
 // To define your own format, write down what the standard time would look
@@ -637,7 +637,8 @@ func skip(value, prefix string) (string, error) {
 //
 // Elements omitted from the value are assumed to be zero or, when
 // zero is impossible, one, so parsing "3:04pm" returns the time
-// corresponding to Jan 1, year 0, 15:04:00 UTC.
+// corresponding to Jan 1, year 0, 15:04:00 UTC (note that because the year is
+// 0, this time is before the zero Time).
 // Years must be in the range 0000..9999. The day of the week is checked
 // for syntax but it is otherwise ignored.
 func Parse(layout, value string) (Time, error) {
@@ -854,9 +855,15 @@ func Parse(layout, value string) (Time, error) {
 			zoneName = p
 
 		case stdFracSecond0:
-			ndigit := std >> stdArgShift
-			nsec, rangeErrString, err = parseNanoseconds(value, 1+ndigit)
-			value = value[1+ndigit:]
+			// stdFracSecond0 requires the exact number of digits as specified in
+			// the layout.
+			ndigit := 1 + (std >> stdArgShift)
+			if len(value) < ndigit {
+				err = errBad
+				break
+			}
+			nsec, rangeErrString, err = parseNanoseconds(value, ndigit)
+			value = value[ndigit:]
 
 		case stdFracSecond9:
 			if len(value) < 2 || value[0] != '.' || value[1] < '0' || '9' < value[1] {
@@ -934,8 +941,7 @@ func parseNanoseconds(value string, nbytes int) (ns int, rangeErrString string, 
 		err = errBad
 		return
 	}
-	ns, err = atoi(value[1:nbytes])
-	if err != nil {
+	if ns, err = atoi(value[1:nbytes]); err != nil {
 		return
 	}
 	if ns < 0 || 1e9 <= ns {

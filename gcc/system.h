@@ -1,8 +1,6 @@
 /* Get common system includes and various definitions and declarations based
    on autoconf macros.
-   Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008,
-   2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1998-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -226,6 +224,14 @@ extern int errno;
 
 #ifdef HAVE_STDLIB_H
 # include <stdlib.h>
+#endif
+
+/* When compiling C++ we need to include <cstdlib> as well as <stdlib.h> so
+   that it is processed before we poison "malloc"; otherwise, if a source
+   file uses a standard library header that includes <cstdlib>, we will get
+   an error about 'using std::malloc'.  */
+#ifdef __cplusplus
+#include <cstdlib>
 #endif
 
 /* Undef vec_free from AIX stdlib.h header which conflicts with vec.h.  */
@@ -636,6 +642,11 @@ extern int vsnprintf(char *, size_t, const char *, va_list);
 #if defined (ENABLE_PLUGIN) && defined (HAVE_DLFCN_H)
 /* If plugin support is enabled, we could use libdl.  */
 #include <dlfcn.h>
+#endif
+
+/* Do not introduce a gmp.h dependency on the build system.  */
+#ifndef GENERATOR_FILE
+#include <gmp.h>
 #endif
 
 /* Get libiberty declarations.  */

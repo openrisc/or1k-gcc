@@ -1,6 +1,5 @@
 /* Configuration file for ARM BPABI targets.
-   Copyright (C) 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery, LLC   
 
    This file is part of GCC.
@@ -60,6 +59,8 @@
   " %{!mlittle-endian:%{march=armv7-a|mcpu=cortex-a5    \
    |mcpu=cortex-a7                                      \
    |mcpu=cortex-a8|mcpu=cortex-a9|mcpu=cortex-a15       \
+   |mcpu=marvell-pj4					\
+   |mcpu=cortex-a53					\
    |mcpu=generic-armv7-a                                \
    |march=armv7-m|mcpu=cortex-m3                        \
    |march=armv7e-m|mcpu=cortex-m4                       \
@@ -71,6 +72,8 @@
   " %{mbig-endian:%{march=armv7-a|mcpu=cortex-a5        \
    |mcpu=cortex-a7                                      \
    |mcpu=cortex-a8|mcpu=cortex-a9|mcpu=cortex-a15       \
+   |mcpu=cortex-a53					\
+   |mcpu=marvell-pj4					\
    |mcpu=generic-armv7-a                                \
    |march=armv7-m|mcpu=cortex-m3                        \
    |march=armv7e-m|mcpu=cortex-m4                       \
@@ -88,11 +91,15 @@
 #define SUBTARGET_EXTRA_LINK_SPEC ""
 #endif
 
+/* Split out the EABI common values so other targets can use it.  */
+#define EABI_LINK_SPEC \
+  TARGET_FIX_V4BX_SPEC BE8_LINK_SPEC
+
 /* The generic link spec in elf.h does not support shared libraries.  */
 #define BPABI_LINK_SPEC \
   "%{mbig-endian:-EB} %{mlittle-endian:-EL} "		\
   "%{static:-Bstatic} %{shared:-shared} %{symbolic:-Bsymbolic} "	\
-  "-X" SUBTARGET_EXTRA_LINK_SPEC TARGET_FIX_V4BX_SPEC BE8_LINK_SPEC
+  "-X" SUBTARGET_EXTRA_LINK_SPEC EABI_LINK_SPEC
 
 #undef  LINK_SPEC
 #define LINK_SPEC BPABI_LINK_SPEC

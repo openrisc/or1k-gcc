@@ -1,7 +1,5 @@
 /* Optimize jump instructions, for GNU compiler.
-   Copyright (C) 1987, 1988, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997
-   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010,
-   2011 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -120,7 +118,7 @@ rebuild_jump_labels_chain (rtx chain)
    This simple pass moves barriers and removes duplicates so that the
    old code is happy.
  */
-unsigned int
+static unsigned int
 cleanup_barriers (void)
 {
   rtx insn, next, prev;
@@ -135,7 +133,7 @@ cleanup_barriers (void)
 	  if (BARRIER_P (prev))
 	    delete_insn (insn);
 	  else if (prev != PREV_INSN (insn))
-	    reorder_insns (insn, insn, prev);
+	    reorder_insns_nobb (insn, insn, prev);
 	}
     }
   return 0;
@@ -276,17 +274,11 @@ mark_all_labels (rtx f)
 	     basic blocks.  If those non-insns represent tablejump data,
 	     they contain label references that we must record.  */
 	  for (insn = BB_HEADER (bb); insn; insn = NEXT_INSN (insn))
-	    if (INSN_P (insn))
-	      {
-		gcc_assert (JUMP_TABLE_DATA_P (insn));
-		mark_jump_label (PATTERN (insn), insn, 0);
-	      }
+	    if (JUMP_TABLE_DATA_P (insn))
+	      mark_jump_label (PATTERN (insn), insn, 0);
 	  for (insn = BB_FOOTER (bb); insn; insn = NEXT_INSN (insn))
-	    if (INSN_P (insn))
-	      {
-		gcc_assert (JUMP_TABLE_DATA_P (insn));
-		mark_jump_label (PATTERN (insn), insn, 0);
-	      }
+	    if (JUMP_TABLE_DATA_P (insn))
+	      mark_jump_label (PATTERN (insn), insn, 0);
 	}
     }
   else
@@ -298,6 +290,8 @@ mark_all_labels (rtx f)
 	    ;
 	  else if (LABEL_P (insn))
 	    prev_nonjump_insn = NULL;
+	  else if (JUMP_TABLE_DATA_P (insn))
+	    mark_jump_label (PATTERN (insn), insn, 0);
 	  else if (NONDEBUG_INSN_P (insn))
 	    {
 	      mark_jump_label (PATTERN (insn), insn, 0);
@@ -1165,8 +1159,8 @@ mark_jump_label_1 (rtx x, rtx insn, bool in_mem, bool is_target)
 	return;
       }
 
-  /* Do walk the labels in a vector, but not the first operand of an
-     ADDR_DIFF_VEC.  Don't set the JUMP_LABEL of a vector.  */
+    /* Do walk the labels in a vector, but not the first operand of an
+       ADDR_DIFF_VEC.  Don't set the JUMP_LABEL of a vector.  */
     case ADDR_VEC:
     case ADDR_DIFF_VEC:
       if (! INSN_DELETED_P (insn))

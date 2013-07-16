@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1995-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1995-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -42,6 +42,7 @@ package Interfaces.C_Streams is
    subtype int is System.CRTL.int;
    subtype long is System.CRTL.long;
    subtype size_t is System.CRTL.size_t;
+   subtype ssize_t is System.CRTL.ssize_t;
    subtype voids is System.Address;
 
    NULL_Stream : constant FILEs;
@@ -106,8 +107,8 @@ package Interfaces.C_Streams is
    function fopen
      (filename : chars;
       mode     : chars;
-      encoding : System.CRTL.Filename_Encoding := System.CRTL.UTF8)
-      return FILEs
+      encoding : System.CRTL.Filename_Encoding := System.CRTL.UTF8;
+      vms_form : chars := System.Null_Address) return FILEs
      renames System.CRTL.fopen;
    --  Note: to maintain target independence, use text_translation_required,
    --  a boolean variable defined in sysdep.c to deal with the target
@@ -143,8 +144,8 @@ package Interfaces.C_Streams is
      (filename : chars;
       mode     : chars;
       stream   : FILEs;
-      encoding : System.CRTL.Filename_Encoding := System.CRTL.UTF8)
-      return FILEs
+      encoding : System.CRTL.Filename_Encoding := System.CRTL.UTF8;
+      vms_form : chars := System.Null_Address) return FILEs
      renames System.CRTL.freopen;
 
    function fseek
@@ -153,8 +154,17 @@ package Interfaces.C_Streams is
       origin : int) return int
      renames System.CRTL.fseek;
 
+   function fseek64
+     (stream : FILEs;
+      offset : ssize_t;
+      origin : int) return int
+     renames System.CRTL.fseek64;
+
    function ftell (stream : FILEs) return long
      renames System.CRTL.ftell;
+
+   function ftell64 (stream : FILEs) return ssize_t
+     renames System.CRTL.ftell64;
 
    function fwrite
      (buffer : voids;

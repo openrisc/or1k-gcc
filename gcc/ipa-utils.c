@@ -1,5 +1,5 @@
 /* Utilities for ipa analysis.
-   Copyright (C) 2005, 2007, 2008 Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
    Contributed by Kenneth Zadeck <zadeck@naturalbridge.com>
 
 This file is part of GCC.
@@ -287,7 +287,7 @@ ipa_reverse_postorder (struct cgraph_node **order)
 	  && (pass
 	      || (!node->symbol.address_taken
 		  && !node->global.inlined_to
-		  && !node->alias && !node->thunk.thunk_p
+		  && !node->symbol.alias && !node->thunk.thunk_p
 		  && !cgraph_only_called_directly_p (node))))
 	{
 	  stack_size = 0;
@@ -465,7 +465,7 @@ dump_cgraph_node_set (FILE *f, cgraph_node_set set)
   for (iter = csi_start (set); !csi_end_p (iter); csi_next (&iter))
     {
       struct cgraph_node *node = csi_node (iter);
-      fprintf (f, " %s/%i", cgraph_node_name (node), node->uid);
+      fprintf (f, " %s/%i", cgraph_node_name (node), node->symbol.order);
     }
   fprintf (f, "\n");
 }

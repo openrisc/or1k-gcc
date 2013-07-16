@@ -1,6 +1,5 @@
 /* Chains of recurrences.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <pop@cri.ensmp.fr>
 
 This file is part of GCC.
@@ -117,7 +116,7 @@ no_evolution_in_loop_p (tree chrec, unsigned loop_num, bool *res)
 
   STRIP_NOPS (chrec);
   scev = hide_evolution_in_other_loops_than_loop (chrec, loop_num);
-  *res = !tree_is_chrec (scev);
+  *res = !tree_contains_chrecs (scev, NULL);
   return true;
 }
 

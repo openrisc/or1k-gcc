@@ -1,6 +1,6 @@
 /* Definitions of target machine for GNU compiler,
    for PowerPC e500 machines running GNU/Linux.
-   Copyright (C) 2003-2012 Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Aldy Hernandez (aldy@quesejoda.com).
 
    This file is part of GCC.
@@ -20,8 +20,13 @@
    <http://www.gnu.org/licenses/>.  */
 
 /* Override rs6000.h and sysv4.h definition.  */
+#if (TARGET_DEFAULT & MASK_LITTLE_ENDIAN)
+#undef	TARGET_DEFAULT
+#define TARGET_DEFAULT (MASK_STRICT_ALIGN | MASK_LITTLE_ENDIAN)
+#else
 #undef	TARGET_DEFAULT
 #define TARGET_DEFAULT MASK_STRICT_ALIGN
+#endif
 
 #undef  ASM_DEFAULT_SPEC
 #define	ASM_DEFAULT_SPEC "-mppc -mspe -me500"

@@ -1,7 +1,5 @@
 /* Prints out tree in human readable form - GCC
-   Copyright (C) 1990, 1991, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1990-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -31,6 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic.h"
 #include "gimple-pretty-print.h" /* FIXME */
 #include "tree-flow.h"
+#include "tree-dump.h"
 #include "dumpfile.h"
 
 /* Define the hash table of nodes already seen.
@@ -45,34 +44,6 @@ struct bucket
 };
 
 static struct bucket **table;
-
-/* Print the node NODE on standard error, for debugging.
-   Most nodes referred to by this one are printed recursively
-   down to a depth of six.  */
-
-DEBUG_FUNCTION void
-debug_tree (tree node)
-{
-  table = XCNEWVEC (struct bucket *, HASH_SIZE);
-  print_node (stderr, "", node, 0);
-  free (table);
-  table = 0;
-  putc ('\n', stderr);
-}
-
-/* Print the vector of trees VEC on standard error, for debugging.
-   Most nodes referred to by this one are printed recursively
-   down to a depth of six.  */
-
-DEBUG_FUNCTION void
-debug_vec_tree (vec<tree, va_gc> *vec)
-{
-  table = XCNEWVEC (struct bucket *, HASH_SIZE);
-  print_vec_tree (stderr, "", vec, 0);
-  free (table);
-  table = 0;
-  putc ('\n', stderr);
-}
 
 /* Print PREFIX and ADDR to FILE.  */
 void
@@ -255,7 +226,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent)
   /* Allow this function to be called if the table is not there.  */
   if (table)
     {
-      hash = ((unsigned long) node) % HASH_SIZE;
+      hash = ((uintptr_t) node) % HASH_SIZE;
 
       /* If node is in the table, just mention its address.  */
       for (b = table[hash]; b; b = b->next)
@@ -1012,4 +983,173 @@ print_vec_tree (FILE *file, const char *prefix, vec<tree, va_gc> *vec, int inden
       sprintf (temp, "elt %d", ix);
       print_node (file, temp, elt, indent + 4);
     }
+}
+
+
+/* Print the node NODE on standard error, for debugging.
+   Most nodes referred to by this one are printed recursively
+   down to a depth of six.  */
+
+DEBUG_FUNCTION void
+debug_tree (tree node)
+{
+  table = XCNEWVEC (struct bucket *, HASH_SIZE);
+  print_node (stderr, "", node, 0);
+  free (table);
+  table = 0;
+  putc ('\n', stderr);
+}
+
+DEBUG_FUNCTION void
+debug_raw (const tree_node &ref)
+{
+  debug_tree (const_cast <tree> (&ref));
+}
+
+DEBUG_FUNCTION void
+debug_raw (const tree_node *ptr)
+{
+  if (ptr)
+    debug_raw (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+static void
+dump_tree_via_hooks (const tree_node *ptr, int options)
+{
+  if (DECL_P (ptr))
+    lang_hooks.print_decl (stderr, const_cast <tree_node*> (ptr), 0);
+  else if (TYPE_P (ptr))
+    lang_hooks.print_type (stderr, const_cast <tree_node*> (ptr), 0);
+  else if (TREE_CODE (ptr) == IDENTIFIER_NODE)
+    lang_hooks.print_identifier (stderr, const_cast <tree_node*> (ptr), 0);
+  else
+    print_generic_expr (stderr, const_cast <tree_node*> (ptr), options);
+  fprintf (stderr, "\n");
+}
+
+DEBUG_FUNCTION void
+debug (const tree_node &ref)
+{
+  dump_tree_via_hooks (&ref, 0);
+}
+
+DEBUG_FUNCTION void
+debug (const tree_node *ptr)
+{
+  if (ptr)
+    debug (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+DEBUG_FUNCTION void
+debug_verbose (const tree_node &ref)
+{
+  dump_tree_via_hooks (&ref, TDF_VERBOSE);
+}
+
+DEBUG_FUNCTION void
+debug_verbose (const tree_node *ptr)
+{
+  if (ptr)
+    debug_verbose (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+DEBUG_FUNCTION void
+debug_head (const tree_node &ref)
+{
+  debug (ref);
+}
+
+DEBUG_FUNCTION void
+debug_head (const tree_node *ptr)
+{
+  if (ptr)
+    debug_head (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+DEBUG_FUNCTION void
+debug_body (const tree_node &ref)
+{
+  if (TREE_CODE (&ref) == FUNCTION_DECL)
+    dump_function_to_file (const_cast <tree_node*> (&ref), stderr, 0);
+  else
+    debug (ref);
+}
+
+DEBUG_FUNCTION void
+debug_body (const tree_node *ptr)
+{
+  if (ptr)
+    debug_body (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+/* Print the vector of trees VEC on standard error, for debugging.
+   Most nodes referred to by this one are printed recursively
+   down to a depth of six.  */
+
+DEBUG_FUNCTION void
+debug_raw (vec<tree, va_gc> &ref)
+{
+  tree elt;
+  unsigned ix;
+
+  /* Print the slot this node is in, and its code, and address.  */
+  fprintf (stderr, "<VEC");
+  dump_addr (stderr, " ", ref.address ());
+
+  FOR_EACH_VEC_ELT (ref, ix, elt)
+    {
+      fprintf (stderr, "elt %d ", ix);
+      debug_raw (elt);
+    }
+}
+
+DEBUG_FUNCTION void
+debug (vec<tree, va_gc> &ref)
+{
+  tree elt;
+  unsigned ix;
+
+  /* Print the slot this node is in, and its code, and address.  */
+  fprintf (stderr, "<VEC");
+  dump_addr (stderr, " ", ref.address ());
+
+  FOR_EACH_VEC_ELT (ref, ix, elt)
+    {
+      fprintf (stderr, "elt %d ", ix);
+      debug (elt);
+    }
+}
+
+DEBUG_FUNCTION void
+debug (vec<tree, va_gc> *ptr)
+{
+  if (ptr)
+    debug (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+DEBUG_FUNCTION void
+debug_raw (vec<tree, va_gc> *ptr)
+{
+  if (ptr)
+    debug_raw (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+DEBUG_FUNCTION void
+debug_vec_tree (vec<tree, va_gc> *vec)
+{
+  debug_raw (vec);
 }

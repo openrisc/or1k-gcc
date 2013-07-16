@@ -1,7 +1,7 @@
 // { dg-options "-std=gnu++0x" }
 // 2007-06-02  Paolo Carlini  <pcarlini@suse.de>
 //
-// Copyright (C) 2007, 2009 Free Software Foundation, Inc.
+// Copyright (C) 2007-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -40,6 +40,10 @@ void test01()
   VERIFY( (is_same<add_lvalue_reference<ClassType&&>::type, ClassType&>::value) );
   VERIFY( (is_same<add_lvalue_reference<void>::type, void>::value) );
   VERIFY( (is_same<add_lvalue_reference<const void>::type, const void>::value) );  
+  VERIFY( (is_same<add_lvalue_reference<bool(int) const>::type, bool(int) const>::value) );  
+  VERIFY( (is_same<add_lvalue_reference<bool(int) &>::type, bool(int) &>::value) );  
+  VERIFY( (is_same<add_lvalue_reference<bool(int) const &&>::type, bool(int) const &&>::value) );  
+  VERIFY( (is_same<add_lvalue_reference<bool(int)>::type, bool(&)(int)>::value) );  
 }
 
 int main()

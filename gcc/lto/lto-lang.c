@@ -1,5 +1,5 @@
 /* Language-dependent hooks for LTO.
-   Copyright 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -1155,9 +1155,6 @@ lto_init (void)
 
   /* We need to generate LTO if running in WPA mode.  */
   flag_generate_lto = flag_wpa;
-
-  /* Initialize libcpp line maps for gcc_assert to work.  */
-  linemap_add (line_table, LC_ENTER, 0, NULL, 0);
 
   /* Create the basic integer types.  */
   build_common_tree_nodes (flag_signed_char, /*short_double=*/false);

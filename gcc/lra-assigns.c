@@ -1,6 +1,5 @@
 /* Assign reload pseudos.
-   Copyright (C) 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -197,6 +196,12 @@ reload_pseudo_compare_func (const void *v1p, const void *v2p)
     return diff;
   if ((diff = (regno_assign_info[regno_assign_info[r2].first].freq
 	       - regno_assign_info[regno_assign_info[r1].first].freq)) != 0)
+    return diff;
+  /* Allocate bigger pseudos first to avoid register file
+     fragmentation.  */
+  if ((diff
+       = (ira_reg_class_max_nregs[cl2][lra_reg_info[r2].biggest_mode]
+	  - ira_reg_class_max_nregs[cl1][lra_reg_info[r1].biggest_mode])) != 0)
     return diff;
   /* Put pseudos from the thread nearby.  */
   if ((diff = regno_assign_info[r1].first - regno_assign_info[r2].first) != 0)
@@ -443,7 +448,7 @@ find_hard_regno_for (int regno, int *cost, int try_only_hard_regno)
   int hr, conflict_hr, nregs;
   enum machine_mode biggest_mode;
   unsigned int k, conflict_regno;
-  int val, biggest_nregs, nregs_diff;
+  int offset, val, biggest_nregs, nregs_diff;
   enum reg_class rclass;
   bitmap_iterator bi;
   bool *rclass_intersect_p;
@@ -503,9 +508,10 @@ find_hard_regno_for (int regno, int *cost, int try_only_hard_regno)
 #endif
   sparseset_clear_bit (conflict_reload_and_inheritance_pseudos, regno);
   val = lra_reg_info[regno].val;
+  offset = lra_reg_info[regno].offset;
   CLEAR_HARD_REG_SET (impossible_start_hard_regs);
   EXECUTE_IF_SET_IN_SPARSESET (live_range_hard_reg_pseudos, conflict_regno)
-    if (val == lra_reg_info[conflict_regno].val)
+    if (lra_reg_val_equal_p (conflict_regno, val, offset))
       {
 	conflict_hr = live_pseudos_reg_renumber[conflict_regno];
 	nregs = (hard_regno_nregs[conflict_hr]
@@ -533,7 +539,7 @@ find_hard_regno_for (int regno, int *cost, int try_only_hard_regno)
       }
   EXECUTE_IF_SET_IN_SPARSESET (conflict_reload_and_inheritance_pseudos,
 			       conflict_regno)
-    if (val != lra_reg_info[conflict_regno].val)
+    if (!lra_reg_val_equal_p (conflict_regno, val, offset))
       {
 	lra_assert (live_pseudos_reg_renumber[conflict_regno] < 0);
 	if ((hard_regno
@@ -592,16 +598,12 @@ find_hard_regno_for (int regno, int *cost, int try_only_hard_regno)
 		&& ! df_regs_ever_live_p (hard_regno + j))
 	      /* It needs save restore.	 */
 	      hard_regno_costs[hard_regno]
-		+= 2 * ENTRY_BLOCK_PTR->next_bb->frequency;
+		+= 2 * ENTRY_BLOCK_PTR->next_bb->frequency + 1;
 	  priority = targetm.register_priority (hard_regno);
 	  if (best_hard_regno < 0 || hard_regno_costs[hard_regno] < best_cost
 	      || (hard_regno_costs[hard_regno] == best_cost
 		  && (priority > best_priority
-		      /* Hard register usage leveling actually results
-			 in bigger code for targets with conditional
-			 execution like ARM because it reduces chance
-			 of if-conversion after LRA.  */
-		      || (! targetm.have_conditional_execution ()
+		      || (targetm.register_usage_leveling_p ()
 			  && priority == best_priority
 			  && best_usage > lra_hard_reg_usage[hard_regno]))))
 	    {
@@ -670,6 +672,19 @@ update_hard_regno_preference (int regno, int hard_regno, int div)
     }
 }
 
+/* Return prefix title for pseudo REGNO.  */
+static const char *
+pseudo_prefix_title (int regno)
+{
+  return
+    (regno < lra_constraint_new_regno_start ? ""
+     : bitmap_bit_p (&lra_inheritance_pseudos, regno) ? "inheritance "
+     : bitmap_bit_p (&lra_split_regs, regno) ? "split "
+     : bitmap_bit_p (&lra_optional_reload_pseudos, regno) ? "optional reload "
+     : bitmap_bit_p (&lra_subreg_reload_pseudos, regno) ? "subreg reload "
+     : "reload ");
+}
+
 /* Update REG_RENUMBER and other pseudo preferences by assignment of
    HARD_REGNO to pseudo REGNO and print about it if PRINT_P.  */
 void
@@ -690,13 +705,7 @@ lra_setup_reg_renumber (int regno, int hard_regno, bool print_p)
       lra_hard_reg_usage[hr + i] += lra_reg_info[regno].freq;
   if (print_p && lra_dump_file != NULL)
     fprintf (lra_dump_file, "	   Assign %d to %sr%d (freq=%d)\n",
-	     reg_renumber[regno],
-	     regno < lra_constraint_new_regno_start
-	     ? ""
-	     : bitmap_bit_p (&lra_inheritance_pseudos, regno) ? "inheritance "
-	     : bitmap_bit_p (&lra_split_regs, regno) ? "split "
-	     : bitmap_bit_p (&lra_optional_reload_pseudos, regno)
-	     ? "optional reload ": "reload ",
+	     reg_renumber[regno], pseudo_prefix_title (regno),
 	     regno, lra_reg_info[regno].freq);
   if (hard_regno >= 0)
     {
@@ -842,6 +851,7 @@ spill_for (int regno, bitmap spilled_pseudo_bitmap)
 	if ((int) spill_regno >= lra_constraint_new_regno_start
 	    && ! bitmap_bit_p (&lra_inheritance_pseudos, spill_regno)
 	    && ! bitmap_bit_p (&lra_split_regs, spill_regno)
+	    && ! bitmap_bit_p (&lra_subreg_reload_pseudos, spill_regno)
 	    && ! bitmap_bit_p (&lra_optional_reload_pseudos, spill_regno))
 	  goto fail;
       insn_pseudos_num = 0;
@@ -951,14 +961,7 @@ spill_for (int regno, bitmap spilled_pseudo_bitmap)
     {
       if (lra_dump_file != NULL)
 	fprintf (lra_dump_file, "      Spill %sr%d(hr=%d, freq=%d) for r%d\n",
-		 ((int) spill_regno < lra_constraint_new_regno_start
-		  ? ""
-		  : bitmap_bit_p (&lra_inheritance_pseudos, spill_regno)
-		  ? "inheritance "
-		  : bitmap_bit_p (&lra_split_regs, spill_regno)
-		  ? "split "
-		  : bitmap_bit_p (&lra_optional_reload_pseudos, spill_regno)
-		  ? "optional reload " : "reload "),
+		 pseudo_prefix_title (spill_regno),
 		 spill_regno, reg_renumber[spill_regno],
 		 lra_reg_info[spill_regno].freq, regno);
       update_lives (spill_regno, true);
@@ -1002,7 +1005,7 @@ setup_live_pseudos_and_spill_after_risky_transforms (bitmap
 {
   int p, i, j, n, regno, hard_regno;
   unsigned int k, conflict_regno;
-  int val;
+  int val, offset;
   HARD_REG_SET conflict_set;
   enum machine_mode mode;
   lra_live_range_t r;
@@ -1045,8 +1048,9 @@ setup_live_pseudos_and_spill_after_risky_transforms (bitmap
       COPY_HARD_REG_SET (conflict_set, lra_no_alloc_regs);
       IOR_HARD_REG_SET (conflict_set, lra_reg_info[regno].conflict_hard_regs);
       val = lra_reg_info[regno].val;
+      offset = lra_reg_info[regno].offset;
       EXECUTE_IF_SET_IN_SPARSESET (live_range_hard_reg_pseudos, conflict_regno)
-	if (val != lra_reg_info[conflict_regno].val
+	if (!lra_reg_val_equal_p (conflict_regno, val, offset)
 	    /* If it is multi-register pseudos they should start on
 	       the same hard register.	*/
 	    || hard_regno != reg_renumber[conflict_regno])
@@ -1084,6 +1088,8 @@ improve_inheritance (bitmap changed_pseudos)
   lra_copy_t cp, next_cp;
   bitmap_iterator bi;
 
+  if (lra_inheritance_iter > LRA_MAX_INHERITANCE_PASSES)
+    return;
   n = 0;
   EXECUTE_IF_SET_IN_BITMAP (&lra_inheritance_pseudos, 0, k, bi)
     if (reg_renumber[k] >= 0 && lra_reg_info[k].nrefs != 0)
@@ -1171,6 +1177,7 @@ assign_by_spills (void)
   bitmap_initialize (&changed_insns, &reg_obstack);
   bitmap_initialize (&non_reload_pseudos, &reg_obstack);
   bitmap_ior (&non_reload_pseudos, &lra_inheritance_pseudos, &lra_split_regs);
+  bitmap_ior_into (&non_reload_pseudos, &lra_subreg_reload_pseudos);
   bitmap_ior_into (&non_reload_pseudos, &lra_optional_reload_pseudos);
   for (iter = 0; iter <= 1; iter++)
     {
@@ -1239,6 +1246,23 @@ assign_by_spills (void)
 		  asm_p = true;
 		  error_for_asm (insn,
 				 "%<asm%> operand has impossible constraints");
+		  /* Avoid further trouble with this insn.
+		     For asm goto, instead of fixing up all the edges
+		     just clear the template and clear input operands
+		     (asm goto doesn't have any output operands).  */
+		  if (JUMP_P (insn))
+		    {
+		      rtx asm_op = extract_asm_operands (PATTERN (insn));
+		      ASM_OPERANDS_TEMPLATE (asm_op) = ggc_strdup ("");
+		      ASM_OPERANDS_INPUT_VEC (asm_op) = rtvec_alloc (0);
+		      ASM_OPERANDS_INPUT_CONSTRAINT_VEC (asm_op) = rtvec_alloc (0);
+		      lra_update_insn_regno_info (insn);
+		    }
+		  else
+		    {
+		      PATTERN (insn) = gen_rtx_USE (VOIDmode, const0_rtx);
+		      lra_set_insn_deleted (insn);
+		    }
 		}
 	    }
 	  lra_assert (asm_p);
@@ -1262,6 +1286,9 @@ assign_by_spills (void)
 	  bitmap_ior_into (&changed_insns,
 			   &lra_reg_info[sorted_pseudos[i]].insn_bitmap);
 	}
+
+      /* FIXME: Look up the changed insns in the cached LRA insn data using
+	 an EXECUTE_IF_SET_IN_BITMAP over changed_insns.  */
       FOR_EACH_BB (bb)
 	FOR_BB_INSNS (bb, insn)
 	if (bitmap_bit_p (&changed_insns, INSN_UID (insn)))
@@ -1325,6 +1352,7 @@ assign_by_spills (void)
 		 && lra_reg_info[i].restore_regno >= 0)
 	     || (bitmap_bit_p (&lra_split_regs, i)
 		 && lra_reg_info[i].restore_regno >= 0)
+	     || bitmap_bit_p (&lra_subreg_reload_pseudos, i)
 	     || bitmap_bit_p (&lra_optional_reload_pseudos, i))
 	    && reg_renumber[i] < 0 && lra_reg_info[i].nrefs != 0
 	    && regno_allocno_class_array[i] != NO_REGS)

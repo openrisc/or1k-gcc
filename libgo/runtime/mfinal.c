@@ -11,7 +11,7 @@ enum { debug = 0 };
 typedef struct Fin Fin;
 struct Fin
 {
-	void (*fn)(void*);
+	FuncVal *fn;
 	const struct __go_func_type *ft;
 };
 
@@ -42,7 +42,7 @@ static struct {
 } fintab[TABSZ];
 
 static void
-addfintab(Fintab *t, void *k, void (*fn)(void*), const struct __go_func_type *ft)
+addfintab(Fintab *t, void *k, FuncVal *fn, const struct __go_func_type *ft)
 {
 	int32 i, j;
 
@@ -137,7 +137,7 @@ resizefintab(Fintab *tab)
 }
 
 bool
-runtime_addfinalizer(void *p, void (*f)(void*), const struct __go_func_type *ft)
+runtime_addfinalizer(void *p, FuncVal *f, const struct __go_func_type *ft)
 {
 	Fintab *tab;
 	byte *base;
@@ -175,7 +175,7 @@ runtime_addfinalizer(void *p, void (*f)(void*), const struct __go_func_type *ft)
 // get finalizer; if del, delete finalizer.
 // caller is responsible for updating RefHasFinalizer (special) bit.
 bool
-runtime_getfinalizer(void *p, bool del, void (**fn)(void*), const struct __go_func_type **ft)
+runtime_getfinalizer(void *p, bool del, FuncVal **fn, const struct __go_func_type **ft)
 {
 	Fintab *tab;
 	bool res;
@@ -193,7 +193,7 @@ runtime_getfinalizer(void *p, bool del, void (**fn)(void*), const struct __go_fu
 }
 
 void
-runtime_walkfintab(void (*fn)(void*), void (*addroot)(byte *, uintptr))
+runtime_walkfintab(void (*fn)(void*), void (*addroot)(Obj))
 {
 	void **key;
 	void **ekey;
@@ -206,8 +206,8 @@ runtime_walkfintab(void (*fn)(void*), void (*addroot)(byte *, uintptr))
 		for(; key < ekey; key++)
 			if(*key != nil && *key != ((void*)-1))
 				fn(*key);
-		addroot((byte*)&fintab[i].fkey, sizeof(void*));
-		addroot((byte*)&fintab[i].val, sizeof(void*));
+		addroot((Obj){(byte*)&fintab[i].fkey, sizeof(void*), 0});
+		addroot((Obj){(byte*)&fintab[i].val, sizeof(void*), 0});
 		runtime_unlock(&fintab[i]);
 	}
 }

@@ -1,5 +1,5 @@
 // -*- C++ -*- Implement the members of exception_ptr.
-// Copyright (C) 2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+// Copyright (C) 2008-2013 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -212,8 +212,8 @@ std::rethrow_exception(std::exception_ptr ep)
   dep->primaryException = obj;
   __atomic_add_fetch (&eh->referenceCount, 1,  __ATOMIC_ACQ_REL);
 
-  dep->unexpectedHandler = __unexpected_handler;
-  dep->terminateHandler = __terminate_handler;
+  dep->unexpectedHandler = get_unexpected ();
+  dep->terminateHandler = get_terminate ();
   __GXX_INIT_DEPENDENT_EXCEPTION_CLASS(dep->unwindHeader.exception_class);
   dep->unwindHeader.exception_cleanup = __gxx_dependent_exception_cleanup;
 

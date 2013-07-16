@@ -1,7 +1,5 @@
 /* Subroutines for manipulating rtx's in semantically interesting ways.
-   Copyright (C) 1987, 1991, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -108,10 +106,10 @@ plus_constant (enum machine_mode mode, rtx x, HOST_WIDE_INT c)
 	  if (overflow)
 	    gcc_unreachable ();
 
-	  return immed_double_int_const (v, VOIDmode);
+	  return immed_double_int_const (v, mode);
 	}
 
-      return GEN_INT (INTVAL (x) + c);
+      return gen_int_mode (INTVAL (x) + c, mode);
 
     case CONST_DOUBLE:
       {
@@ -126,7 +124,7 @@ plus_constant (enum machine_mode mode, rtx x, HOST_WIDE_INT c)
 	     To fix, add constant support wider than CONST_DOUBLE.  */
 	  gcc_assert (GET_MODE_BITSIZE (mode) <= HOST_BITS_PER_DOUBLE_INT);
 
-	return immed_double_int_const (v, VOIDmode);
+	return immed_double_int_const (v, mode);
       }
 
     case MEM:

@@ -1,5 +1,5 @@
 /* Machine description for AArch64 architecture.
-   Copyright (C) 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GCC.
@@ -45,6 +45,8 @@
 #include "gimple.h"
 #include "optabs.h"
 #include "dwarf2.h"
+#include "cfgloop.h"
+#include "tree-vectorizer.h"
 
 /* Classifies an address.
 
@@ -87,6 +89,15 @@ struct aarch64_address_info {
   enum aarch64_symbol_type symbol_type;
 };
 
+struct simd_immediate_info
+{
+  rtx value;
+  int shift;
+  int element_width;
+  bool mvn;
+  bool msl;
+};
+
 /* The current code model.  */
 enum aarch64_code_model aarch64_cmodel;
 
@@ -103,12 +114,13 @@ static bool aarch64_vfp_is_call_or_return_candidate (enum machine_mode,
 static void aarch64_elf_asm_constructor (rtx, int) ATTRIBUTE_UNUSED;
 static void aarch64_elf_asm_destructor (rtx, int) ATTRIBUTE_UNUSED;
 static void aarch64_override_options_after_change (void);
-static int aarch64_simd_valid_immediate (rtx, enum machine_mode, int, rtx *,
-					 int *, unsigned char *, int *, int *);
 static bool aarch64_vector_mode_supported_p (enum machine_mode);
 static unsigned bit_count (unsigned HOST_WIDE_INT);
 static bool aarch64_const_vec_all_same_int_p (rtx,
 					      HOST_WIDE_INT, HOST_WIDE_INT);
+
+static bool aarch64_vectorize_vec_perm_const_ok (enum machine_mode vmode,
+						 const unsigned char *sel);
 
 /* The processor for which instructions should be scheduled.  */
 enum aarch64_processor aarch64_tune = generic;
@@ -175,6 +187,26 @@ static const struct cpu_regmove_cost generic_regmove_cost =
   NAMED_PARAM (FP2FP, 4)
 };
 
+/* Generic costs for vector insn classes.  */
+#if HAVE_DESIGNATED_INITIALIZERS && GCC_VERSION >= 2007
+__extension__
+#endif
+static const struct cpu_vector_cost generic_vector_cost =
+{
+  NAMED_PARAM (scalar_stmt_cost, 1),
+  NAMED_PARAM (scalar_load_cost, 1),
+  NAMED_PARAM (scalar_store_cost, 1),
+  NAMED_PARAM (vec_stmt_cost, 1),
+  NAMED_PARAM (vec_to_scalar_cost, 1),
+  NAMED_PARAM (scalar_to_vec_cost, 1),
+  NAMED_PARAM (vec_align_load_cost, 1),
+  NAMED_PARAM (vec_unalign_load_cost, 1),
+  NAMED_PARAM (vec_unalign_store_cost, 1),
+  NAMED_PARAM (vec_store_cost, 1),
+  NAMED_PARAM (cond_taken_branch_cost, 3),
+  NAMED_PARAM (cond_not_taken_branch_cost, 1)
+};
+
 #if HAVE_DESIGNATED_INITIALIZERS && GCC_VERSION >= 2007
 __extension__
 #endif
@@ -183,6 +215,7 @@ static const struct tune_params generic_tunings =
   &generic_rtx_cost_table,
   &generic_addrcost_table,
   &generic_regmove_cost,
+  &generic_vector_cost,
   NAMED_PARAM (memmov_cost, 4)
 };
 
@@ -521,13 +554,15 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	return;
       }
 
+    case SYMBOL_TINY_ABSOLUTE:
+      emit_insn (gen_rtx_SET (Pmode, dest, imm));
+      return;
+
     case SYMBOL_SMALL_GOT:
       {
 	rtx tmp_reg = dest;
 	if (can_create_pseudo_p ())
-	  {
-	    tmp_reg =  gen_reg_rtx (Pmode);
-	  }
+	  tmp_reg =  gen_reg_rtx (Pmode);
 	emit_move_insn (tmp_reg, gen_rtx_HIGH (Pmode, imm));
 	emit_insn (gen_ldr_got_small (dest, tmp_reg, imm));
 	return;
@@ -578,6 +613,10 @@ aarch64_load_symref_appropriately (rtx dest, rtx imm,
 	return;
       }
 
+    case SYMBOL_TINY_GOT:
+      emit_insn (gen_ldr_got_tiny (dest, imm));
+      return;
+
     default:
       gcc_unreachable ();
     }
@@ -601,49 +640,85 @@ aarch64_split_128bit_move (rtx dst, rtx src)
 {
   rtx low_dst;
 
-  gcc_assert (GET_MODE (dst) == TImode);
+  enum machine_mode src_mode = GET_MODE (src);
+  enum machine_mode dst_mode = GET_MODE (dst);
+  int src_regno = REGNO (src);
+  int dst_regno = REGNO (dst);
+
+  gcc_assert (dst_mode == TImode || dst_mode == TFmode);
 
   if (REG_P (dst) && REG_P (src))
     {
-      int src_regno = REGNO (src);
-      int dst_regno = REGNO (dst);
-
-      gcc_assert (GET_MODE (src) == TImode);
+      gcc_assert (src_mode == TImode || src_mode == TFmode);
 
       /* Handle r -> w, w -> r.  */
       if (FP_REGNUM_P (dst_regno) && GP_REGNUM_P (src_regno))
 	{
-	  emit_insn (gen_aarch64_movtilow_di (dst,
-					      gen_lowpart (word_mode, src)));
-	  emit_insn (gen_aarch64_movtihigh_di (dst,
-					       gen_highpart (word_mode, src)));
-	  return;
+	  switch (src_mode) {
+	  case TImode:
+	    emit_insn
+	      (gen_aarch64_movtilow_di (dst, gen_lowpart (word_mode, src)));
+	    emit_insn
+	      (gen_aarch64_movtihigh_di (dst, gen_highpart (word_mode, src)));
+	    return;
+	  case TFmode:
+	    emit_insn
+	      (gen_aarch64_movtflow_di (dst, gen_lowpart (word_mode, src)));
+	    emit_insn
+	      (gen_aarch64_movtfhigh_di (dst, gen_highpart (word_mode, src)));
+	    return;
+	  default:
+	    gcc_unreachable ();
+	  }
 	}
       else if (GP_REGNUM_P (dst_regno) && FP_REGNUM_P (src_regno))
 	{
-	  emit_insn (gen_aarch64_movdi_tilow (gen_lowpart (word_mode, dst),
-					      src));
-	  emit_insn (gen_aarch64_movdi_tihigh (gen_highpart (word_mode, dst),
-					       src));
-	  return;
+	  switch (src_mode) {
+	  case TImode:
+	    emit_insn
+	      (gen_aarch64_movdi_tilow (gen_lowpart (word_mode, dst), src));
+	    emit_insn
+	      (gen_aarch64_movdi_tihigh (gen_highpart (word_mode, dst), src));
+	    return;
+	  case TFmode:
+	    emit_insn
+	      (gen_aarch64_movdi_tflow (gen_lowpart (word_mode, dst), src));
+	    emit_insn
+	      (gen_aarch64_movdi_tfhigh (gen_highpart (word_mode, dst), src));
+	    return;
+	  default:
+	    gcc_unreachable ();
+	  }
 	}
       /* Fall through to r -> r cases.  */
     }
 
-  low_dst = gen_lowpart (word_mode, dst);
-  if (REG_P (low_dst)
-      && reg_overlap_mentioned_p (low_dst, src))
-    {
-      aarch64_emit_move (gen_highpart (word_mode, dst),
-			 gen_highpart_mode (word_mode, TImode, src));
-      aarch64_emit_move (low_dst, gen_lowpart (word_mode, src));
-    }
-  else
-    {
-      aarch64_emit_move (low_dst, gen_lowpart (word_mode, src));
-      aarch64_emit_move (gen_highpart (word_mode, dst),
-			 gen_highpart_mode (word_mode, TImode, src));
-    }
+  switch (dst_mode) {
+  case TImode:
+    low_dst = gen_lowpart (word_mode, dst);
+    if (REG_P (low_dst)
+	&& reg_overlap_mentioned_p (low_dst, src))
+      {
+	aarch64_emit_move (gen_highpart (word_mode, dst),
+			   gen_highpart_mode (word_mode, TImode, src));
+	aarch64_emit_move (low_dst, gen_lowpart (word_mode, src));
+      }
+    else
+      {
+	aarch64_emit_move (low_dst, gen_lowpart (word_mode, src));
+	aarch64_emit_move (gen_highpart (word_mode, dst),
+			   gen_highpart_mode (word_mode, TImode, src));
+      }
+    return;
+  case TFmode:
+    emit_move_insn (gen_rtx_REG (DFmode, dst_regno),
+		    gen_rtx_REG (DFmode, src_regno));
+    emit_move_insn (gen_rtx_REG (DFmode, dst_regno + 1),
+		    gen_rtx_REG (DFmode, src_regno + 1));
+    return;
+  default:
+    gcc_unreachable ();
+  }
 }
 
 bool
@@ -653,11 +728,99 @@ aarch64_split_128bit_move_p (rtx dst, rtx src)
 	  || ! (FP_REGNUM_P (REGNO (dst)) && FP_REGNUM_P (REGNO (src))));
 }
 
+/* Split a complex SIMD combine.  */
+
+void
+aarch64_split_simd_combine (rtx dst, rtx src1, rtx src2)
+{
+  enum machine_mode src_mode = GET_MODE (src1);
+  enum machine_mode dst_mode = GET_MODE (dst);
+
+  gcc_assert (VECTOR_MODE_P (dst_mode));
+
+  if (REG_P (dst) && REG_P (src1) && REG_P (src2))
+    {
+      rtx (*gen) (rtx, rtx, rtx);
+
+      switch (src_mode)
+	{
+	case V8QImode:
+	  gen = gen_aarch64_simd_combinev8qi;
+	  break;
+	case V4HImode:
+	  gen = gen_aarch64_simd_combinev4hi;
+	  break;
+	case V2SImode:
+	  gen = gen_aarch64_simd_combinev2si;
+	  break;
+	case V2SFmode:
+	  gen = gen_aarch64_simd_combinev2sf;
+	  break;
+	case DImode:
+	  gen = gen_aarch64_simd_combinedi;
+	  break;
+	case DFmode:
+	  gen = gen_aarch64_simd_combinedf;
+	  break;
+	default:
+	  gcc_unreachable ();
+	}
+
+      emit_insn (gen (dst, src1, src2));
+      return;
+    }
+}
+
+/* Split a complex SIMD move.  */
+
+void
+aarch64_split_simd_move (rtx dst, rtx src)
+{
+  enum machine_mode src_mode = GET_MODE (src);
+  enum machine_mode dst_mode = GET_MODE (dst);
+
+  gcc_assert (VECTOR_MODE_P (dst_mode));
+
+  if (REG_P (dst) && REG_P (src))
+    {
+      rtx (*gen) (rtx, rtx);
+
+      gcc_assert (VECTOR_MODE_P (src_mode));
+
+      switch (src_mode)
+	{
+	case V16QImode:
+	  gen = gen_aarch64_split_simd_movv16qi;
+	  break;
+	case V8HImode:
+	  gen = gen_aarch64_split_simd_movv8hi;
+	  break;
+	case V4SImode:
+	  gen = gen_aarch64_split_simd_movv4si;
+	  break;
+	case V2DImode:
+	  gen = gen_aarch64_split_simd_movv2di;
+	  break;
+	case V4SFmode:
+	  gen = gen_aarch64_split_simd_movv4sf;
+	  break;
+	case V2DFmode:
+	  gen = gen_aarch64_split_simd_movv2df;
+	  break;
+	default:
+	  gcc_unreachable ();
+	}
+
+      emit_insn (gen (dst, src));
+      return;
+    }
+}
+
 static rtx
-aarch64_force_temporary (rtx x, rtx value)
+aarch64_force_temporary (enum machine_mode mode, rtx x, rtx value)
 {
   if (can_create_pseudo_p ())
-    return force_reg (Pmode, value);
+    return force_reg (mode, value);
   else
     {
       x = aarch64_emit_move (x, value);
@@ -669,15 +832,16 @@ aarch64_force_temporary (rtx x, rtx value)
 static rtx
 aarch64_add_offset (enum machine_mode mode, rtx temp, rtx reg, HOST_WIDE_INT offset)
 {
-  if (!aarch64_plus_immediate (GEN_INT (offset), DImode))
+  if (!aarch64_plus_immediate (GEN_INT (offset), mode))
     {
       rtx high;
       /* Load the full offset into a register.  This
          might be improvable in the future.  */
       high = GEN_INT (offset);
       offset = 0;
-      high = aarch64_force_temporary (temp, high);
-      reg = aarch64_force_temporary (temp, gen_rtx_PLUS (Pmode, high, reg));
+      high = aarch64_force_temporary (mode, temp, high);
+      reg = aarch64_force_temporary (mode, temp,
+				     gen_rtx_PLUS (mode, high, reg));
     }
   return plus_constant (mode, reg, offset);
 }
@@ -716,7 +880,7 @@ aarch64_expand_mov_immediate (rtx dest, rtx imm)
 	      && targetm.cannot_force_const_mem (mode, imm))
 	    {
 	      gcc_assert(can_create_pseudo_p ());
-	      base = aarch64_force_temporary (dest, base);
+	      base = aarch64_force_temporary (mode, dest, base);
 	      base = aarch64_add_offset (mode, NULL, base, INTVAL (offset));
 	      aarch64_emit_move (dest, base);
 	      return;
@@ -730,10 +894,11 @@ aarch64_expand_mov_immediate (rtx dest, rtx imm)
         case SYMBOL_SMALL_TLSDESC:
         case SYMBOL_SMALL_GOTTPREL:
 	case SYMBOL_SMALL_GOT:
+	case SYMBOL_TINY_GOT:
 	  if (offset != const0_rtx)
 	    {
 	      gcc_assert(can_create_pseudo_p ());
-	      base = aarch64_force_temporary (dest, base);
+	      base = aarch64_force_temporary (mode, dest, base);
 	      base = aarch64_add_offset (mode, NULL, base, INTVAL (offset));
 	      aarch64_emit_move (dest, base);
 	      return;
@@ -742,6 +907,7 @@ aarch64_expand_mov_immediate (rtx dest, rtx imm)
 
         case SYMBOL_SMALL_TPREL:
 	case SYMBOL_SMALL_ABSOLUTE:
+	case SYMBOL_TINY_ABSOLUTE:
 	  aarch64_load_symref_appropriately (dest, imm, sty);
 	  return;
 
@@ -2236,12 +2402,10 @@ aarch64_final_eh_return_addr (void)
 
 /* Output code to build up a constant in a register.  */
 static void
-aarch64_build_constant (FILE *file,
-			int regnum,
-			HOST_WIDE_INT val)
+aarch64_build_constant (int regnum, HOST_WIDE_INT val)
 {
   if (aarch64_bitmask_imm (val, DImode))
-    asm_fprintf (file, "\tmovi\t%r, %wd\n", regnum, val);
+    emit_move_insn (gen_rtx_REG (Pmode, regnum), GEN_INT (val));
   else
     {
       int i;
@@ -2272,12 +2436,14 @@ aarch64_build_constant (FILE *file,
 	 the same.  */
       if (ncount < zcount)
 	{
-	  asm_fprintf (file, "\tmovn\t%r, %wd\n", regnum, (~val) & 0xffff);
+	  emit_move_insn (gen_rtx_REG (Pmode, regnum),
+			  GEN_INT ((~val) & 0xffff));
 	  tval = 0xffff;
 	}
       else
 	{
-	  asm_fprintf (file, "\tmovz\t%r, %wd\n", regnum, val & 0xffff);
+	  emit_move_insn (gen_rtx_REG (Pmode, regnum),
+			  GEN_INT (val & 0xffff));
 	  tval = 0;
 	}
 
@@ -2286,39 +2452,47 @@ aarch64_build_constant (FILE *file,
       for (i = 16; i < 64; i += 16)
 	{
 	  if ((val & 0xffff) != tval)
-	    asm_fprintf (file, "\tmovk\t%r, %wd, lsl %d\n",
-			 regnum, val & 0xffff, i);
+	    emit_insn (gen_insv_immdi (gen_rtx_REG (Pmode, regnum),
+				       GEN_INT (i), GEN_INT (val & 0xffff)));
 	  val >>= 16;
 	}
     }
 }
 
 static void
-aarch64_add_constant (FILE *file, int regnum, int scratchreg,
-			     HOST_WIDE_INT delta)
+aarch64_add_constant (int regnum, int scratchreg, HOST_WIDE_INT delta)
 {
   HOST_WIDE_INT mdelta = delta;
+  rtx this_rtx = gen_rtx_REG (Pmode, regnum);
+  rtx scratch_rtx = gen_rtx_REG (Pmode, scratchreg);
 
   if (mdelta < 0)
     mdelta = -mdelta;
 
   if (mdelta >= 4096 * 4096)
     {
-      aarch64_build_constant (file, scratchreg, delta);
-      asm_fprintf (file, "\tadd\t%r, %r, %r\n", regnum, regnum,
-		   scratchreg);
+      aarch64_build_constant (scratchreg, delta);
+      emit_insn (gen_add3_insn (this_rtx, this_rtx, scratch_rtx));
     }
   else if (mdelta > 0)
     {
-      const char *const mi_op = delta < 0 ? "sub" : "add";
-
       if (mdelta >= 4096)
-	asm_fprintf (file, "\t%s\t%r, %r, %wd, lsl 12\n", mi_op, regnum, regnum,
-		     mdelta / 4096);
-
+	{
+	  emit_insn (gen_rtx_SET (Pmode, scratch_rtx, GEN_INT (mdelta / 4096)));
+	  rtx shift = gen_rtx_ASHIFT (Pmode, scratch_rtx, GEN_INT (12));
+	  if (delta < 0)
+	    emit_insn (gen_rtx_SET (Pmode, this_rtx,
+				    gen_rtx_MINUS (Pmode, this_rtx, shift)));
+	  else
+	    emit_insn (gen_rtx_SET (Pmode, this_rtx,
+				    gen_rtx_PLUS (Pmode, this_rtx, shift)));
+	}
       if (mdelta % 4096 != 0)
-	asm_fprintf (file, "\t%s\t%r, %r, %wd\n", mi_op, regnum, regnum,
-		     mdelta % 4096);
+	{
+	  scratch_rtx = GEN_INT ((delta < 0 ? -1 : 1) * (mdelta % 4096));
+	  emit_insn (gen_rtx_SET (Pmode, this_rtx,
+				  gen_rtx_PLUS (Pmode, this_rtx, scratch_rtx)));
+	}
     }
 }
 
@@ -2341,7 +2515,7 @@ aarch64_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
   emit_note (NOTE_INSN_PROLOGUE_END);
 
   if (vcall_offset == 0)
-    aarch64_add_constant (file, this_regno, IP1_REGNUM, delta);
+    aarch64_add_constant (this_regno, IP1_REGNUM, delta);
   else
     {
       gcc_assert ((vcall_offset & 0x7) == 0);
@@ -2357,7 +2531,7 @@ aarch64_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 	    addr = gen_rtx_PRE_MODIFY (Pmode, this_rtx,
 				       plus_constant (Pmode, this_rtx, delta));
 	  else
-	    aarch64_add_constant (file, this_regno, IP1_REGNUM, delta);
+	    aarch64_add_constant (this_regno, IP1_REGNUM, delta);
 	}
 
       aarch64_emit_move (temp0, gen_rtx_MEM (Pmode, addr));
@@ -2366,7 +2540,7 @@ aarch64_output_mi_thunk (FILE *file, tree thunk ATTRIBUTE_UNUSED,
 	  addr = plus_constant (Pmode, temp0, vcall_offset);
       else
 	{
-	  aarch64_build_constant (file, IP1_REGNUM, vcall_offset);
+	  aarch64_build_constant (IP1_REGNUM, vcall_offset);
 	  addr = gen_rtx_PLUS (Pmode, temp0, temp1);
 	}
 
@@ -2542,12 +2716,14 @@ static bool
 aarch64_cannot_force_const_mem (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 {
   rtx base, offset;
+
   if (GET_CODE (x) == HIGH)
     return true;
 
   split_const (x, &base, &offset);
   if (GET_CODE (base) == SYMBOL_REF || GET_CODE (base) == LABEL_REF)
-    return (aarch64_classify_symbol (base, SYMBOL_CONTEXT_ADR) != SYMBOL_FORCE_TO_MEM);
+    return (aarch64_classify_symbol (base, SYMBOL_CONTEXT_ADR)
+	    != SYMBOL_FORCE_TO_MEM);
 
   return aarch64_tls_referenced_p (x);
 }
@@ -2915,9 +3091,10 @@ aarch64_classify_address (struct aarch64_address_info *info,
     case CONST:
     case SYMBOL_REF:
     case LABEL_REF:
-      /* load literal: pc-relative constant pool entry.  */
+      /* load literal: pc-relative constant pool entry.  Only supported
+         for SI mode or larger.  */
       info->type = ADDRESS_SYMBOLIC;
-      if (outer_code != PARALLEL)
+      if (outer_code != PARALLEL && GET_MODE_SIZE (mode) >= 4)
 	{
 	  rtx sym, addend;
 
@@ -2984,10 +3161,13 @@ aarch64_symbolic_address_p (rtx x)
 
 /* Classify the base of symbolic expression X, given that X appears in
    context CONTEXT.  */
-static enum aarch64_symbol_type
-aarch64_classify_symbolic_expression (rtx x, enum aarch64_symbol_context context)
+
+enum aarch64_symbol_type
+aarch64_classify_symbolic_expression (rtx x,
+				      enum aarch64_symbol_context context)
 {
   rtx offset;
+
   split_const (x, &x, &offset);
   return aarch64_classify_symbol (x, context);
 }
@@ -3017,7 +3197,7 @@ aarch64_legitimate_address_p (enum machine_mode mode, rtx x,
 
 /* Return TRUE if rtx X is immediate constant 0.0 */
 bool
-aarch64_const_double_zero_rtx_p (rtx x)
+aarch64_float_const_zero_rtx_p (rtx x)
 {
   REAL_VALUE_TYPE r;
 
@@ -3028,6 +3208,16 @@ aarch64_const_double_zero_rtx_p (rtx x)
   if (REAL_VALUE_MINUS_ZERO (r))
     return !HONOR_SIGNED_ZEROS (GET_MODE (x));
   return REAL_VALUES_EQUAL (r, dconst0);
+}
+
+/* Return the fixed registers used for condition codes.  */
+
+static bool
+aarch64_fixed_condition_code_regs (unsigned int *p1, unsigned int *p2)
+{
+  *p1 = CC_REGNUM;
+  *p2 = INVALID_REGNUM;
+  return true;
 }
 
 enum machine_mode
@@ -3065,7 +3255,8 @@ aarch64_select_cc_mode (RTX_CODE code, rtx x, rtx y)
   if ((GET_MODE (x) == SImode || GET_MODE (x) == DImode)
       && y == const0_rtx
       && (code == EQ || code == NE || code == LT || code == GE)
-      && (GET_CODE (x) == PLUS || GET_CODE (x) == MINUS))
+      && (GET_CODE (x) == PLUS || GET_CODE (x) == MINUS || GET_CODE (x) == AND
+	  || GET_CODE (x) == NEG))
     return CC_NZmode;
 
   /* A compare with a shifted operand.  Because of canonicalization,
@@ -3257,27 +3448,7 @@ aarch64_print_operand (FILE *f, rtx x, char code)
 	  return;
 	}
 
-      asm_fprintf (f, "%r", REGNO (x) + 1);
-      break;
-
-    case 'Q':
-      /* Print the least significant register of a pair (TImode) of regs.  */
-      if (GET_CODE (x) != REG || !GP_REGNUM_P (REGNO (x) + 1))
-	{
-	  output_operand_lossage ("invalid operand for '%%%c'", code);
-	  return;
-	}
-      asm_fprintf (f, "%r", REGNO (x) + (WORDS_BIG_ENDIAN ? 1 : 0));
-      break;
-
-    case 'R':
-      /* Print the most significant register of a pair (TImode) of regs.  */
-      if (GET_CODE (x) != REG || !GP_REGNUM_P (REGNO (x) + 1))
-	{
-	  output_operand_lossage ("invalid operand for '%%%c'", code);
-	  return;
-	}
-      asm_fprintf (f, "%r", REGNO (x) + (WORDS_BIG_ENDIAN ? 0 : 1));
+      asm_fprintf (f, "%s", reg_names [REGNO (x) + 1]);
       break;
 
     case 'm':
@@ -3327,7 +3498,7 @@ aarch64_print_operand (FILE *f, rtx x, char code)
 	  output_operand_lossage ("incompatible floating point / vector register operand for '%%%c'", code);
 	  return;
 	}
-      asm_fprintf (f, "%s%c%d", REGISTER_PREFIX, code, REGNO (x) - V0_REGNUM);
+      asm_fprintf (f, "%c%d", code, REGNO (x) - V0_REGNUM);
       break;
 
     case 'S':
@@ -3340,30 +3511,39 @@ aarch64_print_operand (FILE *f, rtx x, char code)
 	  output_operand_lossage ("incompatible floating point / vector register operand for '%%%c'", code);
 	  return;
 	}
-      asm_fprintf (f, "%sv%d", REGISTER_PREFIX,
-			       REGNO (x) - V0_REGNUM + (code - 'S'));
+      asm_fprintf (f, "v%d", REGNO (x) - V0_REGNUM + (code - 'S'));
+      break;
+
+    case 'X':
+      /* Print bottom 16 bits of integer constant in hex.  */
+      if (GET_CODE (x) != CONST_INT)
+	{
+	  output_operand_lossage ("invalid operand for '%%%c'", code);
+	  return;
+	}
+      asm_fprintf (f, "0x%wx", UINTVAL (x) & 0xffff);
       break;
 
     case 'w':
     case 'x':
       /* Print a general register name or the zero register (32-bit or
          64-bit).  */
-      if (x == const0_rtx)
+      if (x == const0_rtx
+	  || (CONST_DOUBLE_P (x) && aarch64_float_const_zero_rtx_p (x)))
 	{
-	  asm_fprintf (f, "%s%czr", REGISTER_PREFIX, code);
+	  asm_fprintf (f, "%czr", code);
 	  break;
 	}
 
       if (REG_P (x) && GP_REGNUM_P (REGNO (x)))
 	{
-	  asm_fprintf (f, "%s%c%d", REGISTER_PREFIX, code,
-		       REGNO (x) - R0_REGNUM);
+	  asm_fprintf (f, "%c%d", code, REGNO (x) - R0_REGNUM);
 	  break;
 	}
 
       if (REG_P (x) && REGNO (x) == SP_REGNUM)
 	{
-	  asm_fprintf (f, "%s%ssp", REGISTER_PREFIX, code == 'w' ? "w" : "");
+	  asm_fprintf (f, "%ssp", code == 'w' ? "w" : "");
 	  break;
 	}
 
@@ -3381,7 +3561,7 @@ aarch64_print_operand (FILE *f, rtx x, char code)
       switch (GET_CODE (x))
 	{
 	case REG:
-	  asm_fprintf (f, "%r", REGNO (x));
+	  asm_fprintf (f, "%s", reg_names [REGNO (x)]);
 	  break;
 
 	case MEM:
@@ -3399,11 +3579,46 @@ aarch64_print_operand (FILE *f, rtx x, char code)
 	  break;
 
 	case CONST_VECTOR:
-	  gcc_assert (aarch64_const_vec_all_same_int_p (x, HOST_WIDE_INT_MIN,
-							HOST_WIDE_INT_MAX));
-	  asm_fprintf (f, "%wd", INTVAL (CONST_VECTOR_ELT (x, 0)));
+	  if (GET_MODE_CLASS (GET_MODE (x)) == MODE_VECTOR_INT)
+	    {
+	      gcc_assert (aarch64_const_vec_all_same_int_p (x,
+							    HOST_WIDE_INT_MIN,
+							    HOST_WIDE_INT_MAX));
+	      asm_fprintf (f, "%wd", INTVAL (CONST_VECTOR_ELT (x, 0)));
+	    }
+	  else if (aarch64_simd_imm_zero_p (x, GET_MODE (x)))
+	    {
+	      fputc ('0', f);
+	    }
+	  else
+	    gcc_unreachable ();
 	  break;
 
+	case CONST_DOUBLE:
+	  /* CONST_DOUBLE can represent a double-width integer.
+	     In this case, the mode of x is VOIDmode.  */
+	  if (GET_MODE (x) == VOIDmode)
+	    ; /* Do Nothing.  */
+	  else if (aarch64_float_const_zero_rtx_p (x))
+	    {
+	      fputc ('0', f);
+	      break;
+	    }
+	  else if (aarch64_float_const_representable_p (x))
+	    {
+#define buf_size 20
+	      char float_buf[buf_size] = {'\0'};
+	      REAL_VALUE_TYPE r;
+	      REAL_VALUE_FROM_CONST_DOUBLE (r, x);
+	      real_to_decimal_for_mode (float_buf, &r,
+					buf_size, buf_size,
+					1, GET_MODE (x));
+	      asm_fprintf (asm_out_file, "%s", float_buf);
+	      break;
+#undef buf_size
+	    }
+	  output_operand_lossage ("invalid constant");
+	  return;
 	default:
 	  output_operand_lossage ("invalid operand");
 	  return;
@@ -3436,6 +3651,10 @@ aarch64_print_operand (FILE *f, rtx x, char code)
 	  asm_fprintf (asm_out_file, ":tprel:");
 	  break;
 
+	case SYMBOL_TINY_GOT:
+	  gcc_unreachable ();
+	  break;
+
 	default:
 	  break;
 	}
@@ -3463,6 +3682,10 @@ aarch64_print_operand (FILE *f, rtx x, char code)
 
 	case SYMBOL_SMALL_TPREL:
 	  asm_fprintf (asm_out_file, ":tprel_lo12_nc:");
+	  break;
+
+	case SYMBOL_TINY_GOT:
+	  asm_fprintf (asm_out_file, ":got:");
 	  break;
 
 	default:
@@ -3501,36 +3724,36 @@ aarch64_print_operand_address (FILE *f, rtx x)
       {
       case ADDRESS_REG_IMM:
 	if (addr.offset == const0_rtx)
-	  asm_fprintf (f, "[%r]", REGNO (addr.base));
+	  asm_fprintf (f, "[%s]", reg_names [REGNO (addr.base)]);
 	else
-	  asm_fprintf (f, "[%r,%wd]", REGNO (addr.base),
+	  asm_fprintf (f, "[%s,%wd]", reg_names [REGNO (addr.base)],
 		       INTVAL (addr.offset));
 	return;
 
       case ADDRESS_REG_REG:
 	if (addr.shift == 0)
-	  asm_fprintf (f, "[%r,%r]", REGNO (addr.base),
-		       REGNO (addr.offset));
+	  asm_fprintf (f, "[%s,%s]", reg_names [REGNO (addr.base)],
+		       reg_names [REGNO (addr.offset)]);
 	else
-	  asm_fprintf (f, "[%r,%r,lsl %u]", REGNO (addr.base),
-		       REGNO (addr.offset), addr.shift);
+	  asm_fprintf (f, "[%s,%s,lsl %u]", reg_names [REGNO (addr.base)],
+		       reg_names [REGNO (addr.offset)], addr.shift);
 	return;
 
       case ADDRESS_REG_UXTW:
 	if (addr.shift == 0)
-	  asm_fprintf (f, "[%r,w%d,uxtw]", REGNO (addr.base),
+	  asm_fprintf (f, "[%s,w%d,uxtw]", reg_names [REGNO (addr.base)],
 		       REGNO (addr.offset) - R0_REGNUM);
 	else
-	  asm_fprintf (f, "[%r,w%d,uxtw %u]", REGNO (addr.base),
+	  asm_fprintf (f, "[%s,w%d,uxtw %u]", reg_names [REGNO (addr.base)],
 		       REGNO (addr.offset) - R0_REGNUM, addr.shift);
 	return;
 
       case ADDRESS_REG_SXTW:
 	if (addr.shift == 0)
-	  asm_fprintf (f, "[%r,w%d,sxtw]", REGNO (addr.base),
+	  asm_fprintf (f, "[%s,w%d,sxtw]", reg_names [REGNO (addr.base)],
 		       REGNO (addr.offset) - R0_REGNUM);
 	else
-	  asm_fprintf (f, "[%r,w%d,sxtw %u]", REGNO (addr.base),
+	  asm_fprintf (f, "[%s,w%d,sxtw %u]", reg_names [REGNO (addr.base)],
 		       REGNO (addr.offset) - R0_REGNUM, addr.shift);
 	return;
 
@@ -3538,27 +3761,27 @@ aarch64_print_operand_address (FILE *f, rtx x)
 	switch (GET_CODE (x))
 	  {
 	  case PRE_INC:
-	    asm_fprintf (f, "[%r,%d]!", REGNO (addr.base),
+	    asm_fprintf (f, "[%s,%d]!", reg_names [REGNO (addr.base)], 
 			 GET_MODE_SIZE (aarch64_memory_reference_mode));
 	    return;
 	  case POST_INC:
-	    asm_fprintf (f, "[%r],%d", REGNO (addr.base),
+	    asm_fprintf (f, "[%s],%d", reg_names [REGNO (addr.base)],
 			 GET_MODE_SIZE (aarch64_memory_reference_mode));
 	    return;
 	  case PRE_DEC:
-	    asm_fprintf (f, "[%r,-%d]!", REGNO (addr.base),
+	    asm_fprintf (f, "[%s,-%d]!", reg_names [REGNO (addr.base)],
 			 GET_MODE_SIZE (aarch64_memory_reference_mode));
 	    return;
 	  case POST_DEC:
-	    asm_fprintf (f, "[%r],-%d", REGNO (addr.base),
+	    asm_fprintf (f, "[%s],-%d", reg_names [REGNO (addr.base)],
 			 GET_MODE_SIZE (aarch64_memory_reference_mode));
 	    return;
 	  case PRE_MODIFY:
-	    asm_fprintf (f, "[%r,%wd]!", REGNO (addr.base),
+	    asm_fprintf (f, "[%s,%wd]!", reg_names [REGNO (addr.base)],
 			 INTVAL (addr.offset));
 	    return;
 	  case POST_MODIFY:
-	    asm_fprintf (f, "[%r],%wd", REGNO (addr.base),
+	    asm_fprintf (f, "[%s],%wd", reg_names [REGNO (addr.base)],
 			 INTVAL (addr.offset));
 	    return;
 	  default:
@@ -3567,7 +3790,7 @@ aarch64_print_operand_address (FILE *f, rtx x)
 	break;
 
       case ADDRESS_LO_SUM:
-	asm_fprintf (f, "[%r,#:lo12:", REGNO (addr.base));
+	asm_fprintf (f, "[%s,#:lo12:", reg_names [REGNO (addr.base)]);
 	output_addr_const (f, addr.offset);
 	asm_fprintf (f, "]");
 	return;
@@ -3813,14 +4036,21 @@ aarch64_can_eliminate (const int from, const int to)
     }
   else
     {
-      /* If we decided that we didn't need a frame pointer but then used
-	 LR in the function, then we do need a frame pointer after all, so
-	 prevent this elimination to ensure a frame pointer is used.  */
+      /* If we decided that we didn't need a leaf frame pointer but then used
+	 LR in the function, then we'll want a frame pointer after all, so
+	 prevent this elimination to ensure a frame pointer is used.
 
+	 NOTE: the original value of flag_omit_frame_pointer gets trashed
+	 IFF flag_omit_leaf_frame_pointer is true, so we check the value
+	 of faked_omit_frame_pointer here (which is true when we always
+	 wish to keep non-leaf frame pointers but only wish to keep leaf frame
+	 pointers when LR is clobbered).  */
       if (from == FRAME_POINTER_REGNUM && to == STACK_POINTER_REGNUM
-	  && df_regs_ever_live_p (LR_REGNUM))
+	  && df_regs_ever_live_p (LR_REGNUM)
+	  && faked_omit_frame_pointer)
 	return false;
     }
+
   return true;
 }
 
@@ -3878,9 +4108,9 @@ aarch64_return_addr (int count, rtx frame ATTRIBUTE_UNUSED)
 static void
 aarch64_asm_trampoline_template (FILE *f)
 {
-  asm_fprintf (f, "\tldr\t%r, .+16\n", IP1_REGNUM);
-  asm_fprintf (f, "\tldr\t%r, .+20\n", STATIC_CHAIN_REGNUM);
-  asm_fprintf (f, "\tbr\t%r\n", IP1_REGNUM);
+  asm_fprintf (f, "\tldr\t%s, .+16\n", reg_names [IP1_REGNUM]);
+  asm_fprintf (f, "\tldr\t%s, .+20\n", reg_names [STATIC_CHAIN_REGNUM]);
+  asm_fprintf (f, "\tbr\t%s\n", reg_names [IP1_REGNUM]);
   assemble_aligned_integer (4, const0_rtx);
   assemble_aligned_integer (UNITS_PER_WORD, const0_rtx);
   assemble_aligned_integer (UNITS_PER_WORD, const0_rtx);
@@ -3997,7 +4227,7 @@ aarch64_output_casesi (rtx *operands)
 {
   char buf[100];
   char label[100];
-  rtx diff_vec = PATTERN (next_real_insn (operands[2]));
+  rtx diff_vec = PATTERN (next_active_insn (operands[2]));
   int index;
   static const char *const patterns[4][2] =
   {
@@ -4526,6 +4756,101 @@ aarch64_memory_move_cost (enum machine_mode mode ATTRIBUTE_UNUSED,
   return aarch64_tune_params->memmov_cost;
 }
 
+/* Vectorizer cost model target hooks.  */
+
+/* Implement targetm.vectorize.builtin_vectorization_cost.  */
+static int
+aarch64_builtin_vectorization_cost (enum vect_cost_for_stmt type_of_cost,
+				    tree vectype,
+				    int misalign ATTRIBUTE_UNUSED)
+{
+  unsigned elements;
+
+  switch (type_of_cost)
+    {
+      case scalar_stmt:
+	return aarch64_tune_params->vec_costs->scalar_stmt_cost;
+
+      case scalar_load:
+	return aarch64_tune_params->vec_costs->scalar_load_cost;
+
+      case scalar_store:
+	return aarch64_tune_params->vec_costs->scalar_store_cost;
+
+      case vector_stmt:
+	return aarch64_tune_params->vec_costs->vec_stmt_cost;
+
+      case vector_load:
+	return aarch64_tune_params->vec_costs->vec_align_load_cost;
+
+      case vector_store:
+	return aarch64_tune_params->vec_costs->vec_store_cost;
+
+      case vec_to_scalar:
+	return aarch64_tune_params->vec_costs->vec_to_scalar_cost;
+
+      case scalar_to_vec:
+	return aarch64_tune_params->vec_costs->scalar_to_vec_cost;
+
+      case unaligned_load:
+	return aarch64_tune_params->vec_costs->vec_unalign_load_cost;
+
+      case unaligned_store:
+	return aarch64_tune_params->vec_costs->vec_unalign_store_cost;
+
+      case cond_branch_taken:
+	return aarch64_tune_params->vec_costs->cond_taken_branch_cost;
+
+      case cond_branch_not_taken:
+	return aarch64_tune_params->vec_costs->cond_not_taken_branch_cost;
+
+      case vec_perm:
+      case vec_promote_demote:
+	return aarch64_tune_params->vec_costs->vec_stmt_cost;
+
+      case vec_construct:
+        elements = TYPE_VECTOR_SUBPARTS (vectype);
+	return elements / 2 + 1;
+
+      default:
+	gcc_unreachable ();
+    }
+}
+
+/* Implement targetm.vectorize.add_stmt_cost.  */
+static unsigned
+aarch64_add_stmt_cost (void *data, int count, enum vect_cost_for_stmt kind,
+		       struct _stmt_vec_info *stmt_info, int misalign,
+		       enum vect_cost_model_location where)
+{
+  unsigned *cost = (unsigned *) data;
+  unsigned retval = 0;
+
+  if (flag_vect_cost_model)
+    {
+      tree vectype = stmt_info ? stmt_vectype (stmt_info) : NULL_TREE;
+      int stmt_cost =
+	    aarch64_builtin_vectorization_cost (kind, vectype, misalign);
+
+      /* Statements in an inner loop relative to the loop being
+	 vectorized are weighted more heavily.  The value here is
+	 a function (linear for now) of the loop nest level.  */
+      if (where == vect_body && stmt_info && stmt_in_inner_loop_p (stmt_info))
+	{
+	  loop_vec_info loop_info = STMT_VINFO_LOOP_VINFO (stmt_info);
+	  struct loop *loop =  LOOP_VINFO_LOOP (loop_info);
+	  unsigned nest_level = loop_depth (loop);
+
+	  count *= nest_level;
+	}
+
+      retval = (unsigned) (count * stmt_cost);
+      cost[where] += retval;
+    }
+
+  return retval;
+}
+
 static void initialize_aarch64_code_model (void);
 
 /* Parse the architecture extension string.  */
@@ -4881,6 +5206,7 @@ aarch64_classify_tls_symbol (rtx x)
 
 /* Return the method that should be used to access SYMBOL_REF or
    LABEL_REF X in context CONTEXT.  */
+
 enum aarch64_symbol_type
 aarch64_classify_symbol (rtx x,
 			 enum aarch64_symbol_context context ATTRIBUTE_UNUSED)
@@ -4894,6 +5220,8 @@ aarch64_classify_symbol (rtx x,
 
 	case AARCH64_CMODEL_TINY_PIC:
 	case AARCH64_CMODEL_TINY:
+	  return SYMBOL_TINY_ABSOLUTE;
+
 	case AARCH64_CMODEL_SMALL_PIC:
 	case AARCH64_CMODEL_SMALL:
 	  return SYMBOL_SMALL_ABSOLUTE;
@@ -4903,68 +5231,44 @@ aarch64_classify_symbol (rtx x,
 	}
     }
 
-  gcc_assert (GET_CODE (x) == SYMBOL_REF);
-
-  switch (aarch64_cmodel)
+  if (GET_CODE (x) == SYMBOL_REF)
     {
-    case AARCH64_CMODEL_LARGE:
-      return SYMBOL_FORCE_TO_MEM;
-
-    case AARCH64_CMODEL_TINY:
-    case AARCH64_CMODEL_SMALL:
-
-      /* This is needed to get DFmode, TImode constants to be loaded off
-         the constant pool.  Is it necessary to dump TImode values into
-         the constant pool.  We don't handle TImode constant loads properly
-         yet and hence need to use the constant pool.  */
-      if (CONSTANT_POOL_ADDRESS_P (x))
+      if (aarch64_cmodel == AARCH64_CMODEL_LARGE
+	  || CONSTANT_POOL_ADDRESS_P (x))
 	return SYMBOL_FORCE_TO_MEM;
 
       if (aarch64_tls_symbol_p (x))
 	return aarch64_classify_tls_symbol (x);
 
-      if (SYMBOL_REF_WEAK (x))
-	return SYMBOL_FORCE_TO_MEM;
+      switch (aarch64_cmodel)
+	{
+	case AARCH64_CMODEL_TINY:
+	  if (SYMBOL_REF_WEAK (x))
+	    return SYMBOL_FORCE_TO_MEM;
+	  return SYMBOL_TINY_ABSOLUTE;
 
-      return SYMBOL_SMALL_ABSOLUTE;
+	case AARCH64_CMODEL_SMALL:
+	  if (SYMBOL_REF_WEAK (x))
+	    return SYMBOL_FORCE_TO_MEM;
+	  return SYMBOL_SMALL_ABSOLUTE;
 
-    case AARCH64_CMODEL_TINY_PIC:
-    case AARCH64_CMODEL_SMALL_PIC:
+	case AARCH64_CMODEL_TINY_PIC:
+	  if (!aarch64_symbol_binds_local_p (x))
+	    return SYMBOL_TINY_GOT;
+	  return SYMBOL_TINY_ABSOLUTE;
 
-      if (CONSTANT_POOL_ADDRESS_P (x))
-	return SYMBOL_FORCE_TO_MEM;
+	case AARCH64_CMODEL_SMALL_PIC:
+	  if (!aarch64_symbol_binds_local_p (x))
+	    return SYMBOL_SMALL_GOT;
+	  return SYMBOL_SMALL_ABSOLUTE;
 
-      if (aarch64_tls_symbol_p (x))
-	return aarch64_classify_tls_symbol (x);
-
-      if (!aarch64_symbol_binds_local_p (x))
-	return SYMBOL_SMALL_GOT;
-
-      return SYMBOL_SMALL_ABSOLUTE;
-
-    default:
-      gcc_unreachable ();
+	default:
+	  gcc_unreachable ();
+	}
     }
+
   /* By default push everything into the constant pool.  */
   return SYMBOL_FORCE_TO_MEM;
-}
-
-/* Return true if X is a symbolic constant that can be used in context
-   CONTEXT.  If it is, store the type of the symbol in *SYMBOL_TYPE.  */
-
-bool
-aarch64_symbolic_constant_p (rtx x, enum aarch64_symbol_context context,
-			     enum aarch64_symbol_type *symbol_type)
-{
-  rtx offset;
-  split_const (x, &x, &offset);
-  if (GET_CODE (x) == SYMBOL_REF || GET_CODE (x) == LABEL_REF)
-    *symbol_type = aarch64_classify_symbol (x, context);
-  else
-    return false;
-
-  /* No checking of offset at this point.  */
-  return true;
 }
 
 bool
@@ -4985,6 +5289,27 @@ aarch64_legitimate_pic_operand_p (rtx x)
   return true;
 }
 
+/* Return true if X holds either a quarter-precision or
+     floating-point +0.0 constant.  */
+static bool
+aarch64_valid_floating_const (enum machine_mode mode, rtx x)
+{
+  if (!CONST_DOUBLE_P (x))
+    return false;
+
+  /* TODO: We could handle moving 0.0 to a TFmode register,
+     but first we would like to refactor the movtf_aarch64
+     to be more amicable to split moves properly and
+     correctly gate on TARGET_SIMD.  For now - reject all
+     constants which are not to SFmode or DFmode registers.  */
+  if (!(mode == SFmode || mode == DFmode))
+    return false;
+
+  if (aarch64_float_const_zero_rtx_p (x))
+    return true;
+  return aarch64_float_const_representable_p (x);
+}
+
 static bool
 aarch64_legitimate_constant_p (enum machine_mode mode, rtx x)
 {
@@ -4996,10 +5321,9 @@ aarch64_legitimate_constant_p (enum machine_mode mode, rtx x)
   /* This could probably go away because
      we now decompose CONST_INTs according to expand_mov_immediate.  */
   if ((GET_CODE (x) == CONST_VECTOR
-       && aarch64_simd_valid_immediate (x, mode, false,
-					NULL, NULL, NULL, NULL, NULL) != -1)
-      || CONST_INT_P (x))
-    return !targetm.cannot_force_const_mem (mode, x);
+       && aarch64_simd_valid_immediate (x, mode, false, NULL))
+      || CONST_INT_P (x) || aarch64_valid_floating_const (mode, x))
+	return !targetm.cannot_force_const_mem (mode, x);
 
   if (GET_CODE (x) == HIGH
       && aarch64_valid_symref (XEXP (x, 0), GET_MODE (XEXP (x, 0))))
@@ -5053,6 +5377,7 @@ aarch64_build_builtin_va_list (void)
 			     va_list_type);
   DECL_ARTIFICIAL (va_list_name) = 1;
   TYPE_NAME (va_list_type) = va_list_name;
+  TYPE_STUB_DECL (va_list_type) = va_list_name;
 
   /* Create the fields.  */
   f_stack = build_decl (BUILTINS_LOCATION,
@@ -5827,34 +6152,145 @@ aarch64_vector_mode_supported_p (enum machine_mode mode)
   return false;
 }
 
-/* Return quad mode as the preferred SIMD mode.  */
+/* Return appropriate SIMD container
+   for MODE within a vector of WIDTH bits.  */
 static enum machine_mode
-aarch64_preferred_simd_mode (enum machine_mode mode)
+aarch64_simd_container_mode (enum machine_mode mode, unsigned width)
 {
+  gcc_assert (width == 64 || width == 128);
   if (TARGET_SIMD)
-    switch (mode)
-      {
-      case DFmode:
-        return V2DFmode;
-      case SFmode:
-        return V4SFmode;
-      case SImode:
-        return V4SImode;
-      case HImode:
-        return V8HImode;
-      case QImode:
-        return V16QImode;
-      case DImode:
-          return V2DImode;
-        break;
-
-      default:;
-      }
+    {
+      if (width == 128)
+	switch (mode)
+	  {
+	  case DFmode:
+	    return V2DFmode;
+	  case SFmode:
+	    return V4SFmode;
+	  case SImode:
+	    return V4SImode;
+	  case HImode:
+	    return V8HImode;
+	  case QImode:
+	    return V16QImode;
+	  case DImode:
+	    return V2DImode;
+	  default:
+	    break;
+	  }
+      else
+	switch (mode)
+	  {
+	  case SFmode:
+	    return V2SFmode;
+	  case SImode:
+	    return V2SImode;
+	  case HImode:
+	    return V4HImode;
+	  case QImode:
+	    return V8QImode;
+	  default:
+	    break;
+	  }
+    }
   return word_mode;
 }
 
+/* Return 128-bit container as the preferred SIMD mode for MODE.  */
+static enum machine_mode
+aarch64_preferred_simd_mode (enum machine_mode mode)
+{
+  return aarch64_simd_container_mode (mode, 128);
+}
+
+/* Return the bitmask of possible vector sizes for the vectorizer
+   to iterate over.  */
+static unsigned int
+aarch64_autovectorize_vector_sizes (void)
+{
+  return (16 | 8);
+}
+
+/* A table to help perform AArch64-specific name mangling for AdvSIMD
+   vector types in order to conform to the AAPCS64 (see "Procedure
+   Call Standard for the ARM 64-bit Architecture", Appendix A).  To
+   qualify for emission with the mangled names defined in that document,
+   a vector type must not only be of the correct mode but also be
+   composed of AdvSIMD vector element types (e.g.
+   _builtin_aarch64_simd_qi); these types are registered by
+   aarch64_init_simd_builtins ().  In other words, vector types defined
+   in other ways e.g. via vector_size attribute will get default
+   mangled names.  */
+typedef struct
+{
+  enum machine_mode mode;
+  const char *element_type_name;
+  const char *mangled_name;
+} aarch64_simd_mangle_map_entry;
+
+static aarch64_simd_mangle_map_entry aarch64_simd_mangle_map[] = {
+  /* 64-bit containerized types.  */
+  { V8QImode,  "__builtin_aarch64_simd_qi",     "10__Int8x8_t" },
+  { V8QImode,  "__builtin_aarch64_simd_uqi",    "11__Uint8x8_t" },
+  { V4HImode,  "__builtin_aarch64_simd_hi",     "11__Int16x4_t" },
+  { V4HImode,  "__builtin_aarch64_simd_uhi",    "12__Uint16x4_t" },
+  { V2SImode,  "__builtin_aarch64_simd_si",     "11__Int32x2_t" },
+  { V2SImode,  "__builtin_aarch64_simd_usi",    "12__Uint32x2_t" },
+  { V2SFmode,  "__builtin_aarch64_simd_sf",     "13__Float32x2_t" },
+  { V8QImode,  "__builtin_aarch64_simd_poly8",  "11__Poly8x8_t" },
+  { V4HImode,  "__builtin_aarch64_simd_poly16", "12__Poly16x4_t" },
+  /* 128-bit containerized types.  */
+  { V16QImode, "__builtin_aarch64_simd_qi",     "11__Int8x16_t" },
+  { V16QImode, "__builtin_aarch64_simd_uqi",    "12__Uint8x16_t" },
+  { V8HImode,  "__builtin_aarch64_simd_hi",     "11__Int16x8_t" },
+  { V8HImode,  "__builtin_aarch64_simd_uhi",    "12__Uint16x8_t" },
+  { V4SImode,  "__builtin_aarch64_simd_si",     "11__Int32x4_t" },
+  { V4SImode,  "__builtin_aarch64_simd_usi",    "12__Uint32x4_t" },
+  { V2DImode,  "__builtin_aarch64_simd_di",     "11__Int64x2_t" },
+  { V2DImode,  "__builtin_aarch64_simd_udi",    "12__Uint64x2_t" },
+  { V4SFmode,  "__builtin_aarch64_simd_sf",     "13__Float32x4_t" },
+  { V2DFmode,  "__builtin_aarch64_simd_df",     "13__Float64x2_t" },
+  { V16QImode, "__builtin_aarch64_simd_poly8",  "12__Poly8x16_t" },
+  { V8HImode,  "__builtin_aarch64_simd_poly16", "12__Poly16x8_t" },
+  { VOIDmode, NULL, NULL }
+};
+
+/* Implement TARGET_MANGLE_TYPE.  */
+
+static const char *
+aarch64_mangle_type (const_tree type)
+{
+  /* The AArch64 ABI documents say that "__va_list" has to be
+     managled as if it is in the "std" namespace.  */
+  if (lang_hooks.types_compatible_p (CONST_CAST_TREE (type), va_list_type))
+    return "St9__va_list";
+
+  /* Check the mode of the vector type, and the name of the vector
+     element type, against the table.  */
+  if (TREE_CODE (type) == VECTOR_TYPE)
+    {
+      aarch64_simd_mangle_map_entry *pos = aarch64_simd_mangle_map;
+
+      while (pos->mode != VOIDmode)
+	{
+	  tree elt_type = TREE_TYPE (type);
+
+	  if (pos->mode == TYPE_MODE (type)
+	      && TREE_CODE (TYPE_NAME (elt_type)) == TYPE_DECL
+	      && !strcmp (IDENTIFIER_POINTER (DECL_NAME (TYPE_NAME (elt_type))),
+			  pos->element_type_name))
+	    return pos->mangled_name;
+
+	  pos++;
+	}
+    }
+
+  /* Use the default mangling.  */
+  return NULL;
+}
+
 /* Return the equivalent letter for size.  */
-static unsigned char
+static char
 sizetochar (int size)
 {
   switch (size)
@@ -5867,11 +6303,44 @@ sizetochar (int size)
     }
 }
 
-static int
-aarch64_simd_valid_immediate (rtx op, enum machine_mode mode, int inverse,
-			      rtx *modconst, int *elementwidth,
-			      unsigned char *elementchar,
-			      int *mvn, int *shift)
+/* Return true iff x is a uniform vector of floating-point
+   constants, and the constant can be represented in
+   quarter-precision form.  Note, as aarch64_float_const_representable
+   rejects both +0.0 and -0.0, we will also reject +0.0 and -0.0.  */
+static bool
+aarch64_vect_float_const_representable_p (rtx x)
+{
+  int i = 0;
+  REAL_VALUE_TYPE r0, ri;
+  rtx x0, xi;
+
+  if (GET_MODE_CLASS (GET_MODE (x)) != MODE_VECTOR_FLOAT)
+    return false;
+
+  x0 = CONST_VECTOR_ELT (x, 0);
+  if (!CONST_DOUBLE_P (x0))
+    return false;
+
+  REAL_VALUE_FROM_CONST_DOUBLE (r0, x0);
+
+  for (i = 1; i < CONST_VECTOR_NUNITS (x); i++)
+    {
+      xi = CONST_VECTOR_ELT (x, i);
+      if (!CONST_DOUBLE_P (xi))
+	return false;
+
+      REAL_VALUE_FROM_CONST_DOUBLE (ri, xi);
+      if (!REAL_VALUES_EQUAL (r0, ri))
+	return false;
+    }
+
+  return aarch64_float_const_representable_p (x0);
+}
+
+/* Return true for valid and false for invalid.  */
+bool
+aarch64_simd_valid_immediate (rtx op, enum machine_mode mode, bool inverse,
+			      struct simd_immediate_info *info)
 {
 #define CHECK(STRIDE, ELSIZE, CLASS, TEST, SHIFT, NEG)	\
   matches = 1;						\
@@ -5882,7 +6351,6 @@ aarch64_simd_valid_immediate (rtx op, enum machine_mode mode, int inverse,
     {							\
       immtype = (CLASS);				\
       elsize = (ELSIZE);				\
-      elchar = sizetochar (elsize);			\
       eshift = (SHIFT);					\
       emvn = (NEG);					\
       break;						\
@@ -5891,14 +6359,26 @@ aarch64_simd_valid_immediate (rtx op, enum machine_mode mode, int inverse,
   unsigned int i, elsize = 0, idx = 0, n_elts = CONST_VECTOR_NUNITS (op);
   unsigned int innersize = GET_MODE_SIZE (GET_MODE_INNER (mode));
   unsigned char bytes[16];
-  unsigned char elchar = 0;
   int immtype = -1, matches;
   unsigned int invmask = inverse ? 0xff : 0;
   int eshift, emvn;
 
-  /* TODO: Vectors of float constants.  */
   if (GET_MODE_CLASS (mode) == MODE_VECTOR_FLOAT)
-    return -1;
+    {
+      if (! (aarch64_simd_imm_zero_p (op, mode)
+	     || aarch64_vect_float_const_representable_p (op)))
+	return false;
+
+      if (info)
+	{
+	  info->value = CONST_VECTOR_ELT (op, 0);
+	  info->element_width = GET_MODE_BITSIZE (GET_MODE (info->value));
+	  info->mvn = false;
+	  info->shift = 0;
+	}
+
+      return true;
+    }
 
   /* Splat vector constant out into a byte vector.  */
   for (i = 0; i < n_elts; i++)
@@ -5971,16 +6451,16 @@ aarch64_simd_valid_immediate (rtx op, enum machine_mode mode, int inverse,
       CHECK (2, 16, 11, bytes[i] == 0xff && bytes[i + 1] == bytes[1], 8, 1);
 
       CHECK (4, 32, 12, bytes[i] == 0xff && bytes[i + 1] == bytes[1]
-	     && bytes[i + 2] == 0 && bytes[i + 3] == 0, 0, 0);
+	     && bytes[i + 2] == 0 && bytes[i + 3] == 0, 8, 0);
 
       CHECK (4, 32, 13, bytes[i] == 0 && bytes[i + 1] == bytes[1]
-	     && bytes[i + 2] == 0xff && bytes[i + 3] == 0xff, 0, 1);
+	     && bytes[i + 2] == 0xff && bytes[i + 3] == 0xff, 8, 1);
 
       CHECK (4, 32, 14, bytes[i] == 0xff && bytes[i + 1] == 0xff
-	     && bytes[i + 2] == bytes[2] && bytes[i + 3] == 0, 0, 0);
+	     && bytes[i + 2] == bytes[2] && bytes[i + 3] == 0, 16, 0);
 
       CHECK (4, 32, 15, bytes[i] == 0 && bytes[i + 1] == 0
-	     && bytes[i + 2] == bytes[2] && bytes[i + 3] == 0xff, 0, 1);
+	     && bytes[i + 2] == bytes[2] && bytes[i + 3] == 0xff, 16, 1);
 
       CHECK (1, 8, 16, bytes[i] == bytes[0], 0, 0);
 
@@ -5989,30 +6469,19 @@ aarch64_simd_valid_immediate (rtx op, enum machine_mode mode, int inverse,
     }
   while (0);
 
-  /* TODO: Currently the assembler cannot handle types 12 to 15.
-     And there is no way to specify cmode through the compiler.
-     Disable them till there is support in the assembler.  */
-  if (immtype == -1
-      || (immtype >= 12 && immtype <= 15)
-      || immtype == 18)
-    return -1;
+  if (immtype == -1)
+    return false;
 
-
-  if (elementwidth)
-    *elementwidth = elsize;
-
-  if (elementchar)
-    *elementchar = elchar;
-
-  if (mvn)
-    *mvn = emvn;
-
-  if (shift)
-    *shift = eshift;
-
-  if (modconst)
+  if (info)
     {
+      info->element_width = elsize;
+      info->mvn = emvn != 0;
+      info->shift = eshift;
+
       unsigned HOST_WIDE_INT imm = 0;
+
+      if (immtype >= 12 && immtype <= 15)
+	info->msl = true;
 
       /* Un-invert bytes of recognized vector, if necessary.  */
       if (invmask != 0)
@@ -6028,66 +6497,25 @@ aarch64_simd_valid_immediate (rtx op, enum machine_mode mode, int inverse,
             imm |= (unsigned HOST_WIDE_INT) (bytes[i] ? 0xff : 0)
 	      << (i * BITS_PER_UNIT);
 
-          *modconst = GEN_INT (imm);
-        }
-      else
-        {
-          unsigned HOST_WIDE_INT imm = 0;
 
-          for (i = 0; i < elsize / BITS_PER_UNIT; i++)
-            imm |= (unsigned HOST_WIDE_INT) bytes[i] << (i * BITS_PER_UNIT);
+	  info->value = GEN_INT (imm);
+	}
+      else
+	{
+	  for (i = 0; i < elsize / BITS_PER_UNIT; i++)
+	    imm |= (unsigned HOST_WIDE_INT) bytes[i] << (i * BITS_PER_UNIT);
 
 	  /* Construct 'abcdefgh' because the assembler cannot handle
-	     generic constants.  */
-	  gcc_assert (shift != NULL && mvn != NULL);
-	  if (*mvn)
+	     generic constants.	 */
+	  if (info->mvn)
 	    imm = ~imm;
-	  imm = (imm >> *shift) & 0xff;
-          *modconst = GEN_INT (imm);
-        }
+	  imm = (imm >> info->shift) & 0xff;
+	  info->value = GEN_INT (imm);
+	}
     }
 
-  return immtype;
+  return true;
 #undef CHECK
-}
-
-/* Return TRUE if rtx X is legal for use as either a AdvSIMD MOVI instruction
-   (or, implicitly, MVNI) immediate.  Write back width per element
-   to *ELEMENTWIDTH (or zero for float elements), and a modified constant
-   (whatever should be output for a MOVI instruction) in *MODCONST.  */
-int
-aarch64_simd_immediate_valid_for_move (rtx op, enum machine_mode mode,
-				       rtx *modconst, int *elementwidth,
-				       unsigned char *elementchar,
-				       int *mvn, int *shift)
-{
-  rtx tmpconst;
-  int tmpwidth;
-  unsigned char tmpwidthc;
-  int tmpmvn = 0, tmpshift = 0;
-  int retval = aarch64_simd_valid_immediate (op, mode, 0, &tmpconst,
-					     &tmpwidth, &tmpwidthc,
-					     &tmpmvn, &tmpshift);
-
-  if (retval == -1)
-    return 0;
-
-  if (modconst)
-    *modconst = tmpconst;
-
-  if (elementwidth)
-    *elementwidth = tmpwidth;
-
-  if (elementchar)
-    *elementchar = tmpwidthc;
-
-  if (mvn)
-    *mvn = tmpmvn;
-
-  if (shift)
-    *shift = tmpshift;
-
-  return 1;
 }
 
 static bool
@@ -6125,22 +6553,13 @@ aarch64_simd_shift_imm_p (rtx x, enum machine_mode mode, bool left)
     return aarch64_const_vec_all_same_int_p (x, 1, bit_width);
 }
 
+/* Return true if X is a uniform vector where all elements
+   are either the floating-point constant 0.0 or the
+   integer constant 0.  */
 bool
 aarch64_simd_imm_zero_p (rtx x, enum machine_mode mode)
 {
-  int nunits;
-  int i;
-
- if (GET_CODE (x) != CONST_VECTOR)
-   return false;
-
-  nunits = GET_MODE_NUNITS (mode);
-
-  for (i = 0; i < nunits; i++)
-    if (INTVAL (CONST_VECTOR_ELT (x, i)) != 0)
-      return false;
-
-  return true;
+  return x == CONST0_RTX (mode);
 }
 
 bool
@@ -6160,6 +6579,25 @@ aarch64_simd_imm_scalar_p (rtx x, enum machine_mode mode ATTRIBUTE_UNUSED)
   return true;
 }
 
+bool
+aarch64_mov_operand_p (rtx x,
+		       enum aarch64_symbol_context context,
+		       enum machine_mode mode)
+{
+  if (GET_CODE (x) == HIGH
+      && aarch64_valid_symref (XEXP (x, 0), GET_MODE (XEXP (x, 0))))
+    return true;
+
+  if (CONST_INT_P (x) && aarch64_move_imm (INTVAL (x), mode))
+    return true;
+
+  if (GET_CODE (x) == SYMBOL_REF && mode == DImode && CONSTANT_ADDRESS_P (x))
+    return true;
+
+  return aarch64_classify_symbolic_expression (x, context)
+    == SYMBOL_TINY_ABSOLUTE;
+}
+
 /* Return a const_int vector of VAL.  */
 rtx
 aarch64_simd_gen_const_vector_dup (enum machine_mode mode, int val)
@@ -6172,6 +6610,19 @@ aarch64_simd_gen_const_vector_dup (enum machine_mode mode, int val)
     RTVEC_ELT (v, i) = GEN_INT (val);
 
   return gen_rtx_CONST_VECTOR (mode, v);
+}
+
+/* Check OP is a legal scalar immediate for the MOVI instruction.  */
+
+bool
+aarch64_simd_scalar_immediate_valid_for_move (rtx op, enum machine_mode mode)
+{
+  enum machine_mode vmode;
+
+  gcc_assert (!VECTOR_MODE_P (mode));
+  vmode = aarch64_preferred_simd_mode (mode);
+  rtx op_v = aarch64_simd_gen_const_vector_dup (vmode, INTVAL (op));
+  return aarch64_simd_valid_immediate (op_v, vmode, false, NULL);
 }
 
 /* Construct and return a PARALLEL RTX vector.  */
@@ -6284,8 +6735,6 @@ aarch64_simd_disambiguate_copy (rtx *operands, rtx *dest,
 int
 aarch64_simd_attr_length_move (rtx insn)
 {
-  rtx reg, mem, addr;
-  int load;
   enum machine_mode mode;
 
   extract_insn_cached (insn);
@@ -6306,6 +6755,190 @@ aarch64_simd_attr_length_move (rtx insn)
 	}
     }
   return 4;
+}
+
+/* Implement target hook TARGET_VECTOR_ALIGNMENT.  The AAPCS64 sets the maximum
+   alignment of a vector to 128 bits.  */
+static HOST_WIDE_INT
+aarch64_simd_vector_alignment (const_tree type)
+{
+  HOST_WIDE_INT align = tree_low_cst (TYPE_SIZE (type), 0);
+  return MIN (align, 128);
+}
+
+/* Implement target hook TARGET_VECTORIZE_VECTOR_ALIGNMENT_REACHABLE.  */
+static bool
+aarch64_simd_vector_alignment_reachable (const_tree type, bool is_packed)
+{
+  if (is_packed)
+    return false;
+
+  /* We guarantee alignment for vectors up to 128-bits.  */
+  if (tree_int_cst_compare (TYPE_SIZE (type),
+			    bitsize_int (BIGGEST_ALIGNMENT)) > 0)
+    return false;
+
+  /* Vectors whose size is <= BIGGEST_ALIGNMENT are naturally aligned.  */
+  return true;
+}
+
+/* If VALS is a vector constant that can be loaded into a register
+   using DUP, generate instructions to do so and return an RTX to
+   assign to the register.  Otherwise return NULL_RTX.  */
+static rtx
+aarch64_simd_dup_constant (rtx vals)
+{
+  enum machine_mode mode = GET_MODE (vals);
+  enum machine_mode inner_mode = GET_MODE_INNER (mode);
+  int n_elts = GET_MODE_NUNITS (mode);
+  bool all_same = true;
+  rtx x;
+  int i;
+
+  if (GET_CODE (vals) != CONST_VECTOR)
+    return NULL_RTX;
+
+  for (i = 1; i < n_elts; ++i)
+    {
+      x = CONST_VECTOR_ELT (vals, i);
+      if (!rtx_equal_p (x, CONST_VECTOR_ELT (vals, 0)))
+	all_same = false;
+    }
+
+  if (!all_same)
+    return NULL_RTX;
+
+  /* We can load this constant by using DUP and a constant in a
+     single ARM register.  This will be cheaper than a vector
+     load.  */
+  x = copy_to_mode_reg (inner_mode, CONST_VECTOR_ELT (vals, 0));
+  return gen_rtx_VEC_DUPLICATE (mode, x);
+}
+
+
+/* Generate code to load VALS, which is a PARALLEL containing only
+   constants (for vec_init) or CONST_VECTOR, efficiently into a
+   register.  Returns an RTX to copy into the register, or NULL_RTX
+   for a PARALLEL that can not be converted into a CONST_VECTOR.  */
+static rtx
+aarch64_simd_make_constant (rtx vals)
+{
+  enum machine_mode mode = GET_MODE (vals);
+  rtx const_dup;
+  rtx const_vec = NULL_RTX;
+  int n_elts = GET_MODE_NUNITS (mode);
+  int n_const = 0;
+  int i;
+
+  if (GET_CODE (vals) == CONST_VECTOR)
+    const_vec = vals;
+  else if (GET_CODE (vals) == PARALLEL)
+    {
+      /* A CONST_VECTOR must contain only CONST_INTs and
+	 CONST_DOUBLEs, but CONSTANT_P allows more (e.g. SYMBOL_REF).
+	 Only store valid constants in a CONST_VECTOR.  */
+      for (i = 0; i < n_elts; ++i)
+	{
+	  rtx x = XVECEXP (vals, 0, i);
+	  if (CONST_INT_P (x) || CONST_DOUBLE_P (x))
+	    n_const++;
+	}
+      if (n_const == n_elts)
+	const_vec = gen_rtx_CONST_VECTOR (mode, XVEC (vals, 0));
+    }
+  else
+    gcc_unreachable ();
+
+  if (const_vec != NULL_RTX
+      && aarch64_simd_valid_immediate (const_vec, mode, false, NULL))
+    /* Load using MOVI/MVNI.  */
+    return const_vec;
+  else if ((const_dup = aarch64_simd_dup_constant (vals)) != NULL_RTX)
+    /* Loaded using DUP.  */
+    return const_dup;
+  else if (const_vec != NULL_RTX)
+    /* Load from constant pool. We can not take advantage of single-cycle
+       LD1 because we need a PC-relative addressing mode.  */
+    return const_vec;
+  else
+    /* A PARALLEL containing something not valid inside CONST_VECTOR.
+       We can not construct an initializer.  */
+    return NULL_RTX;
+}
+
+void
+aarch64_expand_vector_init (rtx target, rtx vals)
+{
+  enum machine_mode mode = GET_MODE (target);
+  enum machine_mode inner_mode = GET_MODE_INNER (mode);
+  int n_elts = GET_MODE_NUNITS (mode);
+  int n_var = 0, one_var = -1;
+  bool all_same = true;
+  rtx x, mem;
+  int i;
+
+  x = XVECEXP (vals, 0, 0);
+  if (!CONST_INT_P (x) && !CONST_DOUBLE_P (x))
+    n_var = 1, one_var = 0;
+  
+  for (i = 1; i < n_elts; ++i)
+    {
+      x = XVECEXP (vals, 0, i);
+      if (!CONST_INT_P (x) && !CONST_DOUBLE_P (x))
+	++n_var, one_var = i;
+
+      if (!rtx_equal_p (x, XVECEXP (vals, 0, 0)))
+	all_same = false;
+    }
+
+  if (n_var == 0)
+    {
+      rtx constant = aarch64_simd_make_constant (vals);
+      if (constant != NULL_RTX)
+	{
+	  emit_move_insn (target, constant);
+	  return;
+	}
+    }
+
+  /* Splat a single non-constant element if we can.  */
+  if (all_same)
+    {
+      x = copy_to_mode_reg (inner_mode, XVECEXP (vals, 0, 0));
+      aarch64_emit_move (target, gen_rtx_VEC_DUPLICATE (mode, x));
+      return;
+    }
+
+  /* One field is non-constant.  Load constant then overwrite varying
+     field.  This is more efficient than using the stack.  */
+  if (n_var == 1)
+    {
+      rtx copy = copy_rtx (vals);
+      rtx index = GEN_INT (one_var);
+      enum insn_code icode;
+
+      /* Load constant part of vector, substitute neighboring value for
+	 varying element.  */
+      XVECEXP (copy, 0, one_var) = XVECEXP (vals, 0, one_var ^ 1);
+      aarch64_expand_vector_init (target, copy);
+
+      /* Insert variable.  */
+      x = copy_to_mode_reg (inner_mode, XVECEXP (vals, 0, one_var));
+      icode = optab_handler (vec_set_optab, mode);
+      gcc_assert (icode != CODE_FOR_nothing);
+      emit_insn (GEN_FCN (icode) (target, x, index));
+      return;
+    }
+
+  /* Construct the vector in memory one field at a time
+     and load the whole vector.  */
+  mem = assign_stack_temp (mode, GET_MODE_SIZE (mode));
+  for (i = 0; i < n_elts; i++)
+    emit_move_insn (adjust_address_nv (mem, inner_mode,
+				    i * GET_MODE_SIZE (inner_mode)),
+		    XVECEXP (vals, 0, i));
+  emit_move_insn (target, mem);
+
 }
 
 static unsigned HOST_WIDE_INT
@@ -6543,7 +7176,6 @@ aarch64_split_compare_and_swap (rtx operands[])
 {
   rtx rval, mem, oldval, newval, scratch;
   enum machine_mode mode;
-  enum memmodel mod_s;
   bool is_weak;
   rtx label1, label2, x, cond;
 
@@ -6552,7 +7184,6 @@ aarch64_split_compare_and_swap (rtx operands[])
   oldval = operands[2];
   newval = operands[3];
   is_weak = (operands[4] != const0_rtx);
-  mod_s = (enum memmodel) INTVAL (operands[5]);
   scratch = operands[7];
   mode = GET_MODE (mem);
 
@@ -6651,12 +7282,30 @@ aarch64_split_atomic_op (enum rtx_code code, rtx old_out, rtx new_out, rtx mem,
 }
 
 static void
+aarch64_print_extension (void)
+{
+  const struct aarch64_option_extension *opt = NULL;
+
+  for (opt = all_extensions; opt->name != NULL; opt++)
+    if ((aarch64_isa_flags & opt->flags_on) == opt->flags_on)
+      asm_fprintf (asm_out_file, "+%s", opt->name);
+
+  asm_fprintf (asm_out_file, "\n");
+}
+
+static void
 aarch64_start_file (void)
 {
   if (selected_arch)
-    asm_fprintf (asm_out_file, "\t.arch %s\n", selected_arch->name);
+    {
+      asm_fprintf (asm_out_file, "\t.arch %s", selected_arch->name);
+      aarch64_print_extension ();
+    }
   else if (selected_cpu)
-    asm_fprintf (asm_out_file, "\t.cpu %s\n", selected_cpu->name);
+    {
+      asm_fprintf (asm_out_file, "\t.cpu %s", selected_cpu->name);
+      aarch64_print_extension ();
+    }
   default_file_start();
 }
 
@@ -6668,6 +7317,718 @@ aarch64_c_mode_for_suffix (char suffix)
     return TFmode;
 
   return VOIDmode;
+}
+
+/* We can only represent floating point constants which will fit in
+   "quarter-precision" values.  These values are characterised by
+   a sign bit, a 4-bit mantissa and a 3-bit exponent.  And are given
+   by:
+
+   (-1)^s * (n/16) * 2^r
+
+   Where:
+     's' is the sign bit.
+     'n' is an integer in the range 16 <= n <= 31.
+     'r' is an integer in the range -3 <= r <= 4.  */
+
+/* Return true iff X can be represented by a quarter-precision
+   floating point immediate operand X.  Note, we cannot represent 0.0.  */
+bool
+aarch64_float_const_representable_p (rtx x)
+{
+  /* This represents our current view of how many bits
+     make up the mantissa.  */
+  int point_pos = 2 * HOST_BITS_PER_WIDE_INT - 1;
+  int exponent;
+  unsigned HOST_WIDE_INT mantissa, mask;
+  HOST_WIDE_INT m1, m2;
+  REAL_VALUE_TYPE r, m;
+
+  if (!CONST_DOUBLE_P (x))
+    return false;
+
+  REAL_VALUE_FROM_CONST_DOUBLE (r, x);
+
+  /* We cannot represent infinities, NaNs or +/-zero.  We won't
+     know if we have +zero until we analyse the mantissa, but we
+     can reject the other invalid values.  */
+  if (REAL_VALUE_ISINF (r) || REAL_VALUE_ISNAN (r)
+      || REAL_VALUE_MINUS_ZERO (r))
+    return false;
+
+  /* Extract exponent.  */
+  r = real_value_abs (&r);
+  exponent = REAL_EXP (&r);
+
+  /* For the mantissa, we expand into two HOST_WIDE_INTS, apart from the
+     highest (sign) bit, with a fixed binary point at bit point_pos.
+     m1 holds the low part of the mantissa, m2 the high part.
+     WARNING: If we ever have a representation using more than 2 * H_W_I - 1
+     bits for the mantissa, this can fail (low bits will be lost).  */
+  real_ldexp (&m, &r, point_pos - exponent);
+  REAL_VALUE_TO_INT (&m1, &m2, m);
+
+  /* If the low part of the mantissa has bits set we cannot represent
+     the value.  */
+  if (m1 != 0)
+    return false;
+  /* We have rejected the lower HOST_WIDE_INT, so update our
+     understanding of how many bits lie in the mantissa and
+     look only at the high HOST_WIDE_INT.  */
+  mantissa = m2;
+  point_pos -= HOST_BITS_PER_WIDE_INT;
+
+  /* We can only represent values with a mantissa of the form 1.xxxx.  */
+  mask = ((unsigned HOST_WIDE_INT)1 << (point_pos - 5)) - 1;
+  if ((mantissa & mask) != 0)
+    return false;
+
+  /* Having filtered unrepresentable values, we may now remove all
+     but the highest 5 bits.  */
+  mantissa >>= point_pos - 5;
+
+  /* We cannot represent the value 0.0, so reject it.  This is handled
+     elsewhere.  */
+  if (mantissa == 0)
+    return false;
+
+  /* Then, as bit 4 is always set, we can mask it off, leaving
+     the mantissa in the range [0, 15].  */
+  mantissa &= ~(1 << 4);
+  gcc_assert (mantissa <= 15);
+
+  /* GCC internally does not use IEEE754-like encoding (where normalized
+     significands are in the range [1, 2).  GCC uses [0.5, 1) (see real.c).
+     Our mantissa values are shifted 4 places to the left relative to
+     normalized IEEE754 so we must modify the exponent returned by REAL_EXP
+     by 5 places to correct for GCC's representation.  */
+  exponent = 5 - exponent;
+
+  return (exponent >= 0 && exponent <= 7);
+}
+
+char*
+aarch64_output_simd_mov_immediate (rtx const_vector,
+				   enum machine_mode mode,
+				   unsigned width)
+{
+  bool is_valid;
+  static char templ[40];
+  const char *mnemonic;
+  const char *shift_op;
+  unsigned int lane_count = 0;
+  char element_char;
+
+  struct simd_immediate_info info = { NULL_RTX, 0, 0, false, false };
+
+  /* This will return true to show const_vector is legal for use as either
+     a AdvSIMD MOVI instruction (or, implicitly, MVNI) immediate.  It will
+     also update INFO to show how the immediate should be generated.  */
+  is_valid = aarch64_simd_valid_immediate (const_vector, mode, false, &info);
+  gcc_assert (is_valid);
+
+  element_char = sizetochar (info.element_width);
+  lane_count = width / info.element_width;
+
+  mode = GET_MODE_INNER (mode);
+  if (mode == SFmode || mode == DFmode)
+    {
+      gcc_assert (info.shift == 0 && ! info.mvn);
+      if (aarch64_float_const_zero_rtx_p (info.value))
+        info.value = GEN_INT (0);
+      else
+	{
+#define buf_size 20
+	  REAL_VALUE_TYPE r;
+	  REAL_VALUE_FROM_CONST_DOUBLE (r, info.value);
+	  char float_buf[buf_size] = {'\0'};
+	  real_to_decimal_for_mode (float_buf, &r, buf_size, buf_size, 1, mode);
+#undef buf_size
+
+	  if (lane_count == 1)
+	    snprintf (templ, sizeof (templ), "fmov\t%%d0, %s", float_buf);
+	  else
+	    snprintf (templ, sizeof (templ), "fmov\t%%0.%d%c, %s",
+		      lane_count, element_char, float_buf);
+	  return templ;
+	}
+    }
+
+  mnemonic = info.mvn ? "mvni" : "movi";
+  shift_op = info.msl ? "msl" : "lsl";
+
+  if (lane_count == 1)
+    snprintf (templ, sizeof (templ), "%s\t%%d0, " HOST_WIDE_INT_PRINT_HEX,
+	      mnemonic, UINTVAL (info.value));
+  else if (info.shift)
+    snprintf (templ, sizeof (templ), "%s\t%%0.%d%c, " HOST_WIDE_INT_PRINT_HEX
+	      ", %s %d", mnemonic, lane_count, element_char,
+	      UINTVAL (info.value), shift_op, info.shift);
+  else
+    snprintf (templ, sizeof (templ), "%s\t%%0.%d%c, " HOST_WIDE_INT_PRINT_HEX,
+	      mnemonic, lane_count, element_char, UINTVAL (info.value));
+  return templ;
+}
+
+char*
+aarch64_output_scalar_simd_mov_immediate (rtx immediate,
+					  enum machine_mode mode)
+{
+  enum machine_mode vmode;
+
+  gcc_assert (!VECTOR_MODE_P (mode));
+  vmode = aarch64_simd_container_mode (mode, 64);
+  rtx v_op = aarch64_simd_gen_const_vector_dup (vmode, INTVAL (immediate));
+  return aarch64_output_simd_mov_immediate (v_op, vmode, 64);
+}
+
+/* Split operands into moves from op[1] + op[2] into op[0].  */
+
+void
+aarch64_split_combinev16qi (rtx operands[3])
+{
+  unsigned int dest = REGNO (operands[0]);
+  unsigned int src1 = REGNO (operands[1]);
+  unsigned int src2 = REGNO (operands[2]);
+  enum machine_mode halfmode = GET_MODE (operands[1]);
+  unsigned int halfregs = HARD_REGNO_NREGS (src1, halfmode);
+  rtx destlo, desthi;
+
+  gcc_assert (halfmode == V16QImode);
+
+  if (src1 == dest && src2 == dest + halfregs)
+    {
+      /* No-op move.  Can't split to nothing; emit something.  */
+      emit_note (NOTE_INSN_DELETED);
+      return;
+    }
+
+  /* Preserve register attributes for variable tracking.  */
+  destlo = gen_rtx_REG_offset (operands[0], halfmode, dest, 0);
+  desthi = gen_rtx_REG_offset (operands[0], halfmode, dest + halfregs,
+			       GET_MODE_SIZE (halfmode));
+
+  /* Special case of reversed high/low parts.  */
+  if (reg_overlap_mentioned_p (operands[2], destlo)
+      && reg_overlap_mentioned_p (operands[1], desthi))
+    {
+      emit_insn (gen_xorv16qi3 (operands[1], operands[1], operands[2]));
+      emit_insn (gen_xorv16qi3 (operands[2], operands[1], operands[2]));
+      emit_insn (gen_xorv16qi3 (operands[1], operands[1], operands[2]));
+    }
+  else if (!reg_overlap_mentioned_p (operands[2], destlo))
+    {
+      /* Try to avoid unnecessary moves if part of the result
+	 is in the right place already.  */
+      if (src1 != dest)
+	emit_move_insn (destlo, operands[1]);
+      if (src2 != dest + halfregs)
+	emit_move_insn (desthi, operands[2]);
+    }
+  else
+    {
+      if (src2 != dest + halfregs)
+	emit_move_insn (desthi, operands[2]);
+      if (src1 != dest)
+	emit_move_insn (destlo, operands[1]);
+    }
+}
+
+/* vec_perm support.  */
+
+#define MAX_VECT_LEN 16
+
+struct expand_vec_perm_d
+{
+  rtx target, op0, op1;
+  unsigned char perm[MAX_VECT_LEN];
+  enum machine_mode vmode;
+  unsigned char nelt;
+  bool one_vector_p;
+  bool testing_p;
+};
+
+/* Generate a variable permutation.  */
+
+static void
+aarch64_expand_vec_perm_1 (rtx target, rtx op0, rtx op1, rtx sel)
+{
+  enum machine_mode vmode = GET_MODE (target);
+  bool one_vector_p = rtx_equal_p (op0, op1);
+
+  gcc_checking_assert (vmode == V8QImode || vmode == V16QImode);
+  gcc_checking_assert (GET_MODE (op0) == vmode);
+  gcc_checking_assert (GET_MODE (op1) == vmode);
+  gcc_checking_assert (GET_MODE (sel) == vmode);
+  gcc_checking_assert (TARGET_SIMD);
+
+  if (one_vector_p)
+    {
+      if (vmode == V8QImode)
+	{
+	  /* Expand the argument to a V16QI mode by duplicating it.  */
+	  rtx pair = gen_reg_rtx (V16QImode);
+	  emit_insn (gen_aarch64_combinev8qi (pair, op0, op0));
+	  emit_insn (gen_aarch64_tbl1v8qi (target, pair, sel));
+	}
+      else
+	{
+	  emit_insn (gen_aarch64_tbl1v16qi (target, op0, sel));
+	}
+    }
+  else
+    {
+      rtx pair;
+
+      if (vmode == V8QImode)
+	{
+	  pair = gen_reg_rtx (V16QImode);
+	  emit_insn (gen_aarch64_combinev8qi (pair, op0, op1));
+	  emit_insn (gen_aarch64_tbl1v8qi (target, pair, sel));
+	}
+      else
+	{
+	  pair = gen_reg_rtx (OImode);
+	  emit_insn (gen_aarch64_combinev16qi (pair, op0, op1));
+	  emit_insn (gen_aarch64_tbl2v16qi (target, pair, sel));
+	}
+    }
+}
+
+void
+aarch64_expand_vec_perm (rtx target, rtx op0, rtx op1, rtx sel)
+{
+  enum machine_mode vmode = GET_MODE (target);
+  unsigned int i, nelt = GET_MODE_NUNITS (vmode);
+  bool one_vector_p = rtx_equal_p (op0, op1);
+  rtx rmask[MAX_VECT_LEN], mask;
+
+  gcc_checking_assert (!BYTES_BIG_ENDIAN);
+
+  /* The TBL instruction does not use a modulo index, so we must take care
+     of that ourselves.  */
+  mask = GEN_INT (one_vector_p ? nelt - 1 : 2 * nelt - 1);
+  for (i = 0; i < nelt; ++i)
+    rmask[i] = mask;
+  mask = gen_rtx_CONST_VECTOR (vmode, gen_rtvec_v (nelt, rmask));
+  sel = expand_simple_binop (vmode, AND, sel, mask, NULL, 0, OPTAB_LIB_WIDEN);
+
+  aarch64_expand_vec_perm_1 (target, op0, op1, sel);
+}
+
+/* Recognize patterns suitable for the TRN instructions.  */
+static bool
+aarch64_evpc_trn (struct expand_vec_perm_d *d)
+{
+  unsigned int i, odd, mask, nelt = d->nelt;
+  rtx out, in0, in1, x;
+  rtx (*gen) (rtx, rtx, rtx);
+  enum machine_mode vmode = d->vmode;
+
+  if (GET_MODE_UNIT_SIZE (vmode) > 8)
+    return false;
+
+  /* Note that these are little-endian tests.
+     We correct for big-endian later.  */
+  if (d->perm[0] == 0)
+    odd = 0;
+  else if (d->perm[0] == 1)
+    odd = 1;
+  else
+    return false;
+  mask = (d->one_vector_p ? nelt - 1 : 2 * nelt - 1);
+
+  for (i = 0; i < nelt; i += 2)
+    {
+      if (d->perm[i] != i + odd)
+	return false;
+      if (d->perm[i + 1] != ((i + nelt + odd) & mask))
+	return false;
+    }
+
+  /* Success!  */
+  if (d->testing_p)
+    return true;
+
+  in0 = d->op0;
+  in1 = d->op1;
+  if (BYTES_BIG_ENDIAN)
+    {
+      x = in0, in0 = in1, in1 = x;
+      odd = !odd;
+    }
+  out = d->target;
+
+  if (odd)
+    {
+      switch (vmode)
+	{
+	case V16QImode: gen = gen_aarch64_trn2v16qi; break;
+	case V8QImode: gen = gen_aarch64_trn2v8qi; break;
+	case V8HImode: gen = gen_aarch64_trn2v8hi; break;
+	case V4HImode: gen = gen_aarch64_trn2v4hi; break;
+	case V4SImode: gen = gen_aarch64_trn2v4si; break;
+	case V2SImode: gen = gen_aarch64_trn2v2si; break;
+	case V2DImode: gen = gen_aarch64_trn2v2di; break;
+	case V4SFmode: gen = gen_aarch64_trn2v4sf; break;
+	case V2SFmode: gen = gen_aarch64_trn2v2sf; break;
+	case V2DFmode: gen = gen_aarch64_trn2v2df; break;
+	default:
+	  return false;
+	}
+    }
+  else
+    {
+      switch (vmode)
+	{
+	case V16QImode: gen = gen_aarch64_trn1v16qi; break;
+	case V8QImode: gen = gen_aarch64_trn1v8qi; break;
+	case V8HImode: gen = gen_aarch64_trn1v8hi; break;
+	case V4HImode: gen = gen_aarch64_trn1v4hi; break;
+	case V4SImode: gen = gen_aarch64_trn1v4si; break;
+	case V2SImode: gen = gen_aarch64_trn1v2si; break;
+	case V2DImode: gen = gen_aarch64_trn1v2di; break;
+	case V4SFmode: gen = gen_aarch64_trn1v4sf; break;
+	case V2SFmode: gen = gen_aarch64_trn1v2sf; break;
+	case V2DFmode: gen = gen_aarch64_trn1v2df; break;
+	default:
+	  return false;
+	}
+    }
+
+  emit_insn (gen (out, in0, in1));
+  return true;
+}
+
+/* Recognize patterns suitable for the UZP instructions.  */
+static bool
+aarch64_evpc_uzp (struct expand_vec_perm_d *d)
+{
+  unsigned int i, odd, mask, nelt = d->nelt;
+  rtx out, in0, in1, x;
+  rtx (*gen) (rtx, rtx, rtx);
+  enum machine_mode vmode = d->vmode;
+
+  if (GET_MODE_UNIT_SIZE (vmode) > 8)
+    return false;
+
+  /* Note that these are little-endian tests.
+     We correct for big-endian later.  */
+  if (d->perm[0] == 0)
+    odd = 0;
+  else if (d->perm[0] == 1)
+    odd = 1;
+  else
+    return false;
+  mask = (d->one_vector_p ? nelt - 1 : 2 * nelt - 1);
+
+  for (i = 0; i < nelt; i++)
+    {
+      unsigned elt = (i * 2 + odd) & mask;
+      if (d->perm[i] != elt)
+	return false;
+    }
+
+  /* Success!  */
+  if (d->testing_p)
+    return true;
+
+  in0 = d->op0;
+  in1 = d->op1;
+  if (BYTES_BIG_ENDIAN)
+    {
+      x = in0, in0 = in1, in1 = x;
+      odd = !odd;
+    }
+  out = d->target;
+
+  if (odd)
+    {
+      switch (vmode)
+	{
+	case V16QImode: gen = gen_aarch64_uzp2v16qi; break;
+	case V8QImode: gen = gen_aarch64_uzp2v8qi; break;
+	case V8HImode: gen = gen_aarch64_uzp2v8hi; break;
+	case V4HImode: gen = gen_aarch64_uzp2v4hi; break;
+	case V4SImode: gen = gen_aarch64_uzp2v4si; break;
+	case V2SImode: gen = gen_aarch64_uzp2v2si; break;
+	case V2DImode: gen = gen_aarch64_uzp2v2di; break;
+	case V4SFmode: gen = gen_aarch64_uzp2v4sf; break;
+	case V2SFmode: gen = gen_aarch64_uzp2v2sf; break;
+	case V2DFmode: gen = gen_aarch64_uzp2v2df; break;
+	default:
+	  return false;
+	}
+    }
+  else
+    {
+      switch (vmode)
+	{
+	case V16QImode: gen = gen_aarch64_uzp1v16qi; break;
+	case V8QImode: gen = gen_aarch64_uzp1v8qi; break;
+	case V8HImode: gen = gen_aarch64_uzp1v8hi; break;
+	case V4HImode: gen = gen_aarch64_uzp1v4hi; break;
+	case V4SImode: gen = gen_aarch64_uzp1v4si; break;
+	case V2SImode: gen = gen_aarch64_uzp1v2si; break;
+	case V2DImode: gen = gen_aarch64_uzp1v2di; break;
+	case V4SFmode: gen = gen_aarch64_uzp1v4sf; break;
+	case V2SFmode: gen = gen_aarch64_uzp1v2sf; break;
+	case V2DFmode: gen = gen_aarch64_uzp1v2df; break;
+	default:
+	  return false;
+	}
+    }
+
+  emit_insn (gen (out, in0, in1));
+  return true;
+}
+
+/* Recognize patterns suitable for the ZIP instructions.  */
+static bool
+aarch64_evpc_zip (struct expand_vec_perm_d *d)
+{
+  unsigned int i, high, mask, nelt = d->nelt;
+  rtx out, in0, in1, x;
+  rtx (*gen) (rtx, rtx, rtx);
+  enum machine_mode vmode = d->vmode;
+
+  if (GET_MODE_UNIT_SIZE (vmode) > 8)
+    return false;
+
+  /* Note that these are little-endian tests.
+     We correct for big-endian later.  */
+  high = nelt / 2;
+  if (d->perm[0] == high)
+    /* Do Nothing.  */
+    ;
+  else if (d->perm[0] == 0)
+    high = 0;
+  else
+    return false;
+  mask = (d->one_vector_p ? nelt - 1 : 2 * nelt - 1);
+
+  for (i = 0; i < nelt / 2; i++)
+    {
+      unsigned elt = (i + high) & mask;
+      if (d->perm[i * 2] != elt)
+	return false;
+      elt = (elt + nelt) & mask;
+      if (d->perm[i * 2 + 1] != elt)
+	return false;
+    }
+
+  /* Success!  */
+  if (d->testing_p)
+    return true;
+
+  in0 = d->op0;
+  in1 = d->op1;
+  if (BYTES_BIG_ENDIAN)
+    {
+      x = in0, in0 = in1, in1 = x;
+      high = !high;
+    }
+  out = d->target;
+
+  if (high)
+    {
+      switch (vmode)
+	{
+	case V16QImode: gen = gen_aarch64_zip2v16qi; break;
+	case V8QImode: gen = gen_aarch64_zip2v8qi; break;
+	case V8HImode: gen = gen_aarch64_zip2v8hi; break;
+	case V4HImode: gen = gen_aarch64_zip2v4hi; break;
+	case V4SImode: gen = gen_aarch64_zip2v4si; break;
+	case V2SImode: gen = gen_aarch64_zip2v2si; break;
+	case V2DImode: gen = gen_aarch64_zip2v2di; break;
+	case V4SFmode: gen = gen_aarch64_zip2v4sf; break;
+	case V2SFmode: gen = gen_aarch64_zip2v2sf; break;
+	case V2DFmode: gen = gen_aarch64_zip2v2df; break;
+	default:
+	  return false;
+	}
+    }
+  else
+    {
+      switch (vmode)
+	{
+	case V16QImode: gen = gen_aarch64_zip1v16qi; break;
+	case V8QImode: gen = gen_aarch64_zip1v8qi; break;
+	case V8HImode: gen = gen_aarch64_zip1v8hi; break;
+	case V4HImode: gen = gen_aarch64_zip1v4hi; break;
+	case V4SImode: gen = gen_aarch64_zip1v4si; break;
+	case V2SImode: gen = gen_aarch64_zip1v2si; break;
+	case V2DImode: gen = gen_aarch64_zip1v2di; break;
+	case V4SFmode: gen = gen_aarch64_zip1v4sf; break;
+	case V2SFmode: gen = gen_aarch64_zip1v2sf; break;
+	case V2DFmode: gen = gen_aarch64_zip1v2df; break;
+	default:
+	  return false;
+	}
+    }
+
+  emit_insn (gen (out, in0, in1));
+  return true;
+}
+
+static bool
+aarch64_evpc_tbl (struct expand_vec_perm_d *d)
+{
+  rtx rperm[MAX_VECT_LEN], sel;
+  enum machine_mode vmode = d->vmode;
+  unsigned int i, nelt = d->nelt;
+
+  /* TODO: ARM's TBL indexing is little-endian.  In order to handle GCC's
+     numbering of elements for big-endian, we must reverse the order.  */
+  if (BYTES_BIG_ENDIAN)
+    return false;
+
+  if (d->testing_p)
+    return true;
+
+  /* Generic code will try constant permutation twice.  Once with the
+     original mode and again with the elements lowered to QImode.
+     So wait and don't do the selector expansion ourselves.  */
+  if (vmode != V8QImode && vmode != V16QImode)
+    return false;
+
+  for (i = 0; i < nelt; ++i)
+    rperm[i] = GEN_INT (d->perm[i]);
+  sel = gen_rtx_CONST_VECTOR (vmode, gen_rtvec_v (nelt, rperm));
+  sel = force_reg (vmode, sel);
+
+  aarch64_expand_vec_perm_1 (d->target, d->op0, d->op1, sel);
+  return true;
+}
+
+static bool
+aarch64_expand_vec_perm_const_1 (struct expand_vec_perm_d *d)
+{
+  /* The pattern matching functions above are written to look for a small
+     number to begin the sequence (0, 1, N/2).  If we begin with an index
+     from the second operand, we can swap the operands.  */
+  if (d->perm[0] >= d->nelt)
+    {
+      unsigned i, nelt = d->nelt;
+      rtx x;
+
+      for (i = 0; i < nelt; ++i)
+	d->perm[i] = (d->perm[i] + nelt) & (2 * nelt - 1);
+
+      x = d->op0;
+      d->op0 = d->op1;
+      d->op1 = x;
+    }
+
+  if (TARGET_SIMD)
+    {
+      if (aarch64_evpc_zip (d))
+	return true;
+      else if (aarch64_evpc_uzp (d))
+	return true;
+      else if (aarch64_evpc_trn (d))
+	return true;
+      return aarch64_evpc_tbl (d);
+    }
+  return false;
+}
+
+/* Expand a vec_perm_const pattern.  */
+
+bool
+aarch64_expand_vec_perm_const (rtx target, rtx op0, rtx op1, rtx sel)
+{
+  struct expand_vec_perm_d d;
+  int i, nelt, which;
+
+  d.target = target;
+  d.op0 = op0;
+  d.op1 = op1;
+
+  d.vmode = GET_MODE (target);
+  gcc_assert (VECTOR_MODE_P (d.vmode));
+  d.nelt = nelt = GET_MODE_NUNITS (d.vmode);
+  d.testing_p = false;
+
+  for (i = which = 0; i < nelt; ++i)
+    {
+      rtx e = XVECEXP (sel, 0, i);
+      int ei = INTVAL (e) & (2 * nelt - 1);
+      which |= (ei < nelt ? 1 : 2);
+      d.perm[i] = ei;
+    }
+
+  switch (which)
+    {
+    default:
+      gcc_unreachable ();
+
+    case 3:
+      d.one_vector_p = false;
+      if (!rtx_equal_p (op0, op1))
+	break;
+
+      /* The elements of PERM do not suggest that only the first operand
+	 is used, but both operands are identical.  Allow easier matching
+	 of the permutation by folding the permutation into the single
+	 input vector.  */
+      /* Fall Through.  */
+    case 2:
+      for (i = 0; i < nelt; ++i)
+	d.perm[i] &= nelt - 1;
+      d.op0 = op1;
+      d.one_vector_p = true;
+      break;
+
+    case 1:
+      d.op1 = op0;
+      d.one_vector_p = true;
+      break;
+    }
+
+  return aarch64_expand_vec_perm_const_1 (&d);
+}
+
+static bool
+aarch64_vectorize_vec_perm_const_ok (enum machine_mode vmode,
+				     const unsigned char *sel)
+{
+  struct expand_vec_perm_d d;
+  unsigned int i, nelt, which;
+  bool ret;
+
+  d.vmode = vmode;
+  d.nelt = nelt = GET_MODE_NUNITS (d.vmode);
+  d.testing_p = true;
+  memcpy (d.perm, sel, nelt);
+
+  /* Calculate whether all elements are in one vector.  */
+  for (i = which = 0; i < nelt; ++i)
+    {
+      unsigned char e = d.perm[i];
+      gcc_assert (e < 2 * nelt);
+      which |= (e < nelt ? 1 : 2);
+    }
+
+  /* If all elements are from the second vector, reindex as if from the
+     first vector.  */
+  if (which == 2)
+    for (i = 0; i < nelt; ++i)
+      d.perm[i] -= nelt;
+
+  /* Check whether the mask can be applied to a single vector.  */
+  d.one_vector_p = (which != 3);
+
+  d.target = gen_raw_REG (d.vmode, LAST_VIRTUAL_REGISTER + 1);
+  d.op1 = d.op0 = gen_raw_REG (d.vmode, LAST_VIRTUAL_REGISTER + 2);
+  if (!d.one_vector_p)
+    d.op1 = gen_raw_REG (d.vmode, LAST_VIRTUAL_REGISTER + 3);
+
+  start_sequence ();
+  ret = aarch64_expand_vec_perm_const_1 (&d);
+  end_sequence ();
+
+  return ret;
 }
 
 #undef TARGET_ADDRESS_COST
@@ -6745,6 +8106,9 @@ aarch64_c_mode_for_suffix (char suffix)
 #undef TARGET_EXPAND_BUILTIN_VA_START
 #define TARGET_EXPAND_BUILTIN_VA_START aarch64_expand_builtin_va_start
 
+#undef TARGET_FOLD_BUILTIN
+#define TARGET_FOLD_BUILTIN aarch64_fold_builtin
+
 #undef TARGET_FUNCTION_ARG
 #define TARGET_FUNCTION_ARG aarch64_function_arg
 
@@ -6766,6 +8130,9 @@ aarch64_c_mode_for_suffix (char suffix)
 #undef TARGET_FRAME_POINTER_REQUIRED
 #define TARGET_FRAME_POINTER_REQUIRED aarch64_frame_pointer_required
 
+#undef TARGET_GIMPLE_FOLD_BUILTIN
+#define TARGET_GIMPLE_FOLD_BUILTIN aarch64_gimple_fold_builtin
+
 #undef TARGET_GIMPLIFY_VA_ARG_EXPR
 #define TARGET_GIMPLIFY_VA_ARG_EXPR aarch64_gimplify_va_arg_expr
 
@@ -6780,6 +8147,9 @@ aarch64_c_mode_for_suffix (char suffix)
 
 #undef TARGET_LIBGCC_CMP_RETURN_MODE
 #define TARGET_LIBGCC_CMP_RETURN_MODE aarch64_libgcc_cmp_return_mode
+
+#undef TARGET_MANGLE_TYPE
+#define TARGET_MANGLE_TYPE aarch64_mangle_type
 
 #undef TARGET_MEMORY_MOVE_COST
 #define TARGET_MEMORY_MOVE_COST aarch64_memory_move_cost
@@ -6842,8 +8212,26 @@ aarch64_c_mode_for_suffix (char suffix)
 #undef TARGET_ARRAY_MODE_SUPPORTED_P
 #define TARGET_ARRAY_MODE_SUPPORTED_P aarch64_array_mode_supported_p
 
+#undef TARGET_VECTORIZE_ADD_STMT_COST
+#define TARGET_VECTORIZE_ADD_STMT_COST aarch64_add_stmt_cost
+
+#undef TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST
+#define TARGET_VECTORIZE_BUILTIN_VECTORIZATION_COST \
+  aarch64_builtin_vectorization_cost
+
 #undef TARGET_VECTORIZE_PREFERRED_SIMD_MODE
 #define TARGET_VECTORIZE_PREFERRED_SIMD_MODE aarch64_preferred_simd_mode
+
+#undef TARGET_VECTORIZE_BUILTINS
+#define TARGET_VECTORIZE_BUILTINS
+
+#undef TARGET_VECTORIZE_BUILTIN_VECTORIZED_FUNCTION
+#define TARGET_VECTORIZE_BUILTIN_VECTORIZED_FUNCTION \
+  aarch64_builtin_vectorized_function
+
+#undef TARGET_VECTORIZE_AUTOVECTORIZE_VECTOR_SIZES
+#define TARGET_VECTORIZE_AUTOVECTORIZE_VECTOR_SIZES \
+  aarch64_autovectorize_vector_sizes
 
 /* Section anchor support.  */
 
@@ -6855,6 +8243,23 @@ aarch64_c_mode_for_suffix (char suffix)
    to determine the size of the access.  We assume accesses are aligned.  */
 #undef TARGET_MAX_ANCHOR_OFFSET
 #define TARGET_MAX_ANCHOR_OFFSET 4095
+
+#undef TARGET_VECTOR_ALIGNMENT
+#define TARGET_VECTOR_ALIGNMENT aarch64_simd_vector_alignment
+
+#undef TARGET_VECTORIZE_VECTOR_ALIGNMENT_REACHABLE
+#define TARGET_VECTORIZE_VECTOR_ALIGNMENT_REACHABLE \
+  aarch64_simd_vector_alignment_reachable
+
+/* vec_perm support.  */
+
+#undef TARGET_VECTORIZE_VEC_PERM_CONST_OK
+#define TARGET_VECTORIZE_VEC_PERM_CONST_OK \
+  aarch64_vectorize_vec_perm_const_ok
+
+
+#undef TARGET_FIXED_CONDITION_CODE_REGS
+#define TARGET_FIXED_CONDITION_CODE_REGS aarch64_fixed_condition_code_regs
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

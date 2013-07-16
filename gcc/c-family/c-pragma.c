@@ -1,6 +1,5 @@
 /* Handle #pragma, system V.4 style.  Supports #pragma weak and #pragma pack.
-   Copyright (C) 1992, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2006, 2007, 2008, 2009, 2010, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -368,7 +367,12 @@ handle_pragma_weak (cpp_reader * ARG_UNUSED (dummy))
     {
       apply_pragma_weak (decl, value);
       if (value)
-	assemble_alias (decl, value);
+	{
+	  DECL_EXTERNAL (decl) = 0;
+	  if (TREE_CODE (decl) == VAR_DECL)
+	    TREE_STATIC (decl) = 1;
+	  assemble_alias (decl, value);
+	}
     }
   else
     {
@@ -479,7 +483,7 @@ handle_pragma_redefine_extname (cpp_reader * ARG_UNUSED (dummy))
     add_to_renaming_pragma_list (oldname, newname);
 }
 
-/* This is called from here and from ia64.c.  */
+/* This is called from here and from ia64-c.c.  */
 void
 add_to_renaming_pragma_list (tree oldname, tree newname)
 {

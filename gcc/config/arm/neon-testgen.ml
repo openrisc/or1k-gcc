@@ -1,5 +1,5 @@
 (* Auto-generate ARM Neon intrinsics tests.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery.
 
    This file is part of GCC.
@@ -162,9 +162,13 @@ let effective_target features =
   try
     match List.find (fun feature ->
                        match feature with Requires_feature _ -> true
+                                        | Requires_arch _ -> true
+                                        | Requires_FP_bit 1 -> true
                                         | _ -> false)
                      features with
       Requires_feature "FMA" -> "arm_neonv2"
+    | Requires_arch 8 -> "arm_v8_neon"
+    | Requires_FP_bit 1 -> "arm_neon_fp16"
     | _ -> assert false
   with Not_found -> "arm_neon"
 

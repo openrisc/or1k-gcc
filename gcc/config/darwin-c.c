@@ -1,6 +1,5 @@
 /* Darwin support needed only by C/C++ frontends.
-   Copyright (C) 2001, 2003, 2004, 2005, 2007, 2008, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Apple Computer Inc.
 
 This file is part of GCC.
@@ -38,6 +37,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "c-family/c-target.h"
 #include "c-family/c-target-def.h"
 #include "cgraph.h"
+#include "../../libcpp/internal.h"
 
 /* Pragmas.  */
 
@@ -632,7 +632,7 @@ darwin_cpp_builtins (cpp_reader *pfile)
       builtin_define ("__weak=");
     }
 
-  if (flag_objc_abi == 2)
+  if (CPP_OPTION (pfile, objc) && flag_objc_abi == 2)
     builtin_define ("__OBJC2__");
 }
 

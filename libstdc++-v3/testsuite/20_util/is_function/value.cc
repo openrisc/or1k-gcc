@@ -1,6 +1,6 @@
 // { dg-options "-std=gnu++0x" }
 //
-// Copyright (C) 2011 Free Software Foundation, Inc.
+// Copyright (C) 2011-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -32,6 +32,9 @@ void test01()
   VERIFY( (test_category<is_function, ClassType (ClassType)>(true)) );
   VERIFY( (test_category<is_function, float (int, float, int[], int&)>(true)) );
   VERIFY( (test_category<is_function, int (int, ...)>(true)) );
+  VERIFY( (test_category<is_function, bool (ClassType) const>(true)) );
+  VERIFY( (test_category<is_function, ClassType () &>(true)) );
+  VERIFY( (test_category<is_function, char (int, ClassType) const volatile &&>(true)) );
 
   // Negative tests.
   VERIFY( (test_category<is_function, int&>(false)) );

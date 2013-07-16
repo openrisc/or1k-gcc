@@ -1,6 +1,6 @@
 /* Gimple IR definitions.
 
-   Copyright 2007, 2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2007-2013 Free Software Foundation, Inc.
    Contributed by Aldy Hernandez <aldyh@redhat.com>
 
 This file is part of GCC.
@@ -23,6 +23,7 @@ along with GCC; see the file COPYING3.  If not see
 #define GCC_GIMPLE_H
 
 #include "pointer-set.h"
+#include "hash-table.h"
 #include "vec.h"
 #include "ggc.h"
 #include "basic-block.h"
@@ -32,6 +33,15 @@ along with GCC; see the file COPYING3.  If not see
 #include "internal-fn.h"
 
 typedef gimple gimple_seq_node;
+
+/* Types of supported temporaries.  GIMPLE temporaries may be symbols
+   in normal form (i.e., regular decls) or SSA names.  This enum is
+   used by create_gimple_tmp to tell it what kind of temporary the
+   caller wants.  */
+enum ssa_mode {
+    M_SSA = 0,
+    M_NORMAL
+};
 
 /* For each block, the PHI nodes that need to be rewritten are stored into
    these vectors.  */
@@ -130,7 +140,7 @@ enum plf_mask {
 
 /* Iterator object for GIMPLE statement sequences.  */
 
-typedef struct
+struct gimple_stmt_iterator_d
 {
   /* Sequence node holding the current statement.  */
   gimple_seq_node ptr;
@@ -141,8 +151,7 @@ typedef struct
      block/sequence is removed.  */
   gimple_seq *seq;
   basic_block bb;
-} gimple_stmt_iterator;
-
+};
 
 /* Data structure definitions for GIMPLE tuples.  NOTE: word markers
    are for 64 bit hosts.  */
@@ -661,6 +670,9 @@ struct GTY(()) gimple_statement_omp_atomic_store {
    tell the runtime that it should begin the transaction in
    serial-irrevocable mode.  */
 #define GTMA_DOES_GO_IRREVOCABLE	(1u << 6)
+/* The transaction contains no instrumentation code whatsover, most
+   likely because it is guaranteed to go irrevocable upon entry.  */
+#define GTMA_HAS_NO_INSTRUMENTATION	(1u << 7)
 
 struct GTY(()) gimple_statement_transaction
 {
@@ -716,6 +728,17 @@ union GTY ((desc ("gimple_statement_structure (&%h)"),
 };
 
 /* In gimple.c.  */
+
+/* Helper functions to build GIMPLE statements.  */
+tree create_gimple_tmp (tree, enum ssa_mode = M_SSA);
+gimple build_assign (enum tree_code, tree, int, enum ssa_mode = M_SSA);
+gimple build_assign (enum tree_code, gimple, int, enum ssa_mode = M_SSA);
+gimple build_assign (enum tree_code, tree, tree, enum ssa_mode = M_SSA);
+gimple build_assign (enum tree_code, gimple, tree, enum ssa_mode = M_SSA);
+gimple build_assign (enum tree_code, tree, gimple, enum ssa_mode = M_SSA);
+gimple build_assign (enum tree_code, gimple, gimple, enum ssa_mode = M_SSA);
+gimple build_type_cast (tree, tree, enum ssa_mode = M_SSA);
+gimple build_type_cast (tree, gimple, enum ssa_mode = M_SSA);
 
 /* Offset in bytes to the location of the operand vector.
    Zero if there is no operand vector for this tuple structure.  */
@@ -893,6 +916,7 @@ extern bool walk_stmt_load_store_ops (gimple, void *,
 				      bool (*)(gimple, tree, void *),
 				      bool (*)(gimple, tree, void *));
 extern bool gimple_ior_addresses_taken (bitmap, gimple);
+extern bool gimple_call_builtin_p (gimple, enum built_in_class);
 extern bool gimple_call_builtin_p (gimple, enum built_in_function);
 extern bool gimple_asm_clobbers_memory_p (const_gimple);
 
@@ -936,6 +960,55 @@ enum gimplify_status {
   GS_ALL_DONE	= 1	/* The expression is fully gimplified.  */
 };
 
+/* Formal (expression) temporary table handling: multiple occurrences of
+   the same scalar expression are evaluated into the same temporary.  */
+
+typedef struct gimple_temp_hash_elt
+{
+  tree val;   /* Key */
+  tree temp;  /* Value */
+} elt_t;
+
+/* Gimplify hashtable helper.  */
+
+struct gimplify_hasher : typed_free_remove <elt_t>
+{
+  typedef elt_t value_type;
+  typedef elt_t compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
+
+inline hashval_t
+gimplify_hasher::hash (const value_type *p)
+{
+  tree t = p->val;
+  return iterative_hash_expr (t, 0);
+}
+
+inline bool
+gimplify_hasher::equal (const value_type *p1, const compare_type *p2)
+{
+  tree t1 = p1->val;
+  tree t2 = p2->val;
+  enum tree_code code = TREE_CODE (t1);
+
+  if (TREE_CODE (t2) != code
+      || TREE_TYPE (t1) != TREE_TYPE (t2))
+    return false;
+
+  if (!operand_equal_p (t1, t2, 0))
+    return false;
+
+#ifdef ENABLE_CHECKING
+  /* Only allow them to compare equal if they also hash equal; otherwise
+     results are nondeterminate, and we fail bootstrap comparison.  */
+  gcc_assert (hash (p1) == hash (p2));
+#endif
+
+  return true;
+}
+
 struct gimplify_ctx
 {
   struct gimplify_ctx *prev_context;
@@ -948,7 +1021,7 @@ struct gimplify_ctx
 
   vec<tree> case_labels;
   /* The formal temporary table.  Should this be persistent?  */
-  htab_t temp_htab;
+  hash_table <gimplify_hasher> temp_htab;
 
   int conditions;
   bool save_stack;
@@ -1028,6 +1101,9 @@ extern tree tree_ssa_strip_useless_type_conversions (tree);
 extern bool useless_type_conversion_p (tree, tree);
 extern bool types_compatible_p (tree, tree);
 
+/* In tree-ssa-coalesce.c */
+extern bool gimple_can_coalesce_p (tree, tree);
+
 /* Return the first node in GIMPLE sequence S.  */
 
 static inline gimple_seq_node
@@ -1091,7 +1167,6 @@ gimple_seq_empty_p (gimple_seq s)
 {
   return s == NULL;
 }
-
 
 void gimple_seq_add_stmt (gimple_seq *, gimple);
 
@@ -2742,23 +2817,6 @@ gimple_cond_false_p (const_gimple gs)
 
   if (code == EQ_EXPR && lhs != rhs)
       return true;
-
-  return false;
-}
-
-/* Check if conditional statement GS is of the form 'if (var != 0)' or
-   'if (var == 1)' */
-
-static inline bool
-gimple_cond_single_var_p (gimple gs)
-{
-  if (gimple_cond_code (gs) == NE_EXPR
-      && gimple_cond_rhs (gs) == boolean_false_node)
-    return true;
-
-  if (gimple_cond_code (gs) == EQ_EXPR
-      && gimple_cond_rhs (gs) == boolean_true_node)
-    return true;
 
   return false;
 }
@@ -5339,4 +5397,15 @@ extern tree maybe_fold_or_comparisons (enum tree_code, tree, tree,
 				       enum tree_code, tree, tree);
 
 bool gimple_val_nonnegative_real_p (tree);
+
+
+/* Set the location of all statements in SEQ to LOC.  */
+
+static inline void
+gimple_seq_set_location (gimple_seq seq, location_t loc)
+{
+  for (gimple_stmt_iterator i = gsi_start (seq); !gsi_end_p (i); gsi_next (&i))
+    gimple_set_location (gsi_stmt (i), loc);
+}
+
 #endif  /* GCC_GIMPLE_H */

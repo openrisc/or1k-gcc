@@ -1,7 +1,5 @@
 /* Definitions for PA_RISC with ELF format
-   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009, 2010,
-   2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -80,17 +78,11 @@ along with GCC; see the file COPYING3.  If not see
 
 #undef ASM_OUTPUT_ADDR_VEC_ELT
 #define ASM_OUTPUT_ADDR_VEC_ELT(FILE, VALUE) \
-  if (TARGET_BIG_SWITCH)					\
-    fprintf (FILE, "\t.word .L%d\n", VALUE);			\
-  else								\
-    fprintf (FILE, "\tb .L%d\n\tnop\n", VALUE)
+  fprintf (FILE, "\t.word .L%d\n", VALUE)
 
 #undef ASM_OUTPUT_ADDR_DIFF_ELT
 #define ASM_OUTPUT_ADDR_DIFF_ELT(FILE, BODY, VALUE, REL) \
-  if (TARGET_BIG_SWITCH)					\
-    fprintf (FILE, "\t.word .L%d-.L%d\n", VALUE, REL);		\
-  else								\
-    fprintf (FILE, "\tb .L%d\n\tnop\n", VALUE)
+  fprintf (FILE, "\t.word .L%d-.L%d\n", VALUE, REL)
 
 /* Use the default.  */
 #undef ASM_OUTPUT_LABEL

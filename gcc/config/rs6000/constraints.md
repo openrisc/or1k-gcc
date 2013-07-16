@@ -1,5 +1,5 @@
 ;; Constraint definitions for RS6000
-;; Copyright (C) 2006-2012 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2013 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -64,9 +64,45 @@
 (define_register_constraint "ws" "rs6000_constraints[RS6000_CONSTRAINT_ws]"
   "@internal")
 
+;; TImode in VSX registers
+(define_register_constraint "wt" "rs6000_constraints[RS6000_CONSTRAINT_wt]"
+  "@internal")
+
 ;; any VSX register
 (define_register_constraint "wa" "rs6000_constraints[RS6000_CONSTRAINT_wa]"
   "@internal")
+
+;; Register constraints to simplify move patterns
+(define_register_constraint "wg" "rs6000_constraints[RS6000_CONSTRAINT_wg]"
+  "Floating point register if -mmfpgpr is used, or NO_REGS.")
+
+(define_register_constraint "wl" "rs6000_constraints[RS6000_CONSTRAINT_wl]"
+  "Floating point register if the LFIWAX instruction is enabled or NO_REGS.")
+
+(define_register_constraint "wm" "rs6000_constraints[RS6000_CONSTRAINT_wm]"
+  "VSX register if direct move instructions are enabled, or NO_REGS.")
+
+(define_register_constraint "wr" "rs6000_constraints[RS6000_CONSTRAINT_wr]"
+  "General purpose register if 64-bit instructions are enabled or NO_REGS.")
+
+(define_register_constraint "wv" "rs6000_constraints[RS6000_CONSTRAINT_wv]"
+  "Altivec register if -mpower8-vector is used or NO_REGS.")
+
+(define_register_constraint "wx" "rs6000_constraints[RS6000_CONSTRAINT_wx]"
+  "Floating point register if the STFIWX instruction is enabled or NO_REGS.")
+
+(define_register_constraint "wz" "rs6000_constraints[RS6000_CONSTRAINT_wz]"
+  "Floating point register if the LFIWZX instruction is enabled or NO_REGS.")
+
+;; NO_REGs register constraint, used to merge mov{sd,sf}, since movsd can use
+;; direct move directly, and movsf can't to move between the register sets.
+;; There is a mode_attr that resolves to wm for SDmode and wn for SFmode
+(define_register_constraint "wn" "NO_REGS")
+
+;; Lq/stq validates the address for load/store quad
+(define_memory_constraint "wQ"
+  "Memory operand suitable for the load/store quad instructions"
+  (match_operand 0 "quad_memory_operand"))
 
 ;; Altivec style load/store that ignores the bottom bits of the address
 (define_memory_constraint "wZ"

@@ -1,6 +1,5 @@
 /* Callgraph transformations to handle inlining
-   Copyright (C) 2003, 2004, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Jan Hubicka
 
 This file is part of GCC.
@@ -93,9 +92,7 @@ can_remove_node_now_p_1 (struct cgraph_node *node)
 	     those only after all devirtualizable virtual calls are processed.
 	     Lacking may edges in callgraph we just preserve them post
 	     inlining.  */
-	  && (!DECL_VIRTUAL_P (node->symbol.decl)
-	      || (!DECL_COMDAT (node->symbol.decl)
-		  && !DECL_EXTERNAL (node->symbol.decl)))
+	  && !DECL_VIRTUAL_P (node->symbol.decl)
 	  /* During early inlining some unanalyzed cgraph nodes might be in the
 	     callgraph and they might reffer the function in question.  */
 	  && !cgraph_new_nodes);
@@ -135,6 +132,13 @@ void
 clone_inlined_nodes (struct cgraph_edge *e, bool duplicate,
 		     bool update_original, int *overall_size)
 {
+  struct cgraph_node *inlining_into;
+
+  if (e->caller->global.inlined_to)
+    inlining_into = e->caller->global.inlined_to;
+  else
+    inlining_into = e->caller;
+
   if (duplicate)
     {
       /* We may eliminate the need for out-of-line copy to be output.
@@ -156,7 +160,7 @@ clone_inlined_nodes (struct cgraph_edge *e, bool duplicate,
 	     cgraph_remove_unreachable_functions gets rid of them.  */
 	  gcc_assert (!e->callee->global.inlined_to);
           symtab_dissolve_same_comdat_group_list ((symtab_node) e->callee);
-	  if (e->callee->analyzed && !DECL_EXTERNAL (e->callee->symbol.decl))
+	  if (e->callee->symbol.definition && !DECL_EXTERNAL (e->callee->symbol.decl))
 	    {
 	      if (overall_size)
 	        *overall_size -= inline_summary (e->callee)->size;
@@ -170,18 +174,15 @@ clone_inlined_nodes (struct cgraph_edge *e, bool duplicate,
 	{
 	  struct cgraph_node *n;
 	  n = cgraph_clone_node (e->callee, e->callee->symbol.decl,
-				 e->count, e->frequency,
-				 update_original, vNULL, true);
+				 e->count, e->frequency, update_original,
+				 vNULL, true, inlining_into);
 	  cgraph_redirect_edge_callee (e, n);
 	}
     }
   else
     symtab_dissolve_same_comdat_group_list ((symtab_node) e->callee);
 
-  if (e->caller->global.inlined_to)
-    e->callee->global.inlined_to = e->caller->global.inlined_to;
-  else
-    e->callee->global.inlined_to = e->caller;
+  e->callee->global.inlined_to = inlining_into;
 
   /* Recursively clone all bodies.  */
   for (e = e->callee->callees; e; e = e->next_callee)
@@ -211,8 +212,7 @@ inline_call (struct cgraph_edge *e, bool update_original,
   struct cgraph_node *callee = cgraph_function_or_thunk_node (e->callee, NULL);
   bool new_edges_found = false;
 
-  /* FIXME: re-enable once ipa-cp problem is fixed.  */
-#if 0
+#ifdef ENABLE_CHECKING
   int estimated_growth = estimate_edge_growth (e);
   bool predicated = inline_edge_summary (e)->predicate != NULL;
 #endif
@@ -240,7 +240,7 @@ inline_call (struct cgraph_edge *e, bool update_original,
 	  if (!alias->callers
 	      && can_remove_node_now_p (alias, e))
 	    {
-	      next_alias = cgraph_alias_aliased_node (alias);
+	      next_alias = cgraph_alias_target (alias);
 	      cgraph_remove_node (alias);
 	      alias = next_alias;
 	    }
@@ -260,17 +260,17 @@ inline_call (struct cgraph_edge *e, bool update_original,
   if (update_overall_summary)
    inline_update_overall_summary (to);
   new_size = inline_summary (to)->size;
-  /* FIXME: re-enable once ipa-cp problem is fixed.  */
-#if 0
+
+#ifdef ENABLE_CHECKING
   /* Verify that estimated growth match real growth.  Allow off-by-one
      error due to INLINE_SIZE_SCALE roudoff errors.  */
-  gcc_assert (!update_overall_summary || !overall_size
+  gcc_assert (!update_overall_summary || !overall_size || new_edges_found
 	      || abs (estimated_growth - (new_size - old_size)) <= 1
 	      /* FIXME: a hack.  Edges with false predicate are accounted
 		 wrong, we should remove them from callgraph.  */
 	      || predicated);
 #endif
-   
+
   /* Account the change of overall unit size; external functions will be
      removed and are thus not accounted.  */
   if (overall_size
@@ -385,7 +385,7 @@ static bool
 preserve_function_body_p (struct cgraph_node *node)
 {
   gcc_assert (cgraph_global_info_ready);
-  gcc_assert (!node->alias && !node->thunk.thunk_p);
+  gcc_assert (!node->symbol.alias && !node->thunk.thunk_p);
 
   /* Look if there is any clone around.  */
   if (node->clones)

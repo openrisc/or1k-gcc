@@ -1,7 +1,5 @@
 /* Utility routines for data type conversion for GCC.
-   Copyright (C) 1987, 1988, 1991, 1992, 1993, 1994, 1995, 1997, 1998,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -215,11 +213,12 @@ convert_to_real (tree type, tree expr)
     switch (TREE_CODE (expr))
       {
 	/* Convert (float)-x into -(float)x.  This is safe for
-	   round-to-nearest rounding mode.  */
+	   round-to-nearest rounding mode when the inner type is float.  */
 	case ABS_EXPR:
 	case NEGATE_EXPR:
 	  if (!flag_rounding_math
-	      && TYPE_PRECISION (type) < TYPE_PRECISION (TREE_TYPE (expr)))
+	      && FLOAT_TYPE_P (itype)
+	      && TYPE_PRECISION (type) < TYPE_PRECISION (itype))
 	    return build1 (TREE_CODE (expr), type,
 			   fold (convert_to_real (type,
 						  TREE_OPERAND (expr, 0))));
@@ -357,8 +356,8 @@ convert_to_integer (tree type, tree expr)
 {
   enum tree_code ex_form = TREE_CODE (expr);
   tree intype = TREE_TYPE (expr);
-  unsigned int inprec = TYPE_PRECISION (intype);
-  unsigned int outprec = TYPE_PRECISION (type);
+  unsigned int inprec = element_precision (intype);
+  unsigned int outprec = element_precision (type);
 
   /* An INTEGER_TYPE cannot be incomplete, but an ENUMERAL_TYPE can
      be.  Consider `enum E = { a, b = (enum E) 3 };'.  */

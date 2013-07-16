@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1996-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1996-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -59,7 +59,6 @@ with GNAT.OS_Lib; use GNAT.OS_Lib;
 
 procedure GNATCmd is
    Project_Node_Tree : Project_Node_Tree_Ref;
-   Root_Environment  : Prj.Tree.Environment;
    Project_File      : String_Access;
    Project           : Prj.Project_Id;
    Current_Verbosity : Prj.Verbosity := Prj.Default;
@@ -407,18 +406,19 @@ procedure GNATCmd is
          end if;
       end loop;
 
-      --  If all arguments are switches and there is no switch -files=, add
-      --  the path names of all the sources of the main project.
+      --  If all arguments are switches and there is no switch -files=, add the
+      --  path names of all the sources of the main project.
 
       if Add_Sources then
 
-         --  For gnatcheck, gnatpp, and gnatmetric, create a temporary file
-         --  and put the list of sources in it. For gnatstack create a
-         --  temporary file with the list of .ci files.
+         --  For gnatcheck, gnatpp, and gnatmetric, create a temporary file and
+         --  put the list of sources in it. For gnatstack create a temporary
+         --  file with the list of .ci files.
 
          if The_Command = Check  or else
             The_Command = Pretty or else
             The_Command = Metric or else
+            The_Command = List   or else
             The_Command = Stack
          then
             Tempdir.Create_Temp_File (FD, Temp_File_Name);
@@ -553,12 +553,10 @@ procedure GNATCmd is
                         end if;
 
                         if not Subunit then
-                           Last_Switches.Increment_Last;
-                           Last_Switches.Table (Last_Switches.Last) :=
-                             new String'
-                               (Get_Name_String
-                                    (Unit.File_Names
-                                         (Impl).Display_File));
+                           Add_To_Response_File
+                             (Get_Name_String
+                                (Unit.File_Names (Impl).Display_File),
+                              Check_File => False);
                         end if;
                      end if;
 
@@ -571,10 +569,10 @@ procedure GNATCmd is
                      if All_Projects or else
                         Unit.File_Names (Spec).Project = Project
                      then
-                        Last_Switches.Increment_Last;
-                        Last_Switches.Table (Last_Switches.Last) :=
-                          new String'(Get_Name_String
-                                       (Unit.File_Names (Spec).Display_File));
+                        Add_To_Response_File
+                          (Get_Name_String
+                             (Unit.File_Names (Spec).Display_File),
+                           Check_File => False);
                      end if;
                   end if;
 
@@ -1395,9 +1393,6 @@ begin
    Snames.Initialize;
 
    Prj.Tree.Initialize (Root_Environment, Gnatmake_Flags);
-   Prj.Env.Initialize_Default_Project_Path
-     (Root_Environment.Project_Path,
-      Target_Name => Sdefault.Target_Name.all);
 
    Project_Node_Tree := new Project_Node_Tree_Data;
    Prj.Tree.Initialize (Project_Node_Tree);
@@ -1769,7 +1764,13 @@ begin
                        (Root_Environment.Project_Path,
                         Argv (Argv'First + 3 .. Argv'Last));
 
-                     Remove_Switch (Arg_Num);
+                     --  Pass -aPdir to gnatls, but not to other tools
+
+                     if The_Command = List then
+                        Arg_Num := Arg_Num + 1;
+                     else
+                        Remove_Switch (Arg_Num);
+                     end if;
 
                   --  -eL  Follow links for files
 
@@ -1911,6 +1912,13 @@ begin
          end Inspect_Switches;
       end if;
 
+      --  Add the default project search directories now, after the directories
+      --  that have been specified by switches -aP<dir>.
+
+      Prj.Env.Initialize_Default_Project_Path
+        (Root_Environment.Project_Path,
+         Target_Name => Sdefault.Target_Name.all);
+
       --  If there is a project file specified, parse it, get the switches
       --  for the tool and setup PATH environment variables.
 
@@ -1999,7 +2007,19 @@ begin
                           In_Arrays => Element.Decl.Arrays,
                           Shared    => Project_Tree.Shared);
                      Name_Len := 0;
-                     Add_Str_To_Name_Buffer (Main.all);
+
+                     --  If the single main has been specified as an absolute
+                     --  path, use only the simple file name. If the absolute
+                     --  path is incorrect, an error will be reported by the
+                     --  underlying tool and it does not make a difference
+                     --  what switches are used.
+
+                     if Is_Absolute_Path (Main.all) then
+                        Add_Str_To_Name_Buffer (File_Name (Main.all));
+                     else
+                        Add_Str_To_Name_Buffer (Main.all);
+                     end if;
+
                      The_Switches := Prj.Util.Value_Of
                        (Index     => Name_Find,
                         Src_Index => 0,
@@ -2354,8 +2374,9 @@ begin
                      then
                         declare
                            Path : constant String :=
-                             Absolute_Path
-                               (Path_Name_Type (Variable.Value), Project);
+                                    Absolute_Path
+                                      (Path_Name_Type (Variable.Value),
+                                       Variable.Project);
                         begin
                            Add_To_Carg_Switches
                              (new String'("-gnatec=" & Path));
@@ -2399,8 +2420,9 @@ begin
                         then
                            declare
                               Path : constant String :=
-                                Absolute_Path
-                                  (Path_Name_Type (Variable.Value), Project);
+                                       Absolute_Path
+                                         (Path_Name_Type (Variable.Value),
+                                          Variable.Project);
                            begin
                               Add_To_Carg_Switches
                                 (new String'("-gnatec=" & Path));
@@ -2463,7 +2485,9 @@ begin
                --  the file name ends with the spec suffix, then indicate to
                --  gnatstub the name of the body file with a -o switch.
 
-               if not Is_Standard_GNAT_Naming (Lang.Config.Naming_Data) then
+               if Lang /= No_Language_Index
+                 and then not Is_Standard_GNAT_Naming (Lang.Config.Naming_Data)
+               then
                   if File_Index /= 0 then
                      declare
                         Spec : constant String :=

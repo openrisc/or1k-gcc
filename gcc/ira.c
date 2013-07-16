@@ -1,6 +1,5 @@
 /* Integrated Register Allocator (IRA) entry point.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -419,6 +418,11 @@ int ira_move_loops_num, ira_additional_jumps_num;
 /* All registers that can be eliminated.  */
 
 HARD_REG_SET eliminable_regset;
+
+/* Value of max_reg_num () before IRA work start.  This value helps
+   us to recognize a situation when new pseudos were created during
+   IRA work.  */
+static int max_regno_before_ira;
 
 /* Temporary hard reg set used for a different calculation.  */
 static HARD_REG_SET temp_hard_regset;
@@ -2184,7 +2188,7 @@ ira_update_equiv_info_by_shuffle_insn (int to_regno, int from_regno, rtx insns)
       && (! ira_reg_equiv[to_regno].defined_p
 	  || ((x = ira_reg_equiv[to_regno].memory) != NULL_RTX
 	      && ! MEM_READONLY_P (x))))
-      return;
+    return;
   insn = insns;
   if (NEXT_INSN (insn) != NULL_RTX)
     {
@@ -2265,11 +2269,11 @@ ira_update_equiv_info_by_shuffle_insn (int to_regno, int from_regno, rtx insns)
 static void
 fix_reg_equiv_init (void)
 {
-  unsigned int max_regno = max_reg_num ();
+  int max_regno = max_reg_num ();
   int i, new_regno, max;
   rtx x, prev, next, insn, set;
 
-  if (vec_safe_length (reg_equivs) < max_regno)
+  if (max_regno_before_ira < max_regno)
     {
       max = vec_safe_length (reg_equivs);
       grow_reg_equivs ();
@@ -2516,7 +2520,7 @@ validate_equiv_mem_from_store (rtx dest, const_rtx set ATTRIBUTE_UNUSED,
   if ((REG_P (dest)
        && reg_overlap_mentioned_p (dest, equiv_mem))
       || (MEM_P (dest)
-	  && true_dependence (dest, VOIDmode, equiv_mem)))
+	  && anti_dependence (equiv_mem, dest)))
     equiv_mem_modified = 1;
 }
 
@@ -2859,6 +2863,28 @@ no_equiv (rtx reg, const_rtx store ATTRIBUTE_UNUSED,
     }
 }
 
+/* Check whether the SUBREG is a paradoxical subreg and set the result
+   in PDX_SUBREGS.  */
+
+static int
+set_paradoxical_subreg (rtx *subreg, void *pdx_subregs)
+{
+  rtx reg;
+
+  if ((*subreg) == NULL_RTX)
+    return 1;
+  if (GET_CODE (*subreg) != SUBREG)
+    return 0;
+  reg = SUBREG_REG (*subreg);
+  if (!REG_P (reg))
+    return 0;
+
+  if (paradoxical_subreg_p (*subreg))
+    ((bool *)pdx_subregs)[REGNO (reg)] = true;
+
+  return 0;
+}
+
 /* In DEBUG_INSN location adjust REGs from CLEARED_REGS bitmap to the
    equivalent replacement.  */
 
@@ -2897,15 +2923,32 @@ update_equiv_regs (void)
   basic_block bb;
   int loop_depth;
   bitmap cleared_regs;
+  bool *pdx_subregs;
 
   /* We need to keep track of whether or not we recorded a LABEL_REF so
      that we know if the jump optimizer needs to be rerun.  */
   recorded_label_ref = 0;
 
+  /* Use pdx_subregs to show whether a reg is used in a paradoxical
+     subreg.  */
+  pdx_subregs = XCNEWVEC (bool, max_regno);
+
   reg_equiv = XCNEWVEC (struct equivalence, max_regno);
   grow_reg_equivs ();
 
   init_alias_analysis ();
+
+  /* Scan insns and set pdx_subregs[regno] if the reg is used in a
+     paradoxical subreg. Don't set such reg sequivalent to a mem,
+     because lra will not substitute such equiv memory in order to
+     prevent access beyond allocated memory for paradoxical memory subreg.  */
+  FOR_EACH_BB (bb)
+    FOR_BB_INSNS (bb, insn)
+      {
+	if (! INSN_P (insn))
+	  continue;
+	for_each_rtx (&insn, set_paradoxical_subreg, (void *)pdx_subregs);
+      }
 
   /* Scan the insns and find which registers have equivalences.  Do this
      in a separate scan of the insns because (due to -fcse-follow-jumps)
@@ -2967,8 +3010,12 @@ update_equiv_regs (void)
 		 register.  */
 	      reg_equiv[regno].is_arg_equivalence = 1;
 
-	      /* Record for reload that this is an equivalencing insn.  */
-	      if (rtx_equal_p (src, XEXP (note, 0)))
+	      /* The insn result can have equivalence memory although
+		 the equivalence is not set up by the insn.  We add
+		 this insn to init insns as it is a flag for now that
+		 regno has an equivalence.  We will remove the insn
+		 from init insn list later.  */
+	      if (rtx_equal_p (src, XEXP (note, 0)) || MEM_P (XEXP (note, 0)))
 		ira_reg_equiv[regno].init_insns
 		  = gen_rtx_INSN_LIST (VOIDmode, insn,
 				       ira_reg_equiv[regno].init_insns);
@@ -3000,6 +3047,13 @@ update_equiv_regs (void)
 	    {
 	      /* This might be setting a SUBREG of a pseudo, a pseudo that is
 		 also set somewhere else to a constant.  */
+	      note_stores (set, no_equiv, NULL);
+	      continue;
+	    }
+
+	  /* Don't set reg (if pdx_subregs[regno] == true) equivalent to a mem.  */
+	  if (MEM_P (src) && pdx_subregs[regno])
+	    {
 	      note_stores (set, no_equiv, NULL);
 	      continue;
 	    }
@@ -3162,7 +3216,8 @@ update_equiv_regs (void)
 	  && reg_equiv[regno].init_insns != const0_rtx
 	  && ! find_reg_note (XEXP (reg_equiv[regno].init_insns, 0),
 			      REG_EQUIV, NULL_RTX)
-	  && ! contains_replace_regs (XEXP (dest, 0)))
+	  && ! contains_replace_regs (XEXP (dest, 0))
+	  && ! pdx_subregs[regno])
 	{
 	  rtx init_insn = XEXP (reg_equiv[regno].init_insns, 0);
 	  if (validate_equiv_mem (init_insn, src, dest)
@@ -3353,6 +3408,7 @@ update_equiv_regs (void)
 
   end_alias_analysis ();
   free (reg_equiv);
+  free (pdx_subregs);
   return recorded_label_ref;
 }
 
@@ -3364,11 +3420,14 @@ static void
 setup_reg_equiv (void)
 {
   int i;
-  rtx elem, insn, set, x;
+  rtx elem, prev_elem, next_elem, insn, set, x;
 
   for (i = FIRST_PSEUDO_REGISTER; i < ira_reg_equiv_len; i++)
-    for (elem = ira_reg_equiv[i].init_insns; elem; elem = XEXP (elem, 1))
+    for (prev_elem = NULL, elem = ira_reg_equiv[i].init_insns;
+	 elem;
+	 prev_elem = elem, elem = next_elem)
       {
+	next_elem = XEXP (elem, 1);
 	insn = XEXP (elem, 0);
 	set = single_set (insn);
 	
@@ -3377,7 +3436,22 @@ setup_reg_equiv (void)
 	if (set != 0 && (REG_P (SET_DEST (set)) || REG_P (SET_SRC (set))))
 	  {
 	    if ((x = find_reg_note (insn, REG_EQUIV, NULL_RTX)) != NULL)
-	      x = XEXP (x, 0);
+	      {
+		x = XEXP (x, 0);
+		if (REG_P (SET_DEST (set))
+		    && REGNO (SET_DEST (set)) == (unsigned int) i
+		    && ! rtx_equal_p (SET_SRC (set), x) && MEM_P (x))
+		  {
+		    /* This insn reporting the equivalence but
+		       actually not setting it.  Remove it from the
+		       list.  */
+		    if (prev_elem == NULL)
+		      ira_reg_equiv[i].init_insns = next_elem;
+		    else
+		      XEXP (prev_elem, 1) = next_elem;
+		    elem = prev_elem;
+		  }
+	      }
 	    else if (REG_P (SET_DEST (set))
 		     && REGNO (SET_DEST (set)) == (unsigned int) i)
 	      x = SET_SRC (set);
@@ -3563,7 +3637,7 @@ build_insn_chain (void)
 	      c->insn = insn;
 	      c->block = bb->index;
 
-	      if (INSN_P (insn))
+	      if (NONDEBUG_INSN_P (insn))
 		for (def_rec = DF_INSN_UID_DEFS (uid); *def_rec; def_rec++)
 		  {
 		    df_ref def = *def_rec;
@@ -3654,7 +3728,7 @@ build_insn_chain (void)
 	      bitmap_and_compl_into (live_relevant_regs, elim_regset);
 	      bitmap_copy (&c->live_throughout, live_relevant_regs);
 
-	      if (INSN_P (insn))
+	      if (NONDEBUG_INSN_P (insn))
 		for (use_rec = DF_INSN_UID_USES (uid); *use_rec; use_rec++)
 		  {
 		    df_ref use = *use_rec;
@@ -4339,9 +4413,6 @@ allocate_initial_values (void)
    function.  */
 bool ira_use_lra_p;
 
-/* All natural loops.  */
-struct loops ira_loops;
-
 /* True if we have allocno conflicts.  It is false for non-optimized
    mode or when the conflict table is too big.  */
 bool ira_conflicts_p;
@@ -4354,7 +4425,7 @@ static void
 ira (FILE *f)
 {
   bool loops_p;
-  int max_regno_before_ira, ira_max_point_before_emit;
+  int ira_max_point_before_emit;
   int rebuild_p;
   bool saved_flag_caller_saves = flag_caller_saves;
   enum ira_region saved_flag_ira_region = flag_ira_region;
@@ -4465,11 +4536,7 @@ ira (FILE *f)
 
   ira_assert (current_loops == NULL);
   if (flag_ira_region == IRA_REGION_ALL || flag_ira_region == IRA_REGION_MIXED)
-    {
-      flow_loops_find (&ira_loops);
-      current_loops = &ira_loops;
-      record_loop_exits ();
-    }
+    loop_optimizer_init (AVOID_CFG_MODIFICATIONS | LOOPS_HAVE_RECORDED_EXITS);
 
   if (internal_flag_ira_verbose > 0 && ira_dump_file != NULL)
     fprintf (ira_dump_file, "Building IRA IR\n");
@@ -4527,11 +4594,10 @@ ira (FILE *f)
 	  /* ??? Rebuild the loop tree, but why?  Does the loop tree
 	     change if new insns were generated?  Can that be handled
 	     by updating the loop tree incrementally?  */
-	  release_recorded_exits ();
-	  flow_loops_free (&ira_loops);
-	  flow_loops_find (&ira_loops);
-	  current_loops = &ira_loops;
-	  record_loop_exits ();
+	  loop_optimizer_finalize ();
+	  free_dominance_info (CDI_DOMINATORS);
+	  loop_optimizer_init (AVOID_CFG_MODIFICATIONS
+			       | LOOPS_HAVE_RECORDED_EXITS);
 
 	  if (! ira_use_lra_p)
 	    {
@@ -4608,8 +4674,7 @@ do_reload (void)
     {
       if (current_loops != NULL)
 	{
-	  release_recorded_exits ();
-	  flow_loops_free (&ira_loops);
+	  loop_optimizer_finalize ();
 	  free_dominance_info (CDI_DOMINATORS);
 	}
       FOR_ALL_BB (bb)
@@ -4658,8 +4723,7 @@ do_reload (void)
       ira_destroy ();
       if (current_loops != NULL)
 	{
-	  release_recorded_exits ();
-	  flow_loops_free (&ira_loops);
+	  loop_optimizer_finalize ();
 	  free_dominance_info (CDI_DOMINATORS);
 	}
       FOR_ALL_BB (bb)
@@ -4727,7 +4791,7 @@ struct rtl_opt_pass pass_ira =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  0,                                    /* todo_flags_finish */
+  TODO_do_not_ggc_collect               /* todo_flags_finish */
  }
 };
 
@@ -4754,6 +4818,6 @@ struct rtl_opt_pass pass_reload =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_ggc_collect                      /* todo_flags_finish */
+  0					/* todo_flags_finish */
  }
 };

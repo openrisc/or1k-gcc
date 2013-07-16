@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -750,6 +750,12 @@ package body Sem_Type is
       --  removes spurious errors from nested instantiations that involve,
       --  among other things, types derived from private types.
 
+      function Real_Actual (T : Entity_Id) return Entity_Id;
+      --  If an actual in an inner instance is the formal of an enclosing
+      --  generic, the actual in the enclosing instance is the one that can
+      --  create an accidental ambiguity, and the check on compatibily of
+      --  generic actual types must use this enclosing actual.
+
       ----------------------
       -- Full_View_Covers --
       ----------------------
@@ -764,6 +770,33 @@ package body Sem_Type is
                  or else Base_Type (Typ1) = Typ2
                  or else Base_Type (Typ2) = Typ1);
       end Full_View_Covers;
+
+      -----------------
+      -- Real_Actual --
+      -----------------
+
+      function Real_Actual (T : Entity_Id) return Entity_Id is
+         Par : constant Node_Id := Parent (T);
+         RA  : Entity_Id;
+
+      begin
+         --  Retrieve parent subtype from subtype declaration for actual
+
+         if Nkind (Par) = N_Subtype_Declaration
+           and then not Comes_From_Source (Par)
+           and then Is_Entity_Name (Subtype_Indication (Par))
+         then
+            RA := Entity (Subtype_Indication (Par));
+
+            if Is_Generic_Actual_Type (RA) then
+               return RA;
+            end if;
+         end if;
+
+         --  Otherwise actual is not the actual of an enclosing instance
+
+         return T;
+      end Real_Actual;
 
    --  Start of processing for Covers
 
@@ -822,21 +855,34 @@ package body Sem_Type is
       --  Generic actuals require special treatment to avoid spurious ambi-
       --  guities in an instance, when two formal types are instantiated with
       --  the same actual, so that different subprograms end up with the same
-      --  signature in the instance.
+      --  signature in the instance. If a generic actual is the actual of an
+      --  enclosing instance, it is that actual that we must compare: generic
+      --  actuals are only incompatible if they appear in the same instance.
 
       if BT1 = BT2
         or else BT1 = T2
         or else BT2 = T1
       then
-         if not Is_Generic_Actual_Type (T1) then
+         if not Is_Generic_Actual_Type (T1)
+              or else
+            not Is_Generic_Actual_Type (T2)
+         then
             return True;
+
+         --  Both T1 and T2 are generic actual types
+
          else
-            return (not Is_Generic_Actual_Type (T2)
-                     or else Is_Itype (T1)
-                     or else Is_Itype (T2)
-                     or else Is_Constr_Subt_For_U_Nominal (T1)
-                     or else Is_Constr_Subt_For_U_Nominal (T2)
-                     or else Scope (T1) /= Scope (T2));
+            declare
+               RT1 : constant Entity_Id := Real_Actual (T1);
+               RT2 : constant Entity_Id := Real_Actual (T2);
+            begin
+               return RT1 = RT2
+                  or else Is_Itype (T1)
+                  or else Is_Itype (T2)
+                  or else Is_Constr_Subt_For_U_Nominal (T1)
+                  or else Is_Constr_Subt_For_U_Nominal (T2)
+                  or else Scope (RT1) /= Scope (RT2);
+            end;
          end if;
 
       --  Literals are compatible with types in a given "class"
@@ -1267,7 +1313,8 @@ package body Sem_Type is
       --  Determine whether a subprogram is an actual in an enclosing instance.
       --  An overloading between such a subprogram and one declared outside the
       --  instance is resolved in favor of the first, because it resolved in
-      --  the generic.
+      --  the generic. Within the instance the actual is represented by a
+      --  constructed subprogram renaming.
 
       function Matches (Actual, Formal : Node_Id) return Boolean;
       --  Look for exact type match in an instance, to remove spurious
@@ -1349,6 +1396,14 @@ package body Sem_Type is
       function Is_Actual_Subprogram (S : Entity_Id) return Boolean is
       begin
          return In_Open_Scopes (Scope (S))
+           and then
+             Nkind (Unit_Declaration_Node (S)) =
+               N_Subprogram_Renaming_Declaration
+
+           --  Why the Comes_From_Source test here???
+
+           and then not Comes_From_Source (Unit_Declaration_Node (S))
+
            and then
              (Is_Generic_Instance (Scope (S))
                or else Is_Wrapper_Package (Scope (S)));
@@ -1973,7 +2028,7 @@ package body Sem_Type is
       elsif (Nkind (N) = N_Function_Call
               and then Nkind (Name (N)) = N_Expanded_Name
               and then (Chars (Predef_Subp) /= Name_Op_Expon
-                          or else Hides_Op (User_Subp, Predef_Subp))
+                         or else Hides_Op (User_Subp, Predef_Subp))
               and then Scope (User_Subp) = Entity (Prefix (Name (N))))
         or else Hides_Op (User_Subp, Predef_Subp)
       then
@@ -1993,8 +2048,8 @@ package body Sem_Type is
       --  Ditto in Ada 2012, where an ambiguity may arise for an operation
       --  on a partial view that is completed with a fixed point type. See
       --  AI05-0020 and AI05-0209. The ambiguity is resolved in favor of the
-      --  user-defined subprogram so that a client of the package has the
-      --  same resulution as the body of the package.
+      --  user-defined type and subprogram, so that a client of the package
+      --  has the same resolution as the body of the package.
 
       else
          if (In_Open_Scopes (Scope (User_Subp))
@@ -2002,15 +2057,13 @@ package body Sem_Type is
            and then not In_Instance
          then
             if Is_Fixed_Point_Type (Typ)
-              and then (Chars (Nam1) = Name_Op_Multiply
-                          or else Chars (Nam1) = Name_Op_Divide)
+              and then Nam_In (Chars (Nam1), Name_Op_Multiply, Name_Op_Divide)
               and then
                 (Ada_Version = Ada_83
-                  or else
-                   (Ada_Version >= Ada_2012
-                     and then
-                       In_Same_Declaration_List
-                         (Typ, Unit_Declaration_Node (User_Subp))))
+                  or else (Ada_Version >= Ada_2012
+                            and then In_Same_Declaration_List
+                                       (First_Subtype (Typ),
+                                          Unit_Declaration_Node (User_Subp))))
             then
                if It2.Nam = Predef_Subp then
                   return It1;
@@ -2024,9 +2077,7 @@ package body Sem_Type is
             --  declared in the same declarative list as the type. The node
             --  may be an operator or a function call.
 
-            elsif (Chars (Nam1) = Name_Op_Eq
-                     or else
-                   Chars (Nam1) = Name_Op_Ne)
+            elsif Nam_In (Chars (Nam1), Name_Op_Eq, Name_Op_Ne)
               and then Ada_Version >= Ada_2005
               and then Etype (User_Subp) = Standard_Boolean
               and then Ekind (Operand_Type) = E_Anonymous_Access_Type
@@ -3004,10 +3055,7 @@ package body Sem_Type is
       elsif Num = 1 then
          T1 := Etype (First_Formal (New_S));
 
-         if Op_Name = Name_Op_Subtract
-           or else Op_Name = Name_Op_Add
-           or else Op_Name = Name_Op_Abs
-         then
+         if Nam_In (Op_Name, Name_Op_Subtract, Name_Op_Add, Name_Op_Abs) then
             return Base_Type (T1) = Base_Type (T)
               and then Is_Numeric_Type (T);
 
@@ -3025,26 +3073,24 @@ package body Sem_Type is
          T1 := Etype (First_Formal (New_S));
          T2 := Etype (Next_Formal (First_Formal (New_S)));
 
-         if Op_Name =  Name_Op_And or else Op_Name = Name_Op_Or
-           or else Op_Name = Name_Op_Xor
-         then
+         if Nam_In (Op_Name, Name_Op_And, Name_Op_Or, Name_Op_Xor) then
             return Base_Type (T1) = Base_Type (T2)
               and then Base_Type (T1) = Base_Type (T)
               and then Valid_Boolean_Arg (Base_Type (T));
 
-         elsif Op_Name = Name_Op_Eq or else Op_Name = Name_Op_Ne then
+         elsif Nam_In (Op_Name, Name_Op_Eq, Name_Op_Ne) then
             return Base_Type (T1) = Base_Type (T2)
               and then not Is_Limited_Type (T1)
               and then Is_Boolean_Type (T);
 
-         elsif Op_Name = Name_Op_Lt or else Op_Name = Name_Op_Le
-           or else Op_Name = Name_Op_Gt or else Op_Name = Name_Op_Ge
+         elsif Nam_In (Op_Name, Name_Op_Lt, Name_Op_Le,
+                                Name_Op_Gt, Name_Op_Ge)
          then
             return Base_Type (T1) = Base_Type (T2)
               and then Valid_Comparison_Arg (T1)
               and then Is_Boolean_Type (T);
 
-         elsif Op_Name = Name_Op_Add or else Op_Name = Name_Op_Subtract then
+         elsif Nam_In (Op_Name, Name_Op_Add, Name_Op_Subtract) then
             return Base_Type (T1) = Base_Type (T2)
               and then Base_Type (T1) = Base_Type (T)
               and then Is_Numeric_Type (T);
@@ -3097,7 +3143,7 @@ package body Sem_Type is
                         and then Is_Floating_Point_Type (T2)
                         and then Base_Type (T2) = Base_Type (T));
 
-         elsif Op_Name = Name_Op_Mod or else Op_Name = Name_Op_Rem then
+         elsif Nam_In (Op_Name, Name_Op_Mod, Name_Op_Rem) then
             return Base_Type (T1) = Base_Type (T2)
               and then Base_Type (T1) = Base_Type (T)
               and then Is_Integer_Type (T);

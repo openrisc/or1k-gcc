@@ -1,7 +1,6 @@
 /* Definitions of target machine for GNU compiler,
    for 64 bit PowerPC linux.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011  Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -137,8 +136,11 @@ extern int dot_symbols;
 		SET_CMODEL (CMODEL_MEDIUM);			\
 	      if (rs6000_current_cmodel != CMODEL_SMALL)	\
 		{						\
-		  TARGET_NO_FP_IN_TOC = 0;			\
-		  TARGET_NO_SUM_IN_TOC = 0;			\
+		  if (!global_options_set.x_TARGET_NO_FP_IN_TOC) \
+		    TARGET_NO_FP_IN_TOC				\
+		      = rs6000_current_cmodel == CMODEL_MEDIUM;	\
+		  if (!global_options_set.x_TARGET_NO_SUM_IN_TOC) \
+		    TARGET_NO_SUM_IN_TOC = 0;			\
 		}						\
 	    }							\
 	}							\
@@ -181,20 +183,14 @@ extern int dot_symbols;
 #endif
 
 #define ASM_SPEC32 "-a32 \
-%{mrelocatable} %{mrelocatable-lib} %{fpic:-K PIC} %{fPIC:-K PIC} \
-%{memb} %{!memb: %{msdata=eabi: -memb}} \
-%{!mlittle: %{!mlittle-endian: %{!mbig: %{!mbig-endian: \
-    %{mcall-freebsd: -mbig} \
-    %{mcall-i960-old: -mlittle} \
-    %{mcall-linux: -mbig} \
-    %{mcall-netbsd: -mbig} \
-}}}}"
+%{mrelocatable} %{mrelocatable-lib} %{fpic|fpie|fPIC|fPIE:-K PIC} \
+%{memb|msdata=eabi: -memb}"
 
 #define ASM_SPEC64 "-a64"
 
 #define ASM_SPEC_COMMON "%(asm_cpu) \
-%{,assembler|,assembler-with-cpp: %{mregnames} %{mno-regnames}} \
-%{mlittle} %{mlittle-endian} %{mbig} %{mbig-endian}"
+%{,assembler|,assembler-with-cpp: %{mregnames} %{mno-regnames}}" \
+  ENDIAN_SELECT(" -mbig", " -mlittle", DEFAULT_ASM_ENDIAN)
 
 #undef	SUBSUBTARGET_EXTRA_SPECS
 #define SUBSUBTARGET_EXTRA_SPECS \
@@ -212,10 +208,6 @@ extern int dot_symbols;
 #endif
 
 #ifndef RS6000_BI_ARCH
-
-/* 64-bit PowerPC Linux is always big-endian.  */
-#undef	OPTION_LITTLE_ENDIAN
-#define OPTION_LITTLE_ENDIAN	0
 
 /* 64-bit PowerPC Linux always has a TOC.  */
 #undef  TARGET_TOC
@@ -377,12 +369,30 @@ extern int dot_symbols;
 #define GNU_USER_DYNAMIC_LINKER64 \
   CHOOSE_DYNAMIC_LINKER (GLIBC_DYNAMIC_LINKER64, UCLIBC_DYNAMIC_LINKER64)
 
+#undef  DEFAULT_ASM_ENDIAN
+#if (TARGET_DEFAULT & MASK_LITTLE_ENDIAN)
+#define DEFAULT_ASM_ENDIAN " -mlittle"
+#define LINK_OS_LINUX_EMUL32 ENDIAN_SELECT(" -m elf32ppclinux",		\
+					   " -m elf32lppclinux",	\
+					   " -m elf32lppclinux")
+#define LINK_OS_LINUX_EMUL64 ENDIAN_SELECT(" -m elf64ppc",		\
+					   " -m elf64lppc",		\
+					   " -m elf64lppc")
+#else
+#define DEFAULT_ASM_ENDIAN " -mbig"
+#define LINK_OS_LINUX_EMUL32 ENDIAN_SELECT(" -m elf32ppclinux",		\
+					   " -m elf32lppclinux",	\
+					   " -m elf32ppclinux")
+#define LINK_OS_LINUX_EMUL64 ENDIAN_SELECT(" -m elf64ppc",		\
+					   " -m elf64lppc",		\
+					   " -m elf64ppc")
+#endif
 
-#define LINK_OS_LINUX_SPEC32 "-m elf32ppclinux %{!shared: %{!static: \
+#define LINK_OS_LINUX_SPEC32 LINK_OS_LINUX_EMUL32 " %{!shared: %{!static: \
   %{rdynamic:-export-dynamic} \
   -dynamic-linker " GNU_USER_DYNAMIC_LINKER32 "}}"
 
-#define LINK_OS_LINUX_SPEC64 "-m elf64ppc %{!shared: %{!static: \
+#define LINK_OS_LINUX_SPEC64 LINK_OS_LINUX_EMUL64 " %{!shared: %{!static: \
   %{rdynamic:-export-dynamic} \
   -dynamic-linker " GNU_USER_DYNAMIC_LINKER64 "}}"
 

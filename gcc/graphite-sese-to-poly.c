@@ -1,5 +1,5 @@
 /* Conversion of SESE regions to Polyhedra.
-   Copyright (C) 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@amd.com>.
 
 This file is part of GCC.
@@ -550,7 +550,7 @@ build_scop_scattering (scop_p scop)
   isl_space *dc = isl_set_get_space (scop->context);
   isl_aff *static_sched;
 
-  dc = isl_space_add_dims (dc, isl_dim_set, number_of_loops());
+  dc = isl_space_add_dims (dc, isl_dim_set, number_of_loops (cfun));
   static_sched = isl_aff_zero_on_domain (isl_local_space_from_space (dc));
 
   /* We have to start schedules at 0 on the first component and
@@ -590,8 +590,7 @@ extract_affine_chrec (scop_p s, tree e, __isl_take isl_space *space)
   isl_pw_aff *lhs = extract_affine (s, CHREC_LEFT (e), isl_space_copy (space));
   isl_pw_aff *rhs = extract_affine (s, CHREC_RIGHT (e), isl_space_copy (space));
   isl_local_space *ls = isl_local_space_from_space (space);
-  unsigned pos = sese_loop_depth ((sese) s->region,
-				  get_loop (CHREC_VARIABLE (e))) - 1;
+  unsigned pos = sese_loop_depth ((sese) s->region, get_chrec_loop (e)) - 1;
   isl_aff *loop = isl_aff_set_coefficient_si
     (isl_aff_zero_on_domain (ls), isl_dim_in, pos, 1);
   isl_pw_aff *l = isl_pw_aff_from_aff (loop);
@@ -1058,6 +1057,8 @@ build_loop_iteration_domains (scop_p scop, struct loop *loop,
 	  c = isl_constraint_set_constant (c, v);
 	  inner = isl_set_add_constraint (inner, c);
 	}
+      else
+	isl_pw_aff_free (aff);
     }
   else
     gcc_unreachable ();
@@ -1402,7 +1403,7 @@ build_scop_iteration_domain (scop_p scop)
   sese region = SCOP_REGION (scop);
   int i;
   poly_bb_p pbb;
-  int nb_loops = number_of_loops ();
+  int nb_loops = number_of_loops (cfun);
   isl_set **doms = XCNEWVEC (isl_set *, nb_loops);
 
   FOR_EACH_VEC_ELT (SESE_LOOP_NEST (region), i, loop)
@@ -2018,7 +2019,7 @@ insert_out_of_ssa_copy (scop_p scop, tree res, tree expr, gimple after_stmt)
   gimple_seq stmts;
   gimple_stmt_iterator gsi;
   tree var = force_gimple_operand (expr, &stmts, true, NULL_TREE);
-  gimple stmt = gimple_build_assign (res, var);
+  gimple stmt = gimple_build_assign (unshare_expr (res), var);
   vec<gimple> x;
   x.create (3);
 
@@ -2074,7 +2075,7 @@ insert_out_of_ssa_copy_on_edge (scop_p scop, edge e, tree res, tree expr)
   gimple_stmt_iterator gsi;
   gimple_seq stmts = NULL;
   tree var = force_gimple_operand (expr, &stmts, true, NULL_TREE);
-  gimple stmt = gimple_build_assign (res, var);
+  gimple stmt = gimple_build_assign (unshare_expr (res), var);
   basic_block bb;
   vec<gimple> x;
   x.create (3);
@@ -2230,7 +2231,7 @@ rewrite_close_phi_out_of_ssa (scop_p scop, gimple_stmt_iterator *psi)
     {
       tree zero_dim_array = create_zero_dim_array (res, "Close_Phi");
 
-      stmt = gimple_build_assign (res, zero_dim_array);
+      stmt = gimple_build_assign (res, unshare_expr (zero_dim_array));
 
       if (TREE_CODE (arg) == SSA_NAME)
 	insert_out_of_ssa_copy (scop, zero_dim_array, arg,
@@ -2256,10 +2257,8 @@ rewrite_phi_out_of_ssa (scop_p scop, gimple_stmt_iterator *psi)
   gimple phi = gsi_stmt (*psi);
   basic_block bb = gimple_bb (phi);
   tree res = gimple_phi_result (phi);
-  tree var;
   tree zero_dim_array = create_zero_dim_array (res, "phi_out_of_ssa");
   gimple stmt;
-  gimple_seq stmts;
 
   for (i = 0; i < gimple_phi_num_args (phi); i++)
     {
@@ -2276,13 +2275,10 @@ rewrite_phi_out_of_ssa (scop_p scop, gimple_stmt_iterator *psi)
 	insert_out_of_ssa_copy_on_edge (scop, e, zero_dim_array, arg);
     }
 
-  var = force_gimple_operand (zero_dim_array, &stmts, true, NULL_TREE);
-
-  stmt = gimple_build_assign (res, var);
+  stmt = gimple_build_assign (res, unshare_expr (zero_dim_array));
   remove_phi_node (psi, false);
   SSA_NAME_DEF_STMT (res) = stmt;
-
-  insert_stmts (scop, stmt, stmts, gsi_after_labels (bb));
+  insert_stmts (scop, stmt, NULL, gsi_after_labels (bb));
 }
 
 /* Rewrite the degenerate phi node at position PSI from the degenerate

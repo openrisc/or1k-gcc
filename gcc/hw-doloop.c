@@ -1,6 +1,6 @@
 /* Code to analyze doloop loops in order for targets to perform late
    optimizations converting doloops to other forms of hardware loops.
-   Copyright (C) 2011 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -365,7 +365,7 @@ discover_loops (bitmap_obstack *loop_stack, struct hw_doloop_hooks *hooks)
       rtx tail = BB_END (bb);
       rtx insn, reg;
 
-      while (tail && GET_CODE (tail) == NOTE && tail != BB_HEAD (bb))
+      while (tail && NOTE_P (tail) && tail != BB_HEAD (bb))
 	tail = PREV_INSN (tail);
 
       if (tail == NULL_RTX)

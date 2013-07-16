@@ -1,3 +1,34 @@
+2013-03-16  Yvan Roux <yvan.roux@linaro.org>
+
+        * include/private/gcconfig.h (AARCH64): New macro (defined only if
+        __aarch64__).
+        (CPP_WORDSZ): Define for AArch64.
+        (MACH_TYPE): Likewise.
+        (ALIGNMENT): Likewise.
+        (HBLKSIZE): Likewise.
+        (OS_TYPE): Likewise.
+        (LINUX_STACKBOTTOM): Likewise.
+        (USE_GENERIC_PUSH_REGS): Likewise.
+        (DYNAMIC_LOADING): Likewise.
+        (DATASTART): Likewise.
+        (DATAEND): Likewise.
+        (STACKBOTTOM): Likewise.
+        (NOSYS): Likewise.
+        (mach_type_known): Define for AArch64 and comment update.
+
+2013-03-06  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* os_dep.c [SOLARIS_STACKBOTTOM] (GC_solaris_stack_base): New
+	function.
+	[!BEOS && !AMIGA && !MSWIN32 && !MSWINCE && !OS2 && !NOSYS &&
+	!ECOS] (GC_get_stack_base): Use it.
+	* include/private/gcconfig.h [SPARC && SUNOS5]
+	(SOLARIS_STACKBOTTOM): Define.
+	(STACKBOTTOM, HEURISTIC2): Remove.
+	[I386 && SUNOS5]
+	(SOLARIS_STACKBOTTOM): Define.
+	(STACKBOTTOM): Remove.
+
 2012-11-04  Samuel Thibault  <samuel.thibault@gnu.org>
 
 	* configure.ac: Add stanza for *-*-gnu* threads configuration.

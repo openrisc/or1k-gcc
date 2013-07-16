@@ -1,9 +1,6 @@
 /* Report error messages, build initializers, and perform
    some front-end optimizations for C++ compiler.
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011,
-   2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Hacked by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -101,7 +98,7 @@ cxx_readonly_error (tree arg, enum lvalue_use errstring)
 
   /* Handle C++-specific things first.  */
 
-  if (TREE_CODE (arg) == VAR_DECL
+  if (VAR_P (arg)
       && DECL_LANG_SPECIFIC (arg)
       && DECL_IN_AGGR_P (arg)
       && !TREE_STATIC (arg))
@@ -114,9 +111,9 @@ cxx_readonly_error (tree arg, enum lvalue_use errstring)
 			  G_("decrement of "
 			     "constant field %qD"),
 			  arg);
-  else if (TREE_CODE (arg) == INDIRECT_REF
+  else if (INDIRECT_REF_P (arg)
 	   && TREE_CODE (TREE_TYPE (TREE_OPERAND (arg, 0))) == REFERENCE_TYPE
-	   && (TREE_CODE (TREE_OPERAND (arg, 0)) == VAR_DECL
+	   && (VAR_P (TREE_OPERAND (arg, 0))
 	       || TREE_CODE (TREE_OPERAND (arg, 0)) == PARM_DECL))
     ERROR_FOR_ASSIGNMENT (G_("assignment of "
                              "read-only reference %qD"),
@@ -143,6 +140,9 @@ struct GTY((chain_next ("%h.next"))) pending_abstract_type {
 
   /* Type which will be checked for abstractness.  */
   tree type;
+
+  /* Kind of use in an unnamed declarator.  */
+  abstract_class_use use;
 
   /* Position of the declaration. This is only needed for IDENTIFIER_NODEs,
      because DECLs already carry locus information.  */
@@ -184,6 +184,7 @@ pat_compare (const void* val1, const void* val2)
 static GTY ((param_is (struct pending_abstract_type)))
 htab_t abstract_pending_vars = NULL;
 
+static int abstract_virtuals_error_sfinae (tree, tree, abstract_class_use, tsubst_flags_t);
 
 /* This function is called after TYPE is completed, and will check if there
    are pending declarations for which we still need to verify the abstractness
@@ -234,7 +235,8 @@ complete_type_check_abstract (tree type)
 	    location. Notice that this is only needed if the decl is an
 	    IDENTIFIER_NODE.  */
 	  input_location = pat->locus;
-	  abstract_virtuals_error (pat->decl, pat->type);
+	  abstract_virtuals_error_sfinae (pat->decl, pat->type, pat->use,
+					  tf_warning_or_error);
 	  pat = pat->next;
 	}
     }
@@ -247,11 +249,13 @@ complete_type_check_abstract (tree type)
 
 /* If TYPE has abstract virtual functions, issue an error about trying
    to create an object of that type.  DECL is the object declared, or
-   NULL_TREE if the declaration is unavailable.  Returns 1 if an error
-   occurred; zero if all was well.  */
+   NULL_TREE if the declaration is unavailable, in which case USE specifies
+   the kind of invalid use.  Returns 1 if an error occurred; zero if
+   all was well.  */
 
-int
-abstract_virtuals_error_sfinae (tree decl, tree type, tsubst_flags_t complain)
+static int
+abstract_virtuals_error_sfinae (tree decl, tree type, abstract_class_use use,
+				tsubst_flags_t complain)
 {
   vec<tree, va_gc> *pure;
 
@@ -261,17 +265,24 @@ abstract_virtuals_error_sfinae (tree decl, tree type, tsubst_flags_t complain)
     return 0;
   type = TYPE_MAIN_VARIANT (type);
 
+#if 0
+  /* Instantiation here seems to be required by the standard,
+     but breaks e.g. boost::bind.  FIXME!  */
+  /* In SFINAE, non-N3276 context, force instantiation.  */
+  if (!(complain & (tf_error|tf_decltype)))
+    complete_type (type);
+#endif
+
   /* If the type is incomplete, we register it within a hash table,
      so that we can check again once it is completed. This makes sense
      only for objects for which we have a declaration or at least a
      name.  */
-  if (!COMPLETE_TYPE_P (type))
+  if (!COMPLETE_TYPE_P (type) && (complain & tf_error))
     {
       void **slot;
       struct pending_abstract_type *pat;
 
-      gcc_assert (!decl || DECL_P (decl)
-		  || TREE_CODE (decl) == IDENTIFIER_NODE);
+      gcc_assert (!decl || DECL_P (decl) || identifier_p (decl));
 
       if (!abstract_pending_vars)
 	abstract_pending_vars = htab_create_ggc (31, &pat_calc_hash,
@@ -283,6 +294,7 @@ abstract_virtuals_error_sfinae (tree decl, tree type, tsubst_flags_t complain)
       pat = ggc_alloc_pending_abstract_type ();
       pat->type = type;
       pat->decl = decl;
+      pat->use = use;
       pat->locus = ((decl && DECL_P (decl))
 		    ? DECL_SOURCE_LOCATION (decl)
 		    : input_location);
@@ -307,12 +319,18 @@ abstract_virtuals_error_sfinae (tree decl, tree type, tsubst_flags_t complain)
 
   if (decl)
     {
-      if (TREE_CODE (decl) == VAR_DECL)
+      if (VAR_P (decl))
 	error ("cannot declare variable %q+D to be of abstract "
 	       "type %qT", decl, type);
       else if (TREE_CODE (decl) == PARM_DECL)
-	error ("cannot declare parameter %q+D to be of abstract type %qT",
-	       decl, type);
+	{
+	  if (DECL_NAME (decl))
+	    error ("cannot declare parameter %q+D to be of abstract type %qT",
+		   decl, type);
+	  else
+	    error ("cannot declare parameter to be of abstract type %qT",
+		   type);
+	}
       else if (TREE_CODE (decl) == FIELD_DECL)
 	error ("cannot declare field %q+D to be of abstract type %qT",
 	       decl, type);
@@ -321,14 +339,40 @@ abstract_virtuals_error_sfinae (tree decl, tree type, tsubst_flags_t complain)
 	error ("invalid abstract return type for member function %q+#D", decl);
       else if (TREE_CODE (decl) == FUNCTION_DECL)
 	error ("invalid abstract return type for function %q+#D", decl);
-      else if (TREE_CODE (decl) == IDENTIFIER_NODE)
+      else if (identifier_p (decl))
 	/* Here we do not have location information.  */
 	error ("invalid abstract type %qT for %qE", type, decl);
       else
 	error ("invalid abstract type for %q+D", decl);
     }
-  else
-    error ("cannot allocate an object of abstract type %qT", type);
+  else switch (use)
+    {
+    case ACU_ARRAY:
+      error ("creating array of %qT, which is an abstract class type", type);
+      break;
+    case ACU_CAST:
+      error ("invalid cast to abstract class type %qT", type);
+      break;
+    case ACU_NEW:
+      error ("invalid new-expression of abstract class type %qT", type);
+      break;
+    case ACU_RETURN:
+      error ("invalid abstract return type %qT", type);
+      break;
+    case ACU_PARM:
+      error ("invalid abstract parameter type %qT", type);
+      break;
+    case ACU_THROW:
+      error ("expression of abstract class type %qT cannot "
+	     "be used in throw-expression", type);
+      break;
+    case ACU_CATCH:
+      error ("cannot declare catch parameter to be of abstract "
+	     "class type %qT", type);
+      break;
+    default:
+      error ("cannot allocate an object of abstract type %qT", type);
+    }
 
   /* Only go through this once.  */
   if (pure->length ())
@@ -350,13 +394,23 @@ abstract_virtuals_error_sfinae (tree decl, tree type, tsubst_flags_t complain)
 	 again.  */
       pure->truncate (0);
     }
-  else
-    inform (DECL_SOURCE_LOCATION (TYPE_MAIN_DECL (type)),
-	    "  since type %qT has pure virtual functions",
-	    type);
 
   return 1;
 }
+
+int
+abstract_virtuals_error_sfinae (tree decl, tree type, tsubst_flags_t complain)
+{
+  return abstract_virtuals_error_sfinae (decl, type, ACU_UNKNOWN, complain);
+}
+
+int
+abstract_virtuals_error_sfinae (abstract_class_use use, tree type,
+				tsubst_flags_t complain)
+{
+  return abstract_virtuals_error_sfinae (NULL_TREE, type, use, complain);
+}
+
 
 /* Wrapper for the above function in the common case of wanting errors.  */
 
@@ -364,6 +418,12 @@ int
 abstract_virtuals_error (tree decl, tree type)
 {
   return abstract_virtuals_error_sfinae (decl, type, tf_warning_or_error);
+}
+
+int
+abstract_virtuals_error (abstract_class_use use, tree type)
+{
+  return abstract_virtuals_error_sfinae (use, type, tf_warning_or_error);
 }
 
 /* Print an error message for invalid use of an incomplete type.
@@ -385,7 +445,7 @@ cxx_incomplete_type_diagnostic (const_tree value, const_tree type,
   if (TREE_CODE (type) == ERROR_MARK)
     return;
 
-  if (value != 0 && (TREE_CODE (value) == VAR_DECL
+  if (value != 0 && (VAR_P (value)
 		     || TREE_CODE (value) == PARM_DECL
 		     || TREE_CODE (value) == FIELD_DECL))
     {
@@ -715,7 +775,8 @@ store_init_value (tree decl, tree init, vec<tree, va_gc>** cleanups, int flags)
       bool const_init;
       value = fold_non_dependent_expr (value);
       value = maybe_constant_init (value);
-      if (DECL_DECLARED_CONSTEXPR_P (decl))
+      if (DECL_DECLARED_CONSTEXPR_P (decl)
+	  || DECL_IN_AGGR_P (decl))
 	{
 	  /* Diagnose a non-constant initializer for constexpr.  */
 	  if (processing_template_decl
@@ -735,10 +796,12 @@ store_init_value (tree decl, tree init, vec<tree, va_gc>** cleanups, int flags)
      will perform the dynamic initialization.  */
   if (value != error_mark_node
       && (TREE_SIDE_EFFECTS (value)
-	   || ! initializer_constant_valid_p (value, TREE_TYPE (value))))
+	  || array_of_runtime_bound_p (type)
+	  || ! reduced_constant_expression_p (value)))
     {
       if (TREE_CODE (type) == ARRAY_TYPE
-	  && TYPE_HAS_NONTRIVIAL_DESTRUCTOR (TREE_TYPE (type)))
+	  && (TYPE_HAS_NONTRIVIAL_DESTRUCTOR (TREE_TYPE (type))
+	      || array_of_runtime_bound_p (type)))
 	/* For an array, we only need/want a single cleanup region rather
 	   than one per element.  */
 	return build_vec_init (decl, NULL_TREE, value, false, 1,
@@ -828,7 +891,7 @@ check_narrowing (tree type, tree init)
 
   if (!ok)
     {
-      if (cxx_dialect >= cxx0x)
+      if (cxx_dialect >= cxx11)
 	pedwarn (EXPR_LOC_OR_HERE (init), OPT_Wnarrowing,
 		 "narrowing conversion of %qE from %qT to %qT inside { }",
 		 init, ftype, type);
@@ -1054,7 +1117,7 @@ process_init_constructor_array (tree type, tree init,
   if (TREE_CODE (type) == ARRAY_TYPE)
     {
       tree domain = TYPE_DOMAIN (type);
-      if (domain)
+      if (domain && TREE_CONSTANT (TYPE_MAX_VALUE (domain)))
 	len = (tree_to_double_int (TYPE_MAX_VALUE (domain))
 	       - tree_to_double_int (TYPE_MIN_VALUE (domain))
 	       + double_int_one)
@@ -1174,6 +1237,8 @@ process_init_constructor_record (tree type, tree init,
       type = TREE_TYPE (field);
       if (DECL_BIT_FIELD_TYPE (field))
 	type = DECL_BIT_FIELD_TYPE (field);
+      if (type == error_mark_node)
+	return PICFLAG_ERRONEOUS;
 
       if (idx < vec_safe_length (CONSTRUCTOR_ELTS (init)))
 	{
@@ -1184,7 +1249,7 @@ process_init_constructor_record (tree type, tree init,
 		 latter case can happen in templates where lookup has to be
 		 deferred.  */
 	      gcc_assert (TREE_CODE (ce->index) == FIELD_DECL
-			  || TREE_CODE (ce->index) == IDENTIFIER_NODE);
+			  || identifier_p (ce->index));
 	      if (ce->index != field
 		  && ce->index != DECL_NAME (field))
 		{
@@ -1310,7 +1375,7 @@ process_init_constructor_union (tree type, tree init,
     {
       if (TREE_CODE (ce->index) == FIELD_DECL)
 	;
-      else if (TREE_CODE (ce->index) == IDENTIFIER_NODE)
+      else if (identifier_p (ce->index))
 	{
 	  /* This can happen within a cast, see g++.dg/opt/cse2.C.  */
 	  tree name = ce->index;
@@ -1529,7 +1594,7 @@ build_x_arrow (location_t loc, tree expr, tsubst_flags_t complain)
   else
     last_rval = decay_conversion (expr, complain);
 
-  if (TREE_CODE (TREE_TYPE (last_rval)) == POINTER_TYPE)
+  if (TYPE_PTR_P (TREE_TYPE (last_rval)))
     {
       if (processing_template_decl)
 	{
@@ -1615,7 +1680,7 @@ build_m_component_ref (tree datum, tree component, tsubst_flags_t complain)
 
   if (TYPE_PTRDATAMEM_P (ptrmem_type))
     {
-      bool is_lval = real_lvalue_p (datum);
+      cp_lvalue_kind kind = lvalue_kind (datum);
       tree ptype;
 
       /* Compute the type of the field, as described in [expr.ref].
@@ -1645,12 +1710,39 @@ build_m_component_ref (tree datum, tree component, tsubst_flags_t complain)
 	return error_mark_node;
 
       /* If the object expression was an rvalue, return an rvalue.  */
-      if (!is_lval)
+      if (kind & clk_class)
+	datum = rvalue (datum);
+      else if (kind & clk_rvalueref)
 	datum = move (datum);
       return datum;
     }
   else
-    return build2 (OFFSET_REF, type, datum, component);
+    {
+      /* 5.5/6: In a .* expression whose object expression is an rvalue, the
+	 program is ill-formed if the second operand is a pointer to member
+	 function with ref-qualifier &. In a .* expression whose object
+	 expression is an lvalue, the program is ill-formed if the second
+	 operand is a pointer to member function with ref-qualifier &&.  */
+      if (FUNCTION_REF_QUALIFIED (type))
+	{
+	  bool lval = real_lvalue_p (datum);
+	  if (lval && FUNCTION_RVALUE_QUALIFIED (type))
+	    {
+	      if (complain & tf_error)
+		error ("pointer-to-member-function type %qT requires an rvalue",
+		       ptrmem_type);
+	      return error_mark_node;
+	    }
+	  else if (!lval && !FUNCTION_RVALUE_QUALIFIED (type))
+	    {
+	      if (complain & tf_error)
+		error ("pointer-to-member-function type %qT requires an lvalue",
+		       ptrmem_type);
+	      return error_mark_node;
+	    }
+	}
+      return build2 (OFFSET_REF, type, datum, component);
+    }
 }
 
 /* Return a tree node for the expression TYPENAME '(' PARMS ')'.  */
@@ -1732,7 +1824,7 @@ build_functional_cast (tree exp, tree parms, tsubst_flags_t complain)
 
   if (!complete_type_or_maybe_complain (type, NULL_TREE, complain))
     return error_mark_node;
-  if (abstract_virtuals_error_sfinae (NULL_TREE, type, complain))
+  if (abstract_virtuals_error_sfinae (ACU_CAST, type, complain))
     return error_mark_node;
 
   /* [expr.type.conv]
@@ -1793,7 +1885,7 @@ add_exception_specifier (tree list, tree spec, int complain)
   /* [except.spec] 1, type in an exception specifier shall not be
      incomplete, or pointer or ref to incomplete other than pointer
      to cv void.  */
-  is_ptr = TREE_CODE (core) == POINTER_TYPE;
+  is_ptr = TYPE_PTR_P (core);
   if (is_ptr || TREE_CODE (core) == REFERENCE_TYPE)
     core = TREE_TYPE (core);
   if (complain < 0)
@@ -1871,7 +1963,7 @@ merge_exception_specifiers (tree list, tree add, tree fn)
       /* If ADD is a deferred noexcept, we must have been called from
 	 process_subob_fn.  For implicitly declared functions, we build up
 	 a list of functions to consider at instantiation time.  */
-      if (noex == boolean_true_node)
+      if (noex && operand_equal_p (noex, boolean_true_node, 0))
 	noex = NULL_TREE;
       gcc_assert (fn && (!noex || is_overloaded_fn (noex)));
       noex = build_overload (fn, noex);

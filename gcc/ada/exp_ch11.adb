@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1005,8 +1005,8 @@ package body Exp_Ch11 is
             then
                Warn_No_Exception_Propagation_Active (Handler);
                Error_Msg_N
-                 ("\?this handler can never be entered, and has been removed",
-                  Handler);
+                 ("\?X?this handler can never be entered, "
+                  & "and has been removed", Handler);
             end if;
 
             if No_Exception_Propagation_Active then
@@ -1402,10 +1402,15 @@ package body Exp_Ch11 is
 
       --  Add clean up actions if required
 
-      if Nkind (Parent (N)) /= N_Package_Body
-        and then Nkind (Parent (N)) /= N_Accept_Statement
-        and then Nkind (Parent (N)) /= N_Extended_Return_Statement
+      if not Nkind_In (Parent (N), N_Package_Body,
+                                   N_Accept_Statement,
+                                   N_Extended_Return_Statement)
         and then not Delay_Cleanups (Current_Scope)
+
+        --  No cleanup action needed in thunks associated with interfaces
+        --  because they only displace the pointer to the object.
+
+        and then not Is_Thunk (Current_Scope)
       then
          Expand_Cleanup_Actions (Parent (N));
       else
@@ -1430,6 +1435,62 @@ package body Exp_Ch11 is
 
       Possible_Local_Raise (N, Standard_Constraint_Error);
    end Expand_N_Raise_Constraint_Error;
+
+   -------------------------------
+   -- Expand_N_Raise_Expression --
+   -------------------------------
+
+   procedure Expand_N_Raise_Expression (N : Node_Id) is
+      Loc : constant Source_Ptr := Sloc (N);
+      Typ : constant Entity_Id  := Etype (N);
+      RCE : Node_Id;
+
+   begin
+      Possible_Local_Raise (N, Name (N));
+
+      --  Later we must teach the back end/gigi how to deal with this, but
+      --  for now we will assume the type is Standard_Boolean and transform
+      --  the node to:
+
+      --     do
+      --       raise X [with string]
+      --     in
+      --       raise Constraint_Error;
+
+      --  unless the flag Convert_To_Return_False is set, in which case
+      --  the transformation is to:
+
+      --     do
+      --       return False;
+      --     in
+      --       raise Constraint_Error;
+
+      --  The raise constraint error can never be executed. It is just a dummy
+      --  node that can be labeled with an arbitrary type.
+
+      RCE := Make_Raise_Constraint_Error (Loc, Reason => CE_Explicit_Raise);
+      Set_Etype (RCE, Typ);
+
+      if Convert_To_Return_False (N) then
+         Rewrite (N,
+           Make_Expression_With_Actions (Loc,
+             Actions     => New_List (
+               Make_Simple_Return_Statement (Loc,
+                 Expression => New_Occurrence_Of (Standard_False, Loc))),
+              Expression => RCE));
+
+      else
+         Rewrite (N,
+           Make_Expression_With_Actions (Loc,
+             Actions     => New_List (
+               Make_Raise_Statement (Loc,
+                 Name       => Name (N),
+                 Expression => Expression (N))),
+              Expression => RCE));
+      end if;
+
+      Analyze_And_Resolve (N, Typ);
+   end Expand_N_Raise_Expression;
 
    ----------------------------------
    -- Expand_N_Raise_Program_Error --
@@ -1808,10 +1869,10 @@ package body Exp_Ch11 is
 
             if Configurable_Run_Time_Mode then
                Error_Msg_NE
-                 ("\?& may call Last_Chance_Handler", N, E);
+                 ("\?X?& may call Last_Chance_Handler", N, E);
             else
                Error_Msg_NE
-                 ("\?& may result in unhandled exception", N, E);
+                 ("\?X?& may result in unhandled exception", N, E);
             end if;
          end if;
       end;
@@ -1832,7 +1893,7 @@ package body Exp_Ch11 is
 
       Rewrite (N,
         Make_Attribute_Reference (Loc,
-          Prefix => Identifier (N),
+          Prefix         => Identifier (N),
           Attribute_Name => Name_Code_Address));
 
       Analyze_And_Resolve (N, RTE (RE_Code_Loc));
@@ -2071,6 +2132,8 @@ package body Exp_Ch11 is
             Add_Str_To_Name_Buffer ("PE_Accessibility_Check");
          when PE_Address_Of_Intrinsic =>
             Add_Str_To_Name_Buffer ("PE_Address_Of_Intrinsic");
+         when PE_Aliased_Parameters =>
+            Add_Str_To_Name_Buffer ("PE_Aliased_Parameters");
          when PE_All_Guards_Closed =>
             Add_Str_To_Name_Buffer ("PE_All_Guards_Closed");
          when PE_Bad_Predicated_Generic_Type =>
@@ -2147,10 +2210,10 @@ package body Exp_Ch11 is
 
          if Configurable_Run_Time_Mode then
             Error_Msg_N
-              ("\?Last_Chance_Handler will be called on exception", N);
+              ("\?X?Last_Chance_Handler will be called on exception", N);
          else
             Error_Msg_N
-              ("\?execution may raise unhandled exception", N);
+              ("\?X?execution may raise unhandled exception", N);
          end if;
       end if;
    end Warn_If_No_Propagation;
@@ -2162,7 +2225,7 @@ package body Exp_Ch11 is
    procedure Warn_No_Exception_Propagation_Active (N : Node_Id) is
    begin
       Error_Msg_N
-        ("?pragma Restrictions (No_Exception_Propagation) in effect", N);
+        ("?X?pragma Restrictions (No_Exception_Propagation) in effect", N);
    end Warn_No_Exception_Propagation_Active;
 
 end Exp_Ch11;

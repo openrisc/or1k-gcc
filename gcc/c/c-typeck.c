@@ -1,7 +1,5 @@
 /* Build expressions with type checking for C compiler.
-   Copyright (C) 1987, 1988, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -2306,6 +2304,17 @@ build_array_ref (location_t loc, tree array, tree index)
       || TREE_TYPE (index) == error_mark_node)
     return error_mark_node;
 
+  if (flag_enable_cilkplus && contains_array_notation_expr (index))
+    {
+      size_t rank = 0;
+      if (!find_rank (loc, index, index, true, &rank))
+	return error_mark_node;
+      if (rank > 1)
+	{
+	  error_at (loc, "rank of the array's index is greater than 1");
+	  return error_mark_node;
+	}
+    }
   if (TREE_CODE (TREE_TYPE (array)) != ARRAY_TYPE
       && TREE_CODE (TREE_TYPE (array)) != POINTER_TYPE
       /* Allow vector[index] but not index[vector].  */
@@ -2724,6 +2733,10 @@ build_function_call_vec (location_t loc, tree function,
 	 often rewritten and don't match the original parameter list.  */
       if (name && !strncmp (IDENTIFIER_POINTER (name), "__atomic_", 9))
         origtypes = NULL;
+
+      if (flag_enable_cilkplus
+	  && is_cilkplus_reduce_builtin (function))
+	origtypes = NULL;
     }
   if (TREE_CODE (TREE_TYPE (function)) == FUNCTION_TYPE)
     function = function_to_pointer_conversion (loc, function);
@@ -2929,6 +2942,8 @@ convert_arguments (tree typelist, vec<tree, va_gc> *values,
 	  break;
 	}
     }
+  if (flag_enable_cilkplus && fundecl && is_cilkplus_reduce_builtin (fundecl))
+    return vec_safe_length (values);
 
   /* Scan the given expressions and types, producing individual
      converted arguments.  */
@@ -3335,10 +3350,10 @@ pointer_diff (location_t loc, tree op0, tree op1)
 
 
   if (TREE_CODE (target_type) == VOID_TYPE)
-    pedwarn (loc, pedantic ? OPT_Wpedantic : OPT_Wpointer_arith,
+    pedwarn (loc, OPT_Wpointer_arith,
 	     "pointer of type %<void *%> used in subtraction");
   if (TREE_CODE (target_type) == FUNCTION_TYPE)
-    pedwarn (loc, pedantic ? OPT_Wpedantic : OPT_Wpointer_arith,
+    pedwarn (loc, OPT_Wpointer_arith,
 	     "pointer to a function used in subtraction");
 
   /* If the conversion to ptrdiff_type does anything like widening or
@@ -3665,10 +3680,10 @@ build_unary_op (location_t location,
 		     || TREE_CODE (TREE_TYPE (argtype)) == VOID_TYPE)
 	      {
 		if (code == PREINCREMENT_EXPR || code == POSTINCREMENT_EXPR)
-		  pedwarn (location, pedantic ? OPT_Wpedantic : OPT_Wpointer_arith,
+		  pedwarn (location, OPT_Wpointer_arith,
 			   "wrong type argument to increment");
 		else
-		  pedwarn (location, pedantic ? OPT_Wpedantic : OPT_Wpointer_arith,
+		  pedwarn (location, OPT_Wpointer_arith,
 			   "wrong type argument to decrement");
 	      }
 
@@ -3877,6 +3892,7 @@ lvalue_p (const_tree ref)
 
     case INDIRECT_REF:
     case ARRAY_REF:
+    case ARRAY_NOTATION_REF:
     case VAR_DECL:
     case PARM_DECL:
     case RESULT_DECL:
@@ -5247,11 +5263,9 @@ convert_for_assignment (location_t location, tree type, tree rhs,
   rhs = require_complete_type (rhs);
   if (rhs == error_mark_node)
     return error_mark_node;
-  /* A type converts to a reference to it.
-     This code doesn't fully support references, it's just for the
-     special case of va_start and va_copy.  */
-  if (codel == REFERENCE_TYPE
-      && comptypes (TREE_TYPE (type), TREE_TYPE (rhs)) == 1)
+  /* A non-reference type can convert to a reference.  This handles
+     va_start, va_copy and possibly port built-ins.  */
+  if (codel == REFERENCE_TYPE && coder != REFERENCE_TYPE)
     {
       if (!lvalue_p (rhs))
 	{
@@ -5263,16 +5277,11 @@ convert_for_assignment (location_t location, tree type, tree rhs,
       rhs = build1 (ADDR_EXPR, build_pointer_type (TREE_TYPE (rhs)), rhs);
       SET_EXPR_LOCATION (rhs, location);
 
-      /* We already know that these two types are compatible, but they
-	 may not be exactly identical.  In fact, `TREE_TYPE (type)' is
-	 likely to be __builtin_va_list and `TREE_TYPE (rhs)' is
-	 likely to be va_list, a typedef to __builtin_va_list, which
-	 is different enough that it will cause problems later.  */
-      if (TREE_TYPE (TREE_TYPE (rhs)) != TREE_TYPE (type))
-	{
-	  rhs = build1 (NOP_EXPR, build_pointer_type (TREE_TYPE (type)), rhs);
-	  SET_EXPR_LOCATION (rhs, location);
-	}
+      rhs = convert_for_assignment (location, build_pointer_type (TREE_TYPE (type)),
+				    rhs, origtype, errtype, null_pointer_constant,
+				    fundecl, function, parmnum);
+      if (rhs == error_mark_node)
+	return error_mark_node;
 
       rhs = build1 (NOP_EXPR, type, rhs);
       SET_EXPR_LOCATION (rhs, location);
@@ -5543,8 +5552,10 @@ convert_for_assignment (location_t location, tree type, tree rhs,
       if (VOID_TYPE_P (ttl) || VOID_TYPE_P (ttr)
 	  || (target_cmp = comp_target_types (location, type, rhstype))
 	  || is_opaque_pointer
-	  || (c_common_unsigned_type (mvl)
-	      == c_common_unsigned_type (mvr)))
+	  || ((c_common_unsigned_type (mvl)
+	       == c_common_unsigned_type (mvr))
+	      && c_common_signed_type (mvl)
+		 == c_common_signed_type (mvr)))
 	{
 	  if (pedantic
 	      && ((VOID_TYPE_P (ttl) && TREE_CODE (ttr) == FUNCTION_TYPE)
@@ -7206,6 +7217,11 @@ set_init_index (tree first, tree last,
       if (last)
 	constant_expression_warning (last);
       constructor_index = convert (bitsizetype, first);
+      if (tree_int_cst_lt (constructor_index, first))
+	{
+	  constructor_index = copy_node (constructor_index);
+	  TREE_OVERFLOW (constructor_index) = 1;
+	}
 
       if (last)
 	{
@@ -7574,7 +7590,9 @@ set_nonincremental_init_from_string (tree str,
   end = p + TREE_STRING_LENGTH (str);
 
   for (purpose = bitsize_zero_node;
-       p < end && !tree_int_cst_lt (constructor_max_index, purpose);
+       p < end
+       && !(constructor_max_index
+	    && tree_int_cst_lt (constructor_max_index, purpose));
        purpose = size_binop (PLUS_EXPR, purpose, bitsize_one_node))
     {
       if (wchar_bytes == 1)
@@ -8106,9 +8124,9 @@ process_init_element (struct c_expr value, bool implicit,
 			      true, braced_init_obstack);
       else if ((TREE_CODE (constructor_type) == ARRAY_TYPE
 	        || TREE_CODE (constructor_type) == VECTOR_TYPE)
-	       && (constructor_max_index == 0
-		   || tree_int_cst_lt (constructor_max_index,
-				       constructor_index)))
+	       && constructor_max_index
+	       && tree_int_cst_lt (constructor_max_index,
+				   constructor_index))
 	process_init_element (pop_init_level (1, braced_init_obstack),
 			      true, braced_init_obstack);
       else
@@ -8500,6 +8518,8 @@ build_asm_expr (location_t loc, tree string, tree outputs, tree inputs,
     {
       tree output = TREE_VALUE (tail);
 
+      output = c_fully_fold (output, false, NULL);
+
       /* ??? Really, this should not be here.  Users should be using a
 	 proper lvalue, dammit.  But there's a long history of using casts
 	 in the output operands.  In cases like longlong.h, this becomes a
@@ -8557,16 +8577,27 @@ build_asm_expr (location_t loc, tree string, tree outputs, tree inputs,
 	     mark it addressable.  */
 	  if (!allows_reg && allows_mem)
 	    {
+	      input = c_fully_fold (input, false, NULL);
+
 	      /* Strip the nops as we allow this case.  FIXME, this really
 		 should be rejected or made deprecated.  */
 	      STRIP_NOPS (input);
 	      if (!c_mark_addressable (input))
 		input = error_mark_node;
 	    }
-	  else if (input != error_mark_node && VOID_TYPE_P (TREE_TYPE (input)))
+	  else
 	    {
-	      error_at (loc, "invalid use of void expression");
-	      input = error_mark_node;
+	      struct c_expr expr;
+	      memset (&expr, 0, sizeof (expr));
+	      expr.value = input;
+	      expr = default_function_array_conversion (loc, expr);
+	      input = c_fully_fold (expr.value, false, NULL);
+
+	      if (input != error_mark_node && VOID_TYPE_P (TREE_TYPE (input)))
+		{
+		  error_at (loc, "invalid use of void expression");
+		  input = error_mark_node;
+		}
 	    }
 	}
       else
@@ -8632,11 +8663,25 @@ c_finish_return (location_t loc, tree retval, tree origtype)
   tree valtype = TREE_TYPE (TREE_TYPE (current_function_decl)), ret_stmt;
   bool no_warning = false;
   bool npc = false;
+  size_t rank = 0;
 
   if (TREE_THIS_VOLATILE (current_function_decl))
     warning_at (loc, 0,
 		"function declared %<noreturn%> has a %<return%> statement");
 
+  if (flag_enable_cilkplus && contains_array_notation_expr (retval))
+    {
+      /* Array notations are allowed in a return statement if it is inside a
+	 built-in array notation reduction function.  */
+      if (!find_rank (loc, retval, retval, false, &rank))
+	return error_mark_node;
+      if (rank >= 1)
+	{
+	  error_at (loc, "array notation expression cannot be used as a "
+		    "return value");
+	  return error_mark_node;
+	}
+    }
   if (retval)
     {
       tree semantic_type = NULL_TREE;
@@ -8928,6 +8973,34 @@ c_finish_if_stmt (location_t if_locus, tree cond, tree then_block,
 {
   tree stmt;
 
+  /* If the condition has array notations, then the rank of the then_block and
+     else_block must be either 0 or be equal to the rank of the condition.  If
+     the condition does not have array notations then break them up as it is
+     broken up in a normal expression.  */
+  if (flag_enable_cilkplus && contains_array_notation_expr (cond))
+    {
+      size_t then_rank = 0, cond_rank = 0, else_rank = 0;
+      if (!find_rank (if_locus, cond, cond, true, &cond_rank))
+	return;
+      if (then_block
+	  && !find_rank (if_locus, then_block, then_block, true, &then_rank))
+	return;
+      if (else_block
+	  && !find_rank (if_locus, else_block, else_block, true, &else_rank)) 
+	return;
+      if (cond_rank != then_rank && then_rank != 0)
+	{
+	  error_at (if_locus, "rank-mismatch between if-statement%'s condition"
+		    " and the then-block");
+	  return;
+	}
+      else if (cond_rank != else_rank && else_rank != 0)
+	{
+	  error_at (if_locus, "rank-mismatch between if-statement%'s condition"
+		    " and the else-block");
+	  return;
+	}
+    }
   /* Diagnose an ambiguous else if if-then-else is nested inside if-then.  */
   if (warn_parentheses && nested_if && else_block == NULL)
     {
@@ -8979,6 +9052,13 @@ c_finish_loop (location_t start_locus, tree cond, tree incr, tree body,
 {
   tree entry = NULL, exit = NULL, t;
 
+  if (flag_enable_cilkplus && contains_array_notation_expr (cond))
+    {
+      error_at (start_locus, "array notation expression cannot be used in a "
+		"loop%'s condition");
+      return;
+    }
+  
   /* If the condition is zero don't generate a loop construct.  */
   if (cond && integer_zerop (cond))
     {
@@ -9485,8 +9565,18 @@ build_binary_op (location_t location, enum tree_code code,
       op1 = default_conversion (op1);
     }
 
-  orig_type0 = type0 = TREE_TYPE (op0);
-  orig_type1 = type1 = TREE_TYPE (op1);
+  /* When Cilk Plus is enabled and there are array notations inside op0, then
+     we check to see if there are builtin array notation functions.  If
+     so, then we take on the type of the array notation inside it.  */
+  if (flag_enable_cilkplus && contains_array_notation_expr (op0)) 
+    orig_type0 = type0 = find_correct_array_notation_type (op0);
+  else
+    orig_type0 = type0 = TREE_TYPE (op0);
+
+  if (flag_enable_cilkplus && contains_array_notation_expr (op1))
+    orig_type1 = type1 = find_correct_array_notation_type (op1);
+  else 
+    orig_type1 = type1 = TREE_TYPE (op1);
 
   /* The expression codes of the data types of the arguments tell us
      whether the arguments are integers, floating, pointers, etc.  */

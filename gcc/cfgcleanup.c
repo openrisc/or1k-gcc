@@ -1,7 +1,5 @@
 /* Control flow optimization code for GNU compiler.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010, 2011,
-   2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -458,7 +456,7 @@ try_forward_edges (int mode, basic_block b)
 
       if (first != EXIT_BLOCK_PTR
 	  && find_reg_note (BB_END (first), REG_CROSSING_JUMP, NULL_RTX))
-	return false;
+	return changed;
 
       while (counter < n_basic_blocks)
 	{
@@ -597,9 +595,7 @@ try_forward_edges (int mode, basic_block b)
 	  /* We successfully forwarded the edge.  Now update profile
 	     data: for each edge we traversed in the chain, remove
 	     the original edge's execution count.  */
-	  edge_frequency = ((edge_probability * b->frequency
-			     + REG_BR_PROB_BASE / 2)
-			    / REG_BR_PROB_BASE);
+	  edge_frequency = apply_probability (b->frequency, edge_probability);
 
 	  do
 	    {
@@ -1138,6 +1134,28 @@ old_insns_match_p (int mode ATTRIBUTE_UNUSED, rtx i1, rtx i2)
 			CALL_INSN_FUNCTION_USAGE (i2))
 	  || SIBLING_CALL_P (i1) != SIBLING_CALL_P (i2))
 	return dir_none;
+
+      /* For address sanitizer, never crossjump __asan_report_* builtins,
+	 otherwise errors might be reported on incorrect lines.  */
+      if (flag_asan)
+	{
+	  rtx call = get_call_rtx_from (i1);
+	  if (call && GET_CODE (XEXP (XEXP (call, 0), 0)) == SYMBOL_REF)
+	    {
+	      rtx symbol = XEXP (XEXP (call, 0), 0);
+	      if (SYMBOL_REF_DECL (symbol)
+		  && TREE_CODE (SYMBOL_REF_DECL (symbol)) == FUNCTION_DECL)
+		{
+		  if ((DECL_BUILT_IN_CLASS (SYMBOL_REF_DECL (symbol))
+		       == BUILT_IN_NORMAL)
+		      && DECL_FUNCTION_CODE (SYMBOL_REF_DECL (symbol))
+			 >= BUILT_IN_ASAN_REPORT_LOAD1
+		      && DECL_FUNCTION_CODE (SYMBOL_REF_DECL (symbol))
+			 <= BUILT_IN_ASAN_REPORT_STORE16)
+		    return dir_none;
+		}
+	    }
+	}
     }
 
 #ifdef STACK_REGS
@@ -1846,7 +1864,7 @@ try_crossjump_to_edge (int mode, edge e1, edge e2,
      partition boundaries).  See the comments at the top of
      bb-reorder.c:partition_hot_cold_basic_blocks for complete details.  */
 
-  if (flag_reorder_blocks_and_partition && reload_completed)
+  if (crtl->has_bb_partition && reload_completed)
     return false;
 
   /* Search backward through forwarder blocks.  We don't need to worry
@@ -2997,14 +3015,11 @@ cleanup_cfg (int mode)
       && (changed
 	  || (mode & CLEANUP_CFG_CHANGED)))
     {
-      bitmap changed_bbs;
       timevar_push (TV_REPAIR_LOOPS);
       /* The above doesn't preserve dominance info if available.  */
       gcc_assert (!dom_info_available_p (CDI_DOMINATORS));
       calculate_dominance_info (CDI_DOMINATORS);
-      changed_bbs = BITMAP_ALLOC (NULL);
-      fix_loop_structure (changed_bbs);
-      BITMAP_FREE (changed_bbs);
+      fix_loop_structure (NULL);
       free_dominance_info (CDI_DOMINATORS);
       timevar_pop (TV_REPAIR_LOOPS);
     }
@@ -3040,7 +3055,7 @@ struct rtl_opt_pass pass_jump =
   0,					/* properties_required */
   0,					/* properties_provided */
   0,					/* properties_destroyed */
-  TODO_ggc_collect,			/* todo_flags_start */
+  0,					/* todo_flags_start */
   TODO_verify_rtl_sharing,		/* todo_flags_finish */
  }
 };
@@ -3067,7 +3082,7 @@ struct rtl_opt_pass pass_jump2 =
   0,					/* properties_required */
   0,					/* properties_provided */
   0,					/* properties_destroyed */
-  TODO_ggc_collect,			/* todo_flags_start */
+  0,					/* todo_flags_start */
   TODO_verify_rtl_sharing,		/* todo_flags_finish */
  }
 };

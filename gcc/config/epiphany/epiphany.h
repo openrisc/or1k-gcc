@@ -1,6 +1,5 @@
 /* Definitions of target machine for GNU compiler, Argonaut EPIPHANY cpu.
-   Copyright (C) 1994, 1995, 1997, 1998, 1999, 2000, 2001, 2002, 2004, 2005,
-   2007, 2009, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1994-2013 Free Software Foundation, Inc.
    Contributed by Embecosm on behalf of Adapteva, Inc.
 
 This file is part of GCC.
@@ -407,7 +406,8 @@ extern enum reg_class epiphany_regno_reg_class[FIRST_PSEUDO_REGISTER];
    They give nonzero only if REGNO is a hard reg of the suitable class
    or a pseudo reg currently allocated to a suitable hard reg.
    Since they use reg_renumber, they are safe only once reg_renumber
-   has been allocated, which happens in local-alloc.c.  */
+   has been allocated, which happens in reginfo.c during register
+   allocation.  */
 #define REGNO_OK_FOR_BASE_P(REGNO) \
 ((REGNO) < FIRST_PSEUDO_REGISTER || (unsigned) reg_renumber[REGNO] < FIRST_PSEUDO_REGISTER)
 #define REGNO_OK_FOR_INDEX_P(REGNO) \
@@ -450,6 +450,7 @@ typedef struct GTY (()) machine_function
   unsigned pretend_args_odd : 1;
   unsigned lr_clobbered : 1;
   unsigned control_use_inserted : 1;
+  unsigned lr_slot_known : 1;
   unsigned sw_entities_processed : 6;
   long lr_slot_offset;
   rtx and_mask;
@@ -895,7 +896,8 @@ enum epiphany_function_type
    finally an entity that runs in a second mode switching pass to
    resolve FP_MODE_ROUND_UNKNOWN.  */
 #define NUM_MODES_FOR_MODE_SWITCHING \
-  { 2, 2, FP_MODE_NONE, FP_MODE_NONE, FP_MODE_NONE, FP_MODE_NONE, FP_MODE_NONE }
+  { 2, 2, 2, \
+    FP_MODE_NONE, FP_MODE_NONE, FP_MODE_NONE, FP_MODE_NONE, FP_MODE_NONE }
 
 #define MODE_NEEDED(ENTITY, INSN) epiphany_mode_needed((ENTITY), (INSN))
 
@@ -917,11 +919,13 @@ enum
 {
   EPIPHANY_MSW_ENTITY_AND,
   EPIPHANY_MSW_ENTITY_OR,
+  EPIPHANY_MSW_ENTITY_CONFIG, /* 1 means config is known or saved.  */
   EPIPHANY_MSW_ENTITY_NEAREST,
   EPIPHANY_MSW_ENTITY_TRUNC,
   EPIPHANY_MSW_ENTITY_ROUND_UNKNOWN,
   EPIPHANY_MSW_ENTITY_ROUND_KNOWN,
-  EPIPHANY_MSW_ENTITY_FPU_OMNIBUS
+  EPIPHANY_MSW_ENTITY_FPU_OMNIBUS,
+  EPIPHANY_MSW_ENTITY_NUM
 };
 
 extern int epiphany_normal_fp_rounding;

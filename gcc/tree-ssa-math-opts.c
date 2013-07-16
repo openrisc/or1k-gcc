@@ -1,6 +1,5 @@
 /* Global, SSA-based optimizations using mathematical identities.
-   Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1111,7 +1110,7 @@ gimple_expand_builtin_pow (gimple_stmt_iterator *gsi, location_t loc,
   HOST_WIDE_INT n;
   tree type, sqrtfn, cbrtfn, sqrt_arg0, sqrt_sqrt, result, cbrt_x, powi_cbrt_x;
   enum machine_mode mode;
-  bool hw_sqrt_exists;
+  bool hw_sqrt_exists, c_is_int, c2_is_int;
 
   /* If the exponent isn't a constant, there's nothing of interest
      to be done.  */
@@ -1123,8 +1122,9 @@ gimple_expand_builtin_pow (gimple_stmt_iterator *gsi, location_t loc,
   c = TREE_REAL_CST (arg1);
   n = real_to_integer (&c);
   real_from_integer (&cint, VOIDmode, n, n < 0 ? -1 : 0, 0);
+  c_is_int = real_identical (&c, &cint);
 
-  if (real_identical (&c, &cint)
+  if (c_is_int
       && ((n >= -1 && n <= 2)
 	  || (flag_unsafe_math_optimizations
 	      && optimize_insn_for_speed_p ()
@@ -1222,7 +1222,8 @@ gimple_expand_builtin_pow (gimple_stmt_iterator *gsi, location_t loc,
       return build_and_insert_call (gsi, loc, cbrtfn, sqrt_arg0);
     }
 
-  /* Optimize pow(x,c), where n = 2c for some nonzero integer n, into
+  /* Optimize pow(x,c), where n = 2c for some nonzero integer n
+     and c not an integer, into
 
        sqrt(x) * powi(x, n/2),                n > 0;
        1.0 / (sqrt(x) * powi(x, abs(n/2))),   n < 0.
@@ -1231,10 +1232,13 @@ gimple_expand_builtin_pow (gimple_stmt_iterator *gsi, location_t loc,
   real_arithmetic (&c2, MULT_EXPR, &c, &dconst2);
   n = real_to_integer (&c2);
   real_from_integer (&cint, VOIDmode, n, n < 0 ? -1 : 0, 0);
+  c2_is_int = real_identical (&c2, &cint);
 
   if (flag_unsafe_math_optimizations
       && sqrtfn
-      && real_identical (&c2, &cint))
+      && c2_is_int
+      && !c_is_int
+      && optimize_function_for_speed_p (cfun))
     {
       tree powi_x_ndiv2 = NULL_TREE;
 
@@ -1287,6 +1291,7 @@ gimple_expand_builtin_pow (gimple_stmt_iterator *gsi, location_t loc,
       && cbrtfn
       && (gimple_val_nonnegative_real_p (arg0) || !HONOR_NANS (mode))
       && real_identical (&c2, &c)
+      && !c2_is_int
       && optimize_function_for_speed_p (cfun)
       && powi_cost (n / 3) <= POWI_MAX_MULTS)
     {
@@ -1440,12 +1445,41 @@ execute_cse_sincos (void)
 		CASE_FLT_FN (BUILT_IN_POWI):
 		  arg0 = gimple_call_arg (stmt, 0);
 		  arg1 = gimple_call_arg (stmt, 1);
-		  if (!host_integerp (arg1, 0))
-		    break;
-
-		  n = TREE_INT_CST_LOW (arg1);
 		  loc = gimple_location (stmt);
-		  result = gimple_expand_builtin_powi (&gsi, loc, arg0, n);
+
+		  if (real_minus_onep (arg0))
+		    {
+                      tree t0, t1, cond, one, minus_one;
+		      gimple stmt;
+
+		      t0 = TREE_TYPE (arg0);
+		      t1 = TREE_TYPE (arg1);
+		      one = build_real (t0, dconst1);
+		      minus_one = build_real (t0, dconstm1);
+
+		      cond = make_temp_ssa_name (t1, NULL, "powi_cond");
+		      stmt = gimple_build_assign_with_ops (BIT_AND_EXPR, cond,
+							   arg1,
+							   build_int_cst (t1,
+									  1));
+		      gimple_set_location (stmt, loc);
+		      gsi_insert_before (&gsi, stmt, GSI_SAME_STMT);
+
+		      result = make_temp_ssa_name (t0, NULL, "powi");
+		      stmt = gimple_build_assign_with_ops (COND_EXPR, result,
+							   cond,
+							   minus_one, one);
+		      gimple_set_location (stmt, loc);
+		      gsi_insert_before (&gsi, stmt, GSI_SAME_STMT);
+		    }
+		  else
+		    {
+		      if (!host_integerp (arg1, 0))
+			break;
+
+		      n = TREE_INT_CST_LOW (arg1);
+		      result = gimple_expand_builtin_powi (&gsi, loc, arg0, n);
+		    }
 
 		  if (result)
 		    {
@@ -2563,6 +2597,28 @@ convert_mult_to_fma (gimple mul_stmt, tree op1, tree op2)
 	default:
 	  /* FMA can only be formed from PLUS and MINUS.  */
 	  return false;
+	}
+
+      /* If the subtrahend (gimple_assign_rhs2 (use_stmt)) is computed
+	 by a MULT_EXPR that we'll visit later, we might be able to
+	 get a more profitable match with fnma.
+	 OTOH, if we don't, a negate / fma pair has likely lower latency
+	 that a mult / subtract pair.  */
+      if (use_code == MINUS_EXPR && !negate_p
+	  && gimple_assign_rhs1 (use_stmt) == result
+	  && optab_handler (fms_optab, TYPE_MODE (type)) == CODE_FOR_nothing
+	  && optab_handler (fnma_optab, TYPE_MODE (type)) != CODE_FOR_nothing)
+	{
+	  tree rhs2 = gimple_assign_rhs2 (use_stmt);
+
+	  if (TREE_CODE (rhs2) == SSA_NAME)
+	    {
+	      gimple stmt2 = SSA_NAME_DEF_STMT (rhs2);
+	      if (has_single_use (rhs2)
+		  && is_gimple_assign (stmt2)
+		  && gimple_assign_rhs_code (stmt2) == MULT_EXPR)
+	      return false;
+	    }
 	}
 
       /* We can't handle a * b + a * b.  */

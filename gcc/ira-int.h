@@ -1,6 +1,5 @@
 /* Integrated Register Allocator (IRA) intercommunication header file.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -34,7 +33,7 @@ along with GCC; see the file COPYING3.  If not see
 #define ira_assert(c) gcc_assert (c)
 #else
 /* Always define and include C, so that warnings for empty body in an
-  ‘if’ statement and unused variable do not occur.  */
+  'if' statement and unused variable do not occur.  */
 #define ira_assert(c) ((void)(0 && (c)))
 #endif
 
@@ -47,9 +46,6 @@ along with GCC; see the file COPYING3.  If not see
   (optimize_size || (flag_branch_probabilities && !ENTRY_BLOCK_PTR->count) \
    ? REG_FREQ_MAX : (freq * REG_FREQ_MAX / BB_FREQ_MAX)			   \
    ? (freq * REG_FREQ_MAX / BB_FREQ_MAX) : 1)
-
-/* All natural loops.  */
-extern struct loops ira_loops;
 
 /* A modified value of flag `-fira-verbose' used internally.  */
 extern int internal_flag_ira_verbose;
@@ -937,8 +933,13 @@ extern ira_loop_tree_node_t ira_curr_loop_tree_node;
 extern ira_allocno_t *ira_curr_regno_allocno_map;
 
 extern void ira_debug_copy (ira_copy_t);
+extern void debug (ira_allocno_copy &ref);
+extern void debug (ira_allocno_copy *ptr);
+
 extern void ira_debug_copies (void);
 extern void ira_debug_allocno_copies (ira_allocno_t);
+extern void debug (ira_allocno &ref);
+extern void debug (ira_allocno *ptr);
 
 extern void ira_traverse_loop_tree (bool, ira_loop_tree_node_t,
 				    void (*) (ira_loop_tree_node_t),
@@ -987,6 +988,8 @@ extern void ira_tune_allocno_costs (void);
 
 extern void ira_rebuild_start_finish_chains (void);
 extern void ira_print_live_range_list (FILE *, live_range_t);
+extern void debug (live_range &ref);
+extern void debug (live_range *ptr);
 extern void ira_debug_live_range_list (live_range_t);
 extern void ira_debug_allocno_live_ranges (ira_allocno_t);
 extern void ira_debug_live_ranges (void);

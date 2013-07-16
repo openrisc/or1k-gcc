@@ -1,7 +1,6 @@
 // List implementation -*- C++ -*-
 
-// Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-// 2011, 2012 Free Software Foundation, Inc.
+// Copyright (C) 2001-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -141,6 +140,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
       _List_iterator(__detail::_List_node_base* __x)
       : _M_node(__x) { }
 
+      _Self
+      _M_const_cast() const
+      { return *this; }
+
       // Must downcast from _List_node_base to _List_node to get to _M_data.
       reference
       operator*() const
@@ -219,6 +222,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 
       _List_const_iterator(const iterator& __x)
       : _M_node(__x._M_node) { }
+
+      iterator
+      _M_const_cast() const
+      { return iterator(const_cast<__detail::_List_node_base*>(_M_node)); }
 
       // Must downcast from List_node_base to _List_node to get to
       // _M_data.
@@ -1057,9 +1064,22 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       template<typename... _Args>
         iterator
-        emplace(iterator __position, _Args&&... __args);
-#endif
+        emplace(const_iterator __position, _Args&&... __args);
 
+      /**
+       *  @brief  Inserts given value into %list before specified iterator.
+       *  @param  __position  A const_iterator into the %list.
+       *  @param  __x  Data to be inserted.
+       *  @return  An iterator that points to the inserted data.
+       *
+       *  This function will insert a copy of the given value before
+       *  the specified location.  Due to the nature of a %list this
+       *  operation can be done in constant time, and does not
+       *  invalidate iterators and references.
+       */
+      iterator
+      insert(const_iterator __position, const value_type& __x);
+#else
       /**
        *  @brief  Inserts given value into %list before specified iterator.
        *  @param  __position  An iterator into the %list.
@@ -1073,11 +1093,12 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       iterator
       insert(iterator __position, const value_type& __x);
+#endif
 
 #if __cplusplus >= 201103L
       /**
        *  @brief  Inserts given rvalue into %list before specified iterator.
-       *  @param  __position  An iterator into the %list.
+       *  @param  __position  A const_iterator into the %list.
        *  @param  __x  Data to be inserted.
        *  @return  An iterator that points to the inserted data.
        *
@@ -1087,14 +1108,16 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  invalidate iterators and references.
         */
       iterator
-      insert(iterator __position, value_type&& __x)
+      insert(const_iterator __position, value_type&& __x)
       { return emplace(__position, std::move(__x)); }
 
       /**
        *  @brief  Inserts the contents of an initializer_list into %list
-       *          before specified iterator.
-       *  @param  __p  An iterator into the %list.
+       *          before specified const_iterator.
+       *  @param  __p  A const_iterator into the %list.
        *  @param  __l  An initializer_list of value_type.
+       *  @return  An iterator pointing to the first element inserted
+       *           (or __position).
        *
        *  This function will insert copies of the data in the
        *  initializer_list @a l into the %list before the location
@@ -1103,11 +1126,29 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  This operation is linear in the number of elements inserted and
        *  does not invalidate iterators and references.
        */
-      void
-      insert(iterator __p, initializer_list<value_type> __l)
-      { this->insert(__p, __l.begin(), __l.end()); }
+      iterator
+      insert(const_iterator __p, initializer_list<value_type> __l)
+      { return this->insert(__p, __l.begin(), __l.end()); }
 #endif
 
+#if __cplusplus >= 201103L
+      /**
+       *  @brief  Inserts a number of copies of given data into the %list.
+       *  @param  __position  A const_iterator into the %list.
+       *  @param  __n  Number of elements to be inserted.
+       *  @param  __x  Data to be inserted.
+       *  @return  An iterator pointing to the first element inserted
+       *           (or __position).
+       *
+       *  This function will insert a specified number of copies of the
+       *  given data before the location specified by @a position.
+       *
+       *  This operation is linear in the number of elements inserted and
+       *  does not invalidate iterators and references.
+       */
+      iterator
+      insert(const_iterator __position, size_type __n, const value_type& __x);
+#else
       /**
        *  @brief  Inserts a number of copies of given data into the %list.
        *  @param  __position  An iterator into the %list.
@@ -1126,7 +1167,30 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	list __tmp(__n, __x, get_allocator());
 	splice(__position, __tmp);
       }
+#endif
 
+#if __cplusplus >= 201103L
+      /**
+       *  @brief  Inserts a range into the %list.
+       *  @param  __position  A const_iterator into the %list.
+       *  @param  __first  An input iterator.
+       *  @param  __last   An input iterator.
+       *  @return  An iterator pointing to the first element inserted
+       *           (or __position).
+       *
+       *  This function will insert copies of the data in the range [@a
+       *  first,@a last) into the %list before the location specified by
+       *  @a position.
+       *
+       *  This operation is linear in the number of elements inserted and
+       *  does not invalidate iterators and references.
+       */
+      template<typename _InputIterator,
+	       typename = std::_RequireInputIter<_InputIterator>>
+	iterator
+	insert(const_iterator __position, _InputIterator __first,
+	       _InputIterator __last);
+#else
       /**
        *  @brief  Inserts a range into the %list.
        *  @param  __position  An iterator into the %list.
@@ -1140,12 +1204,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  This operation is linear in the number of elements inserted and
        *  does not invalidate iterators and references.
        */
-#if __cplusplus >= 201103L
-      template<typename _InputIterator,
-	       typename = std::_RequireInputIter<_InputIterator>>
-#else
       template<typename _InputIterator>
-#endif
         void
         insert(iterator __position, _InputIterator __first,
 	       _InputIterator __last)
@@ -1153,6 +1212,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	  list __tmp(__first, __last, get_allocator());
 	  splice(__position, __tmp);
 	}
+#endif
 
       /**
        *  @brief  Remove element at given position.
@@ -1170,7 +1230,11 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  any way.  Managing the pointer is the user's responsibility.
        */
       iterator
+#if __cplusplus >= 201103L
+      erase(const_iterator __position);
+#else
       erase(iterator __position);
+#endif
 
       /**
        *  @brief  Remove a range of elements.
@@ -1191,11 +1255,15 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  is the user's responsibility.
        */
       iterator
+#if __cplusplus >= 201103L
+      erase(const_iterator __first, const_iterator __last)
+#else
       erase(iterator __first, iterator __last)
+#endif
       {
 	while (__first != __last)
 	  __first = erase(__first);
-	return __last;
+	return __last._M_const_cast();
       }
 
       /**
@@ -1246,7 +1314,7 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        */
       void
 #if __cplusplus >= 201103L
-      splice(iterator __position, list&& __x)
+      splice(const_iterator __position, list&& __x)
 #else
       splice(iterator __position, list& __x)
 #endif
@@ -1255,16 +1323,31 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	  {
 	    _M_check_equal_allocators(__x);
 
-	    this->_M_transfer(__position, __x.begin(), __x.end());
+	    this->_M_transfer(__position._M_const_cast(),
+			      __x.begin(), __x.end());
 	  }
       }
 
 #if __cplusplus >= 201103L
       void
-      splice(iterator __position, list& __x)
+      splice(const_iterator __position, list& __x)
       { splice(__position, std::move(__x)); }
 #endif
 
+#if __cplusplus >= 201103L
+      /**
+       *  @brief  Insert element from another %list.
+       *  @param  __position  Const_iterator referencing the element to
+       *                      insert before.
+       *  @param  __x  Source list.
+       *  @param  __i  Const_iterator referencing the element to move.
+       *
+       *  Removes the element in list @a __x referenced by @a __i and
+       *  inserts it into the current list before @a __position.
+       */
+      void
+      splice(const_iterator __position, list&& __x, const_iterator __i)
+#else
       /**
        *  @brief  Insert element from another %list.
        *  @param  __position  Iterator referencing the element to insert before.
@@ -1275,13 +1358,10 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  inserts it into the current list before @a __position.
        */
       void
-#if __cplusplus >= 201103L
-      splice(iterator __position, list&& __x, iterator __i)
-#else
       splice(iterator __position, list& __x, iterator __i)
 #endif
       {
-	iterator __j = __i;
+	iterator __j = __i._M_const_cast();
 	++__j;
 	if (__position == __i || __position == __j)
 	  return;
@@ -1289,15 +1369,44 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	if (this != &__x)
 	  _M_check_equal_allocators(__x);
 
-	this->_M_transfer(__position, __i, __j);
+	this->_M_transfer(__position._M_const_cast(),
+			  __i._M_const_cast(), __j);
       }
 
 #if __cplusplus >= 201103L
+      /**
+       *  @brief  Insert element from another %list.
+       *  @param  __position  Const_iterator referencing the element to
+       *                      insert before.
+       *  @param  __x  Source list.
+       *  @param  __i  Const_iterator referencing the element to move.
+       *
+       *  Removes the element in list @a __x referenced by @a __i and
+       *  inserts it into the current list before @a __position.
+       */
       void
-      splice(iterator __position, list& __x, iterator __i)
+      splice(const_iterator __position, list& __x, const_iterator __i)
       { splice(__position, std::move(__x), __i); }
 #endif
 
+#if __cplusplus >= 201103L
+      /**
+       *  @brief  Insert range from another %list.
+       *  @param  __position  Const_iterator referencing the element to
+       *                      insert before.
+       *  @param  __x  Source list.
+       *  @param  __first  Const_iterator referencing the start of range in x.
+       *  @param  __last  Const_iterator referencing the end of range in x.
+       *
+       *  Removes elements in the range [__first,__last) and inserts them
+       *  before @a __position in constant time.
+       *
+       *  Undefined if @a __position is in [__first,__last).
+       */
+      void
+      splice(const_iterator __position, list&& __x, const_iterator __first,
+	     const_iterator __last)
+#else
       /**
        *  @brief  Insert range from another %list.
        *  @param  __position  Iterator referencing the element to insert before.
@@ -1311,10 +1420,6 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
        *  Undefined if @a __position is in [__first,__last).
        */
       void
-#if __cplusplus >= 201103L
-      splice(iterator __position, list&& __x, iterator __first,
-	     iterator __last)
-#else
       splice(iterator __position, list& __x, iterator __first,
 	     iterator __last)
 #endif
@@ -1324,13 +1429,29 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 	    if (this != &__x)
 	      _M_check_equal_allocators(__x);
 
-	    this->_M_transfer(__position, __first, __last);
+	    this->_M_transfer(__position._M_const_cast(),
+			      __first._M_const_cast(),
+			      __last._M_const_cast());
 	  }
       }
 
 #if __cplusplus >= 201103L
+      /**
+       *  @brief  Insert range from another %list.
+       *  @param  __position  Const_iterator referencing the element to
+       *                      insert before.
+       *  @param  __x  Source list.
+       *  @param  __first  Const_iterator referencing the start of range in x.
+       *  @param  __last  Const_iterator referencing the end of range in x.
+       *
+       *  Removes elements in the range [__first,__last) and inserts them
+       *  before @a __position in constant time.
+       *
+       *  Undefined if @a __position is in [__first,__last).
+       */
       void
-      splice(iterator __position, list& __x, iterator __first, iterator __last)
+      splice(const_iterator __position, list& __x, const_iterator __first,
+	     const_iterator __last)
       { splice(__position, std::move(__x), __first, __last); }
 #endif
 
@@ -1488,7 +1609,11 @@ _GLIBCXX_BEGIN_NAMESPACE_CONTAINER
 			       __false_type)
         {
 	  for (; __first != __last; ++__first)
+#if __cplusplus >= 201103L
+	    emplace_back(*__first);
+#else
 	    push_back(*__first);
+#endif
 	}
 
       // Called by list(n,v,a), and the range constructor when it turns out

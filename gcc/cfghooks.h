@@ -1,6 +1,5 @@
 /* Hooks for cfg representation specific functions.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <s.pop@laposte.net>
 
 This file is part of GCC.
@@ -29,6 +28,7 @@ struct cfg_hooks
   /* Debugging.  */
   int (*verify_flow_info) (void);
   void (*dump_bb) (FILE *, basic_block, int, int);
+  void (*dump_bb_for_graph) (pretty_printer *, basic_block);
 
   /* Basic CFG manipulation.  */
 
@@ -152,6 +152,8 @@ struct cfg_hooks
 
 extern void verify_flow_info (void);
 extern void dump_bb (FILE *, basic_block, int, int);
+extern void dump_bb_for_graph (pretty_printer *, basic_block);
+
 extern edge redirect_edge_and_branch (edge, basic_block);
 extern basic_block redirect_edge_and_branch_force (edge, basic_block);
 extern bool can_remove_branch_p (const_edge);
@@ -199,7 +201,7 @@ extern void lv_add_condition_to_bb (basic_block, basic_block, basic_block,
 extern bool can_copy_bbs_p (basic_block *, unsigned);
 extern void copy_bbs (basic_block *, unsigned, basic_block *,
 		      edge *, unsigned, edge *, struct loop *,
-		      basic_block);
+		      basic_block, bool);
 
 void account_profile_record (struct profile_record *, int);
 

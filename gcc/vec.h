@@ -1,6 +1,5 @@
 /* Vector API for GNU compiler.
-   Copyright (C) 2004, 2005, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
    Contributed by Nathan Sidwell <nathan@codesourcery.com>
    Re-implemented in C++ by Diego Novillo <dnovillo@google.com>
 
@@ -338,8 +337,20 @@ struct va_gc
 		       CXX_MEM_STAT_INFO);
 
   template<typename T, typename A>
-  static void release (vec<T, A, vl_embed> *&v) { v = NULL; }
+  static void release (vec<T, A, vl_embed> *&v);
 };
+
+
+/* Free GC memory used by V and reset V to NULL.  */
+
+template<typename T, typename A>
+inline void
+va_gc::release (vec<T, A, vl_embed> *&v)
+{
+  if (v)
+    ::ggc_free (v);
+  v = NULL;
+}
 
 
 /* Allocator for GC memory.  Ensure there are at least RESERVE free

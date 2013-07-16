@@ -1,6 +1,5 @@
 /* dwarf2out.h - Various declarations for functions found in dwarf2out.c
-   Copyright (C) 1998, 1999, 2000, 2003, 2007, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1998-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -258,6 +257,8 @@ extern void dwarf2out_emit_cfi (dw_cfi_ref cfi);
 extern void debug_dwarf (void);
 struct die_struct;
 extern void debug_dwarf_die (struct die_struct *);
+extern void debug (die_struct &ref);
+extern void debug (die_struct *ptr);
 extern void dwarf2out_set_demangle_name_func (const char *(*) (const char *));
 #ifdef VMS_DEBUGGING_INFO
 extern void dwarf2out_vms_debug_main_pointer (void);

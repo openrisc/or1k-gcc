@@ -5,8 +5,7 @@
    This code has no license restrictions, and is considered public
    domain.
 
-   Changes copyright (C) 2005, 2006, 2007, 2008, 2009,
-   2010 Free Software Foundation, Inc.
+   Changes copyright (C) 2005-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@inria.fr>
 
 This file is part of GCC.
@@ -308,6 +307,23 @@ omega_print_vars (FILE *file, omega_pb pb)
     }
 
   fprintf (file, "\n");
+}
+
+/* Dump problem PB.  */
+
+DEBUG_FUNCTION void
+debug (omega_pb_d &ref)
+{
+  omega_print_problem (stderr, &ref);
+}
+
+DEBUG_FUNCTION void
+debug (omega_pb_d *ptr)
+{
+  if (ptr)
+    debug (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
 }
 
 /* Debug problem PB.  */

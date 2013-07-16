@@ -6,7 +6,7 @@
 --                                                                          --
 --                                B o d y                                   --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -167,6 +167,8 @@ begin
    Write_Switch_Char ("Dnn");
    Write_Line ("Debug expanded generated code (max line length = nn)");
 
+   --  No line for -gnatea : internal switch
+
    --  Line for -gnateA switch
 
    Write_Switch_Char ("eA");
@@ -197,6 +199,11 @@ begin
    Write_Switch_Char ("ef");
    Write_Line ("Full source path in brief error messages");
 
+   --  Line for -gnateF switch
+
+   Write_Switch_Char ("eF");
+   Write_Line ("Check overflow on predefined Float types");
+
    --  Line for -gnateG switch
 
    Write_Switch_Char ("eG");
@@ -217,6 +224,8 @@ begin
    Write_Switch_Char ("em=?");
    Write_Line ("Specify mapping file, e.g. -gnatem=mapping");
 
+   --  No line for -gnateO=? : internal switch
+
    --  Line for -gnatep switch
 
    Write_Switch_Char ("ep=?");
@@ -232,10 +241,27 @@ begin
    Write_Switch_Char ("eS");
    Write_Line ("Generate SCO (Source Coverage Obligation) information");
 
+   --  Line for -gnatet switch
+
+   Write_Switch_Char ("et=?");
+   Write_Line ("Write target dependent information file ?, e.g. gnatet=tdf");
+
+   --  Line for -gnateT switch
+
+   Write_Switch_Char ("eT=?");
+   Write_Line ("Read target dependent information file ?, e.g. gnateT=tdf");
+
    --  Line for -gnateV switch
 
    Write_Switch_Char ("eV");
    Write_Line ("Validity checks on subprogram parameters");
+
+   --  Line for -gnateY switch
+
+   Write_Switch_Char ("eY");
+   Write_Line ("Ignore all Style_Checks pragmas in source");
+
+   --  No line for -gnatez : internal switch
 
    --  Line for -gnatE switch
 
@@ -311,28 +337,21 @@ begin
    Write_Switch_Char ("n[?]");
    Write_Line ("Enable pragma Inline (both within and across units, ?=1/2)");
 
-   --  Line for -gnatN switch
-
-   Write_Switch_Char ("N");
-   Write_Line ("Full (frontend) inlining of subprograms");
-
    --  Line for -gnato switch
 
    Write_Switch_Char ("o");
    Write_Line ("Enable overflow checking mode to CHECKED (off by default)");
 
-   --  Line for -gnato? switch
+   --  Lines for -gnato? switches
 
    Write_Switch_Char ("o?");
-   Write_Line ("Set SUPPRESSED/CHECKED/MINIMIZED/ELIMINATED (?=0/1/2/3) mode");
-
+   Write_Line
+     ("Enable overflow checks in STRICT/MINIMIZED/ELIMINATED (1/2/3) mode ");
    Write_Switch_Char ("o??");
-   Write_Line ("Set mode for general/assertion expressions separately");
+   Write_Line
+     ("Set mode for general/assertion expressions separately");
 
-   --  Line for -gnatO switch
-
-   Write_Switch_Char ("O nm ");
-   Write_Line ("Set name of output ali file (internal switch)");
+   --  No line for -gnatO : internal switch
 
    --  Line for -gnatp switch
 
@@ -366,22 +385,22 @@ begin
    Write_Switch_Char ("R?s");
    Write_Line ("List rep info to file.rep instead of standard output");
 
-   --  Lines for -gnats switch
+   --  Line for -gnats switch
 
    Write_Switch_Char ("s");
    Write_Line ("Syntax check only");
 
-   --  Lines for -gnatS switch
+   --  Line for -gnatS switch
 
    Write_Switch_Char ("S");
    Write_Line ("Print listing of package Standard");
 
-   --  Lines for -gnatt switch
+   --  Line for -gnatt switch
 
    Write_Switch_Char ("t");
    Write_Line ("Tree output file to be generated");
 
-   --  Line for -gnatT switch
+   --  Line for -gnatTnn switch
 
    Write_Switch_Char ("Tnn");
    Write_Line ("All compiler tables start at nn times usual starting size");
@@ -401,7 +420,7 @@ begin
    Write_Switch_Char ("v");
    Write_Line ("Verbose mode. Full error output with source lines to stdout");
 
-   --  Line for -gnatV switch
+   --  Lines for -gnatV switch
 
    Write_Switch_Char ("Vxx");
    Write_Line
@@ -453,6 +472,16 @@ begin
    Write_Line ("        .C*  turn off warnings for unrepped components");
    Write_Line ("        d    turn on warnings for implicit dereference");
    Write_Line ("        D*   turn off warnings for implicit dereference");
+
+   --  Switches -gnatw.d/w.D not available on VMS
+
+   if not OpenVMS_On_Target then
+      Write_Line
+        ("        .d   turn on tagging of warnings with -gnatw switch");
+      Write_Line
+        ("        .D*  turn off tagging of warnings with -gnatw switch");
+   end if;
+
    Write_Line ("        e    treat all warnings (but not info) as errors");
    Write_Line ("        .e   turn on every optional info/warning " &
                                                   "(no exceptions)");
@@ -466,8 +495,8 @@ begin
    Write_Line ("        .H*  turn off warnings for holes in records");
    Write_Line ("        i*+  turn on warnings for implementation unit");
    Write_Line ("        I    turn off warnings for implementation unit");
-   Write_Line ("        .i   turn on warnings for overlapping actuals");
-   Write_Line ("        .I*  turn off warnings for overlapping actuals");
+   Write_Line ("        .i*+ turn on warnings for overlapping actuals");
+   Write_Line ("        .I   turn off warnings for overlapping actuals");
    Write_Line ("        j+   turn on warnings for obsolescent " &
                                                   "(annex J) feature");
    Write_Line ("        J*   turn off warnings for obsolescent " &
@@ -481,7 +510,7 @@ begin
    Write_Line ("        L*   turn off warnings for missing " &
                                                   "elaboration pragma");
    Write_Line ("        .l   turn on info messages for inherited aspects");
-   Write_Line ("        .L*   turn off info messages for inherited aspects");
+   Write_Line ("        .L*  turn off info messages for inherited aspects");
    Write_Line ("        m+   turn on warnings for variable assigned " &
                                                   "but not read");
    Write_Line ("        M*   turn off warnings for variable assigned " &
@@ -520,8 +549,8 @@ begin
    Write_Line ("        .S*  turn off warnings for overridden size clause");
    Write_Line ("        t    turn on warnings for tracking deleted code");
    Write_Line ("        T*   turn off warnings for tracking deleted code");
-   Write_Line ("        .t+  turn on warnings for suspicious contract");
-   Write_Line ("        .T*  turn off warnings for suspicious contract");
+   Write_Line ("        .t*+ turn on warnings for suspicious contract");
+   Write_Line ("        .T   turn off warnings for suspicious contract");
    Write_Line ("        u+   turn on warnings for unused entity");
    Write_Line ("        U*   turn off warnings for unused entity");
    Write_Line ("        .u   turn on warnings for unordered enumeration");
@@ -548,8 +577,8 @@ begin
 
    --  Line for -gnatW switch
 
-   Write_Switch_Char ("W");
-   Write_Str ("Wide character encoding method (");
+   Write_Switch_Char ("W?");
+   Write_Str ("Wide character encoding method (?=");
 
    for J in WC_Encoding_Method loop
       Write_Char (WC_Encoding_Letters (J));

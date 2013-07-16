@@ -1,3 +1,64 @@
+2013-03-25  Ian Lance Taylor  <iant@google.com>
+
+	* alloc.c: #include <sys/types.h>.
+	* mmap.c: Likewise.
+
+2013-01-31  Ian Lance Taylor  <iant@google.com>
+
+	* dwarf.c (read_function_info): Permit fvec parameter to be NULL.
+	(dwarf_lookup_pc): Don't use ddata->fvec if threaded.
+
+2013-01-25  Jakub Jelinek  <jakub@redhat.com>
+
+	PR other/56076
+	* dwarf.c (read_line_header): Don't crash if DW_AT_comp_dir
+	attribute was not seen.
+
+2013-01-16  Ian Lance Taylor  <iant@google.com>
+
+	* dwarf.c (struct unit): Add filename and abs_filename fields.
+	(build_address_map): Set new fields when reading unit.
+	(dwarf_lookup_pc): If we don't find an entry in the line table,
+	just return the main file name.
+
+2013-01-14  Richard Sandiford  <rdsandiford@googlemail.com>
+
+	Update copyright years.
+
+2013-01-01  Ian Lance Taylor  <iant@google.com>
+
+	PR bootstrap/54834
+	* Makefile.am (AM_CPPFLAGS): Remove -I ../gcc/include and -I
+	$(MULTIBUILDTOP)/../../gcc/include.
+	* Makefile.in: Rebuild.
+
+2013-01-01  Ian Lance Taylor  <iant@google.com>
+
+	PR other/55536
+	* mmap.c (backtrace_alloc): Don't call sync functions if not
+	threaded.
+	(backtrace_free): Likewise.
+
+2012-12-12  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
+
+	* mmapio.c: Define MAP_FAILED if not defined.
+
+2012-12-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR bootstrap/54926
+	* Makefile.am (AM_CFLAGS): Remove -frandom-seed=$@.
+	* configure.ac: If --with-target-subdir, add -frandom-seed=$@
+	to EXTRA_FLAGS unconditionally, otherwise check whether the compiler
+	accepts it.
+	* Makefile.in: Regenerated.
+	* configure: Regenerated.
+
+2012-12-07  Jakub Jelinek  <jakub@redhat.com>
+
+	PR bootstrap/54926
+	* Makefile.am (AM_CFLAGS): Add -frandom-seed=$@.
+	* Makefile.in: Regenerated.
+
 2012-11-20  Ian Lance Taylor  <iant@google.com>
 
 	* dwarf.c (read_attribute): Always clear val.
@@ -6,6 +67,7 @@
 
 	PR other/55312
 	* configure.ac: Only add -Werror if building a target library.
+	* configure: Rebuild.
 
 2012-11-12  Ian Lance Taylor  <iant@google.com>
 	    Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>

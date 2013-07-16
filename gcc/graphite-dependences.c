@@ -1,5 +1,5 @@
 /* Data dependence analysis for Graphite.
-   Copyright (C) 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <sebastian.pop@amd.com> and
    Konrad Trifunovic <konrad.trifunovic@inria.fr>.
 
@@ -43,6 +43,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #ifdef HAVE_cloog
 #include "graphite-poly.h"
+#include "graphite-htab.h"
 
 /* Add the constraints from the set S to the domain of MAP.  */
 
@@ -297,7 +298,7 @@ carries_deps (__isl_keep isl_union_map *schedule,
 	      int depth)
 {
   bool res;
-  int idx, i;
+  int i;
   isl_space *space;
   isl_map *lex, *x;
   isl_constraint *ineq;
@@ -312,13 +313,12 @@ carries_deps (__isl_keep isl_union_map *schedule,
   space = isl_map_get_space (x);
   ineq = isl_inequality_alloc (isl_local_space_from_space (space));
 
-  idx = 2 * depth + 1;
-  for (i = 0; i < idx; i++)
+  for (i = 0; i < depth - 1; i++)
     lex = isl_map_equate (lex, isl_dim_in, i, isl_dim_out, i);
 
   /* in + 1 <= out  */
-  ineq = isl_constraint_set_coefficient_si (ineq, isl_dim_out, idx, 1);
-  ineq = isl_constraint_set_coefficient_si (ineq, isl_dim_in, idx, -1);
+  ineq = isl_constraint_set_coefficient_si (ineq, isl_dim_out, depth - 1, 1);
+  ineq = isl_constraint_set_coefficient_si (ineq, isl_dim_in, depth - 1, -1);
   ineq = isl_constraint_set_constant_si (ineq, -1);
   lex = isl_map_add_constraint (lex, ineq);
   x = isl_map_intersect (x, lex);
@@ -579,7 +579,7 @@ loop_level_carries_dependences (scop_p scop, vec<poly_bb_p> body,
    poly_bb_p.  */
 
 bool
-loop_is_parallel_p (loop_p loop, htab_t bb_pbb_mapping, int depth)
+loop_is_parallel_p (loop_p loop, bb_pbb_htab_type bb_pbb_mapping, int depth)
 {
   bool dependences;
   scop_p scop;

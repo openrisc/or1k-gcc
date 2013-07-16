@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2000-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 2000-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -3155,16 +3155,21 @@ package body Prj.Nmsc is
             end if;
 
             if not Dir_Exists then
+               if Directories_Must_Exist_In_Projects then
 
-               --  Get the absolute name of the library directory that
-               --  does not exist, to report an error.
+                  --  Get the absolute name of the library directory that does
+                  --  not exist, to report an error.
 
-               Err_Vars.Error_Msg_File_1 :=
-                 File_Name_Type (Project.Library_Dir.Display_Name);
-               Error_Msg
-                 (Data.Flags,
-                  "library directory { does not exist",
-                  Lib_Dir.Location, Project);
+                  Err_Vars.Error_Msg_File_1 :=
+                    File_Name_Type (Project.Library_Dir.Display_Name);
+                  Error_Msg
+                    (Data.Flags,
+                     "library directory { does not exist",
+                     Lib_Dir.Location, Project);
+
+               else
+                  Project.Library_Dir := No_Path_Information;
+               end if;
 
             --  Checks for object/source directories
 
@@ -3208,8 +3213,8 @@ package body Prj.Nmsc is
                              File_Name_Type (Dir_Elem.Value);
                            Error_Msg
                              (Data.Flags,
-                              "library directory cannot be the same " &
-                              "as source directory {",
+                              "library directory cannot be the same "
+                              & "as source directory {",
                               Lib_Dir.Location, Project);
                            OK := False;
                            exit;
@@ -3243,8 +3248,8 @@ package body Prj.Nmsc is
 
                                     Error_Msg
                                       (Data.Flags,
-                                       "library directory cannot be the same" &
-                                       " as source directory { of project %%",
+                                       "library directory cannot be the same "
+                                       & "as source directory { of project %%",
                                        Lib_Dir.Location, Project);
                                     OK := False;
                                     exit Project_Loop;
@@ -3652,6 +3657,21 @@ package body Prj.Nmsc is
                exit;
             end if;
          end loop;
+      end if;
+
+      if not Lib_Standalone.Default
+        and then Project.Library_Kind = Static
+      then
+         --  An standalone library must be a shared library
+
+         Error_Msg_Name_1 := Project.Name;
+
+         Error_Msg
+           (Data.Flags,
+            Continuation.all &
+              "standalone library project %% must be a shared library",
+            Project.Location, Project);
+         Continuation := Continuation_String'Access;
       end if;
 
       if Project.Library and not Data.In_Aggregate_Lib then
@@ -5022,9 +5042,8 @@ package body Prj.Nmsc is
       function Is_Reserved (Name : Name_Id) return Boolean is
       begin
          if Get_Name_Table_Byte (Name) /= 0
-           and then Name /= Name_Project
-           and then Name /= Name_Extends
-           and then Name /= Name_External
+           and then
+             not Nam_In (Name, Name_Project, Name_Extends, Name_External)
            and then Name not in Ada_2005_Reserved_Words
          then
             Unit := No_Name;
@@ -5408,15 +5427,20 @@ package body Prj.Nmsc is
                Externally_Built => Project.Externally_Built);
 
             if not Dir_Exists and then not Project.Externally_Built then
+               if Opt.Directories_Must_Exist_In_Projects then
+                  --  The object directory does not exist, report an error if
+                  --  the project is not externally built.
 
-               --  The object directory does not exist, report an error if the
-               --  project is not externally built.
+                  Err_Vars.Error_Msg_File_1 :=
+                    File_Name_Type (Object_Dir.Value);
+                  Error_Or_Warning
+                    (Data.Flags, Data.Flags.Require_Obj_Dirs,
+                     "object directory { not found",
+                     Project.Location, Project);
 
-               Err_Vars.Error_Msg_File_1 :=
-                 File_Name_Type (Object_Dir.Value);
-               Error_Or_Warning
-                 (Data.Flags, Data.Flags.Require_Obj_Dirs,
-                  "object directory { not found", Project.Location, Project);
+               else
+                  Project.Object_Directory := No_Path_Information;
+               end if;
             end if;
          end if;
 
@@ -5489,10 +5513,15 @@ package body Prj.Nmsc is
                Externally_Built => Project.Externally_Built);
 
             if not Dir_Exists then
-               Err_Vars.Error_Msg_File_1 := File_Name_Type (Exec_Dir.Value);
-               Error_Or_Warning
-                 (Data.Flags, Data.Flags.Missing_Source_Files,
-                  "exec directory { not found", Project.Location, Project);
+               if Opt.Directories_Must_Exist_In_Projects then
+                  Err_Vars.Error_Msg_File_1 := File_Name_Type (Exec_Dir.Value);
+                  Error_Or_Warning
+                    (Data.Flags, Data.Flags.Missing_Source_Files,
+                     "exec directory { not found", Project.Location, Project);
+
+               else
+                  Project.Exec_Directory := No_Path_Information;
+               end if;
             end if;
          end if;
       end if;
@@ -6727,9 +6756,9 @@ package body Prj.Nmsc is
 
    procedure Free (Data : in out Project_Processing_Data) is
    begin
-      Source_Names_Htable.Reset      (Data.Source_Names);
-      Unit_Exceptions_Htable.Reset   (Data.Unit_Exceptions);
-      Excluded_Sources_Htable.Reset  (Data.Excluded);
+      Source_Names_Htable.Reset     (Data.Source_Names);
+      Unit_Exceptions_Htable.Reset  (Data.Unit_Exceptions);
+      Excluded_Sources_Htable.Reset (Data.Excluded);
    end Free;
 
    -------------------------------
@@ -6996,9 +7025,9 @@ package body Prj.Nmsc is
 
                if Name_Loc.Source.Naming_Exception = Inherited then
                   declare
-                     Proj  : Project_Id := Name_Loc.Source.Project.Extends;
-                     Iter  : Source_Iterator;
-                     Src   : Source_Id;
+                     Proj : Project_Id := Name_Loc.Source.Project.Extends;
+                     Iter : Source_Iterator;
+                     Src  : Source_Id;
                   begin
                      while Proj /= No_Project loop
                         Iter := For_Each_Source (Data.Tree, Proj);
@@ -7149,10 +7178,10 @@ package body Prj.Nmsc is
         (Path : Path_Information;
          Rank : Natural) return Boolean
       is
-         Dir   : Dir_Type;
-         Name  : String (1 .. 250);
-         Last  : Natural;
-         Found : Path_Information;
+         Dir     : Dir_Type;
+         Name    : String (1 .. 250);
+         Last    : Natural;
+         Found   : Path_Information;
          Success : Boolean := False;
 
       begin
@@ -7198,10 +7227,10 @@ package body Prj.Nmsc is
          Rank : Natural) return Boolean
       is
          Path_Str : constant String := Get_Name_String (Path.Display_Name);
-         Dir   : Dir_Type;
-         Name  : String (1 .. 250);
-         Last  : Natural;
-         Success : Boolean := False;
+         Dir      : Dir_Type;
+         Name     : String (1 .. 250);
+         Last     : Natural;
+         Success  : Boolean := False;
 
       begin
          Debug_Output ("looking for subdirs of ", Name_Id (Path.Display_Name));
@@ -7729,7 +7758,7 @@ package body Prj.Nmsc is
 
                if Language.First_Source = No_Source
                  and then (Data.Flags.Require_Sources_Other_Lang
-                           or else Language.Name = Name_Ada)
+                            or else Language.Name = Name_Ada)
                then
                   Iter := For_Each_Source (In_Tree => Data.Tree,
                                            Project => Project.Project);
@@ -8321,9 +8350,7 @@ package body Prj.Nmsc is
             procedure Check_Not_Defined (Name : Name_Id) is
                Var : constant Prj.Variable_Value :=
                        Prj.Util.Value_Of
-                         (Name,
-                          Project.Decl.Attributes,
-                          Data.Tree.Shared);
+                         (Name, Project.Decl.Attributes, Data.Tree.Shared);
             begin
                if not Var.Default then
                   Error_Msg_Name_1 := Name;

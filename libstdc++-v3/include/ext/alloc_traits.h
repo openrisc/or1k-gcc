@@ -1,6 +1,6 @@
 // Allocator traits -*- C++ -*-
 
-// Copyright (C) 2011-2012 Free Software Foundation, Inc.
+// Copyright (C) 2011-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -32,17 +32,11 @@
 #pragma GCC system_header
 
 #if __cplusplus >= 201103L
+# include <bits/move.h>
 # include <bits/alloc_traits.h>
 #else
 # include <bits/allocator.h>  // for __alloc_swap
 #endif
-
-namespace std _GLIBCXX_VISIBILITY(default)
-{
-_GLIBCXX_BEGIN_NAMESPACE_VERSION
-  template<typename> struct allocator;
-_GLIBCXX_END_NAMESPACE_VERSION
-} // namespace
 
 namespace __gnu_cxx _GLIBCXX_VISIBILITY(default)
 {
@@ -243,6 +237,6 @@ template<typename _Alloc>
   };
 
 _GLIBCXX_END_NAMESPACE_VERSION
-} // namespace
+} // namespace std
 
 #endif

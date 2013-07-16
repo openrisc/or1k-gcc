@@ -1,6 +1,5 @@
 /* DWARF2 EH unwinding support for MIPS Linux.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -51,6 +50,11 @@ mips_fallback_frame_state (struct _Unwind_Context *context,
   struct sigcontext *sc;
   _Unwind_Ptr new_cfa, reg_offset;
   int i;
+
+  /* A MIPS16 or microMIPS frame.  Signal frames always use the standard
+     ISA encoding.  */
+  if ((_Unwind_Ptr) pc & 3)
+    return _URC_END_OF_STACK;
 
   /* 24021061 li v0, 0x1061 (rt_sigreturn)*/
   /* 0000000c syscall    */

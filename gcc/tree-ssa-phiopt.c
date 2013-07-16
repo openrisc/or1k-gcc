@@ -1,6 +1,5 @@
 /* Optimization of PHI nodes by converting them into straightline code.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -21,6 +20,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
+#include "hash-table.h"
 #include "tm.h"
 #include "ggc.h"
 #include "tree.h"
@@ -38,6 +38,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "insn-config.h"
 #include "expr.h"
 #include "optabs.h"
+#include "tree-scalar-evolution.h"
 
 #ifndef HAVE_conditional_move
 #define HAVE_conditional_move (0)
@@ -242,7 +243,16 @@ tree_ssa_phiopt (void)
 static unsigned int
 tree_ssa_cs_elim (void)
 {
-  return tree_ssa_phiopt_worker (true, false);
+  unsigned todo;
+  /* ???  We are not interested in loop related info, but the following
+     will create it, ICEing as we didn't init loops with pre-headers.
+     An interfacing issue of find_data_references_in_bb.  */
+  loop_optimizer_init (LOOPS_NORMAL);
+  scev_initialize ();
+  todo = tree_ssa_phiopt_worker (true, false);
+  scev_finalize ();
+  loop_optimizer_finalize ();
+  return todo;
 }
 
 /* Return the singleton PHI in the SEQ of PHIs for edges E0 and E1. */
@@ -1234,38 +1244,51 @@ abs_replacement (basic_block cond_bb, basic_block middle_bb,
 struct name_to_bb
 {
   unsigned int ssa_name_ver;
+  unsigned int phase;
   bool store;
   HOST_WIDE_INT offset, size;
   basic_block bb;
 };
 
-/* The hash table for remembering what we've seen.  */
-static htab_t seen_ssa_names;
+/* Hashtable helpers.  */
+
+struct ssa_names_hasher : typed_free_remove <name_to_bb>
+{
+  typedef name_to_bb value_type;
+  typedef name_to_bb compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
+
+/* Used for quick clearing of the hash-table when we see calls.
+   Hash entries with phase < nt_call_phase are invalid.  */
+static unsigned int nt_call_phase;
 
 /* The set of MEM_REFs which can't trap.  */
 static struct pointer_set_t *nontrap_set;
 
 /* The hash function.  */
-static hashval_t
-name_to_bb_hash (const void *p)
+
+inline hashval_t
+ssa_names_hasher::hash (const value_type *n)
 {
-  const struct name_to_bb *n = (const struct name_to_bb *) p;
   return n->ssa_name_ver ^ (((hashval_t) n->store) << 31)
          ^ (n->offset << 6) ^ (n->size << 3);
 }
 
 /* The equality function of *P1 and *P2.  */
-static int
-name_to_bb_eq (const void *p1, const void *p2)
-{
-  const struct name_to_bb *n1 = (const struct name_to_bb *)p1;
-  const struct name_to_bb *n2 = (const struct name_to_bb *)p2;
 
+inline bool
+ssa_names_hasher::equal (const value_type *n1, const compare_type *n2)
+{
   return n1->ssa_name_ver == n2->ssa_name_ver
          && n1->store == n2->store
          && n1->offset == n2->offset
          && n1->size == n2->size;
 }
+
+/* The hash table for remembering what we've seen.  */
+static hash_table <ssa_names_hasher> seen_ssa_names;
 
 /* We see the expression EXP in basic block BB.  If it's an interesting
    expression (an MEM_REF through an SSA_NAME) possibly insert the
@@ -1285,27 +1308,28 @@ add_or_mark_expr (basic_block bb, tree exp,
     {
       tree name = TREE_OPERAND (exp, 0);
       struct name_to_bb map;
-      void **slot;
+      name_to_bb **slot;
       struct name_to_bb *n2bb;
       basic_block found_bb = 0;
 
       /* Try to find the last seen MEM_REF through the same
          SSA_NAME, which can trap.  */
       map.ssa_name_ver = SSA_NAME_VERSION (name);
+      map.phase = 0;
       map.bb = 0;
       map.store = store;
       map.offset = tree_low_cst (TREE_OPERAND (exp, 1), 0);
       map.size = size;
 
-      slot = htab_find_slot (seen_ssa_names, &map, INSERT);
-      n2bb = (struct name_to_bb *) *slot;
-      if (n2bb)
+      slot = seen_ssa_names.find_slot (&map, INSERT);
+      n2bb = *slot;
+      if (n2bb && n2bb->phase >= nt_call_phase)
         found_bb = n2bb->bb;
 
       /* If we've found a trapping MEM_REF, _and_ it dominates EXP
          (it's in a basic block on the path from us to the dominator root)
 	 then we can't trap.  */
-      if (found_bb && found_bb->aux == (void *)1)
+      if (found_bb && (((size_t)found_bb->aux) & 1) == 1)
 	{
 	  pointer_set_insert (nontrap, exp);
 	}
@@ -1314,12 +1338,14 @@ add_or_mark_expr (basic_block bb, tree exp,
 	  /* EXP might trap, so insert it into the hash table.  */
 	  if (n2bb)
 	    {
+	      n2bb->phase = nt_call_phase;
 	      n2bb->bb = bb;
 	    }
 	  else
 	    {
 	      n2bb = XNEW (struct name_to_bb);
 	      n2bb->ssa_name_ver = SSA_NAME_VERSION (name);
+	      n2bb->phase = nt_call_phase;
 	      n2bb->bb = bb;
 	      n2bb->store = store;
 	      n2bb->offset = map.offset;
@@ -1330,20 +1356,55 @@ add_or_mark_expr (basic_block bb, tree exp,
     }
 }
 
+/* Return true when CALL is a call stmt that definitely doesn't
+   free any memory or makes it unavailable otherwise.  */
+bool
+nonfreeing_call_p (gimple call)
+{
+  if (gimple_call_builtin_p (call, BUILT_IN_NORMAL)
+      && gimple_call_flags (call) & ECF_LEAF)
+    switch (DECL_FUNCTION_CODE (gimple_call_fndecl (call)))
+      {
+	/* Just in case these become ECF_LEAF in the future.  */
+	case BUILT_IN_FREE:
+	case BUILT_IN_TM_FREE:
+	case BUILT_IN_REALLOC:
+	case BUILT_IN_STACK_RESTORE:
+	  return false;
+	default:
+	  return true;
+      }
+
+  return false;
+}
+
 /* Called by walk_dominator_tree, when entering the block BB.  */
 static void
 nt_init_block (struct dom_walk_data *data ATTRIBUTE_UNUSED, basic_block bb)
 {
+  edge e;
+  edge_iterator ei;
   gimple_stmt_iterator gsi;
-  /* Mark this BB as being on the path to dominator root.  */
-  bb->aux = (void*)1;
+
+  /* If we haven't seen all our predecessors, clear the hash-table.  */
+  FOR_EACH_EDGE (e, ei, bb->preds)
+    if ((((size_t)e->src->aux) & 2) == 0)
+      {
+	nt_call_phase++;
+	break;
+      }
+
+  /* Mark this BB as being on the path to dominator root and as visited.  */
+  bb->aux = (void*)(1 | 2);
 
   /* And walk the statements in order.  */
   for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
     {
       gimple stmt = gsi_stmt (gsi);
 
-      if (gimple_assign_single_p (stmt))
+      if (is_gimple_call (stmt) && !nonfreeing_call_p (stmt))
+	nt_call_phase++;
+      else if (gimple_assign_single_p (stmt) && !gimple_has_volatile_ops (stmt))
 	{
 	  add_or_mark_expr (bb, gimple_assign_lhs (stmt), nontrap_set, true);
 	  add_or_mark_expr (bb, gimple_assign_rhs1 (stmt), nontrap_set, false);
@@ -1356,7 +1417,7 @@ static void
 nt_fini_block (struct dom_walk_data *data ATTRIBUTE_UNUSED, basic_block bb)
 {
   /* This BB isn't on the path to dominator root anymore.  */
-  bb->aux = NULL;
+  bb->aux = (void*)2;
 }
 
 /* This is the entry point of gathering non trapping memory accesses.
@@ -1369,9 +1430,9 @@ get_non_trapping (void)
   struct pointer_set_t *nontrap;
   struct dom_walk_data walk_data;
 
+  nt_call_phase = 0;
   nontrap = pointer_set_create ();
-  seen_ssa_names = htab_create (128, name_to_bb_hash, name_to_bb_eq,
-				free);
+  seen_ssa_names.create (128);
   /* We're going to do a dominator walk, so ensure that we have
      dominance information.  */
   calculate_dominance_info (CDI_DOMINATORS);
@@ -1388,8 +1449,9 @@ get_non_trapping (void)
   init_walk_dominator_tree (&walk_data);
   walk_dominator_tree (&walk_data, ENTRY_BLOCK_PTR);
   fini_walk_dominator_tree (&walk_data);
-  htab_delete (seen_ssa_names);
+  seen_ssa_names.dispose ();
 
+  clear_aux_for_blocks ();
   return nontrap;
 }
 
@@ -1420,7 +1482,8 @@ cond_store_replacement (basic_block middle_bb, basic_block join_bb,
 
   /* Check if middle_bb contains of only one store.  */
   if (!assign
-      || !gimple_assign_single_p (assign))
+      || !gimple_assign_single_p (assign)
+      || gimple_has_volatile_ops (assign))
     return false;
 
   locus = gimple_location (assign);
@@ -1491,9 +1554,11 @@ cond_if_else_store_replacement_1 (basic_block then_bb, basic_block else_bb,
   if (then_assign == NULL
       || !gimple_assign_single_p (then_assign)
       || gimple_clobber_p (then_assign)
+      || gimple_has_volatile_ops (then_assign)
       || else_assign == NULL
       || !gimple_assign_single_p (else_assign)
-      || gimple_clobber_p (else_assign))
+      || gimple_clobber_p (else_assign)
+      || gimple_has_volatile_ops (else_assign))
     return false;
 
   lhs = gimple_assign_lhs (then_assign);
@@ -1830,7 +1895,9 @@ hoist_adjacent_loads (basic_block bb0, basic_block bb1,
 
       /* Both statements must be assignments whose RHS is a COMPONENT_REF.  */
       if (!gimple_assign_single_p (def1)
-	  || !gimple_assign_single_p (def2))
+	  || !gimple_assign_single_p (def2)
+	  || gimple_has_volatile_ops (def1)
+	  || gimple_has_volatile_ops (def2))
 	continue;
 
       ref1 = gimple_assign_rhs1 (def1);
@@ -1964,8 +2031,7 @@ struct gimple_opt_pass pass_phiopt =
   0,					/* properties_provided */
   0,					/* properties_destroyed */
   0,					/* todo_flags_start */
-  TODO_ggc_collect
-    | TODO_verify_ssa
+  TODO_verify_ssa
     | TODO_verify_flow
     | TODO_verify_stmts	 		/* todo_flags_finish */
  }
@@ -1993,8 +2059,7 @@ struct gimple_opt_pass pass_cselim =
   0,					/* properties_provided */
   0,					/* properties_destroyed */
   0,					/* todo_flags_start */
-  TODO_ggc_collect
-    | TODO_verify_ssa
+  TODO_verify_ssa
     | TODO_verify_flow
     | TODO_verify_stmts	 		/* todo_flags_finish */
  }

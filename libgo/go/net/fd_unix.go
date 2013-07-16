@@ -37,11 +37,11 @@ type netFD struct {
 	laddr       Addr
 	raddr       Addr
 
-	// owned by client
-	rdeadline int64
-	rio       sync.Mutex
-	wdeadline int64
-	wio       sync.Mutex
+	// serialize access to Read and Write methods
+	rio, wio sync.Mutex
+
+	// read and write deadlines
+	rdeadline, wdeadline deadline
 
 	// owned by fd wait server
 	ncr, ncw int
@@ -82,11 +82,11 @@ func (s *pollServer) AddFD(fd *netFD, mode int) error {
 	key := intfd << 1
 	if mode == 'r' {
 		fd.ncr++
-		t = fd.rdeadline
+		t = fd.rdeadline.value()
 	} else {
 		fd.ncw++
 		key++
-		t = fd.wdeadline
+		t = fd.wdeadline.value()
 	}
 	s.pending[key] = fd
 	doWakeup := false
@@ -110,15 +110,23 @@ func (s *pollServer) AddFD(fd *netFD, mode int) error {
 // any I/O running on fd.  The caller must have locked
 // pollserver.
 func (s *pollServer) Evict(fd *netFD) {
+	doWakeup := false
 	if s.pending[fd.sysfd<<1] == fd {
 		s.WakeFD(fd, 'r', errClosing)
-		s.poll.DelFD(fd.sysfd, 'r')
+		if s.poll.DelFD(fd.sysfd, 'r') {
+			doWakeup = true
+		}
 		delete(s.pending, fd.sysfd<<1)
 	}
 	if s.pending[fd.sysfd<<1|1] == fd {
 		s.WakeFD(fd, 'w', errClosing)
-		s.poll.DelFD(fd.sysfd, 'w')
+		if s.poll.DelFD(fd.sysfd, 'w') {
+			doWakeup = true
+		}
 		delete(s.pending, fd.sysfd<<1|1)
+	}
+	if doWakeup {
+		s.Wakeup()
 	}
 }
 
@@ -153,12 +161,8 @@ func (s *pollServer) WakeFD(fd *netFD, mode int, err error) {
 	}
 }
 
-func (s *pollServer) Now() int64 {
-	return time.Now().UnixNano()
-}
-
 func (s *pollServer) CheckDeadlines() {
-	now := s.Now()
+	now := time.Now().UnixNano()
 	// TODO(rsc): This will need to be handled more efficiently,
 	// probably with a heap indexed by wakeup time.
 
@@ -172,21 +176,19 @@ func (s *pollServer) CheckDeadlines() {
 			mode = 'w'
 		}
 		if mode == 'r' {
-			t = fd.rdeadline
+			t = fd.rdeadline.value()
 		} else {
-			t = fd.wdeadline
+			t = fd.wdeadline.value()
 		}
 		if t > 0 {
 			if t <= now {
 				delete(s.pending, key)
 				if mode == 'r' {
 					s.poll.DelFD(fd.sysfd, mode)
-					fd.rdeadline = -1
 				} else {
 					s.poll.DelFD(fd.sysfd, mode)
-					fd.wdeadline = -1
 				}
-				s.WakeFD(fd, mode, nil)
+				s.WakeFD(fd, mode, errTimeout)
 			} else if nextDeadline == 0 || t < nextDeadline {
 				nextDeadline = t
 			}
@@ -200,15 +202,15 @@ func (s *pollServer) Run() {
 	s.Lock()
 	defer s.Unlock()
 	for {
-		var t = s.deadline
-		if t > 0 {
-			t = t - s.Now()
-			if t <= 0 {
+		var timeout int64 // nsec to wait for or 0 for none
+		if s.deadline > 0 {
+			timeout = s.deadline - time.Now().UnixNano()
+			if timeout <= 0 {
 				s.CheckDeadlines()
 				continue
 			}
 		}
-		fd, mode, err := s.poll.WaitFD(s, t)
+		fd, mode, err := s.poll.WaitFD(s, timeout)
 		if err != nil {
 			print("pollServer WaitFD: ", err.Error(), "\n")
 			return
@@ -294,10 +296,16 @@ func server(fd int) *pollServer {
 	return pollservers[k]
 }
 
-func newFD(fd, family, sotype int, net string) (*netFD, error) {
-	if err := syscall.SetNonblock(fd, true); err != nil {
+func dialTimeout(net, addr string, timeout time.Duration) (Conn, error) {
+	deadline := time.Now().Add(timeout)
+	_, addri, err := resolveNetAddr("dial", net, addr, deadline)
+	if err != nil {
 		return nil, err
 	}
+	return dialAddr(net, addr, addri, deadline)
+}
+
+func newFD(fd, family, sotype int, net string) (*netFD, error) {
 	netfd := &netFD{
 		sysfd:  fd,
 		family: family,
@@ -329,13 +337,9 @@ func (fd *netFD) name() string {
 
 func (fd *netFD) connect(ra syscall.Sockaddr) error {
 	err := syscall.Connect(fd.sysfd, ra)
-	hadTimeout := fd.wdeadline > 0
 	if err == syscall.EINPROGRESS {
 		if err = fd.pollServer.WaitWrite(fd); err != nil {
 			return err
-		}
-		if hadTimeout && fd.wdeadline < 0 {
-			return errTimeout
 		}
 		var e int
 		e, err = syscall.GetsockoptInt(fd.sysfd, syscall.SOL_SOCKET, syscall.SO_ERROR)
@@ -381,8 +385,8 @@ func (fd *netFD) decref() {
 
 func (fd *netFD) Close() error {
 	fd.pollServer.Lock() // needed for both fd.incref(true) and pollserver.Evict
-	defer fd.pollServer.Unlock()
 	if err := fd.incref(true); err != nil {
+		fd.pollServer.Unlock()
 		return err
 	}
 	// Unblock any I/O.  Once it all unblocks and returns,
@@ -391,6 +395,7 @@ func (fd *netFD) Close() error {
 	// fairly quickly, since all the I/O is non-blocking, and any
 	// attempts to block in the pollserver will return errClosing.
 	fd.pollServer.Evict(fd)
+	fd.pollServer.Unlock()
 	fd.decref()
 	return nil
 }
@@ -423,20 +428,20 @@ func (fd *netFD) Read(p []byte) (n int, err error) {
 	}
 	defer fd.decref()
 	for {
-		n, err = syscall.Read(int(fd.sysfd), p)
-		if err == syscall.EAGAIN {
+		if fd.rdeadline.expired() {
 			err = errTimeout
-			if fd.rdeadline >= 0 {
+			break
+		}
+		n, err = syscall.Read(int(fd.sysfd), p)
+		if err != nil {
+			n = 0
+			if err == syscall.EAGAIN {
 				if err = fd.pollServer.WaitRead(fd); err == nil {
 					continue
 				}
 			}
 		}
-		if err != nil {
-			n = 0
-		} else if n == 0 && err == nil && fd.sotype != syscall.SOCK_DGRAM {
-			err = io.EOF
-		}
+		err = chkReadErr(n, err, fd)
 		break
 	}
 	if err != nil && err != io.EOF {
@@ -453,18 +458,20 @@ func (fd *netFD) ReadFrom(p []byte) (n int, sa syscall.Sockaddr, err error) {
 	}
 	defer fd.decref()
 	for {
-		n, sa, err = syscall.Recvfrom(fd.sysfd, p, 0)
-		if err == syscall.EAGAIN {
+		if fd.rdeadline.expired() {
 			err = errTimeout
-			if fd.rdeadline >= 0 {
+			break
+		}
+		n, sa, err = syscall.Recvfrom(fd.sysfd, p, 0)
+		if err != nil {
+			n = 0
+			if err == syscall.EAGAIN {
 				if err = fd.pollServer.WaitRead(fd); err == nil {
 					continue
 				}
 			}
 		}
-		if err != nil {
-			n = 0
-		}
+		err = chkReadErr(n, err, fd)
 		break
 	}
 	if err != nil && err != io.EOF {
@@ -481,41 +488,47 @@ func (fd *netFD) ReadMsg(p []byte, oob []byte) (n, oobn, flags int, sa syscall.S
 	}
 	defer fd.decref()
 	for {
-		n, oobn, flags, sa, err = syscall.Recvmsg(fd.sysfd, p, oob, 0)
-		if err == syscall.EAGAIN {
+		if fd.rdeadline.expired() {
 			err = errTimeout
-			if fd.rdeadline >= 0 {
+			break
+		}
+		n, oobn, flags, sa, err = syscall.Recvmsg(fd.sysfd, p, oob, 0)
+		if err != nil {
+			// TODO(dfc) should n and oobn be set to 0
+			if err == syscall.EAGAIN {
 				if err = fd.pollServer.WaitRead(fd); err == nil {
 					continue
 				}
 			}
 		}
-		if err == nil && n == 0 {
-			err = io.EOF
-		}
+		err = chkReadErr(n, err, fd)
 		break
 	}
 	if err != nil && err != io.EOF {
 		err = &OpError{"read", fd.net, fd.laddr, err}
-		return
 	}
 	return
 }
 
-func (fd *netFD) Write(p []byte) (int, error) {
+func chkReadErr(n int, err error, fd *netFD) error {
+	if n == 0 && err == nil && fd.sotype != syscall.SOCK_DGRAM && fd.sotype != syscall.SOCK_RAW {
+		return io.EOF
+	}
+	return err
+}
+
+func (fd *netFD) Write(p []byte) (nn int, err error) {
 	fd.wio.Lock()
 	defer fd.wio.Unlock()
 	if err := fd.incref(false); err != nil {
 		return 0, err
 	}
 	defer fd.decref()
-	if fd.sysfile == nil {
-		return 0, syscall.EINVAL
-	}
-
-	var err error
-	nn := 0
 	for {
+		if fd.wdeadline.expired() {
+			err = errTimeout
+			break
+		}
 		var n int
 		n, err = syscall.Write(int(fd.sysfd), p[nn:])
 		if n > 0 {
@@ -525,11 +538,8 @@ func (fd *netFD) Write(p []byte) (int, error) {
 			break
 		}
 		if err == syscall.EAGAIN {
-			err = errTimeout
-			if fd.wdeadline >= 0 {
-				if err = fd.pollServer.WaitWrite(fd); err == nil {
-					continue
-				}
+			if err = fd.pollServer.WaitWrite(fd); err == nil {
+				continue
 			}
 		}
 		if err != nil {
@@ -555,13 +565,14 @@ func (fd *netFD) WriteTo(p []byte, sa syscall.Sockaddr) (n int, err error) {
 	}
 	defer fd.decref()
 	for {
+		if fd.wdeadline.expired() {
+			err = errTimeout
+			break
+		}
 		err = syscall.Sendto(fd.sysfd, p, 0, sa)
 		if err == syscall.EAGAIN {
-			err = errTimeout
-			if fd.wdeadline >= 0 {
-				if err = fd.pollServer.WaitWrite(fd); err == nil {
-					continue
-				}
+			if err = fd.pollServer.WaitWrite(fd); err == nil {
+				continue
 			}
 		}
 		break
@@ -582,13 +593,14 @@ func (fd *netFD) WriteMsg(p []byte, oob []byte, sa syscall.Sockaddr) (n int, oob
 	}
 	defer fd.decref()
 	for {
+		if fd.wdeadline.expired() {
+			err = errTimeout
+			break
+		}
 		err = syscall.Sendmsg(fd.sysfd, p, oob, sa, 0)
 		if err == syscall.EAGAIN {
-			err = errTimeout
-			if fd.wdeadline >= 0 {
-				if err = fd.pollServer.WaitWrite(fd); err == nil {
-					continue
-				}
+			if err = fd.pollServer.WaitWrite(fd); err == nil {
+				continue
 			}
 		}
 		break
@@ -608,22 +620,14 @@ func (fd *netFD) accept(toAddr func(syscall.Sockaddr) Addr) (netfd *netFD, err e
 	}
 	defer fd.decref()
 
-	// See ../syscall/exec_unix.go for description of ForkLock.
-	// It is okay to hold the lock across syscall.Accept
-	// because we have put fd.sysfd into non-blocking mode.
 	var s int
 	var rsa syscall.Sockaddr
 	for {
-		syscall.ForkLock.RLock()
-		s, rsa, err = syscall.Accept(fd.sysfd)
+		s, rsa, err = accept(fd.sysfd)
 		if err != nil {
-			syscall.ForkLock.RUnlock()
 			if err == syscall.EAGAIN {
-				err = errTimeout
-				if fd.rdeadline >= 0 {
-					if err = fd.pollServer.WaitRead(fd); err == nil {
-						continue
-					}
+				if err = fd.pollServer.WaitRead(fd); err == nil {
+					continue
 				}
 			} else if err == syscall.ECONNABORTED {
 				// This means that a socket on the listen queue was closed
@@ -634,8 +638,6 @@ func (fd *netFD) accept(toAddr func(syscall.Sockaddr) Addr) (netfd *netFD, err e
 		}
 		break
 	}
-	syscall.CloseOnExec(s)
-	syscall.ForkLock.RUnlock()
 
 	if netfd, err = newFD(s, fd.family, fd.sotype, fd.net); err != nil {
 		closesocket(s)

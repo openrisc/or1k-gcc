@@ -1,6 +1,5 @@
 /* Generic routines for manipulating SSA_NAME expressions
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -51,11 +50,8 @@ along with GCC; see the file COPYING3.  If not see
    External code should also not assume the version number on nodes is
    monotonically increasing.  We reuse the version number when we
    reuse an SSA_NAME expression.  This helps keep arrays and bitmaps
-   more compact.
+   more compact.  */
 
-   We could also use a zone allocator for these objects since they have
-   a very well defined lifetime.  If someone wants to experiment with that
-   this is the place to try it.  */
 
 /* Version numbers with special meanings.  We start allocating new version
    numbers after the special ones.  */
@@ -459,7 +455,7 @@ struct gimple_opt_pass pass_release_ssa_names =
   PROP_ssa,				/* properties_required */
   0,					/* properties_provided */
   0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0              			/* todo_flags_finish */
+  TODO_remove_unused_locals,		/* todo_flags_start */
+  0					/* todo_flags_finish */
  }
 };

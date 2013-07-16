@@ -1,6 +1,5 @@
 /* Register note definitions.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -172,11 +171,6 @@ REG_NOTE (CFA_WINDOW_SAVE)
    This is normally used for a call instruction which is not exposed to
    the rest of the compiler as a CALL_INSN.  */
 REG_NOTE (CFA_FLUSH_QUEUE)
-
-/* Indicates that REG holds the exception context for the function.
-   This context is shared by inline functions, so the code to acquire
-   the real exception context is delayed until after inlining.  */
-REG_NOTE (EH_CONTEXT)
 
 /* Indicates what exception region an INSN belongs in.  This is used
    to indicate what region to which a call may throw.  REGION 0

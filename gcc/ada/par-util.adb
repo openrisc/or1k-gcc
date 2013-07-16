@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -181,12 +181,11 @@ package body Util is
       if Ada_Version = Ada_95
         and then Warn_On_Ada_2005_Compatibility
       then
-         if Token_Name = Name_Overriding
-           or else Token_Name = Name_Synchronized
+         if Nam_In (Token_Name, Name_Overriding, Name_Synchronized)
            or else (Token_Name = Name_Interface
                      and then Prev_Token /= Tok_Pragma)
          then
-            Error_Msg_N ("& is a reserved word in Ada 2005?", Token_Node);
+            Error_Msg_N ("& is a reserved word in Ada 2005?y?", Token_Node);
          end if;
       end if;
 
@@ -196,7 +195,7 @@ package body Util is
         and then Warn_On_Ada_2012_Compatibility
       then
          if Token_Name = Name_Some then
-            Error_Msg_N ("& is a reserved word in Ada 2012?", Token_Node);
+            Error_Msg_N ("& is a reserved word in Ada 2012?y?", Token_Node);
          end if;
       end if;
 
@@ -635,6 +634,10 @@ package body Util is
 
    procedure No_Constraint is
    begin
+      --  If we have a token that could start a constraint on the same line
+      --  then cnsider this an illegal constraint. It seems unlikely it could
+      --  be anything else if it is on the same line.
+
       if Token in Token_Class_Consk then
          Error_Msg_SC ("constraint not allowed here");
          Discard_Junk_Node (P_Constraint_Opt);
@@ -761,7 +764,7 @@ package body Util is
             C : constant Entity_Id := Current_Entity (N);
          begin
             if Present (C) and then Sloc (C) = Standard_Location then
-               Error_Msg_N ("redefinition of entity& in Standard?", N);
+               Error_Msg_N ("redefinition of entity& in Standard?K?", N);
             end if;
          end;
       end if;

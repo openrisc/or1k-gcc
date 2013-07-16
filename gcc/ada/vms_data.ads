@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1996-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1996-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -1275,10 +1275,17 @@ package VMS_Data is
    --   Equivalent to /12 (/2012 is the preferred usage).
 
    S_GCC_Add     : aliased constant S := "/ADD_PROJECT_SEARCH_DIR=*"       &
-                                            "-aP*";
+                                             "-aP*";
    --        /ADD_PROJECT_SEARCH_PATH=(directory[,...])
    --
    --   Add directories to the project search path.
+
+   S_GCC_AlCheck : aliased constant S := "/ALIASING_CHECK "                &
+                                             "-gnateA";
+   --        /NOALIASING_CHECK (D)
+   --        /ALIASING_CHECK
+   --
+   --   Check that there are no aliased parameters in subprogram calls.
 
    S_GCC_Asm     : aliased constant S := "/ASM "                           &
                                              "-S,!-c";
@@ -1398,6 +1405,14 @@ package VMS_Data is
                                              "-gnatp,!-gnato,!-gnatE";
    --  NODOC (see /CHECKS)
 
+   S_GCC_Chflov  : aliased constant S := "/FLOAT_OVERFLOW_CHECK "          &
+                                             "-gnateF";
+   --        /NOFLOAT_OVERFLOW_CHECK (D)
+   --        /FLOAT_OVERFLOW_CHECK
+   --
+   --   Set mode to check overflow for all floating-point operations including
+   --   those using an unconstrained predefined type (i.e. no infinities).
+
    S_GCC_Compres : aliased constant S := "/COMPRESS_NAMES "                &
                                              "-gnatC";
    --        /NOCOMPRESS_NAMES (D)
@@ -1414,7 +1429,8 @@ package VMS_Data is
                                              "-gnatec>";
    --        /CONFIGURATION_PRAGMAS_FILE=file
    --
-   --   Specify a configuration pragmas file that need to be taken into account
+   --   Specify a configuration pragmas file that needs to be taken into
+   --   account.
 
    S_GCC_Current : aliased constant S := "/CURRENT_DIRECTORY "             &
                                              "!-I-";
@@ -1533,6 +1549,12 @@ package VMS_Data is
    S_GCC_DebugX  : aliased constant S := "/NODEBUG "                       &
                                              "!-g";
    --  NODOC (see /Debug)
+
+   S_GCC_DisAtom : aliased constant S := "/DISABLE_ATOMIC_SYNCHRONIZATION " &
+                                            "-gnated";
+   --         /NODISABLE_ATOMIC_SYNCHRONIZATION (D)
+   --         /DISABLE_ATOMIC_SYNCHRONIZATION
+   --   Disable synchronization of atomic variables.
 
    S_GCC_Dist    : aliased constant S := "/DISTRIBUTION_STUBS="            &
                                             "RECEIVER "                    &
@@ -1764,13 +1786,21 @@ package VMS_Data is
                                              "-gnati1";
    --  NODOC (see /IDENTIFIER_CHARACTER_SET)
 
-   S_GCC_Ignore  : aliased constant S := "/IGNORE_REP_CLAUSES "            &
+   S_GCC_IgnoreR : aliased constant S := "/IGNORE_REP_CLAUSES "            &
                                              "-gnatI";
    --        /IGNORE_REP_CLAUSES
    --
    --   Causes all representation clauses to be ignored and treated as
    --   comments. Useful when compiling foreign code (for example when ASIS
    --   is used to analyze such code).
+
+   S_GCC_IgnoreS : aliased constant S := "/IGNORE_STYLE_CHECKS_PRAGMAS "   &
+                                             "-gnateY";
+   --        /IGNORE_STYLE_CHECKS_PRAGMAS
+   --
+   --   Causes all Style_Checks pragmas to be checked for legality, but
+   --   otherwise ignored. Allows style checks to be fully controlled by
+   --   command line qualifiers.
 
    S_GCC_Immed   : aliased constant S := "/IMMEDIATE_ERRORS "              &
                                              "-gnatdO";
@@ -2125,6 +2155,13 @@ package VMS_Data is
    --   digit sets the mode (using the above code) for expressions outside an
    --   assertion, and the second digit sets the mode for expressions within
    --   an assertion.
+
+   S_GCC_PValid  : aliased constant S := "/PARAMETER_VALIDITY_CHECK "      &
+                                            "-gnateV";
+   --        /NOPARAMETER_VALIDITY_CHECK (D)
+   --        /PARAMETER_VALIDITY_CHECK
+   --
+   --   Check validity of subprogram parameters.
 
    S_GCC_Pointer : aliased constant S := "/POINTER_SIZE="                  &
                                             "64 "                          &
@@ -2836,6 +2873,13 @@ package VMS_Data is
    --        /TABLE_MULTIPLIER=nnn
    --
    --   All compiler tables start at nnn times usual starting size.
+
+   S_GCC_Target  : aliased constant S := "/TARGET_DEPENDENT_INFO "         &
+                                             "-gnatet";
+   --        /NOTARGET_DEPENDENT_INFO (D)
+   --        /TARGET_DEPENDENT_INFO
+   --
+   --   Generate target dependent information.
 
    S_GCC_Trace   : aliased constant S := "/TRACE_UNITS "                   &
                                             "-gnatdc";
@@ -3592,10 +3636,12 @@ package VMS_Data is
                      S_GCC_Ada_12  'Access,
                      S_GCC_Ada_2012'Access,
                      S_GCC_Add     'Access,
+                     S_GCC_AlCheck 'Access,
                      S_GCC_Asm     'Access,
                      S_GCC_AValid  'Access,
                      S_GCC_CategW  'Access,
                      S_GCC_Checks  'Access,
+                     S_GCC_Chflov  'Access,
                      S_GCC_ChecksX 'Access,
                      S_GCC_Compres 'Access,
                      S_GCC_Config  'Access,
@@ -3603,6 +3649,7 @@ package VMS_Data is
                      S_GCC_Debug   'Access,
                      S_GCC_DebugX  'Access,
                      S_GCC_Data    'Access,
+                     S_GCC_DisAtom 'Access,
                      S_GCC_Dist    'Access,
                      S_GCC_DistX   'Access,
                      S_GCC_Error   'Access,
@@ -3621,7 +3668,8 @@ package VMS_Data is
                      S_GCC_Help    'Access,
                      S_GCC_Ident   'Access,
                      S_GCC_IdentX  'Access,
-                     S_GCC_Ignore  'Access,
+                     S_GCC_IgnoreR 'Access,
+                     S_GCC_IgnoreS 'Access,
                      S_GCC_Immed   'Access,
                      S_GCC_Inline  'Access,
                      S_GCC_InlineX 'Access,
@@ -3645,6 +3693,7 @@ package VMS_Data is
                      S_GCC_Opt     'Access,
                      S_GCC_OptX    'Access,
                      S_GCC_Overflo 'Access,
+                     S_GCC_PValid  'Access,
                      S_GCC_Pointer 'Access,
                      S_GCC_Polling 'Access,
                      S_GCC_Project 'Access,
@@ -3663,6 +3712,7 @@ package VMS_Data is
                      S_GCC_Symbol  'Access,
                      S_GCC_Syntax  'Access,
                      S_GCC_Table   'Access,
+                     S_GCC_Target  'Access,
                      S_GCC_Trace   'Access,
                      S_GCC_Tree    'Access,
                      S_GCC_Trys    'Access,
@@ -4237,6 +4287,18 @@ package VMS_Data is
    --   ification field in the image header. It overrides any pragma Ident
    --   specified string.
 
+   S_Link_NoInhib : aliased constant S := "/NOINHIBIT-EXEC "               &
+                                            "--for-linker=--noinhibit-exec";
+   --        /NOINHIBIT-EXEC (D)
+   --
+   --   Preserve executable if there are warnings. This is the default.
+
+   S_Link_Inhib : aliased constant S := "/INHIBIT-EXEC "                   &
+                                            "--for-linker=--inhibit-exec";
+   --        /INHIBIT-EXEC
+   --
+   --   Remove executable if there are warnings.
+
    S_Link_Libdir  : aliased constant S := "/LIBDIR=*"                      &
                                             "-L*";
    --        /LIBDIR=(directory, ...)
@@ -4275,12 +4337,6 @@ package VMS_Data is
    --   Do not compile the file generated by the binder.
    --   This may be used when a link is rerun with different options,
    --   but there is no need to recompile the binder generated file.
-
-   S_Link_Noinhib : aliased constant S := "/NOINHIBIT-EXEC "               &
-                                            "--for-linker=--noinhibit-exec";
-   --        /NOINHIBIT-EXEC
-   --
-   --   Delete executable if there are errors or warnings.
 
    S_Link_Nofiles : aliased constant S := "/NOSTART_FILES "                &
                                             "-nostartfiles";
@@ -4357,12 +4413,13 @@ package VMS_Data is
                       S_Link_Forlink 'Access,
                       S_Link_Force   'Access,
                       S_Link_Ident   'Access,
+                      S_Link_NoInhib 'Access,
+                      S_Link_Inhib   'Access,
                       S_Link_Libdir  'Access,
                       S_Link_Library 'Access,
                       S_Link_Mess    'Access,
                       S_Link_Nocomp  'Access,
                       S_Link_Nofiles 'Access,
-                      S_Link_Noinhib 'Access,
                       S_Link_Project 'Access,
                       S_Link_Return  'Access,
                       S_Link_Static  'Access,
@@ -6097,6 +6154,7 @@ package VMS_Data is
    --   By default, the form of the line terminator depends on the platforms.
    --   On Unix and VMS, it is a Line Feed (LF) character. On Windows (DOS),
    --   It is a Carriage Return (CR) followed by a Line Feed.
+
    --   The Options DOS and CRLF are equivalent. The options UNIX and LF are
    --   also equivalent.
 
@@ -6343,6 +6401,30 @@ package VMS_Data is
    --
    --   Replace all tabulations in comments with spaces.
 
+   S_Pretty_Numbers     : aliased constant S := "/NUMBER_CASING="          &
+                                              "AS_DECLARED "               &
+                                                 "-ntD "                   &
+                                              "LOWER_CASE "                &
+                                                 "-ntL "                   &
+                                              "UPPER_CASE "                &
+                                                 "-ntU "                   &
+                                              "MIXED_CASE "                &
+                                                 "-ntM";
+   --        /NUMBER_CASING=name-option
+   --
+   --   Specify the casing of named number names. If not specified, the casing
+   --   of these names is defined by the NAME_CASING option. 'name-option'
+   --   is one of:
+   --
+   --      AS_DECLARED       Names are cased as they appear in the declaration
+   --                        in the source file.
+   --
+   --      LOWER_CASE        Names are in lower case.
+   --
+   --      UPPER_CASE        Names are in upper case.
+   --
+   --      MIXED_CASE        Names are in mixed case.
+
    S_Pretty_Output    : aliased constant S := "/OUTPUT=@"                  &
                                               "-o@";
    --        /OUTPUT=file
@@ -6498,6 +6580,7 @@ package VMS_Data is
                         S_Pretty_Names            'Access,
                         S_Pretty_No_Labels        'Access,
                         S_Pretty_Notabs           'Access,
+                        S_Pretty_Numbers          'Access,
                         S_Pretty_Output           'Access,
                         S_Pretty_Override         'Access,
                         S_Pretty_Pragma           'Access,
@@ -6560,17 +6643,23 @@ package VMS_Data is
    --   ification field in the image header. It overrides any pragma Ident
    --   specified string.
 
+   S_Shared_NoInhib : aliased constant S := "/NOINHIBIT-IMAGE "            &
+                                            "--for-linker=--noinhibit-exec";
+   --        /NOINHIBIT-EXEC (D)
+   --
+   --   Preserve image if there are warnings. This is the default.
+
+   S_Shared_Inhib : aliased constant S := "/INHIBIT-IMAGE "                &
+                                            "--for-linker=--inhibit-exec";
+   --        /INHIBIT-EXEC
+   --
+   --   Remove image if there are warnings.
+
    S_Shared_Nofiles : aliased constant S := "/NOSTART_FILES "              &
                                             "-nostartfiles";
    --        /NOSTART_FILES
    --
    --   Link in default image initialization and startup functions.
-
-   S_Shared_Noinhib : aliased constant S := "/NOINHIBIT-IMAGE "            &
-                                            "--for-linker=--noinhibit-exec";
-   --        /NOINHIBIT-IMAGE
-   --
-   --   Delete image if there are errors or warnings.
 
    S_Shared_Verb    : aliased constant S := "/VERBOSE "                    &
                                             "-v";
@@ -6591,8 +6680,9 @@ package VMS_Data is
                        (S_Shared_Debug   'Access,
                         S_Shared_Image   'Access,
                         S_Shared_Ident   'Access,
+                        S_Shared_NoInhib 'Access,
+                        S_Shared_Inhib   'Access,
                         S_Shared_Nofiles 'Access,
-                        S_Shared_Noinhib 'Access,
                         S_Shared_Verb    'Access,
                         S_Shared_ZZZZZ   'Access);
 

@@ -1,6 +1,5 @@
 /* Natural loop analysis code for GNU compiler.
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -78,7 +77,7 @@ mark_irreducible_loops (void)
   int src, dest;
   unsigned depth;
   struct graph *g;
-  int num = number_of_loops ();
+  int num = number_of_loops (cfun);
   struct loop *cloop;
   bool irred_loop_found = false;
   int i;
@@ -410,7 +409,7 @@ estimate_reg_pressure_cost (unsigned n_new, unsigned n_old, bool speed,
 
   if (optimize && (flag_ira_region == IRA_REGION_ALL
 		   || flag_ira_region == IRA_REGION_MIXED)
-      && number_of_loops () <= (unsigned) IRA_MAX_LOOPS_NUM)
+      && number_of_loops (cfun) <= (unsigned) IRA_MAX_LOOPS_NUM)
     /* IRA regional allocation deals with high register pressure
        better.  So decrease the cost (to do more accurate the cost
        calculation for IRA, we need to know how many registers lives
@@ -428,7 +427,7 @@ mark_loop_exit_edges (void)
   basic_block bb;
   edge e;
 
-  if (number_of_loops () <= 1)
+  if (number_of_loops (cfun) <= 1)
     return;
 
   FOR_EACH_BB (bb)

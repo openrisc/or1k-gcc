@@ -1,6 +1,5 @@
 /* Data references and dependences detectors.
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <pop@cri.ensmp.fr>
 
 This file is part of GCC.
@@ -370,10 +369,16 @@ extern bool compute_data_dependences_for_bb (basic_block, bool,
                                              vec<ddr_p> *);
 extern void debug_ddrs (vec<ddr_p> );
 extern void dump_data_reference (FILE *, struct data_reference *);
+extern void debug (data_reference &ref);
+extern void debug (data_reference *ptr);
 extern void debug_data_reference (struct data_reference *);
 extern void debug_data_references (vec<data_reference_p> );
+extern void debug (vec<data_reference_p> &ref);
+extern void debug (vec<data_reference_p> *ptr);
 extern void debug_data_dependence_relation (struct data_dependence_relation *);
 extern void dump_data_dependence_relations (FILE *, vec<ddr_p> );
+extern void debug (vec<ddr_p> &ref);
+extern void debug (vec<ddr_p> *ptr);
 extern void debug_data_dependence_relations (vec<ddr_p> );
 extern void free_dependence_relation (struct data_dependence_relation *);
 extern void free_dependence_relations (vec<ddr_p> );
@@ -383,6 +388,7 @@ extern bool find_data_references_in_stmt (struct loop *, gimple,
 					  vec<data_reference_p> *);
 extern bool graphite_find_data_references_in_stmt (loop_p, loop_p, gimple,
 						   vec<data_reference_p> *);
+tree find_data_references_in_loop (struct loop *, vec<data_reference_p> *);
 struct data_reference *create_data_ref (loop_p, loop_p, tree, gimple, bool);
 extern bool find_loop_nest (struct loop *, vec<loop_p> *);
 extern struct data_dependence_relation *initialize_data_dependence_relation

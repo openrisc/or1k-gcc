@@ -1,7 +1,6 @@
 /* Process declarations and variables for the GNU compiler for the
    Java(TM) language.
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2007,
-   2005, 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1905,7 +1904,7 @@ java_mark_decl_local (tree decl)
   if (TREE_CODE (decl) == FUNCTION_DECL)
     {
       struct cgraph_node *node = cgraph_get_node (decl);
-      gcc_assert (!node || !node->local.finalized);
+      gcc_assert (!node || !node->symbol.definition);
     }
 #endif
   gcc_assert (!DECL_RTL_SET_P (decl));

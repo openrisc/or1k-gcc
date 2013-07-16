@@ -1,6 +1,5 @@
 /* Basic block reordering routines for the GNU compiler.
-   Copyright (C) 2000, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010, 2011,
-   2012 Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -124,10 +123,10 @@ struct target_bb_reorder *this_target_bb_reorder = &default_target_bb_reorder;
   (this_target_bb_reorder->x_uncond_jump_length)
 
 /* Branch thresholds in thousandths (per mille) of the REG_BR_PROB_BASE.  */
-static int branch_threshold[N_ROUNDS] = {400, 200, 100, 0, 0};
+static const int branch_threshold[N_ROUNDS] = {400, 200, 100, 0, 0};
 
 /* Exec thresholds in thousandths (per mille) of the frequency of bb 0.  */
-static int exec_threshold[N_ROUNDS] = {500, 200, 50, 0, 0};
+static const int exec_threshold[N_ROUNDS] = {500, 200, 50, 0, 0};
 
 /* If edge frequency is lower than DUPLICATION_THRESHOLD per mille of entry
    block the edge destination is not duplicated while connecting traces.  */
@@ -1054,7 +1053,7 @@ connect_traces (int n_traces, struct trace *traces)
   current_partition = BB_PARTITION (traces[0].first);
   two_passes = false;
 
-  if (flag_reorder_blocks_and_partition)
+  if (crtl->has_bb_partition)
     for (i = 0; i < n_traces && !two_passes; i++)
       if (BB_PARTITION (traces[0].first)
 	  != BB_PARTITION (traces[i].first))
@@ -1263,7 +1262,7 @@ connect_traces (int n_traces, struct trace *traces)
 		      }
 		  }
 
-	      if (flag_reorder_blocks_and_partition)
+	      if (crtl->has_bb_partition)
 		try_copy = false;
 
 	      /* Copy tiny blocks always; copy larger blocks only when the
@@ -1379,15 +1378,6 @@ get_uncond_jump_length (void)
   delete_insn (jump);
   delete_insn (label);
   return length;
-}
-
-/* Emit a barrier into the footer of BB.  */
-
-static void
-emit_barrier_after_bb (basic_block bb)
-{
-  rtx barrier = emit_barrier_after (BB_END (bb));
-  BB_FOOTER (bb) = unlink_insn_chain (barrier, barrier);
 }
 
 /* The landing pad OLD_LP, in block OLD_BB, has edges from both partitions.
@@ -1721,8 +1711,7 @@ fix_up_fall_thru_edges (void)
 		     (i.e. fix it so the fall through does not cross and
 		     the cond jump does).  */
 
-		  if (!cond_jump_crosses
-		      && cur_bb->aux == cond_jump->dest)
+		  if (!cond_jump_crosses)
 		    {
 		      /* Find label in fall_thru block. We've already added
 			 any missing labels, so there must be one.  */
@@ -1766,10 +1755,10 @@ fix_up_fall_thru_edges (void)
 		      new_bb->aux = cur_bb->aux;
 		      cur_bb->aux = new_bb;
 
-		      /* Make sure new fall-through bb is in same
-			 partition as bb it's falling through from.  */
+                      /* This is done by force_nonfallthru_and_redirect.  */
+		      gcc_assert (BB_PARTITION (new_bb)
+                                  == BB_PARTITION (cur_bb));
 
-		      BB_COPY_PARTITION (new_bb, cur_bb);
 		      single_succ_edge (new_bb)->flags |= EDGE_CROSSING;
 		    }
 		  else
@@ -1999,14 +1988,12 @@ fix_crossing_unconditional_branches (void)
       if (JUMP_P (last_insn)
 	  && (succ->flags & EDGE_CROSSING))
 	{
-	  rtx label2, table;
-
 	  gcc_assert (!any_condjump_p (last_insn));
 
 	  /* Make sure the jump is not already an indirect or table jump.  */
 
 	  if (!computed_jump_p (last_insn)
-	      && !tablejump_p (last_insn, &label2, &table))
+	      && !tablejump_p (last_insn, NULL, NULL))
 	    {
 	      /* We have found a "crossing" unconditional branch.  Now
 		 we must convert it to an indirect jump.  First create
@@ -2067,45 +2054,11 @@ add_reg_crossing_jump_notes (void)
   FOR_EACH_BB (bb)
     FOR_EACH_EDGE (e, ei, bb->succs)
       if ((e->flags & EDGE_CROSSING)
-	  && JUMP_P (BB_END (e->src)))
+	  && JUMP_P (BB_END (e->src))
+          /* Some notes were added during fix_up_fall_thru_edges, via
+             force_nonfallthru_and_redirect.  */
+          && !find_reg_note (BB_END (e->src), REG_CROSSING_JUMP, NULL_RTX))
 	add_reg_note (BB_END (e->src), REG_CROSSING_JUMP, NULL_RTX);
-}
-
-/* Verify, in the basic block chain, that there is at most one switch
-   between hot/cold partitions. This is modelled on
-   rtl_verify_flow_info_1, but it cannot go inside that function
-   because this condition will not be true until after
-   reorder_basic_blocks is called.  */
-
-static void
-verify_hot_cold_block_grouping (void)
-{
-  basic_block bb;
-  int err = 0;
-  bool switched_sections = false;
-  int current_partition = 0;
-
-  FOR_EACH_BB (bb)
-    {
-      if (!current_partition)
-	current_partition = BB_PARTITION (bb);
-      if (BB_PARTITION (bb) != current_partition)
-	{
-	  if (switched_sections)
-	    {
-	      error ("multiple hot/cold transitions found (bb %i)",
-		     bb->index);
-	      err = 1;
-	    }
-	  else
-	    {
-	      switched_sections = true;
-	      current_partition = BB_PARTITION (bb);
-	    }
-	}
-    }
-
-  gcc_assert(!err);
 }
 
 /* Reorder basic blocks.  The main entry point to this file.  FLAGS is
@@ -2160,8 +2113,9 @@ reorder_basic_blocks (void)
       dump_flow_info (dump_file, dump_flags);
     }
 
-  if (flag_reorder_blocks_and_partition)
-    verify_hot_cold_block_grouping ();
+  /* Signal that rtl_verify_flow_info_1 can now verify that there
+     is at most one switch between hot/cold sections.  */
+  crtl->bb_reorder_complete = true;
 }
 
 /* Determine which partition the first basic block in the function
@@ -2172,28 +2126,26 @@ reorder_basic_blocks (void)
    encountering this note will make the compiler switch between the
    hot and cold text sections.  */
 
-static void
+void
 insert_section_boundary_note (void)
 {
   basic_block bb;
-  rtx new_note;
-  int first_partition = 0;
+  bool switched_sections = false;
+  int current_partition = 0;
 
-  if (!flag_reorder_blocks_and_partition)
+  if (!crtl->has_bb_partition)
     return;
 
   FOR_EACH_BB (bb)
     {
-      if (!first_partition)
-	first_partition = BB_PARTITION (bb);
-      if (BB_PARTITION (bb) != first_partition)
+      if (!current_partition)
+	current_partition = BB_PARTITION (bb);
+      if (BB_PARTITION (bb) != current_partition)
 	{
-	  new_note = emit_note_before (NOTE_INSN_SWITCH_TEXT_SECTIONS,
-				       BB_HEAD (bb));
-	  /* ??? This kind of note always lives between basic blocks,
-	     but add_insn_before will set BLOCK_FOR_INSN anyway.  */
-	  BLOCK_FOR_INSN (new_note) = NULL;
-	  break;
+	  gcc_assert (!switched_sections);
+          switched_sections = true;
+          emit_note_before (NOTE_INSN_SWITCH_TEXT_SECTIONS, BB_HEAD (bb));
+          current_partition = BB_PARTITION (bb);
 	}
     }
 }
@@ -2224,8 +2176,6 @@ rest_of_handle_reorder_blocks (void)
       bb->aux = bb->next_bb;
   cfg_layout_finalize ();
 
-  /* Add NOTE_INSN_SWITCH_TEXT_SECTIONS notes.  */
-  insert_section_boundary_note ();
   return 0;
 }
 
@@ -2357,6 +2307,11 @@ duplicate_computed_gotos (void)
 
       /* The successor block has to be a duplication candidate.  */
       if (!bitmap_bit_p (candidates, single_succ (bb)->index))
+	continue;
+
+      /* Don't duplicate a partition crossing edge, which requires difficult
+         fixup.  */
+      if (find_reg_note (BB_END (bb), REG_CROSSING_JUMP, NULL_RTX))
 	continue;
 
       new_bb = duplicate_block (single_succ (bb), single_succ_edge (bb), bb);
@@ -2510,6 +2465,8 @@ partition_hot_cold_basic_blocks (void)
   crossing_edges = find_rarely_executed_basic_blocks_and_crossing_edges ();
   if (!crossing_edges.exists ())
     return 0;
+
+  crtl->has_bb_partition = true;
 
   /* Make sure the source of any crossing edge ends in a jump and the
      destination of any crossing edge has a label.  */

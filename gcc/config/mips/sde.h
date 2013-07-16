@@ -1,7 +1,6 @@
 /* Definitions of target machine for GNU compiler.
    MIPS SDE version.
-   Copyright (C) 2003, 2004, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -89,23 +88,6 @@ along with GCC; see the file COPYING3.  If not see
 #define SIZE_TYPE "long unsigned int"
 #undef PTRDIFF_TYPE
 #define PTRDIFF_TYPE "long int"
-
-/* Use standard ELF-style local labels (not '$' as on early Irix).  */
-#undef LOCAL_LABEL_PREFIX
-#define LOCAL_LABEL_PREFIX "."
-
-/* Use periods rather than dollar signs in special g++ assembler names.  */
-#define NO_DOLLAR_IN_LABEL
-
-/* Currently we don't support 128bit long doubles, so for now we force
-   n32 to be 64bit.  */
-#undef LONG_DOUBLE_TYPE_SIZE
-#define LONG_DOUBLE_TYPE_SIZE 64
-
-#ifdef IN_LIBGCC2
-#undef LIBGCC2_LONG_DOUBLE_TYPE_SIZE
-#define LIBGCC2_LONG_DOUBLE_TYPE_SIZE 64
-#endif
 
 /* Force all .init and .fini entries to be 32-bit, not mips16, so that
    in a mixed environment they are all the same mode. The crti.asm and

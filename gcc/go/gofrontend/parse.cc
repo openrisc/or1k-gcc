@@ -141,7 +141,7 @@ Parse::expression_list(Expression* first, bool may_be_sink,
   while (true)
     {
       ret->push_back(this->expression(PRECEDENCE_NORMAL, may_be_sink,
-				      may_be_composite_lit, NULL));
+				      may_be_composite_lit, NULL, NULL));
 
       const Token* token = this->peek_token();
       if (!token->is_op(OPERATOR_COMMA))
@@ -394,7 +394,7 @@ Parse::array_type(bool may_use_ellipsis)
   else
     {
       if (!token->is_op(OPERATOR_ELLIPSIS))
-	length = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+	length = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
       else if (may_use_ellipsis)
 	{
 	  // An ellipsis is used in composite literals to represent a
@@ -975,13 +975,13 @@ Parse::parameter_list(bool* is_varargs)
   this->parameter_decl(parameters_have_names, ret, is_varargs, &mix_error);
   while (this->peek_token()->is_op(OPERATOR_COMMA))
     {
+      if (this->advance_token()->is_op(OPERATOR_RPAREN))
+	break;
       if (is_varargs != NULL && *is_varargs)
 	{
 	  error_at(this->location(), "%<...%> must be last parameter");
 	  saw_error = true;
 	}
-      if (this->advance_token()->is_op(OPERATOR_RPAREN))
-	break;
       this->parameter_decl(parameters_have_names, ret, is_varargs, &mix_error);
     }
   if (mix_error)
@@ -1457,6 +1457,16 @@ Parse::const_spec(Type** last_type, Expression_list** last_expr_list)
 
       if (!Gogo::is_sink_name(pi->name()))
 	this->gogo_->add_constant(*pi, *pe, this->iota_value());
+      else
+	{
+	  static int count;
+	  char buf[30];
+	  snprintf(buf, sizeof buf, ".$sinkconst%d", count);
+	  ++count;
+	  Typed_identifier ti(std::string(buf), type, pi->location());
+	  Named_object* no = this->gogo_->add_constant(ti, *pe, this->iota_value());
+	  no->const_value()->set_is_sink();
+	}
     }
   if (pe != expr_list->end())
     error_at(this->location(), "too many initializers");
@@ -2137,7 +2147,7 @@ Parse::simple_var_decl_or_assignment(const std::string& name,
       bool is_type_switch = false;
       Expression* expr = this->expression(PRECEDENCE_NORMAL, false,
 					  may_be_composite_lit,
-					  &is_type_switch);
+					  &is_type_switch, NULL);
       if (is_type_switch)
 	{
 	  p_type_switch->found = true;
@@ -2404,8 +2414,11 @@ Parse::receiver()
 
 // If MAY_BE_SINK is true, this operand may be "_".
 
+// If IS_PARENTHESIZED is not NULL, *IS_PARENTHESIZED is set to true
+// if the entire expression is in parentheses.
+
 Expression*
-Parse::operand(bool may_be_sink)
+Parse::operand(bool may_be_sink, bool* is_parenthesized)
 {
   const Token* token = this->peek_token();
   Expression* ret;
@@ -2581,11 +2594,14 @@ Parse::operand(bool may_be_sink)
       if (token->is_op(OPERATOR_LPAREN))
 	{
 	  this->advance_token();
-	  ret = this->expression(PRECEDENCE_NORMAL, may_be_sink, true, NULL);
+	  ret = this->expression(PRECEDENCE_NORMAL, may_be_sink, true, NULL,
+				 NULL);
 	  if (!this->peek_token()->is_op(OPERATOR_RPAREN))
 	    error_at(this->location(), "missing %<)%>");
 	  else
 	    this->advance_token();
+	  if (is_parenthesized != NULL)
+	    *is_parenthesized = true;
 	  return ret;
 	}
       else if (token->is_op(OPERATOR_LSQUARE))
@@ -2621,7 +2637,11 @@ Parse::enclosing_var_reference(Named_object* in_function, Named_object* var,
   Named_object* this_function = this->gogo_->current_function();
   Named_object* closure = this_function->func_value()->closure_var();
 
-  Enclosing_var ev(var, in_function, this->enclosing_vars_.size());
+  // The last argument to the Enclosing_var constructor is the index
+  // of this variable in the closure.  We add 1 to the current number
+  // of enclosed variables, because the first field in the closure
+  // points to the function code.
+  Enclosing_var ev(var, in_function, this->enclosing_vars_.size() + 1);
   std::pair<Enclosing_vars::iterator, bool> ins =
     this->enclosing_vars_.insert(ev);
   if (ins.second)
@@ -2708,11 +2728,12 @@ Parse::composite_lit(Type* type, int depth, Location location)
 	      this->unget_token(Token::make_identifier_token(identifier,
 							     is_exported,
 							     location));
-	      val = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+	      val = this->expression(PRECEDENCE_NORMAL, false, true, NULL,
+				     NULL);
 	    }
 	}
       else if (!token->is_op(OPERATOR_LCURLY))
-	val = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+	val = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
       else
 	{
 	  // This must be a composite literal inside another composite
@@ -2758,7 +2779,7 @@ Parse::composite_lit(Type* type, int depth, Location location)
 	  vals->push_back(val);
 
 	  if (!token->is_op(OPERATOR_LCURLY))
-	    val = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+	    val = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
 	  else
 	    {
 	      // This must be a composite literal inside another
@@ -2875,8 +2896,9 @@ Parse::function_lit()
 // Create a closure for the nested function FUNCTION.  This is based
 // on ENCLOSING_VARS, which is a list of all variables defined in
 // enclosing functions and referenced from FUNCTION.  A closure is the
-// address of a struct which contains the addresses of all the
-// referenced variables.  This returns NULL if no closure is required.
+// address of a struct which point to the real function code and
+// contains the addresses of all the referenced variables.  This
+// returns NULL if no closure is required.
 
 Expression*
 Parse::create_closure(Named_object* function, Enclosing_vars* enclosing_vars,
@@ -2892,16 +2914,25 @@ Parse::create_closure(Named_object* function, Enclosing_vars* enclosing_vars,
   for (Enclosing_vars::const_iterator p = enclosing_vars->begin();
        p != enclosing_vars->end();
        ++p)
-    ev[p->index()] = *p;
+    {
+      // Subtract 1 because index 0 is the function code.
+      ev[p->index() - 1] = *p;
+    }
 
   // Build an initializer for a composite literal of the closure's
   // type.
 
   Named_object* enclosing_function = this->gogo_->current_function();
   Expression_list* initializer = new Expression_list;
+
+  initializer->push_back(Expression::make_func_code_reference(function,
+							      location));
+
   for (size_t i = 0; i < enclosing_var_count; ++i)
     {
-      go_assert(ev[i].index() == i);
+      // Add 1 to i because the first field in the closure is a
+      // pointer to the function code.
+      go_assert(ev[i].index() == i + 1);
       Named_object* var = ev[i].var();
       Expression* ref;
       if (ev[i].in_function() == enclosing_function)
@@ -2931,19 +2962,25 @@ Parse::create_closure(Named_object* function, Enclosing_vars* enclosing_vars,
 // If IS_TYPE_SWITCH is not NULL, this will recognize a type switch
 // guard (var := expr.("type") using the literal keyword "type").
 
+// If IS_PARENTHESIZED is not NULL, *IS_PARENTHESIZED is set to true
+// if the entire expression is in parentheses.
+
 Expression*
 Parse::primary_expr(bool may_be_sink, bool may_be_composite_lit,
-		    bool* is_type_switch)
+		    bool* is_type_switch, bool* is_parenthesized)
 {
   Location start_loc = this->location();
-  bool is_parenthesized = this->peek_token()->is_op(OPERATOR_LPAREN);
+  bool operand_is_parenthesized = false;
+  bool whole_is_parenthesized = false;
 
-  Expression* ret = this->operand(may_be_sink);
+  Expression* ret = this->operand(may_be_sink, &operand_is_parenthesized);
+
+  whole_is_parenthesized = operand_is_parenthesized;
 
   // An unknown name followed by a curly brace must be a composite
   // literal, and the unknown name must be a type.
   if (may_be_composite_lit
-      && !is_parenthesized
+      && !operand_is_parenthesized
       && ret->unknown_expression() != NULL
       && this->peek_token()->is_op(OPERATOR_LCURLY))
     {
@@ -2959,6 +2996,7 @@ Parse::primary_expr(bool may_be_sink, bool may_be_composite_lit,
     {
       if (this->peek_token()->is_op(OPERATOR_LCURLY))
 	{
+	  whole_is_parenthesized = false;
 	  if (!may_be_composite_lit)
 	    {
 	      Type* t = ret->type();
@@ -2968,17 +3006,20 @@ Parse::primary_expr(bool may_be_sink, bool may_be_composite_lit,
 			 _("parentheses required around this composite literal "
 			   "to avoid parsing ambiguity"));
 	    }
-	  else if (is_parenthesized)
+	  else if (operand_is_parenthesized)
 	    error_at(start_loc,
 		     "cannot parenthesize type in composite literal");
 	  ret = this->composite_lit(ret->type(), 0, ret->location());
 	}
       else if (this->peek_token()->is_op(OPERATOR_LPAREN))
 	{
+	  whole_is_parenthesized = false;
 	  Location loc = this->location();
 	  this->advance_token();
 	  Expression* expr = this->expression(PRECEDENCE_NORMAL, false, true,
-					      NULL);
+					      NULL, NULL);
+	  if (this->peek_token()->is_op(OPERATOR_COMMA))
+	    this->advance_token();
 	  if (this->peek_token()->is_op(OPERATOR_ELLIPSIS))
 	    {
 	      error_at(this->location(),
@@ -2999,7 +3040,7 @@ Parse::primary_expr(bool may_be_sink, bool may_be_composite_lit,
 		  && t->array_type()->length()->is_nil_expression())
 		{
 		  error_at(ret->location(),
-			   "invalid use of %<...%> in type conversion");
+			   "use of %<[...]%> outside of array literal");
 		  ret = Expression::make_error(loc);
 		}
 	      else
@@ -3012,18 +3053,28 @@ Parse::primary_expr(bool may_be_sink, bool may_be_composite_lit,
     {
       const Token* token = this->peek_token();
       if (token->is_op(OPERATOR_LPAREN))
-	ret = this->call(this->verify_not_sink(ret));
+	{
+	  whole_is_parenthesized = false;
+	  ret = this->call(this->verify_not_sink(ret));
+	}
       else if (token->is_op(OPERATOR_DOT))
 	{
+	  whole_is_parenthesized = false;
 	  ret = this->selector(this->verify_not_sink(ret), is_type_switch);
 	  if (is_type_switch != NULL && *is_type_switch)
 	    break;
 	}
       else if (token->is_op(OPERATOR_LSQUARE))
-	ret = this->index(this->verify_not_sink(ret));
+	{
+	  whole_is_parenthesized = false;
+	  ret = this->index(this->verify_not_sink(ret));
+	}
       else
 	break;
     }
+
+  if (whole_is_parenthesized && is_parenthesized != NULL)
+    *is_parenthesized = true;
 
   return ret;
 }
@@ -3106,7 +3157,7 @@ Parse::index(Expression* expr)
 
   Expression* start;
   if (!this->peek_token()->is_op(OPERATOR_COLON))
-    start = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+    start = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
   else
     {
       mpz_t zero;
@@ -3122,7 +3173,7 @@ Parse::index(Expression* expr)
       if (this->advance_token()->is_op(OPERATOR_RSQUARE))
 	end = Expression::make_nil(this->location());
       else
-	end = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+	end = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
     }
   if (!this->peek_token()->is_op(OPERATOR_RSQUARE))
     error_at(this->location(), "missing %<]%>");
@@ -3231,12 +3282,16 @@ Parse::id_to_expression(const std::string& name, Location location)
 // If IS_TYPE_SWITCH is not NULL, this will recognize a type switch
 // guard (var := expr.("type") using the literal keyword "type").
 
+// If IS_PARENTHESIZED is not NULL, *IS_PARENTHESIZED is set to true
+// if the entire expression is in parentheses.
+
 Expression*
 Parse::expression(Precedence precedence, bool may_be_sink,
-		  bool may_be_composite_lit, bool* is_type_switch)
+		  bool may_be_composite_lit, bool* is_type_switch,
+		  bool *is_parenthesized)
 {
   Expression* left = this->unary_expr(may_be_sink, may_be_composite_lit,
-				      is_type_switch);
+				      is_type_switch, is_parenthesized);
 
   while (true)
     {
@@ -3293,6 +3348,9 @@ Parse::expression(Precedence precedence, bool may_be_sink,
 	  return left;
 	}
 
+      if (is_parenthesized != NULL)
+	*is_parenthesized = false;
+      
       Operator op = token->op();
       Location binop_location = token->location();
 
@@ -3308,7 +3366,7 @@ Parse::expression(Precedence precedence, bool may_be_sink,
       left = this->verify_not_sink(left);
       Expression* right = this->expression(right_precedence, false,
 					   may_be_composite_lit,
-					   NULL);
+					   NULL, NULL);
       left = Expression::make_binary(op, left, right, binop_location);
     }
 }
@@ -3374,9 +3432,12 @@ Parse::expression_may_start_here()
 // If IS_TYPE_SWITCH is not NULL, this will recognize a type switch
 // guard (var := expr.("type") using the literal keyword "type").
 
+// If IS_PARENTHESIZED is not NULL, *IS_PARENTHESIZED is set to true
+// if the entire expression is in parentheses.
+
 Expression*
 Parse::unary_expr(bool may_be_sink, bool may_be_composite_lit,
-		  bool* is_type_switch)
+		  bool* is_type_switch, bool* is_parenthesized)
 {
   const Token* token = this->peek_token();
 
@@ -3393,7 +3454,7 @@ Parse::unary_expr(bool may_be_sink, bool may_be_composite_lit,
       if (this->advance_token()->is_keyword(KEYWORD_CHAN))
 	{
 	  Expression* expr = this->primary_expr(false, may_be_composite_lit,
-						NULL);
+						NULL, NULL);
 	  if (expr->is_error_expression())
 	    return expr;
 	  else if (!expr->is_type_expression())
@@ -3446,7 +3507,8 @@ Parse::unary_expr(bool may_be_sink, bool may_be_composite_lit,
       Operator op = token->op();
       this->advance_token();
 
-      Expression* expr = this->unary_expr(false, may_be_composite_lit, NULL);
+      Expression* expr = this->unary_expr(false, may_be_composite_lit, NULL,
+					  NULL);
       if (expr->is_error_expression())
 	;
       else if (op == OPERATOR_MULT && expr->is_type_expression())
@@ -3462,7 +3524,7 @@ Parse::unary_expr(bool may_be_sink, bool may_be_composite_lit,
     }
   else
     return this->primary_expr(may_be_sink, may_be_composite_lit,
-			      is_type_switch);
+			      is_type_switch, is_parenthesized);
 }
 
 // This is called for the obscure case of
@@ -3745,7 +3807,8 @@ Parse::simple_stat(bool may_be_composite_lit, bool* return_exp,
 				     may_be_composite_lit,
 				     (p_type_switch == NULL
 				      ? NULL
-				      : &p_type_switch->found));
+				      : &p_type_switch->found),
+				     NULL);
   if (p_type_switch != NULL && p_type_switch->found)
     {
       p_type_switch->name.clear();
@@ -3855,7 +3918,8 @@ Parse::send_stmt(Expression* channel)
   go_assert(this->peek_token()->is_op(OPERATOR_CHANOP));
   Location loc = this->location();
   this->advance_token();
-  Expression* val = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+  Expression* val = this->expression(PRECEDENCE_NORMAL, false, true, NULL,
+				     NULL);
   Statement* s = Statement::make_send_statement(channel, val, loc);
   this->gogo_->add_statement(s);
 }
@@ -4089,13 +4153,17 @@ Parse::go_or_defer_stat()
 	     || this->peek_token()->is_keyword(KEYWORD_DEFER));
   bool is_go = this->peek_token()->is_keyword(KEYWORD_GO);
   Location stat_location = this->location();
+
   this->advance_token();
   Location expr_location = this->location();
-  Expression* expr = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+
+  bool is_parenthesized = false;
+  Expression* expr = this->expression(PRECEDENCE_NORMAL, false, true, NULL,
+				      &is_parenthesized);
   Call_expression* call_expr = expr->call_expression();
-  if (call_expr == NULL)
+  if (is_parenthesized || call_expr == NULL)
     {
-      error_at(expr_location, "expected call expression");
+      error_at(expr_location, "argument to go/defer must be function call");
       return;
     }
 
@@ -4193,7 +4261,7 @@ Parse::if_stat()
 	  cond = Expression::make_error(this->location());
 	}
       if (cond == NULL)
-	cond = this->expression(PRECEDENCE_NORMAL, false, false, NULL);
+	cond = this->expression(PRECEDENCE_NORMAL, false, false, NULL, NULL);
     }
 
   this->gogo_->start_block(this->location());
@@ -4324,7 +4392,7 @@ Parse::switch_stat(Label* label)
 	  if (switch_val == NULL && !type_switch.found)
 	    {
 	      switch_val = this->expression(PRECEDENCE_NORMAL, false, false,
-					    &type_switch.found);
+					    &type_switch.found, NULL);
 	      if (type_switch.found)
 		{
 		  type_switch.name.clear();
@@ -4346,7 +4414,7 @@ Parse::switch_stat(Label* label)
 	  error_at(token_loc, "invalid variable name");
 	  this->advance_token();
 	  this->expression(PRECEDENCE_NORMAL, false, false,
-			   &type_switch.found);
+			   &type_switch.found, NULL);
 	  if (this->peek_token()->is_op(OPERATOR_SEMICOLON))
 	    this->advance_token();
 	  if (!this->peek_token()->is_op(OPERATOR_LCURLY))
@@ -4455,9 +4523,12 @@ Parse::expr_case_clause(Case_clauses* clauses, bool* saw_default)
   bool is_fallthrough = false;
   if (this->peek_token()->is_keyword(KEYWORD_FALLTHROUGH))
     {
+      Location fallthrough_loc = this->location();
       is_fallthrough = true;
       if (this->advance_token()->is_op(OPERATOR_SEMICOLON))
 	this->advance_token();
+      if (this->peek_token()->is_op(OPERATOR_RCURLY))
+	error_at(fallthrough_loc, _("cannot fallthrough final case in switch"));
     }
 
   if (is_default)
@@ -4849,7 +4920,7 @@ Parse::send_or_recv_stmt(bool* is_send, Expression** channel, Expression** val,
 	  // case rv := <-c:
 	  this->advance_token();
 	  Expression* e = this->expression(PRECEDENCE_NORMAL, false, false,
-					   NULL);
+					   NULL, NULL);
 	  Receive_expression* re = e->receive_expression();
 	  if (re == NULL)
 	    {
@@ -4884,7 +4955,7 @@ Parse::send_or_recv_stmt(bool* is_send, Expression** channel, Expression** val,
 		  // case rv, rc := <-c:
 		  this->advance_token();
 		  Expression* e = this->expression(PRECEDENCE_NORMAL, false,
-						   false, NULL);
+						   false, NULL, NULL);
 		  Receive_expression* re = e->receive_expression();
 		  if (re == NULL)
 		    {
@@ -4932,13 +5003,13 @@ Parse::send_or_recv_stmt(bool* is_send, Expression** channel, Expression** val,
 
   Expression* e;
   if (saw_comma || !this->peek_token()->is_op(OPERATOR_CHANOP))
-    e = this->expression(PRECEDENCE_NORMAL, true, true, NULL);
+    e = this->expression(PRECEDENCE_NORMAL, true, true, NULL, NULL);
   else
     {
       // case <-c:
       *is_send = false;
       this->advance_token();
-      *channel = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+      *channel = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
 
       // The next token should be ':'.  If it is '<-', then we have
       // case <-c <- v:
@@ -4958,7 +5029,7 @@ Parse::send_or_recv_stmt(bool* is_send, Expression** channel, Expression** val,
 	}
       *is_send = false;
       this->advance_token();
-      *channel = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+      *channel = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
       if (saw_comma)
 	{
 	  // case v, e = <-c:
@@ -4990,7 +5061,7 @@ Parse::send_or_recv_stmt(bool* is_send, Expression** channel, Expression** val,
       *is_send = true;
       *channel = this->verify_not_sink(e);
       this->advance_token();
-      *val = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+      *val = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
       return true;
     }
 
@@ -5137,7 +5208,7 @@ Parse::for_clause(Expression** cond, Block** post)
       return;
     }
   else
-    *cond = this->expression(PRECEDENCE_NORMAL, false, true, NULL);
+    *cond = this->expression(PRECEDENCE_NORMAL, false, true, NULL, NULL);
   if (!this->peek_token()->is_op(OPERATOR_SEMICOLON))
     error_at(this->location(), "expected semicolon");
   else
@@ -5171,7 +5242,8 @@ Parse::range_clause_decl(const Typed_identifier_list* til,
     error_at(this->location(), "too many variables for range clause");
 
   this->advance_token();
-  Expression* expr = this->expression(PRECEDENCE_NORMAL, false, false, NULL);
+  Expression* expr = this->expression(PRECEDENCE_NORMAL, false, false, NULL,
+				      NULL);
   p_range_clause->range = expr;
 
   bool any_new = false;
@@ -5218,7 +5290,7 @@ Parse::range_clause_expr(const Expression_list* vals,
 
   this->advance_token();
   p_range_clause->range = this->expression(PRECEDENCE_NORMAL, false, false,
-					   NULL);
+					   NULL, NULL);
 
   p_range_clause->index = vals->front();
   if (vals->size() == 1)

@@ -1,7 +1,5 @@
 /* Handle exceptional things in C++.
-   Copyright (C) 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1989-2013 Free Software Foundation, Inc.
    Contributed by Michael Tiemann <tiemann@cygnus.com>
    Rewritten by Mike Stump <mrs@cygnus.com>, based upon an
    initial re-implementation courtesy Tad Hunt.
@@ -279,7 +277,7 @@ push_eh_cleanup (tree type)
 static bool
 decl_is_java_type (tree decl, int err)
 {
-  bool r = (TREE_CODE (decl) == POINTER_TYPE
+  bool r = (TYPE_PTR_P (decl)
 	    && TREE_CODE (TREE_TYPE (decl)) == RECORD_TYPE
 	    && TYPE_FOR_JAVA (TREE_TYPE (decl)));
 
@@ -492,6 +490,7 @@ expand_start_catch_block (tree decl)
 	decl = error_mark_node;
 
       type = prepare_eh_type (TREE_TYPE (decl));
+      mark_used (eh_type_info (type));
     }
   else
     type = NULL_TREE;
@@ -830,7 +829,7 @@ build_throw (tree exp)
 	     treated as an rvalue for the purposes of overload resolution
 	     to favor move constructors over copy constructors.  */
 	  if (/* Must be a local, automatic variable.  */
-	      TREE_CODE (exp) == VAR_DECL
+	      VAR_P (exp)
 	      && DECL_CONTEXT (exp) == current_function_decl
 	      && ! TREE_STATIC (exp)
 	      /* The variable must not have the `volatile' qualifier.  */
@@ -932,7 +931,7 @@ complete_ptr_ref_or_void_ptr_p (tree type, tree from)
     return 0;
 
   /* Or a pointer or ref to one, or cv void *.  */
-  is_ptr = TREE_CODE (type) == POINTER_TYPE;
+  is_ptr = TYPE_PTR_P (type);
   if (is_ptr || TREE_CODE (type) == REFERENCE_TYPE)
     {
       tree core = TREE_TYPE (type);
@@ -974,22 +973,24 @@ is_admissible_throw_operand_or_catch_parameter (tree t, bool is_throw)
   /* 10.4/3 An abstract class shall not be used as a parameter type,
 	    as a function return type or as type of an explicit
 	    conversion.  */
-  else if (ABSTRACT_CLASS_TYPE_P (type))
-    {
-      if (is_throw)
-	error ("expression %qE of abstract class type %qT cannot "
-	       "be used in throw-expression", expr, type);
-      else
-	error ("cannot declare catch parameter to be of abstract "
-	       "class type %qT", type);
-      return false;
-    }
+  else if (abstract_virtuals_error (is_throw ? ACU_THROW : ACU_CATCH, type))
+    return false;
   else if (!is_throw
 	   && TREE_CODE (type) == REFERENCE_TYPE
 	   && TYPE_REF_IS_RVALUE (type))
     {
       error ("cannot declare catch parameter to be of rvalue "
 	     "reference type %qT", type);
+      return false;
+    }
+  else if (variably_modified_type_p (type, NULL_TREE))
+    {
+      if (is_throw)
+	error ("cannot throw expression of type %qT because it involves "
+	       "types of variable size", type);
+      else
+	error ("cannot catch type %qT because it involves types of "
+	       "variable size", type);
       return false;
     }
 
@@ -1036,7 +1037,7 @@ can_convert_eh (tree to, tree from)
   to = non_reference (to);
   from = non_reference (from);
 
-  if (TREE_CODE (to) == POINTER_TYPE && TREE_CODE (from) == POINTER_TYPE)
+  if (TYPE_PTR_P (to) && TYPE_PTR_P (from))
     {
       to = TREE_TYPE (to);
       from = TREE_TYPE (from);
@@ -1044,7 +1045,7 @@ can_convert_eh (tree to, tree from)
       if (! at_least_as_qualified_p (to, from))
 	return 0;
 
-      if (TREE_CODE (to) == VOID_TYPE)
+      if (VOID_TYPE_P (to))
 	return 1;
 
       /* Else fall through.  */
@@ -1316,15 +1317,21 @@ build_noexcept_spec (tree expr, int complain)
 						LOOKUP_NORMAL);
       expr = cxx_constant_value (expr);
     }
-  if (expr == boolean_true_node)
-    return noexcept_true_spec;
-  else if (expr == boolean_false_node)
-    return noexcept_false_spec;
+  if (TREE_CODE (expr) == INTEGER_CST)
+    {
+      if (operand_equal_p (expr, boolean_true_node, 0))
+	return noexcept_true_spec;
+      else
+	{
+	  gcc_checking_assert (operand_equal_p (expr, boolean_false_node, 0));
+	  return noexcept_false_spec;
+	}
+    }
   else if (expr == error_mark_node)
     return error_mark_node;
   else
     {
-      gcc_assert (processing_template_decl || expr == error_mark_node
+      gcc_assert (processing_template_decl
 		  || TREE_CODE (expr) == DEFERRED_NOEXCEPT);
       return build_tree_list (expr, NULL_TREE);
     }

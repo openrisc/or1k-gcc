@@ -1,6 +1,5 @@
 /* Common hooks for IBM S/390 and zSeries.
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
-   2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -43,7 +42,7 @@ EXPORTED_CONST int processor_flags_table[] =
     /* z196 */   PF_IEEE_FLOAT | PF_ZARCH | PF_LONG_DISPLACEMENT
                  | PF_EXTIMM | PF_DFP | PF_Z10 | PF_Z196,
     /* zEC12 */  PF_IEEE_FLOAT | PF_ZARCH | PF_LONG_DISPLACEMENT
-                 | PF_EXTIMM | PF_DFP | PF_Z10 | PF_Z196 | PF_ZEC12
+                 | PF_EXTIMM | PF_DFP | PF_Z10 | PF_Z196 | PF_ZEC12 | PF_TX
   };
 
 /* Change optimizations to be performed, depending on the

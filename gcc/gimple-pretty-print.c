@@ -1,6 +1,5 @@
 /* Pretty formatting of GIMPLE statements and expressions.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011  Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Aldy Hernandez <aldyh@redhat.com> and
    Diego Novillo <dnovillo@google.com>
 
@@ -85,7 +84,6 @@ DEBUG_FUNCTION void
 debug_gimple_stmt (gimple gs)
 {
   print_gimple_stmt (stderr, gs, 0, TDF_VOPS|TDF_MEMSYMS);
-  fprintf (stderr, "\n");
 }
 
 
@@ -100,6 +98,21 @@ print_gimple_stmt (FILE *file, gimple g, int spc, int flags)
   pp_newline_and_flush (&buffer);
 }
 
+DEBUG_FUNCTION void
+debug (gimple_statement_d &ref)
+{
+  print_gimple_stmt (stderr, &ref, 0, 0);
+}
+
+DEBUG_FUNCTION void
+debug (gimple_statement_d *ptr)
+{
+  if (ptr)
+    debug (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
 
 /* Print GIMPLE statement G to FILE using SPC indentation spaces and
    FLAGS as in pp_gimple_stmt_1.  Print only the right-hand side
@@ -111,6 +124,7 @@ print_gimple_expr (FILE *file, gimple g, int spc, int flags)
   flags |= TDF_RHS_ONLY;
   maybe_init_pretty_print (file);
   pp_gimple_stmt_1 (&buffer, g, spc, flags);
+  pp_flush (&buffer);
 }
 
 
@@ -1399,6 +1413,11 @@ dump_gimple_transaction (pretty_printer *buffer, gimple gs, int spc, int flags)
 		  pp_string (buffer, "GTMA_DOES_GO_IRREVOCABLE ");
 		  subcode &= ~GTMA_DOES_GO_IRREVOCABLE;
 		}
+	      if (subcode & GTMA_HAS_NO_INSTRUMENTATION)
+		{
+		  pp_string (buffer, "GTMA_HAS_NO_INSTRUMENTATION ");
+		  subcode &= ~GTMA_HAS_NO_INSTRUMENTATION;
+		}
 	      if (subcode)
 		pp_printf (buffer, "0x%x ", subcode);
 	      pp_string (buffer, "]");
@@ -2048,12 +2067,6 @@ pp_gimple_stmt_1 (pretty_printer *buffer, gimple gs, int spc, int flags)
     default:
       GIMPLE_NIY;
     }
-
-  /* If we're building a diagnostic, the formatted text will be
-     written into BUFFER's stream by the caller; otherwise, write it
-     now.  */
-  if (!(flags & TDF_DIAGNOSTIC))
-    pp_write_text_to_stream (buffer);
 }
 
 
@@ -2271,3 +2284,45 @@ gimple_dump_bb (FILE *file, basic_block bb, int indent, int flags)
     }
   dump_gimple_bb_footer (file, bb, indent, flags);
 }
+
+/* Dumps basic block BB to pretty-printer PP with default dump flags and
+   no indentation, for use as a label of a DOT graph record-node.
+   ??? Should just use gimple_dump_bb_buff here, except that value profiling
+   histogram dumping doesn't know about pretty-printers.  */
+
+void
+gimple_dump_bb_for_graph (pretty_printer *pp, basic_block bb)
+{
+  gimple_stmt_iterator gsi;
+
+  pp_printf (pp, "<bb %d>:\n", bb->index);
+  pp_write_text_as_dot_label_to_stream (pp, /*for_record=*/true);
+
+  for (gsi = gsi_start_phis (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+    {
+      gimple phi = gsi_stmt (gsi);
+      if (!virtual_operand_p (gimple_phi_result (phi))
+	  || (dump_flags & TDF_VOPS))
+	{
+	  pp_character (pp, '|');
+	  pp_write_text_to_stream (pp);
+	  pp_string (pp, "# ");
+	  pp_gimple_stmt_1 (pp, phi, 0, dump_flags);
+	  pp_newline (pp);
+	  pp_write_text_as_dot_label_to_stream (pp, /*for_record=*/true);
+	}
+    }
+
+  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+    {
+      gimple stmt = gsi_stmt (gsi);
+      pp_character (pp, '|');
+      pp_write_text_to_stream (pp);
+      pp_gimple_stmt_1 (pp, stmt, 0, dump_flags);
+      pp_newline (pp);
+      pp_write_text_as_dot_label_to_stream (pp, /*for_record=*/true);
+    }
+  dump_implicit_edges (pp, bb, 0, dump_flags);
+  pp_write_text_as_dot_label_to_stream (pp, /*for_record=*/true);
+}
+

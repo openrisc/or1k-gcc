@@ -1,6 +1,5 @@
 /* Default target hook functions.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -73,6 +72,8 @@ extern bool targhook_float_words_big_endian (void);
 extern bool default_decimal_float_supported_p (void);
 extern bool default_fixed_point_supported_p (void);
 
+extern bool default_has_ifunc_p (void);
+
 extern const char * default_invalid_within_doloop (const_rtx);
 
 extern tree default_builtin_vectorized_function (tree, tree, tree);
@@ -134,6 +135,7 @@ extern int default_return_pops_args (tree, tree, int);
 extern reg_class_t default_branch_target_register_class (void);
 extern bool default_lra_p (void);
 extern int default_register_priority (int);
+extern bool default_register_usage_leveling_p (void);
 extern bool default_different_addr_displacement_p (void);
 extern reg_class_t default_secondary_reload (bool, rtx, reg_class_t,
 					     enum machine_mode,
@@ -179,6 +181,8 @@ extern unsigned char default_class_max_nregs (reg_class_t, enum machine_mode);
 
 extern enum unwind_info_type default_debug_unwind_info (void);
 
+extern void default_canonicalize_comparison (int *, rtx *, rtx *, bool);
+
 extern int default_label_align_after_barrier_max_skip (rtx);
 extern int default_loop_align_max_skip (rtx);
 extern int default_label_align_max_skip (rtx);
@@ -192,4 +196,5 @@ extern const char *default_pch_valid_p (const void *, size_t);
 
 extern void default_asm_output_ident_directive (const char*);
 
+extern enum machine_mode default_cstore_mode (enum insn_code);
 extern bool default_member_type_forces_blk (const_tree, enum machine_mode);

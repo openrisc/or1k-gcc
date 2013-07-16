@@ -1,6 +1,5 @@
 /* Declarations for C++ name lookup routines.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -133,10 +132,11 @@ typedef enum tag_scope {
   ts_global = 1,	/* All scopes.  This is the 3.4.1
 			   [basic.lookup.unqual] lookup mentioned
 			   in [basic.lookup.elab]/2.  */
-  ts_within_enclosing_non_class = 2	/* Search within enclosing non-class
+  ts_within_enclosing_non_class = 2,	/* Search within enclosing non-class
 					   only, for friend class lookup
 					   according to [namespace.memdef]/3
 					   and [class.friend]/9.  */
+  ts_lambda = 3			/* Declaring a lambda closure.  */
 } tag_scope;
 
 typedef struct GTY(()) cp_class_binding {
@@ -347,7 +347,7 @@ extern void cp_emit_debug_info_for_using (tree, tree);
 /* Set *DECL to the (non-hidden) declaration for ID at global scope,
    if present and return true; otherwise return false.  */
 
-static inline bool
+inline bool
 get_global_value_if_present (tree id, tree *decl)
 {
   tree global_value = namespace_binding (id, global_namespace);
@@ -358,7 +358,7 @@ get_global_value_if_present (tree id, tree *decl)
 
 /* True is the binding of IDENTIFIER at global scope names a type.  */
 
-static inline bool
+inline bool
 is_typename_at_global_scope (tree id)
 {
   tree global_value = namespace_binding (id, global_namespace);

@@ -7,7 +7,7 @@
 --                                 S p e c                                  --
 --            (OpenVMS 64bit Itanium GCC_ZCX DEC Threads Version)           --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -144,6 +144,7 @@ private
    Machine_Overflows         : constant Boolean := False;
    Machine_Rounds            : constant Boolean := True;
    OpenVMS                   : constant Boolean := True;
+   VAX_Float                 : constant Boolean := False;
    Preallocated_Stacks       : constant Boolean := False;
    Signed_Zeros              : constant Boolean := True;
    Stack_Check_Default       : constant Boolean := True;
@@ -239,7 +240,7 @@ private
    ----------------------------
 
    procedure Lib_Stop (Cond_Value : Integer);
-   pragma Interface (C, Lib_Stop);
+   pragma Import (C, Lib_Stop);
    pragma Import_Procedure (Lib_Stop, "LIB$STOP", Mechanism => (Value));
    --  Interface to VMS condition handling. Used by RTSfind and pragma
    --  {Import,Export}_Exception. Put here because this is the only

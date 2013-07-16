@@ -1,6 +1,5 @@
 /* Dead store elimination
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -84,6 +83,13 @@ dse_possible_dead_store_p (gimple stmt, gimple *use_stmt)
   unsigned cnt = 0;
 
   *use_stmt = NULL;
+
+  /* Self-assignments are zombies.  */
+  if (operand_equal_p (gimple_assign_rhs1 (stmt), gimple_assign_lhs (stmt), 0))
+    {
+      *use_stmt = stmt;
+      return true;
+    }
 
   /* Find the first dominated statement that clobbers (part of) the
      memory stmt stores to with no intermediate statement that may use
@@ -219,7 +225,10 @@ dse_optimize_stmt (gimple_stmt_iterator *gsi)
   if (is_gimple_call (stmt) && gimple_call_fndecl (stmt))
     return;
 
-  if (gimple_has_volatile_ops (stmt))
+  /* Don't return early on *this_2(D) ={v} {CLOBBER}.  */
+  if (gimple_has_volatile_ops (stmt)
+      && (!gimple_clobber_p (stmt)
+	  || TREE_CODE (gimple_assign_lhs (stmt)) != MEM_REF))
     return;
 
   if (is_gimple_assign (stmt))
@@ -227,6 +236,12 @@ dse_optimize_stmt (gimple_stmt_iterator *gsi)
       gimple use_stmt;
 
       if (!dse_possible_dead_store_p (stmt, &use_stmt))
+	return;
+
+      /* But only remove *this_2(D) ={v} {CLOBBER} if killed by
+	 another clobber stmt.  */
+      if (gimple_clobber_p (stmt)
+	  && !gimple_clobber_p (use_stmt))
 	return;
 
       /* If we have precisely one immediate use at this point and the
@@ -367,7 +382,6 @@ struct gimple_opt_pass pass_dse =
   0,				/* properties_provided */
   0,				/* properties_destroyed */
   0,				/* todo_flags_start */
-  TODO_ggc_collect
-    | TODO_verify_ssa		/* todo_flags_finish */
+  TODO_verify_ssa		/* todo_flags_finish */
  }
 };

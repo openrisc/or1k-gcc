@@ -1,6 +1,5 @@
 /* Parse C expressions for cpplib.
-   Copyright (C) 1987, 1992, 1994, 1995, 1997, 1998, 1999, 2000, 2001,
-   2002, 2004, 2008, 2009, 2010, 2011 Free Software Foundation.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Contributed by Per Bothner, 1994.
 
 This program is free software; you can redistribute it and/or modify it
@@ -622,7 +621,7 @@ cpp_classify_number (cpp_reader *pfile, const cpp_token *token,
 	  && CPP_OPTION (pfile, cpp_warn_long_long))
         {
           const char *message = CPP_OPTION (pfile, cplusplus) 
-		                ? N_("use of C++0x long long integer constant")
+				? N_("use of C++11 long long integer constant")
 		                : N_("use of C99 long long integer constant");
 
 	  if (CPP_OPTION (pfile, c99))
@@ -640,9 +639,14 @@ cpp_classify_number (cpp_reader *pfile, const cpp_token *token,
   if ((result & CPP_N_IMAGINARY) && CPP_PEDANTIC (pfile))
     cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
 			 "imaginary constants are a GCC extension");
-  if (radix == 2 && CPP_PEDANTIC (pfile))
+  if (radix == 2
+      && !CPP_OPTION (pfile, binary_constants)
+      && CPP_PEDANTIC (pfile))
     cpp_error_with_line (pfile, CPP_DL_PEDWARN, virtual_location, 0,
-			 "binary constants are a GCC extension");
+			 CPP_OPTION (pfile, cplusplus)
+			 ? "binary constants are a C++1y feature "
+			   "or GCC extension"
+			 : "binary constants are a GCC extension");
 
   if (radix == 10)
     result |= CPP_N_DECIMAL;

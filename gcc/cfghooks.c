@@ -1,6 +1,5 @@
 /* Hooks for cfg representation specific functions.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <s.pop@laposte.net>
 
 This file is part of GCC.
@@ -31,6 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "timevar.h"
 #include "diagnostic-core.h"
 #include "cfgloop.h"
+#include "pretty-print.h"
 
 /* A pointer to one of the hooks containers.  */
 static struct cfg_hooks *cfg_hooks;
@@ -278,6 +278,43 @@ dump_bb (FILE *outf, basic_block bb, int indent, int flags)
   if (flags & TDF_BLOCKS)
     dump_bb_info (outf, bb, indent, flags, false, true);
   fputc ('\n', outf);
+}
+
+DEBUG_FUNCTION void
+debug (basic_block_def &ref)
+{
+  dump_bb (stderr, &ref, 0, 0);
+}
+
+DEBUG_FUNCTION void
+debug (basic_block_def *ptr)
+{
+  if (ptr)
+    debug (*ptr);
+  else
+    fprintf (stderr, "<nil>\n");
+}
+
+
+/* Dumps basic block BB to pretty-printer PP, for use as a label of
+   a DOT graph record-node.  The implementation of this hook is
+   expected to write the label to the stream that is attached to PP.
+   Field separators between instructions are pipe characters printed
+   verbatim.  Instructions should be written with some characters
+   escaped, using pp_write_text_as_dot_label_to_stream().  */
+
+void
+dump_bb_for_graph (pretty_printer *pp, basic_block bb)
+{
+  if (!cfg_hooks->dump_bb_for_graph)
+    internal_error ("%s does not support dump_bb_for_graph",
+		    cfg_hooks->name);
+  if (bb->count)
+    pp_printf (pp, "COUNT:" HOST_WIDEST_INT_PRINT_DEC, bb->count);
+  pp_printf (pp, " FREQ:%i |", bb->frequency);
+  pp_write_text_to_stream (pp);
+  if (!(dump_flags & TDF_SLIM))
+    cfg_hooks->dump_bb_for_graph (pp, bb);
 }
 
 /* Dump the complete CFG to FILE.  FLAGS are the TDF_* flags in dumpfile.h.  */
@@ -625,7 +662,9 @@ split_edge (edge e)
       loop = find_common_loop (src->loop_father, dest->loop_father);
       add_bb_to_loop (ret, loop);
 
-      if (loop->latch == src)
+      /* If we split the latch edge of loop adjust the latch block.  */
+      if (loop->latch == src
+	  && loop->header == dest)
 	loop->latch = ret;
     }
 
@@ -708,11 +747,23 @@ merge_blocks (basic_block a, basic_block b)
 
   cfg_hooks->merge_blocks (a, b);
 
-  /* If we merge a loop header into its predecessor, update the loop
-     structure.  */
   if (current_loops != NULL)
     {
-      if (b->loop_father->header == b)
+      /* If the block we merge into is a loop header do nothing unless ... */
+      if (a->loop_father->header == a)
+	{
+	  /* ... we merge two loop headers, in which case we kill
+	     the inner loop.  */
+	  if (b->loop_father->header == b)
+	    {
+	      b->loop_father->header = NULL;
+	      b->loop_father->latch = NULL;
+	      loops_state_set (LOOPS_NEED_FIXUP);
+	    }
+	}
+      /* If we merge a loop header into its predecessor, update the loop
+	 structure.  */
+      else if (b->loop_father->header == b)
 	{
 	  remove_bb_from_loops (a);
 	  add_bb_to_loop  (a, b->loop_father);
@@ -734,7 +785,12 @@ merge_blocks (basic_block a, basic_block b)
     {
       e->src = a;
       if (current_loops != NULL)
-	rescan_loop_exit (e, true, false);
+	{
+	  /* If b was a latch, a now is.  */
+	  if (e->dest->loop_father->latch == b)
+	    e->dest->loop_father->latch = a;
+	  rescan_loop_exit (e, true, false);
+	}
     }
   a->succs = b->succs;
   a->flags |= b->flags;
@@ -1226,12 +1282,17 @@ end:
 
 /* Duplicates N basic blocks stored in array BBS.  Newly created basic blocks
    are placed into array NEW_BBS in the same order.  Edges from basic blocks
-   in BBS are also duplicated and copies of those of them
-   that lead into BBS are redirected to appropriate newly created block.  The
-   function assigns bbs into loops (copy of basic block bb is assigned to
-   bb->loop_father->copy loop, so this must be set up correctly in advance)
-   and updates dominators locally (LOOPS structure that contains the information
-   about dominators is passed to enable this).
+   in BBS are also duplicated and copies of those that lead into BBS are
+   redirected to appropriate newly created block.  The function assigns bbs
+   into loops (copy of basic block bb is assigned to bb->loop_father->copy
+   loop, so this must be set up correctly in advance)
+
+   If UPDATE_DOMINANCE is true then this function updates dominators locally
+   (LOOPS structure that contains the information about dominators is passed
+   to enable this), otherwise it does not update the dominator information
+   and it assumed that the caller will do this, perhaps by destroying and
+   recreating it instead of trying to do an incremental update like this
+   function does when update_dominance is true.
 
    BASE is the superloop to that basic block belongs; if its header or latch
    is copied, we do not set the new blocks as header or latch.
@@ -1245,7 +1306,7 @@ end:
 void
 copy_bbs (basic_block *bbs, unsigned n, basic_block *new_bbs,
 	  edge *edges, unsigned num_edges, edge *new_edges,
-	  struct loop *base, basic_block after)
+	  struct loop *base, basic_block after, bool update_dominance)
 {
   unsigned i, j;
   basic_block bb, new_bb, dom_bb;
@@ -1271,16 +1332,19 @@ copy_bbs (basic_block *bbs, unsigned n, basic_block *new_bbs,
     }
 
   /* Set dominators.  */
-  for (i = 0; i < n; i++)
+  if (update_dominance)
     {
-      bb = bbs[i];
-      new_bb = new_bbs[i];
-
-      dom_bb = get_immediate_dominator (CDI_DOMINATORS, bb);
-      if (dom_bb->flags & BB_DUPLICATED)
+      for (i = 0; i < n; i++)
 	{
-	  dom_bb = get_bb_copy (dom_bb);
-	  set_immediate_dominator (CDI_DOMINATORS, new_bb, dom_bb);
+	  bb = bbs[i];
+	  new_bb = new_bbs[i];
+
+	  dom_bb = get_immediate_dominator (CDI_DOMINATORS, bb);
+	  if (dom_bb->flags & BB_DUPLICATED)
+	    {
+	      dom_bb = get_bb_copy (dom_bb);
+	      set_immediate_dominator (CDI_DOMINATORS, new_bb, dom_bb);
+	    }
 	}
     }
 

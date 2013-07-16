@@ -2,7 +2,7 @@
 ; Generated automatically by genopt.sh from arm-cores.def, arm-arches.def
 ; and arm-fpus.def.
 
-; Copyright (C) 2011 Free Software Foundation, Inc.
+; Copyright (C) 2011-2013 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -250,6 +250,9 @@ EnumValue
 Enum(processor_type) String(cortex-a15) Value(cortexa15)
 
 EnumValue
+Enum(processor_type) String(cortex-a53) Value(cortexa53)
+
+EnumValue
 Enum(processor_type) String(cortex-r4) Value(cortexr4)
 
 EnumValue
@@ -257,6 +260,9 @@ Enum(processor_type) String(cortex-r4f) Value(cortexr4f)
 
 EnumValue
 Enum(processor_type) String(cortex-r5) Value(cortexr5)
+
+EnumValue
+Enum(processor_type) String(cortex-r7) Value(cortexr7)
 
 EnumValue
 Enum(processor_type) String(cortex-m4) Value(cortexm4)
@@ -272,6 +278,9 @@ Enum(processor_type) String(cortex-m0) Value(cortexm0)
 
 EnumValue
 Enum(processor_type) String(cortex-m0plus) Value(cortexm0plus)
+
+EnumValue
+Enum(processor_type) String(marvell-pj4) Value(marvell_pj4)
 
 Enum
 Name(arm_arch) Type(int)

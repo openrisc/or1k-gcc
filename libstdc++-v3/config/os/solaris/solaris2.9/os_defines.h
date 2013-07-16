@@ -1,7 +1,6 @@
 // Specific definitions for Solaris 9+  -*- C++ -*-
 
-// Copyright (C) 2000, 2002, 2005, 2009, 2011, 2012
-// Free Software Foundation, Inc.
+// Copyright (C) 2000-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -34,6 +33,11 @@
 #define __CORRECT_ISO_CPP_STDLIB_H_PROTO
 #define __CORRECT_ISO_CPP_STRING_H_PROTO
 #define __CORRECT_ISO_CPP_WCHAR_H_PROTO
+#endif
+
+/* Solaris 9 uses the non-standard CLOCK_HIGHRES instead.  */
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC CLOCK_HIGHRES
 #endif
 
 #endif

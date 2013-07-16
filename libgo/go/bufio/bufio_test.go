@@ -28,9 +28,9 @@ func newRot13Reader(r io.Reader) *rot13Reader {
 }
 
 func (r13 *rot13Reader) Read(p []byte) (int, error) {
-	n, e := r13.r.Read(p)
-	if e != nil {
-		return n, e
+	n, err := r13.r.Read(p)
+	if err != nil {
+		return n, err
 	}
 	for i := 0; i < n; i++ {
 		c := p[i] | 0x20 // lowercase byte
@@ -48,15 +48,15 @@ func readBytes(buf *Reader) string {
 	var b [1000]byte
 	nb := 0
 	for {
-		c, e := buf.ReadByte()
-		if e == io.EOF {
+		c, err := buf.ReadByte()
+		if err == io.EOF {
 			break
 		}
-		if e == nil {
+		if err == nil {
 			b[nb] = c
 			nb++
-		} else if e != iotest.ErrTimeout {
-			panic("Data: " + e.Error())
+		} else if err != iotest.ErrTimeout {
+			panic("Data: " + err.Error())
 		}
 	}
 	return string(b[0:nb])
@@ -93,12 +93,12 @@ var readMakers = []readMaker{
 func readLines(b *Reader) string {
 	s := ""
 	for {
-		s1, e := b.ReadString('\n')
-		if e == io.EOF {
+		s1, err := b.ReadString('\n')
+		if err == io.EOF {
 			break
 		}
-		if e != nil && e != iotest.ErrTimeout {
-			panic("GetLines: " + e.Error())
+		if err != nil && err != iotest.ErrTimeout {
+			panic("GetLines: " + err.Error())
 		}
 		s += s1
 	}
@@ -110,9 +110,9 @@ func reads(buf *Reader, m int) string {
 	var b [1000]byte
 	nb := 0
 	for {
-		n, e := buf.Read(b[nb : nb+m])
+		n, err := buf.Read(b[nb : nb+m])
 		nb += n
-		if e == io.EOF {
+		if err == io.EOF {
 			break
 		}
 	}
@@ -748,7 +748,7 @@ func testReadLineNewlines(t *testing.T, input string, expect []readLineResult) {
 	b := NewReaderSize(strings.NewReader(input), minReadBufferSize)
 	for i, e := range expect {
 		line, isPrefix, err := b.ReadLine()
-		if bytes.Compare(line, e.line) != 0 {
+		if !bytes.Equal(line, e.line) {
 			t.Errorf("%q call %d, line == %q, want %q", input, i, line, e.line)
 			return
 		}
@@ -937,6 +937,29 @@ type writeCountingDiscard int
 func (w *writeCountingDiscard) Write(p []byte) (int, error) {
 	*w++
 	return len(p), nil
+}
+
+type negativeReader int
+
+func (r *negativeReader) Read([]byte) (int, error) { return -1, nil }
+
+func TestNegativeRead(t *testing.T) {
+	// should panic with a description pointing at the reader, not at itself.
+	// (should NOT panic with slice index error, for example.)
+	b := NewReader(new(negativeReader))
+	defer func() {
+		switch err := recover().(type) {
+		case nil:
+			t.Fatal("read did not panic")
+		case error:
+			if !strings.Contains(err.Error(), "reader returned negative count from Read") {
+				t.Fatal("wrong panic: %v", err)
+			}
+		default:
+			t.Fatalf("unexpected panic value: %T(%v)", err, err)
+		}
+	}()
+	b.Read(make([]byte, 100))
 }
 
 // An onlyReader only implements io.Reader, no matter what other methods the underlying implementation may have.

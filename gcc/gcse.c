@@ -1,6 +1,5 @@
 /* Partial redundancy elimination / Hoisting for RTL.
-   Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2006, 2007, 2008, 2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -159,7 +158,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "intl.h"
 #include "obstack.h"
 #include "tree-pass.h"
-#include "hashtab.h"
+#include "hash-table.h"
 #include "df.h"
 #include "dbgcnt.h"
 #include "target.h"
@@ -254,8 +253,6 @@ int flag_rerun_cse_after_global_opts;
 
 /* An obstack for our working variables.  */
 static struct obstack gcse_obstack;
-
-struct reg_use {rtx reg_rtx; };
 
 /* Hash table of expressions.  */
 
@@ -362,8 +359,34 @@ struct ls_expr
 /* Head of the list of load/store memory refs.  */
 static struct ls_expr * pre_ldst_mems = NULL;
 
+struct pre_ldst_expr_hasher : typed_noop_remove <ls_expr>
+{
+  typedef ls_expr value_type;
+  typedef value_type compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
+
+/* Hashtable helpers.  */
+inline hashval_t
+pre_ldst_expr_hasher::hash (const value_type *x)
+{
+  int do_not_record_p = 0;
+  return
+    hash_rtx (x->pattern, GET_MODE (x->pattern), &do_not_record_p, NULL, false);
+}
+
+static int expr_equiv_p (const_rtx, const_rtx);
+
+inline bool
+pre_ldst_expr_hasher::equal (const value_type *ptr1,
+			     const compare_type *ptr2)
+{
+  return expr_equiv_p (ptr1->pattern, ptr2->pattern);
+}
+
 /* Hashtable for the load/store memory refs.  */
-static htab_t pre_ldst_table = NULL;
+static hash_table <pre_ldst_expr_hasher> pre_ldst_table;
 
 /* Bitmap containing one bit for each register in the program.
    Used when performing GCSE to track which registers have been set since
@@ -450,7 +473,6 @@ static int oprs_available_p (const_rtx, const_rtx);
 static void insert_expr_in_table (rtx, enum machine_mode, rtx, int, int, int,
 				  struct hash_table_d *);
 static unsigned int hash_expr (const_rtx, enum machine_mode, int *, int);
-static int expr_equiv_p (const_rtx, const_rtx);
 static void record_last_reg_set_info (rtx, int);
 static void record_last_mem_set_info (rtx);
 static void record_last_set_info (rtx, const_rtx, void *);
@@ -893,8 +915,9 @@ oprs_unchanged_p (const_rtx x, const_rtx insn, int avail_p)
       }
 
     case MEM:
-      if (load_killed_in_block_p (current_bb, DF_INSN_LUID (insn),
-				  x, avail_p))
+      if (! flag_gcse_lm
+	  || load_killed_in_block_p (current_bb, DF_INSN_LUID (insn),
+				     x, avail_p))
 	return 0;
       else
 	return oprs_unchanged_p (XEXP (x, 0), insn, avail_p);
@@ -1474,10 +1497,14 @@ canon_list_insert (rtx dest ATTRIBUTE_UNUSED, const_rtx x ATTRIBUTE_UNUSED,
 static void
 record_last_mem_set_info (rtx insn)
 {
-  int bb = BLOCK_FOR_INSN (insn)->index;
+  int bb;
+
+  if (! flag_gcse_lm)
+    return;
 
   /* load_killed_in_block_p will handle the case of calls clobbering
      everything.  */
+  bb = BLOCK_FOR_INSN (insn)->index;
   modify_mem_list[bb].safe_push (insn);
   bitmap_set_bit (modify_mem_list_set, bb);
 
@@ -2147,20 +2174,9 @@ insert_insn_end_basic_block (struct expr *expr, basic_block bb)
 	      || single_succ_edge (bb)->flags & EDGE_ABNORMAL)))
     {
 #ifdef HAVE_cc0
-      rtx note;
-#endif
-
-      /* If this is a jump table, then we can't insert stuff here.  Since
-	 we know the previous real insn must be the tablejump, we insert
-	 the new instruction just before the tablejump.  */
-      if (GET_CODE (PATTERN (insn)) == ADDR_VEC
-	  || GET_CODE (PATTERN (insn)) == ADDR_DIFF_VEC)
-	insn = prev_active_insn (insn);
-
-#ifdef HAVE_cc0
       /* FIXME: 'twould be nice to call prev_cc0_setter here but it aborts
 	 if cc0 isn't set.  */
-      note = find_reg_note (insn, REG_CC_SETTER, NULL_RTX);
+      rtx note = find_reg_note (insn, REG_CC_SETTER, NULL_RTX);
       if (note)
 	insn = XEXP (note, 0);
       else
@@ -2491,23 +2507,27 @@ gcse_emit_move_after (rtx dest, rtx src, rtx insn)
   rtx new_rtx;
   rtx set = single_set (insn), set2;
   rtx note;
-  rtx eqv;
+  rtx eqv = NULL_RTX;
 
   /* This should never fail since we're creating a reg->reg copy
      we've verified to be valid.  */
 
   new_rtx = emit_insn_after (gen_move_insn (dest, src), insn);
 
-  /* Note the equivalence for local CSE pass.  */
+  /* Note the equivalence for local CSE pass.  Take the note from the old
+     set if there was one.  Otherwise record the SET_SRC from the old set
+     unless DEST is also an operand of the SET_SRC.  */
   set2 = single_set (new_rtx);
   if (!set2 || !rtx_equal_p (SET_DEST (set2), dest))
     return new_rtx;
   if ((note = find_reg_equal_equiv_note (insn)))
     eqv = XEXP (note, 0);
-  else
+  else if (! REG_P (dest)
+	   || ! reg_mentioned_p (dest, SET_SRC (set)))
     eqv = SET_SRC (set);
 
-  set_unique_reg_note (new_rtx, REG_EQUAL, copy_insn_1 (eqv));
+  if (eqv != NULL_RTX)
+    set_unique_reg_note (new_rtx, REG_EQUAL, copy_insn_1 (eqv));
 
   return new_rtx;
 }
@@ -3657,23 +3677,6 @@ one_code_hoisting_pass (void)
     load towards the exit, and we end up with no loads or stores of 'i'
     in the loop.  */
 
-static hashval_t
-pre_ldst_expr_hash (const void *p)
-{
-  int do_not_record_p = 0;
-  const struct ls_expr *const x = (const struct ls_expr *) p;
-  return
-    hash_rtx (x->pattern, GET_MODE (x->pattern), &do_not_record_p, NULL, false);
-}
-
-static int
-pre_ldst_expr_eq (const void *p1, const void *p2)
-{
-  const struct ls_expr *const ptr1 = (const struct ls_expr *) p1,
-    *const ptr2 = (const struct ls_expr *) p2;
-  return expr_equiv_p (ptr1->pattern, ptr2->pattern);
-}
-
 /* This will search the ldst list for a matching expression. If it
    doesn't find one, we create one and initialize it.  */
 
@@ -3683,16 +3686,16 @@ ldst_entry (rtx x)
   int do_not_record_p = 0;
   struct ls_expr * ptr;
   unsigned int hash;
-  void **slot;
+  ls_expr **slot;
   struct ls_expr e;
 
   hash = hash_rtx (x, GET_MODE (x), &do_not_record_p,
 		   NULL,  /*have_reg_qty=*/false);
 
   e.pattern = x;
-  slot = htab_find_slot_with_hash (pre_ldst_table, &e, hash, INSERT);
+  slot = pre_ldst_table.find_slot_with_hash (&e, hash, INSERT);
   if (*slot)
-    return (struct ls_expr *)*slot;
+    return *slot;
 
   ptr = XNEW (struct ls_expr);
 
@@ -3728,9 +3731,8 @@ free_ldst_entry (struct ls_expr * ptr)
 static void
 free_ld_motion_mems (void)
 {
-  if (pre_ldst_table)
-    htab_delete (pre_ldst_table);
-  pre_ldst_table = NULL;
+  if (pre_ldst_table.is_created ())
+    pre_ldst_table.dispose ();
 
   while (pre_ldst_mems)
     {
@@ -3785,14 +3787,14 @@ static struct ls_expr *
 find_rtx_in_ldst (rtx x)
 {
   struct ls_expr e;
-  void **slot;
-  if (!pre_ldst_table)
+  ls_expr **slot;
+  if (!pre_ldst_table.is_created ())
     return NULL;
   e.pattern = x;
-  slot = htab_find_slot (pre_ldst_table, &e, NO_INSERT);
-  if (!slot || ((struct ls_expr *)*slot)->invalid)
+  slot = pre_ldst_table.find_slot (&e, NO_INSERT);
+  if (!slot || (*slot)->invalid)
     return NULL;
-  return (struct ls_expr *) *slot;
+  return *slot;
 }
 
 /* Load Motion for loads which only kill themselves.  */
@@ -3880,8 +3882,7 @@ compute_ld_motion_mems (void)
   rtx insn;
 
   pre_ldst_mems = NULL;
-  pre_ldst_table
-    = htab_create (13, pre_ldst_expr_hash, pre_ldst_expr_eq, NULL);
+  pre_ldst_table.create (13);
 
   FOR_EACH_BB (bb)
     {
@@ -3893,6 +3894,8 @@ compute_ld_motion_mems (void)
 		{
 		  rtx src = SET_SRC (PATTERN (insn));
 		  rtx dest = SET_DEST (PATTERN (insn));
+		  rtx note = find_reg_equal_equiv_note (insn);
+		  rtx src_eq;
 
 		  /* Check for a simple LOAD...  */
 		  if (MEM_P (src) && simple_mem (src))
@@ -3908,6 +3911,15 @@ compute_ld_motion_mems (void)
 		      /* Make sure there isn't a buried load somewhere.  */
 		      invalidate_any_buried_refs (src);
 		    }
+
+		  if (note != 0 && REG_NOTE_KIND (note) == REG_EQUAL)
+		    src_eq = XEXP (note, 0);
+		  else
+		    src_eq = NULL_RTX;
+
+		  if (src_eq != NULL_RTX
+		      && !(MEM_P (src_eq) && simple_mem (src_eq)))
+		    invalidate_any_buried_refs (src_eq);
 
 		  /* Check for stores. Don't worry about aliased ones, they
 		     will block any movement we might do later. We only care
@@ -3972,7 +3984,7 @@ trim_ld_motion_mems (void)
       else
 	{
 	  *last = ptr->next;
-	  htab_remove_elt_with_hash (pre_ldst_table, ptr, ptr->hash_index);
+	  pre_ldst_table.remove_elt_with_hash (ptr, ptr->hash_index);
 	  free_ldst_entry (ptr);
 	  ptr = * last;
 	}
@@ -4153,7 +4165,7 @@ struct rtl_opt_pass pass_rtl_pre =
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
   TODO_df_finish | TODO_verify_rtl_sharing |
-  TODO_verify_flow | TODO_ggc_collect   /* todo_flags_finish */
+  TODO_verify_flow                      /* todo_flags_finish */
  }
 };
 
@@ -4174,7 +4186,7 @@ struct rtl_opt_pass pass_rtl_hoist =
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
   TODO_df_finish | TODO_verify_rtl_sharing |
-  TODO_verify_flow | TODO_ggc_collect   /* todo_flags_finish */
+  TODO_verify_flow                      /* todo_flags_finish */
  }
 };
 

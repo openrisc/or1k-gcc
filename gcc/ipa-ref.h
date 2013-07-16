@@ -1,6 +1,5 @@
 /* IPA reference lists.
-   Copyright (C) 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Jan Hubicka
 
 This file is part of GCC.
@@ -62,6 +61,8 @@ struct GTY(()) ipa_ref_list
 struct ipa_ref * ipa_record_reference (symtab_node,
 				       symtab_node,
 				       enum ipa_ref_use, gimple);
+struct ipa_ref * ipa_maybe_record_reference (symtab_node, tree,
+					     enum ipa_ref_use, gimple);
 
 void ipa_remove_reference (struct ipa_ref *);
 void ipa_remove_all_references (struct ipa_ref_list *);
@@ -72,3 +73,5 @@ void ipa_clone_references (symtab_node, struct ipa_ref_list *);
 void ipa_clone_referring (symtab_node, struct ipa_ref_list *);
 bool ipa_ref_cannot_lead_to_return (struct ipa_ref *);
 bool ipa_ref_has_aliases_p (struct ipa_ref_list *);
+struct ipa_ref * ipa_find_reference (symtab_node, symtab_node, gimple);
+void ipa_remove_stmt_references (symtab_node, gimple);

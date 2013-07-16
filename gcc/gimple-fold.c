@@ -1,5 +1,5 @@
 /* Statement simplification on GIMPLE.
-   Copyright (C) 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Split out from tree-ssa-ccp.c.
 
 This file is part of GCC.
@@ -73,11 +73,6 @@ can_refer_decl_in_current_unit_p (tree decl, tree from_decl)
   if ((!TREE_STATIC (decl) && !DECL_EXTERNAL (decl))
       || (TREE_CODE (decl) != VAR_DECL && TREE_CODE (decl) != FUNCTION_DECL))
     return true;
-  /* Weakrefs have somewhat confusing DECL_EXTERNAL flag set; they
-     are always safe.  */
-  if (DECL_EXTERNAL (decl)
-      && lookup_attribute ("weakref", DECL_ATTRIBUTES (decl)))
-    return true;
   /* We are folding reference from external vtable.  The vtable may reffer
      to a symbol keyed to other compilation unit.  The other compilation
      unit may be in separate DSO and the symbol may be hidden.  */
@@ -114,7 +109,7 @@ can_refer_decl_in_current_unit_p (tree decl, tree from_decl)
          The second is important when devirtualization happens during final
          compilation stage when making a new reference no longer makes callee
          to be compiled.  */
-      if (!node || !node->analyzed || node->global.inlined_to)
+      if (!node || !node->symbol.definition || node->global.inlined_to)
 	{
 	  gcc_checking_assert (!TREE_ASM_WRITTEN (decl));
 	  return false;
@@ -123,7 +118,7 @@ can_refer_decl_in_current_unit_p (tree decl, tree from_decl)
   else if (TREE_CODE (decl) == VAR_DECL)
     {
       vnode = varpool_get_node (decl);
-      if (!vnode || !vnode->analyzed)
+      if (!vnode || !vnode->symbol.definition)
 	{
 	  gcc_checking_assert (!TREE_ASM_WRITTEN (decl));
 	  return false;
@@ -178,7 +173,7 @@ canonicalize_constructor_val (tree cval, tree from_decl)
 	  /* Make sure we create a cgraph node for functions we'll reference.
 	     They can be non-existent if the reference comes from an entry
 	     of an external vtable for example.  */
-	  cgraph_get_create_node (base);
+	  cgraph_get_create_real_symbol_node (base);
 	}
       /* Fixup types in global initializers.  */
       if (TREE_TYPE (TREE_TYPE (cval)) != TREE_TYPE (TREE_OPERAND (cval, 0)))
@@ -197,12 +192,12 @@ canonicalize_constructor_val (tree cval, tree from_decl)
 tree
 get_symbol_constant_value (tree sym)
 {
-  if (const_value_known_p (sym))
+  tree val = ctor_for_folding (sym);
+  if (val != error_mark_node)
     {
-      tree val = DECL_INITIAL (sym);
       if (val)
 	{
-	  val = canonicalize_constructor_val (val, sym);
+	  val = canonicalize_constructor_val (unshare_expr (val), sym);
 	  if (val && is_gimple_min_invariant (val))
 	    return val;
 	  else
@@ -378,7 +373,7 @@ fold_gimple_assign (gimple_stmt_iterator *si)
 	  }
 
 	else if (DECL_P (rhs))
-	  return unshare_expr (get_symbol_constant_value (rhs));
+	  return get_symbol_constant_value (rhs);
 
         /* If we couldn't fold the RHS, hand over to the generic
            fold routines.  */
@@ -1043,7 +1038,7 @@ gimple_extract_devirt_binfo_from_cst (tree cst)
       HOST_WIDE_INT pos, size;
       tree fld;
 
-      if (TYPE_MAIN_VARIANT (type) == TYPE_MAIN_VARIANT (expected_type))
+      if (types_same_for_odr (type, expected_type))
 	break;
       if (offset < 0)
 	return NULL_TREE;
@@ -1143,6 +1138,8 @@ gimple_fold_call (gimple_stmt_iterator *gsi, bool inplace)
 	    gimplify_and_update_call_from_tree (gsi, result);
 	  changed = true;
 	}
+      else if (DECL_BUILT_IN_CLASS (callee) == BUILT_IN_MD)
+	changed |= targetm.gimple_fold_builtin (gsi);
     }
 
   return changed;
@@ -1157,11 +1154,6 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace)
   bool changed = false;
   gimple stmt = gsi_stmt (*gsi);
   unsigned i;
-  gimple_stmt_iterator gsinext = *gsi;
-  gimple next_stmt;
-
-  gsi_next (&gsinext);
-  next_stmt = gsi_end_p (gsinext) ? NULL : gsi_stmt (gsinext);
 
   /* Fold the main computation performed by the statement.  */
   switch (gimple_code (stmt))
@@ -1284,9 +1276,8 @@ fold_stmt_1 (gimple_stmt_iterator *gsi, bool inplace)
 
   stmt = gsi_stmt (*gsi);
 
-  /* Fold *& on the lhs.  Don't do this if stmt folded into nothing,
-     as we'd changing the next stmt.  */
-  if (gimple_has_lhs (stmt) && stmt != next_stmt)
+  /* Fold *& on the lhs.  */
+  if (gimple_has_lhs (stmt))
     {
       tree lhs = gimple_get_lhs (stmt);
       if (lhs && REFERENCE_CLASS_P (lhs))
@@ -2704,19 +2695,18 @@ get_base_constructor (tree base, HOST_WIDE_INT *bit_offset,
   switch (TREE_CODE (base))
     {
     case VAR_DECL:
-      if (!const_value_known_p (base))
-	return NULL_TREE;
-
-      /* Fallthru.  */
     case CONST_DECL:
-      if (!DECL_INITIAL (base)
-	  && (TREE_STATIC (base) || DECL_EXTERNAL (base)))
-        return error_mark_node;
-      /* Do not return an error_mark_node DECL_INITIAL.  LTO uses this
-         as special marker (_not_ zero ...) for its own purposes.  */
-      if (DECL_INITIAL (base) == error_mark_node)
-	return NULL_TREE;
-      return DECL_INITIAL (base);
+      {
+	tree init = ctor_for_folding (base);
+
+	/* Our semantic is exact oposite of ctor_for_folding;
+	   NULL means unknown, while error_mark_node is 0.  */
+	if (init == error_mark_node)
+	  return NULL_TREE;
+	if (!init)
+	  return error_mark_node;
+	return init;
+      }
 
     case ARRAY_REF:
     case COMPONENT_REF:
@@ -2947,7 +2937,7 @@ fold_ctor_reference (tree type, tree ctor, unsigned HOST_WIDE_INT offset,
   /* We found the field with exact match.  */
   if (useless_type_conversion_p (type, TREE_TYPE (ctor))
       && !offset)
-    return canonicalize_constructor_val (ctor, from_decl);
+    return canonicalize_constructor_val (unshare_expr (ctor), from_decl);
 
   /* We are at the end of walk, see if we can view convert the
      result.  */
@@ -2956,7 +2946,7 @@ fold_ctor_reference (tree type, tree ctor, unsigned HOST_WIDE_INT offset,
       && operand_equal_p (TYPE_SIZE (type),
 			  TYPE_SIZE (TREE_TYPE (ctor)), 0))
     {
-      ret = canonicalize_constructor_val (ctor, from_decl);
+      ret = canonicalize_constructor_val (unshare_expr (ctor), from_decl);
       ret = fold_unary (VIEW_CONVERT_EXPR, type, ret);
       if (ret)
 	STRIP_NOPS (ret);

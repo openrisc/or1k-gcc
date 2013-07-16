@@ -1,5 +1,5 @@
 /* Target-dependent globals.
-   Copyright (C) 2010  Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -60,6 +60,7 @@ struct GTY(()) target_globals {
 extern struct target_globals default_target_globals;
 
 extern struct target_globals *save_target_globals (void);
+extern struct target_globals *save_target_globals_default_opts (void);
 
 static inline void
 restore_target_globals (struct target_globals *g)

@@ -1,7 +1,5 @@
 /* Definitions of target machine for GNU compiler.
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
    Contributed by James E. Wilson <wilson@cygnus.com> and
 		  David Mosberger <davidm@hpl.hp.com>.
 
@@ -49,7 +47,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "target-def.h"
 #include "common/common-target.h"
 #include "tm_p.h"
-#include "hashtab.h"
+#include "hash-table.h"
 #include "langhooks.h"
 #include "gimple.h"
 #include "intl.h"
@@ -172,7 +170,7 @@ static ds_t ia64_get_insn_spec_ds (rtx);
 static ds_t ia64_get_insn_checked_ds (rtx);
 static bool ia64_skip_rtx_p (const_rtx);
 static int ia64_speculate_insn (rtx, ds_t, rtx *);
-static bool ia64_needs_block_p (int);
+static bool ia64_needs_block_p (ds_t);
 static rtx ia64_gen_spec_check (rtx, rtx, ds_t);
 static int ia64_spec_check_p (rtx);
 static int ia64_spec_check_src_p (rtx);
@@ -259,8 +257,6 @@ static struct bundle_state *get_free_bundle_state (void);
 static void free_bundle_state (struct bundle_state *);
 static void initiate_bundle_states (void);
 static void finish_bundle_states (void);
-static unsigned bundle_state_hash (const void *);
-static int bundle_state_eq_p (const void *, const void *);
 static int insert_bundle_state (struct bundle_state *);
 static void initiate_bundle_state_table (void);
 static void finish_bundle_state_table (void);
@@ -2885,8 +2881,10 @@ ia64_compute_frame_size (HOST_WIDE_INT size)
 
   /* We always use the 16-byte scratch area provided by the caller, but
      if we are a leaf function, there's no one to which we need to provide
-     a scratch area.  */
-  if (crtl->is_leaf)
+     a scratch area.  However, if the function allocates dynamic stack space,
+     the dynamic offset is computed early and contains STACK_POINTER_OFFSET,
+     so we need to cope.  */
+  if (crtl->is_leaf && !cfun->calls_alloca)
     total_size = MAX (0, total_size - 16);
 
   current_frame_info.total_size = total_size;
@@ -2920,18 +2918,15 @@ ia64_initial_elimination_offset (int from, int to)
       switch (to)
 	{
 	case HARD_FRAME_POINTER_REGNUM:
-	  if (crtl->is_leaf)
-	    offset = -current_frame_info.total_size;
-	  else
-	    offset = -(current_frame_info.total_size
-		       - crtl->outgoing_args_size - 16);
+	  offset = -current_frame_info.total_size;
+	  if (!crtl->is_leaf || cfun->calls_alloca)
+	    offset += 16 + crtl->outgoing_args_size;
 	  break;
 
 	case STACK_POINTER_REGNUM:
-	  if (crtl->is_leaf)
-	    offset = 0;
-	  else
-	    offset = 16 + crtl->outgoing_args_size;
+	  offset = 0;
+	  if (!crtl->is_leaf || cfun->calls_alloca)
+	    offset += 16 + crtl->outgoing_args_size;
 	  break;
 
 	default:
@@ -5473,7 +5468,7 @@ ia64_print_operand (FILE * file, rtx x, int code)
 	    else
 	      which = ".sptk";
 	  }
-	else if (GET_CODE (current_output_insn) == CALL_INSN)
+	else if (CALL_P (current_output_insn))
 	  which = ".sptk";
 	else
 	  which = ".dptk";
@@ -5846,19 +5841,16 @@ ia64_secondary_reload_class (enum reg_class rclass,
 static int
 ia64_unspec_may_trap_p (const_rtx x, unsigned flags)
 {
-  if (GET_CODE (x) == UNSPEC)
+  switch (XINT (x, 1))
     {
-      switch (XINT (x, 1))
-	{
-	case UNSPEC_LDA:
-	case UNSPEC_LDS:
-	case UNSPEC_LDSA:
-	case UNSPEC_LDCCLR:
-	case UNSPEC_CHKACLR:
-	case UNSPEC_CHKS:
-	  /* These unspecs are just wrappers.  */
-	  return may_trap_p_1 (XVECEXP (x, 0, 0), flags);
-	}
+    case UNSPEC_LDA:
+    case UNSPEC_LDS:
+    case UNSPEC_LDSA:
+    case UNSPEC_LDCCLR:
+    case UNSPEC_CHKACLR:
+    case UNSPEC_CHKS:
+      /* These unspecs are just wrappers.  */
+      return may_trap_p_1 (XVECEXP (x, 0, 0), flags);
     }
 
   return default_unspec_may_trap_p (x, flags);
@@ -6817,8 +6809,7 @@ group_barrier_needed (rtx insn)
       memset (rws_insn, 0, sizeof (rws_insn));
 
       /* Don't bundle a call following another call.  */
-      if ((pat = prev_active_insn (insn))
-	  && GET_CODE (pat) == CALL_INSN)
+      if ((pat = prev_active_insn (insn)) && CALL_P (pat))
 	{
 	  need_barrier = 1;
 	  break;
@@ -6832,8 +6823,7 @@ group_barrier_needed (rtx insn)
 	flags.is_branch = 1;
 
       /* Don't bundle a jump following a call.  */
-      if ((pat = prev_active_insn (insn))
-	  && GET_CODE (pat) == CALL_INSN)
+      if ((pat = prev_active_insn (insn)) && CALL_P (pat))
 	{
 	  need_barrier = 1;
 	  break;
@@ -6935,20 +6925,20 @@ emit_insn_group_barriers (FILE *dump)
 
   for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
     {
-      if (GET_CODE (insn) == CODE_LABEL)
+      if (LABEL_P (insn))
 	{
 	  if (insns_since_last_label)
 	    last_label = insn;
 	  insns_since_last_label = 0;
 	}
-      else if (GET_CODE (insn) == NOTE
+      else if (NOTE_P (insn)
 	       && NOTE_KIND (insn) == NOTE_INSN_BASIC_BLOCK)
 	{
 	  if (insns_since_last_label)
 	    last_label = insn;
 	  insns_since_last_label = 0;
 	}
-      else if (GET_CODE (insn) == INSN
+      else if (NONJUMP_INSN_P (insn)
 	       && GET_CODE (PATTERN (insn)) == UNSPEC_VOLATILE
 	       && XINT (PATTERN (insn), 1) == UNSPECV_INSN_GROUP_BARRIER)
 	{
@@ -6989,14 +6979,13 @@ emit_all_insn_group_barriers (FILE *dump ATTRIBUTE_UNUSED)
 
   for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
     {
-      if (GET_CODE (insn) == BARRIER)
+      if (BARRIER_P (insn))
 	{
 	  rtx last = prev_active_insn (insn);
 
 	  if (! last)
 	    continue;
-	  if (GET_CODE (last) == JUMP_INSN
-	      && GET_CODE (PATTERN (last)) == ADDR_DIFF_VEC)
+	  if (JUMP_TABLE_DATA_P (last))
 	    last = prev_active_insn (last);
 	  if (recog_memoized (last) != CODE_FOR_insn_group_barrier)
 	    emit_insn_after (gen_insn_group_barrier (GEN_INT (3)), last);
@@ -7493,7 +7482,7 @@ ia64_variable_issue (FILE *dump ATTRIBUTE_UNUSED,
       int needed = group_barrier_needed (insn);
       
       gcc_assert (!needed);
-      if (GET_CODE (insn) == CALL_INSN)
+      if (CALL_P (insn))
 	init_insn_group_barriers ();
       stops_p [INSN_UID (insn)] = stop_before_p;
       stop_before_p = 0;
@@ -7582,7 +7571,7 @@ ia64_dfa_new_cycle (FILE *dump, int verbose, rtx insn, int last_clock,
 	       && last_scheduled_insn
 	       && scheduled_good_insn (last_scheduled_insn))))
       || (last_scheduled_insn
-	  && (GET_CODE (last_scheduled_insn) == CALL_INSN
+	  && (CALL_P (last_scheduled_insn)
 	      || unknown_for_bundling_p (last_scheduled_insn))))
     {
       init_insn_group_barriers ();
@@ -7600,7 +7589,7 @@ ia64_dfa_new_cycle (FILE *dump, int verbose, rtx insn, int last_clock,
 	  state_transition (curr_state, dfa_stop_insn);
 	  if (TARGET_EARLY_STOP_BITS)
 	    *sort_p = (last_scheduled_insn == NULL_RTX
-		       || GET_CODE (last_scheduled_insn) != CALL_INSN);
+		       || ! CALL_P (last_scheduled_insn));
 	  else
 	    *sort_p = 0;
 	  return 1;
@@ -8350,9 +8339,7 @@ ia64_needs_block_p (ds_t ts)
   return !(mflag_sched_spec_control_ldc && mflag_sched_spec_ldc);
 }
 
-/* Generate (or regenerate, if (MUTATE_P)) recovery check for INSN.
-   If (LABEL != 0 || MUTATE_P), generate branchy recovery check.
-   Otherwise, generate a simple check.  */
+/* Generate (or regenerate) a recovery check for INSN.  */
 static rtx
 ia64_gen_spec_check (rtx insn, rtx label, ds_t ds)
 {
@@ -8537,18 +8524,21 @@ finish_bundle_states (void)
     }
 }
 
-/* Hash table of the bundle states.  The key is dfa_state and insn_num
-   of the bundle states.  */
+/* Hashtable helpers.  */
 
-static htab_t bundle_state_table;
+struct bundle_state_hasher : typed_noop_remove <bundle_state>
+{
+  typedef bundle_state value_type;
+  typedef bundle_state compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
 
 /* The function returns hash of BUNDLE_STATE.  */
 
-static unsigned
-bundle_state_hash (const void *bundle_state)
+inline hashval_t
+bundle_state_hasher::hash (const value_type *state)
 {
-  const struct bundle_state *const state
-    = (const struct bundle_state *) bundle_state;
   unsigned result, i;
 
   for (result = i = 0; i < dfa_state_size; i++)
@@ -8559,18 +8549,19 @@ bundle_state_hash (const void *bundle_state)
 
 /* The function returns nonzero if the bundle state keys are equal.  */
 
-static int
-bundle_state_eq_p (const void *bundle_state_1, const void *bundle_state_2)
+inline bool
+bundle_state_hasher::equal (const value_type *state1,
+			    const compare_type *state2)
 {
-  const struct bundle_state *const state1
-    = (const struct bundle_state *) bundle_state_1;
-  const struct bundle_state *const state2
-    = (const struct bundle_state *) bundle_state_2;
-
   return (state1->insn_num == state2->insn_num
 	  && memcmp (state1->dfa_state, state2->dfa_state,
 		     dfa_state_size) == 0);
 }
+
+/* Hash table of the bundle states.  The key is dfa_state and insn_num
+   of the bundle states.  */
+
+static hash_table <bundle_state_hasher> bundle_state_table;
 
 /* The function inserts the BUNDLE_STATE into the hash table.  The
    function returns nonzero if the bundle has been inserted into the
@@ -8579,39 +8570,35 @@ bundle_state_eq_p (const void *bundle_state_1, const void *bundle_state_2)
 static int
 insert_bundle_state (struct bundle_state *bundle_state)
 {
-  void **entry_ptr;
+  struct bundle_state **entry_ptr;
 
-  entry_ptr = htab_find_slot (bundle_state_table, bundle_state, INSERT);
+  entry_ptr = bundle_state_table.find_slot (bundle_state, INSERT);
   if (*entry_ptr == NULL)
     {
       bundle_state->next = index_to_bundle_states [bundle_state->insn_num];
       index_to_bundle_states [bundle_state->insn_num] = bundle_state;
-      *entry_ptr = (void *) bundle_state;
+      *entry_ptr = bundle_state;
       return TRUE;
     }
-  else if (bundle_state->cost < ((struct bundle_state *) *entry_ptr)->cost
-	   || (bundle_state->cost == ((struct bundle_state *) *entry_ptr)->cost
-	       && (((struct bundle_state *)*entry_ptr)->accumulated_insns_num
+  else if (bundle_state->cost < (*entry_ptr)->cost
+	   || (bundle_state->cost == (*entry_ptr)->cost
+	       && ((*entry_ptr)->accumulated_insns_num
 		   > bundle_state->accumulated_insns_num
-		   || (((struct bundle_state *)
-			*entry_ptr)->accumulated_insns_num
+		   || ((*entry_ptr)->accumulated_insns_num
 		       == bundle_state->accumulated_insns_num
-		       && (((struct bundle_state *)
-			    *entry_ptr)->branch_deviation
+		       && ((*entry_ptr)->branch_deviation
 			   > bundle_state->branch_deviation
-			   || (((struct bundle_state *)
-				*entry_ptr)->branch_deviation
+			   || ((*entry_ptr)->branch_deviation
 			       == bundle_state->branch_deviation
-			       && ((struct bundle_state *)
-				   *entry_ptr)->middle_bundle_stops
+			       && (*entry_ptr)->middle_bundle_stops
 			       > bundle_state->middle_bundle_stops))))))
 
     {
       struct bundle_state temp;
 
-      temp = *(struct bundle_state *) *entry_ptr;
-      *(struct bundle_state *) *entry_ptr = *bundle_state;
-      ((struct bundle_state *) *entry_ptr)->next = temp.next;
+      temp = **entry_ptr;
+      **entry_ptr = *bundle_state;
+      (*entry_ptr)->next = temp.next;
       *bundle_state = temp;
     }
   return FALSE;
@@ -8622,8 +8609,7 @@ insert_bundle_state (struct bundle_state *bundle_state)
 static void
 initiate_bundle_state_table (void)
 {
-  bundle_state_table = htab_create (50, bundle_state_hash, bundle_state_eq_p,
-				    (htab_del) 0);
+  bundle_state_table.create (50);
 }
 
 /* Finish work with the hash table.  */
@@ -8631,7 +8617,7 @@ initiate_bundle_state_table (void)
 static void
 finish_bundle_state_table (void)
 {
-  htab_delete (bundle_state_table);
+  bundle_state_table.dispose ();
 }
 
 
@@ -8942,9 +8928,9 @@ ia64_add_bundle_selector_before (int template0, rtx insn)
 	{
 	  do
 	    insn = next_active_insn (insn);
-	  while (GET_CODE (insn) == INSN
+	  while (NONJUMP_INSN_P (insn)
 		 && get_attr_empty (insn) == EMPTY_YES);
-	  if (GET_CODE (insn) == CALL_INSN)
+	  if (CALL_P (insn))
 	    note = find_reg_note (insn, REG_EH_REGION, NULL_RTX);
 	  else if (note)
 	    {
@@ -9378,14 +9364,13 @@ final_emit_insn_group_barriers (FILE *dump ATTRIBUTE_UNUSED)
        insn != current_sched_info->next_tail;
        insn = NEXT_INSN (insn))
     {
-      if (GET_CODE (insn) == BARRIER)
+      if (BARRIER_P (insn))
 	{
 	  rtx last = prev_active_insn (insn);
 
 	  if (! last)
 	    continue;
-	  if (GET_CODE (last) == JUMP_INSN
-	      && GET_CODE (PATTERN (last)) == ADDR_DIFF_VEC)
+	  if (JUMP_TABLE_DATA_P (last))
 	    last = prev_active_insn (last);
 	  if (recog_memoized (last) != CODE_FOR_insn_group_barrier)
 	    emit_insn_after (gen_insn_group_barrier (GEN_INT (3)), last);
@@ -9451,8 +9436,7 @@ final_emit_insn_group_barriers (FILE *dump ATTRIBUTE_UNUSED)
 	  else if (recog_memoized (insn) >= 0
 		   && important_for_bundling_p (insn))
 	    seen_good_insn = 1;
-	  need_barrier_p = (GET_CODE (insn) == CALL_INSN
-			    || unknown_for_bundling_p (insn));
+	  need_barrier_p = (CALL_P (insn) || unknown_for_bundling_p (insn));
 	}
     }
 }
@@ -9596,7 +9580,7 @@ emit_predicate_relation_info (void)
       rtx head = BB_HEAD (bb);
 
       /* We only need such notes at code labels.  */
-      if (GET_CODE (head) != CODE_LABEL)
+      if (! LABEL_P (head))
 	continue;
       if (NOTE_INSN_BASIC_BLOCK_P (NEXT_INSN (head)))
 	head = NEXT_INSN (head);
@@ -9624,7 +9608,7 @@ emit_predicate_relation_info (void)
 
       while (1)
 	{
-	  if (GET_CODE (insn) == CALL_INSN
+	  if (CALL_P (insn)
 	      && GET_CODE (PATTERN (insn)) == COND_EXEC
 	      && find_reg_note (insn, REG_NORETURN, NULL_RTX))
 	    {
@@ -9772,7 +9756,7 @@ ia64_reorg (void)
       if (insn)
 	{
 	  /* Skip over insns that expand to nothing.  */
-	  while (GET_CODE (insn) == INSN
+	  while (NONJUMP_INSN_P (insn)
 		 && get_attr_empty (insn) == EMPTY_YES)
 	    {
 	      if (GET_CODE (PATTERN (insn)) == UNSPEC_VOLATILE
@@ -9780,7 +9764,7 @@ ia64_reorg (void)
 		saw_stop = 1;
 	      insn = prev_active_insn (insn);
 	    }
-	  if (GET_CODE (insn) == CALL_INSN)
+	  if (CALL_P (insn))
 	    {
 	      if (! saw_stop)
 		emit_insn (gen_insn_group_barrier (GEN_INT (3)));
@@ -10190,7 +10174,7 @@ ia64_asm_unwind_emit (FILE *asm_out_file, rtx insn)
 	}
     }
 
-  if (GET_CODE (insn) == NOTE || ! RTX_FRAME_RELATED_P (insn))
+  if (NOTE_P (insn) || ! RTX_FRAME_RELATED_P (insn))
     return;
 
   /* Look for the ALLOC insn.  */

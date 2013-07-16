@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on Renesas RL78 processors.
-   Copyright (C) 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
    Contributed by Red Hat.
 
    This file is part of GCC.
@@ -499,6 +499,8 @@ const struct attribute_spec rl78_attribute_table[] =
     false },
   { "brk_interrupt",  0, 0, true, false, false, rl78_handle_func_attribute,
     false },
+  { "naked",          0, 0, true, false, false, rl78_handle_func_attribute,
+    false },
   { NULL,             0, 0, false, false, false, NULL, false }
 };
 
@@ -645,6 +647,15 @@ rl78_addr_space_pointer_mode (addr_space_t addrspace)
     }
 }
 
+/* Returns TRUE for valid addresses.  */
+#undef TARGET_VALID_POINTER_MODE
+#define TARGET_VALID_POINTER_MODE rl78_valid_pointer_mode
+static bool
+rl78_valid_pointer_mode (enum machine_mode m)
+{
+  return (m == HImode || m == SImode);
+}
+
 /* Return the appropriate mode for a named address address.  */
 #undef TARGET_ADDR_SPACE_ADDRESS_MODE
 #define TARGET_ADDR_SPACE_ADDRESS_MODE rl78_addr_space_address_mode
@@ -769,7 +780,7 @@ rl78_regno_mode_code_ok_for_base_p (int regno, enum machine_mode mode ATTRIBUTE_
 				    addr_space_t address_space ATTRIBUTE_UNUSED,
 				    int outer_code ATTRIBUTE_UNUSED, int index_code)
 {
-  if (regno < 24 && regno >= 16)
+  if (regno <= SP_REG && regno >= 16)
     return true;
   if (index_code == REG)
     return (regno == HL_REG);
@@ -825,6 +836,12 @@ rl78_initial_elimination_offset (int from, int to)
   return rv;
 }
 
+static int
+rl78_is_naked_func (void)
+{
+  return (lookup_attribute ("naked", DECL_ATTRIBUTES (current_function_decl)) != NULL_TREE);
+}
+
 /* Expand the function prologue (from the prologue pattern).  */
 void
 rl78_expand_prologue (void)
@@ -833,11 +850,17 @@ rl78_expand_prologue (void)
   rtx sp = gen_rtx_REG (HImode, STACK_POINTER_REGNUM);
   int rb = 0;
 
+  if (rl78_is_naked_func ())
+    return;
+
   if (!cfun->machine->computed)
     rl78_compute_frame_info ();
 
   if (flag_stack_usage_info)
     current_function_static_stack_size = cfun->machine->framesize;
+
+  if (is_interrupt_func (cfun->decl))
+    emit_insn (gen_sel_rb (GEN_INT (0)));
 
   for (i = 0; i < 16; i++)
     if (cfun->machine->need_to_push [i])
@@ -873,6 +896,9 @@ rl78_expand_epilogue (void)
   int i, fs;
   rtx sp = gen_rtx_REG (HImode, STACK_POINTER_REGNUM);
   int rb = 0;
+
+  if (rl78_is_naked_func ())
+    return;
 
   if (frame_pointer_needed)
     {
@@ -2713,6 +2739,16 @@ rl78_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
 }
 
 
+
+#undef  TARGET_UNWIND_WORD_MODE
+#define TARGET_UNWIND_WORD_MODE rl78_unwind_word_mode
+
+static enum machine_mode
+rl78_unwind_word_mode (void)
+{
+  return HImode;
+}
+
 struct gcc_target targetm = TARGET_INITIALIZER;
 
 #include "gt-rl78.h"

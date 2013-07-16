@@ -1,7 +1,6 @@
 /* Header file for minimum-cost maximal flow routines used to smooth basic
    block and edge frequency counts.
-   Copyright (C) 2008
-   Free Software Foundation, Inc.
+   Copyright (C) 2008-2013 Free Software Foundation, Inc.
    Contributed by Paul Yuan (yingbo.com@gmail.com)
        and Vinodha Ramasamy (vinodha@google.com).
 
@@ -46,5 +45,11 @@ extern gcov_type sum_edge_counts (vec<edge, va_gc> *edges);
 
 extern void init_node_map (void);
 extern void del_node_map (void);
+
+extern void get_working_sets (void);
+
+/* In predict.c.  */
+extern gcov_type get_hot_bb_threshold (void);
+extern void set_hot_bb_threshold (gcov_type);
 
 #endif /* PROFILE_H */

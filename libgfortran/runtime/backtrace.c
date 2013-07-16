@@ -1,4 +1,4 @@
-/* Copyright (C) 2006, 2007, 2009, 2011, 2012 Free Software Foundation, Inc.
+/* Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by François-Xavier Coudert
 
 This file is part of the GNU Fortran runtime library (libgfortran).
@@ -190,13 +190,11 @@ trace_function (struct _Unwind_Context *context, void *state_ptr)
 /* Display the backtrace.  */
 
 void
-show_backtrace (void)
+backtrace (void)
 {
   bt_state state;
   state.frame_number = 0;
   state.error = 0;
-
-  estr_write ("\nBacktrace for this error:\n");
 
 #if CAN_PIPE
 
@@ -261,6 +259,7 @@ show_backtrace (void)
     if (state.error)
       goto fallback;
     close (inp[1]);
+    close (f[0]);
     wait (NULL);
     return;
 
@@ -277,3 +276,4 @@ fallback_noerr:
   state.direct_output = 1;
   _Unwind_Backtrace (trace_function, &state);
 }
+iexport(backtrace);

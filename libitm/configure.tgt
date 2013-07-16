@@ -1,5 +1,5 @@
 # -*- shell-script -*-
-#   Copyright (C) 2011, 2012 Free Software Foundation, Inc.
+#   Copyright (C) 2011-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -47,7 +47,10 @@ fi
 # work out any special compilation flags as necessary.
 case "${target_cpu}" in
   alpha*)		ARCH=alpha ;;
-  rs6000 | powerpc*)	ARCH=powerpc ;;
+  rs6000 | powerpc*)
+	XCFLAGS="${XCFLAGS} -mhtm"
+	ARCH=powerpc
+	;;
 
   arm*)		ARCH=arm ;;
 
@@ -104,6 +107,10 @@ case "${target_cpu}" in
 	esac
 	XCFLAGS="${XCFLAGS} -mrtm"
 	ARCH=x86
+	;;
+  s390|s390x)
+	ARCH=s390
+	XCFLAGS="${XCFLAGS} -mzarch"
 	;;
 
   *)

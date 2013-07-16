@@ -1,6 +1,5 @@
 /* Lower vector operations to scalar operations.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -325,52 +324,6 @@ expand_vector_addition (gimple_stmt_iterator *gsi,
     return expand_vector_piecewise (gsi, f,
 				    type, TREE_TYPE (type),
 				    a, b, code);
-}
-
-/* Check if vector VEC consists of all the equal elements and
-   that the number of elements corresponds to the type of VEC.
-   The function returns first element of the vector
-   or NULL_TREE if the vector is not uniform.  */
-static tree
-uniform_vector_p (tree vec)
-{
-  tree first, t;
-  unsigned i;
-
-  if (vec == NULL_TREE)
-    return NULL_TREE;
-
-  if (TREE_CODE (vec) == VECTOR_CST)
-    {
-      first = VECTOR_CST_ELT (vec, 0);
-      for (i = 1; i < VECTOR_CST_NELTS (vec); ++i)
-	if (!operand_equal_p (first, VECTOR_CST_ELT (vec, i), 0))
-	  return NULL_TREE;
-
-      return first;
-    }
-
-  else if (TREE_CODE (vec) == CONSTRUCTOR)
-    {
-      first = error_mark_node;
-
-      FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (vec), i, t)
-        {
-          if (i == 0)
-            {
-              first = t;
-              continue;
-            }
-	  if (!operand_equal_p (first, t, 0))
-	    return NULL_TREE;
-        }
-      if (i != TYPE_VECTOR_SUBPARTS (TREE_TYPE (vec)))
-	return NULL_TREE;
-
-      return first;
-    }
-
-  return NULL_TREE;
 }
 
 /* Try to expand vector comparison expression OP0 CODE OP1 by
@@ -1473,7 +1426,7 @@ expand_vector_operations_1 (gimple_stmt_iterator *gsi)
 static bool
 gate_expand_vector_operations_ssa (void)
 {
-  return optimize == 0;
+  return !(cfun->curr_properties & PROP_gimple_lvec);
 }
 
 static unsigned int
@@ -1514,7 +1467,7 @@ struct gimple_opt_pass pass_lower_vector =
   0,					/* static_pass_number */
   TV_NONE,				/* tv_id */
   PROP_cfg,				/* properties_required */
-  0,					/* properties_provided */
+  PROP_gimple_lvec,			/* properties_provided */
   0,					/* properties_destroyed */
   0,					/* todo_flags_start */
   TODO_update_ssa	                /* todo_flags_finish */
@@ -1537,7 +1490,7 @@ struct gimple_opt_pass pass_lower_vector_ssa =
   0,					/* static_pass_number */
   TV_NONE,				/* tv_id */
   PROP_cfg,				/* properties_required */
-  0,					/* properties_provided */
+  PROP_gimple_lvec,			/* properties_provided */
   0,					/* properties_destroyed */
   0,					/* todo_flags_start */
   TODO_update_ssa	                /* todo_flags_finish */

@@ -1,7 +1,5 @@
 /* Language-independent node constructors for parse phase of GNU compiler.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -220,6 +218,7 @@ static void print_value_expr_statistics (void);
 static int type_hash_marked_p (const void *);
 static unsigned int type_hash_list (const_tree, hashval_t);
 static unsigned int attribute_hash_list (const_tree, hashval_t);
+static bool decls_same_for_odr (tree decl1, tree decl2);
 
 tree global_trees[TI_MAX];
 tree integer_types[itk_none];
@@ -859,9 +858,7 @@ make_node_stat (enum tree_code code MEM_STAT_DECL)
 
   record_node_allocation_statistics (code, length);
 
-  t = ggc_alloc_zone_cleared_tree_node_stat (
-               (code == IDENTIFIER_NODE) ? &tree_id_zone : &tree_zone,
-               length PASS_MEM_STAT);
+  t = ggc_alloc_cleared_tree_node_stat (length PASS_MEM_STAT);
   TREE_SET_CODE (t, code);
 
   switch (type)
@@ -955,7 +952,7 @@ copy_node_stat (tree node MEM_STAT_DECL)
 
   length = tree_size (node);
   record_node_allocation_statistics (code, length);
-  t = ggc_alloc_zone_tree_node_stat (&tree_zone, length PASS_MEM_STAT);
+  t = ggc_alloc_tree_node_stat (length PASS_MEM_STAT);
   memcpy (t, node, length);
 
   if (CODE_CONTAINS_STRUCT (code, TS_COMMON))
@@ -979,6 +976,9 @@ copy_node_stat (tree node MEM_STAT_DECL)
 	  SET_DECL_VALUE_EXPR (t, DECL_VALUE_EXPR (node));
 	  DECL_HAS_VALUE_EXPR_P (t) = 1;
 	}
+      /* DECL_DEBUG_EXPR is copied explicitely by callers.  */
+      if (TREE_CODE (node) == VAR_DECL)
+	DECL_HAS_DEBUG_EXPR_P (t) = 0;
       if (TREE_CODE (node) == VAR_DECL && DECL_HAS_INIT_PRIORITY_P (node))
 	{
 	  SET_DECL_INIT_PRIORITY (t, DECL_INIT_PRIORITY (node));
@@ -1267,6 +1267,99 @@ build_int_cst_wide (tree type, unsigned HOST_WIDE_INT low, HOST_WIDE_INT hi)
   return t;
 }
 
+void
+cache_integer_cst (tree t)
+{
+  tree type = TREE_TYPE (t);
+  HOST_WIDE_INT hi = TREE_INT_CST_HIGH (t);
+  unsigned HOST_WIDE_INT low = TREE_INT_CST_LOW (t);
+  int ix = -1;
+  int limit = 0;
+
+  gcc_assert (!TREE_OVERFLOW (t));
+
+  switch (TREE_CODE (type))
+    {
+    case NULLPTR_TYPE:
+      gcc_assert (hi == 0 && low == 0);
+      /* Fallthru.  */
+
+    case POINTER_TYPE:
+    case REFERENCE_TYPE:
+      /* Cache NULL pointer.  */
+      if (!hi && !low)
+	{
+	  limit = 1;
+	  ix = 0;
+	}
+      break;
+
+    case BOOLEAN_TYPE:
+      /* Cache false or true.  */
+      limit = 2;
+      if (!hi && low < 2)
+	ix = low;
+      break;
+
+    case INTEGER_TYPE:
+    case OFFSET_TYPE:
+      if (TYPE_UNSIGNED (type))
+	{
+	  /* Cache 0..N */
+	  limit = INTEGER_SHARE_LIMIT;
+	  if (!hi && low < (unsigned HOST_WIDE_INT)INTEGER_SHARE_LIMIT)
+	    ix = low;
+	}
+      else
+	{
+	  /* Cache -1..N */
+	  limit = INTEGER_SHARE_LIMIT + 1;
+	  if (!hi && low < (unsigned HOST_WIDE_INT)INTEGER_SHARE_LIMIT)
+	    ix = low + 1;
+	  else if (hi == -1 && low == -(unsigned HOST_WIDE_INT)1)
+	    ix = 0;
+	}
+      break;
+
+    case ENUMERAL_TYPE:
+      break;
+
+    default:
+      gcc_unreachable ();
+    }
+
+  if (ix >= 0)
+    {
+      /* Look for it in the type's vector of small shared ints.  */
+      if (!TYPE_CACHED_VALUES_P (type))
+	{
+	  TYPE_CACHED_VALUES_P (type) = 1;
+	  TYPE_CACHED_VALUES (type) = make_tree_vec (limit);
+	}
+
+      gcc_assert (TREE_VEC_ELT (TYPE_CACHED_VALUES (type), ix) == NULL_TREE);
+      TREE_VEC_ELT (TYPE_CACHED_VALUES (type), ix) = t;
+    }
+  else
+    {
+      /* Use the cache of larger shared ints.  */
+      void **slot;
+
+      slot = htab_find_slot (int_cst_hash_table, t, INSERT);
+      /* If there is already an entry for the number verify it's the
+         same.  */
+      if (*slot)
+	{
+	  gcc_assert (TREE_INT_CST_LOW ((tree)*slot) == low
+		      && TREE_INT_CST_HIGH ((tree)*slot) == hi);
+	  return;
+	}
+      /* Otherwise insert this one into the hash table.  */
+      *slot = t;
+    }
+}
+
+
 /* Builds an integer constant in TYPE such that lowest BITS bits are ones
    and the rest are zeros.  */
 
@@ -1313,7 +1406,7 @@ make_vector_stat (unsigned len MEM_STAT_DECL)
 
   record_node_allocation_statistics (VECTOR_CST, length);
 
-  t = ggc_alloc_zone_cleared_tree_node_stat (&tree_zone, length PASS_MEM_STAT);
+  t = ggc_alloc_cleared_tree_node_stat (length PASS_MEM_STAT);
 
   TREE_SET_CODE (t, VECTOR_CST);
   TREE_CONSTANT (t) = 1;
@@ -1465,6 +1558,27 @@ build_constructor_from_list (tree type, tree vals)
 	CONSTRUCTOR_APPEND_ELT (v, TREE_PURPOSE (t), TREE_VALUE (t));
     }
 
+  return build_constructor (type, v);
+}
+
+/* Return a new CONSTRUCTOR node whose type is TYPE.  NELTS is the number
+   of elements, provided as index/value pairs.  */
+
+tree
+build_constructor_va (tree type, int nelts, ...)
+{
+  vec<constructor_elt, va_gc> *v = NULL;
+  va_list p;
+
+  va_start (p, nelts);
+  vec_alloc (v, nelts);
+  while (nelts--)
+    {
+      tree index = va_arg (p, tree);
+      tree value = va_arg (p, tree);
+      CONSTRUCTOR_APPEND_ELT (v, index, value);
+    }
+  va_end (p);
   return build_constructor (type, v);
 }
 
@@ -1623,6 +1737,60 @@ build_one_cst (tree type)
     }
 }
 
+/* Return an integer of type TYPE containing all 1's in as much precision as
+   it contains, or a complex or vector whose subparts are such integers.  */
+
+tree
+build_all_ones_cst (tree type)
+{
+  if (TREE_CODE (type) == COMPLEX_TYPE)
+    {
+      tree scalar = build_all_ones_cst (TREE_TYPE (type));
+      return build_complex (type, scalar, scalar);
+    }
+  else
+    return build_minus_one_cst (type);
+}
+
+/* Return a constant of arithmetic type TYPE which is the
+   opposite of the multiplicative identity of the set TYPE.  */
+
+tree
+build_minus_one_cst (tree type)
+{
+  switch (TREE_CODE (type))
+    {
+    case INTEGER_TYPE: case ENUMERAL_TYPE: case BOOLEAN_TYPE:
+    case POINTER_TYPE: case REFERENCE_TYPE:
+    case OFFSET_TYPE:
+      return build_int_cst (type, -1);
+
+    case REAL_TYPE:
+      return build_real (type, dconstm1);
+
+    case FIXED_POINT_TYPE:
+      /* We can only generate 1 for accum types.  */
+      gcc_assert (ALL_SCALAR_ACCUM_MODE_P (TYPE_MODE (type)));
+      return build_fixed (type, fixed_from_double_int (double_int_minus_one,
+						       TYPE_MODE (type)));
+
+    case VECTOR_TYPE:
+      {
+	tree scalar = build_minus_one_cst (TREE_TYPE (type));
+
+	return build_vector_from_val (type, scalar);
+      }
+
+    case COMPLEX_TYPE:
+      return build_complex (type,
+			    build_minus_one_cst (TREE_TYPE (type)),
+			    build_zero_cst (TREE_TYPE (type)));
+
+    default:
+      gcc_unreachable ();
+    }
+}
+
 /* Build 0 constant of type TYPE.  This is used by constructor folding
    and thus the constant should be represented in memory by
    zero(es).  */
@@ -1676,7 +1844,7 @@ make_tree_binfo_stat (unsigned base_binfos MEM_STAT_DECL)
 
   record_node_allocation_statistics (TREE_BINFO, length);
 
-  t = ggc_alloc_zone_tree_node_stat (&tree_zone, length PASS_MEM_STAT);
+  t = ggc_alloc_tree_node_stat (length PASS_MEM_STAT);
 
   memset (t, 0, offsetof (struct tree_binfo, base_binfos));
 
@@ -1715,7 +1883,7 @@ make_tree_vec_stat (int len MEM_STAT_DECL)
 
   record_node_allocation_statistics (TREE_VEC, length);
 
-  t = ggc_alloc_zone_cleared_tree_node_stat (&tree_zone, length PASS_MEM_STAT);
+  t = ggc_alloc_cleared_tree_node_stat (length PASS_MEM_STAT);
 
   TREE_SET_CODE (t, TREE_VEC);
   TREE_VEC_LENGTH (t) = len;
@@ -1782,7 +1950,7 @@ integer_onep (const_tree expr)
 }
 
 /* Return 1 if EXPR is an integer containing all 1's in as much precision as
-   it contains.  Likewise for the corresponding complex constant.  */
+   it contains, or a complex or vector whose subparts are such integers.  */
 
 int
 integer_all_onesp (const_tree expr)
@@ -1794,7 +1962,7 @@ integer_all_onesp (const_tree expr)
 
   if (TREE_CODE (expr) == COMPLEX_CST
       && integer_all_onesp (TREE_REALPART (expr))
-      && integer_zerop (TREE_IMAGPART (expr)))
+      && integer_all_onesp (TREE_IMAGPART (expr)))
     return 1;
 
   else if (TREE_CODE (expr) == VECTOR_CST)
@@ -1838,6 +2006,20 @@ integer_all_onesp (const_tree expr)
     }
   else
     return TREE_INT_CST_LOW (expr) == ((unsigned HOST_WIDE_INT) 1 << prec) - 1;
+}
+
+/* Return 1 if EXPR is the integer constant minus one.  */
+
+int
+integer_minus_onep (const_tree expr)
+{
+  STRIP_NOPS (expr);
+
+  if (TREE_CODE (expr) == COMPLEX_CST)
+    return (integer_all_onesp (TREE_REALPART (expr))
+	    && integer_zerop (TREE_IMAGPART (expr)));
+  else
+    return integer_all_onesp (expr);
 }
 
 /* Return 1 if EXPR is an integer constant that is a power of 2 (i.e., has only
@@ -2332,8 +2514,7 @@ tree_cons_stat (tree purpose, tree value, tree chain MEM_STAT_DECL)
 {
   tree node;
 
-  node = ggc_alloc_zone_tree_node_stat (&tree_zone, sizeof (struct tree_list)
-                                        PASS_MEM_STAT);
+  node = ggc_alloc_tree_node_stat (sizeof (struct tree_list) PASS_MEM_STAT);
   memset (node, 0, sizeof (struct tree_common));
 
   record_node_allocation_statistics (TREE_LIST, sizeof (struct tree_list));
@@ -2832,14 +3013,12 @@ save_expr (tree expr)
   return t;
 }
 
-/* Look inside EXPR and into any simple arithmetic operations.  Return
-   the innermost non-arithmetic node.  */
+/* Look inside EXPR into any simple arithmetic operations.  Return the
+   outermost non-arithmetic or non-invariant node.  */
 
 tree
 skip_simple_arithmetic (tree expr)
 {
-  tree inner;
-
   /* We don't care about whether this can be used as an lvalue in this
      context.  */
   while (TREE_CODE (expr) == NON_LVALUE_EXPR)
@@ -2849,17 +3028,16 @@ skip_simple_arithmetic (tree expr)
      a constant, it will be more efficient to not make another SAVE_EXPR since
      it will allow better simplification and GCSE will be able to merge the
      computations if they actually occur.  */
-  inner = expr;
-  while (1)
+  while (true)
     {
-      if (UNARY_CLASS_P (inner))
-	inner = TREE_OPERAND (inner, 0);
-      else if (BINARY_CLASS_P (inner))
+      if (UNARY_CLASS_P (expr))
+	expr = TREE_OPERAND (expr, 0);
+      else if (BINARY_CLASS_P (expr))
 	{
-	  if (tree_invariant_p (TREE_OPERAND (inner, 1)))
-	    inner = TREE_OPERAND (inner, 0);
-	  else if (tree_invariant_p (TREE_OPERAND (inner, 0)))
-	    inner = TREE_OPERAND (inner, 1);
+	  if (tree_invariant_p (TREE_OPERAND (expr, 1)))
+	    expr = TREE_OPERAND (expr, 0);
+	  else if (tree_invariant_p (TREE_OPERAND (expr, 0)))
+	    expr = TREE_OPERAND (expr, 1);
 	  else
 	    break;
 	}
@@ -2867,9 +3045,37 @@ skip_simple_arithmetic (tree expr)
 	break;
     }
 
-  return inner;
+  return expr;
 }
 
+/* Look inside EXPR into simple arithmetic operations involving constants.
+   Return the outermost non-arithmetic or non-constant node.  */
+
+tree
+skip_simple_constant_arithmetic (tree expr)
+{
+  while (TREE_CODE (expr) == NON_LVALUE_EXPR)
+    expr = TREE_OPERAND (expr, 0);
+
+  while (true)
+    {
+      if (UNARY_CLASS_P (expr))
+	expr = TREE_OPERAND (expr, 0);
+      else if (BINARY_CLASS_P (expr))
+	{
+	  if (TREE_CONSTANT (TREE_OPERAND (expr, 1)))
+	    expr = TREE_OPERAND (expr, 0);
+	  else if (TREE_CONSTANT (TREE_OPERAND (expr, 0)))
+	    expr = TREE_OPERAND (expr, 1);
+	  else
+	    break;
+	}
+      else
+	break;
+    }
+
+  return expr;
+}
 
 /* Return which tree structure is used by T.  */
 
@@ -3802,7 +4008,7 @@ build1_stat (enum tree_code code, tree type, tree node MEM_STAT_DECL)
 
   gcc_assert (TREE_CODE_LENGTH (code) == 1);
 
-  t = ggc_alloc_zone_tree_node_stat (&tree_zone, length PASS_MEM_STAT);
+  t = ggc_alloc_tree_node_stat (length PASS_MEM_STAT);
 
   memset (t, 0, sizeof (struct tree_common));
 
@@ -5301,7 +5507,7 @@ struct simple_ipa_opt_pass pass_ipa_free_lang_data =
   0,					/* properties_provided */
   0,					/* properties_destroyed */
   0,					/* todo_flags_start */
-  TODO_ggc_collect			/* todo_flags_finish */
+  0					/* todo_flags_finish */
  }
 };
 
@@ -6295,7 +6501,7 @@ type_hash_hash (const void *item)
 /* Look in the type hash table for a type isomorphic to TYPE.
    If one is found, return it.  Otherwise return 0.  */
 
-tree
+static tree
 type_hash_lookup (hashval_t hashcode, tree type)
 {
   struct type_hash *h, in;
@@ -6317,7 +6523,7 @@ type_hash_lookup (hashval_t hashcode, tree type)
 /* Add an entry to the type-hash-table
    for a type TYPE whose hash code is HASHCODE.  */
 
-void
+static void
 type_hash_add (hashval_t hashcode, tree type)
 {
   struct type_hash *h;
@@ -6653,8 +6859,6 @@ tree_int_cst_sgn (const_tree t)
 unsigned int
 tree_int_cst_min_precision (tree value, bool unsignedp)
 {
-  int log;
-
   /* If the value is negative, compute its negative minus 1.  The latter
      adjustment is because the absolute value of the largest negative value
      is one larger than the largest positive value.  This is equivalent to
@@ -6664,14 +6868,14 @@ tree_int_cst_min_precision (tree value, bool unsignedp)
     value = fold_build1 (BIT_NOT_EXPR, TREE_TYPE (value), value);
 
   /* Return the number of bits needed, taking into account the fact
-     that we need one more bit for a signed than unsigned type.  */
+     that we need one more bit for a signed than unsigned type.
+     If value is 0 or -1, the minimum precision is 1 no matter
+     whether unsignedp is true or false.  */
 
   if (integer_zerop (value))
-    log = 0;
+    return 1;
   else
-    log = tree_floor_log2 (value);
-
-  return log + 1 + !unsignedp;
+    return tree_floor_log2 (value) + 1 + !unsignedp;
 }
 
 /* Compare two constructor-element-type constants.  Return 1 if the lists
@@ -6891,6 +7095,19 @@ valid_constant_size_p (const_tree size)
       || tree_int_cst_sign_bit (size) != 0)
     return false;
   return true;
+}
+
+/* Return the precision of the type, or for a complex or vector type the
+   precision of the type of its elements.  */
+
+unsigned int
+element_precision (const_tree type)
+{
+  enum tree_code code = TREE_CODE (type);
+  if (code == COMPLEX_TYPE || code == VECTOR_TYPE)
+    type = TREE_TYPE (type);
+
+  return TYPE_PRECISION (type);
 }
 
 /* Return true if CODE represents an associative tree code.  Otherwise
@@ -10025,6 +10242,54 @@ initializer_zerop (const_tree init)
     }
 }
 
+/* Check if vector VEC consists of all the equal elements and
+   that the number of elements corresponds to the type of VEC.
+   The function returns first element of the vector
+   or NULL_TREE if the vector is not uniform.  */
+tree
+uniform_vector_p (const_tree vec)
+{
+  tree first, t;
+  unsigned i;
+
+  if (vec == NULL_TREE)
+    return NULL_TREE;
+
+  gcc_assert (VECTOR_TYPE_P (TREE_TYPE (vec)));
+
+  if (TREE_CODE (vec) == VECTOR_CST)
+    {
+      first = VECTOR_CST_ELT (vec, 0);
+      for (i = 1; i < VECTOR_CST_NELTS (vec); ++i)
+	if (!operand_equal_p (first, VECTOR_CST_ELT (vec, i), 0))
+	  return NULL_TREE;
+
+      return first;
+    }
+
+  else if (TREE_CODE (vec) == CONSTRUCTOR)
+    {
+      first = error_mark_node;
+
+      FOR_EACH_CONSTRUCTOR_VALUE (CONSTRUCTOR_ELTS (vec), i, t)
+        {
+          if (i == 0)
+            {
+              first = t;
+              continue;
+            }
+	  if (!operand_equal_p (first, t, 0))
+	    return NULL_TREE;
+        }
+      if (i != TYPE_VECTOR_SUBPARTS (TREE_TYPE (vec)))
+	return NULL_TREE;
+
+      return first;
+    }
+
+  return NULL_TREE;
+}
+
 /* Build an empty statement at location LOC.  */
 
 tree
@@ -10075,7 +10340,7 @@ build_vl_exp_stat (enum tree_code code, int len MEM_STAT_DECL)
 
   record_node_allocation_statistics (code, length);
 
-  t = ggc_alloc_zone_cleared_tree_node_stat (&tree_zone, length PASS_MEM_STAT);
+  t = ggc_alloc_cleared_tree_node_stat (length PASS_MEM_STAT);
 
   TREE_SET_CODE (t, code);
 
@@ -11447,6 +11712,127 @@ lhd_gcc_personality (void)
   return gcc_eh_personality_decl;
 }
 
+/* For languages with One Definition Rule, work out if
+   trees are actually the same even if the tree representation
+   differs.  This handles only decls appearing in TYPE_NAME
+   and TYPE_CONTEXT.  That is NAMESPACE_DECL, TYPE_DECL,
+   RECORD_TYPE and IDENTIFIER_NODE.  */
+
+static bool
+same_for_odr (tree t1, tree t2)
+{
+  if (t1 == t2)
+    return true;
+  if (!t1 || !t2)
+    return false;
+  /* C and C++ FEs differ by using IDENTIFIER_NODE and TYPE_DECL.  */
+  if (TREE_CODE (t1) == IDENTIFIER_NODE
+      && TREE_CODE (t2) == TYPE_DECL
+      && DECL_FILE_SCOPE_P (t1))
+    {
+      t2 = DECL_NAME (t2);
+      gcc_assert (TREE_CODE (t2) == IDENTIFIER_NODE);
+    }
+  if (TREE_CODE (t2) == IDENTIFIER_NODE
+      && TREE_CODE (t1) == TYPE_DECL
+      && DECL_FILE_SCOPE_P (t2))
+    {
+      t1 = DECL_NAME (t1);
+      gcc_assert (TREE_CODE (t1) == IDENTIFIER_NODE);
+    }
+  if (TREE_CODE (t1) != TREE_CODE (t2))
+    return false;
+  if (TYPE_P (t1))
+    return types_same_for_odr (t1, t2);
+  if (DECL_P (t1))
+    return decls_same_for_odr (t1, t2);
+  return false;
+}
+
+/* For languages with One Definition Rule, work out if
+   decls are actually the same even if the tree representation
+   differs.  This handles only decls appearing in TYPE_NAME
+   and TYPE_CONTEXT.  That is NAMESPACE_DECL, TYPE_DECL,
+   RECORD_TYPE and IDENTIFIER_NODE.  */
+
+static bool
+decls_same_for_odr (tree decl1, tree decl2)
+{
+  if (decl1 && TREE_CODE (decl1) == TYPE_DECL
+      && DECL_ORIGINAL_TYPE (decl1))
+    decl1 = DECL_ORIGINAL_TYPE (decl1);
+  if (decl2 && TREE_CODE (decl2) == TYPE_DECL
+      && DECL_ORIGINAL_TYPE (decl2))
+    decl2 = DECL_ORIGINAL_TYPE (decl2);
+  if (decl1 == decl2)
+    return true;
+  if (!decl1 || !decl2)
+    return false;
+  gcc_checking_assert (DECL_P (decl1) && DECL_P (decl2));
+  if (TREE_CODE (decl1) != TREE_CODE (decl2))
+    return false;
+  if (TREE_CODE (decl1) == TRANSLATION_UNIT_DECL)
+    return true;
+  if (TREE_CODE (decl1) != NAMESPACE_DECL
+      && TREE_CODE (decl1) != TYPE_DECL)
+    return false;
+  if (!DECL_NAME (decl1))
+    return false;
+  gcc_checking_assert (TREE_CODE (DECL_NAME (decl1)) == IDENTIFIER_NODE);
+  gcc_checking_assert (!DECL_NAME (decl2)
+		       ||  TREE_CODE (DECL_NAME (decl2)) == IDENTIFIER_NODE);
+  if (DECL_NAME (decl1) != DECL_NAME (decl2))
+    return false;
+  return same_for_odr (DECL_CONTEXT (decl1),
+		       DECL_CONTEXT (decl2));
+}
+
+/* For languages with One Definition Rule, work out if
+   types are same even if the tree representation differs. 
+   This is non-trivial for LTO where minnor differences in
+   the type representation may have prevented type merging
+   to merge two copies of otherwise equivalent type.  */
+
+bool
+types_same_for_odr (tree type1, tree type2)
+{
+  gcc_checking_assert (TYPE_P (type1) && TYPE_P (type2));
+  type1 = TYPE_MAIN_VARIANT (type1);
+  type2 = TYPE_MAIN_VARIANT (type2);
+  if (type1 == type2)
+    return true;
+
+  /* If types are not structuraly same, do not bother to contnue.
+     Match in the remainder of code would mean ODR violation.  */
+  if (!types_compatible_p (type1, type2))
+    return false;
+
+#ifndef ENABLE_CHECKING
+  if (!in_lto_p)
+    return false;
+#endif
+
+  /* Check for anonymous namespaces. Those have !TREE_PUBLIC
+     on the corresponding TYPE_STUB_DECL.  */
+  if (TYPE_STUB_DECL (type1) != TYPE_STUB_DECL (type2)
+      && (!TYPE_STUB_DECL (type1)
+	  || !TYPE_STUB_DECL (type2)
+	  || !TREE_PUBLIC (TYPE_STUB_DECL (type1))
+	  || !TREE_PUBLIC (TYPE_STUB_DECL (type2))))
+    return false;
+
+  if (!TYPE_NAME (type1))
+    return false;
+  if (!decls_same_for_odr (TYPE_NAME (type1), TYPE_NAME (type2)))
+    return false;
+  if (!same_for_odr (TYPE_CONTEXT (type1), TYPE_CONTEXT (type2)))
+    return false;
+  /* When not in LTO the MAIN_VARIANT check should be the same.  */
+  gcc_assert (in_lto_p);
+    
+  return true;
+}
+
 /* Try to find a base info of BINFO that would have its field decl at offset
    OFFSET within the BINFO type and which is of EXPECTED_TYPE.  If it can be
    found, return, otherwise return NULL_TREE.  */
@@ -11462,7 +11848,7 @@ get_binfo_at_offset (tree binfo, HOST_WIDE_INT offset, tree expected_type)
       tree fld;
       int i;
 
-      if (TYPE_MAIN_VARIANT (type) == TYPE_MAIN_VARIANT (expected_type))
+      if (types_same_for_odr (type, expected_type))
 	  return binfo;
       if (offset < 0)
 	return NULL_TREE;
@@ -11492,7 +11878,7 @@ get_binfo_at_offset (tree binfo, HOST_WIDE_INT offset, tree expected_type)
 	{
 	  tree base_binfo, found_binfo = NULL_TREE;
 	  for (i = 0; BINFO_BASE_ITERATE (binfo, i, base_binfo); i++)
-	    if (TREE_TYPE (base_binfo) == TREE_TYPE (fld))
+	    if (types_same_for_odr (TREE_TYPE (base_binfo), TREE_TYPE (fld)))
 	      {
 		found_binfo = base_binfo;
 		break;
@@ -11559,12 +11945,12 @@ warn_deprecated_use (tree node, tree attr)
       expanded_location xloc = expand_location (DECL_SOURCE_LOCATION (node));
       if (msg)
 	warning (OPT_Wdeprecated_declarations,
-		 "%qD is deprecated (declared at %s:%d): %s",
-		 node, xloc.file, xloc.line, msg);
+		 "%qD is deprecated (declared at %r%s:%d%R): %s",
+		 node, "locus", xloc.file, xloc.line, msg);
       else
 	warning (OPT_Wdeprecated_declarations,
-		 "%qD is deprecated (declared at %s:%d)",
-		 node, xloc.file, xloc.line);
+		 "%qD is deprecated (declared at %r%s:%d%R)",
+		 node, "locus", xloc.file, xloc.line);
     }
   else if (TYPE_P (node))
     {
@@ -11588,23 +11974,23 @@ warn_deprecated_use (tree node, tree attr)
 	    {
 	      if (msg)
 		warning (OPT_Wdeprecated_declarations,
-			 "%qE is deprecated (declared at %s:%d): %s",
-			 what, xloc.file, xloc.line, msg);
+			 "%qE is deprecated (declared at %r%s:%d%R): %s",
+			 what, "locus", xloc.file, xloc.line, msg);
 	      else
 		warning (OPT_Wdeprecated_declarations,
-			 "%qE is deprecated (declared at %s:%d)", what,
-			 xloc.file, xloc.line);
+			 "%qE is deprecated (declared at %r%s:%d%R)",
+			 what, "locus", xloc.file, xloc.line);
 	    }
 	  else
 	    {
 	      if (msg)
 		warning (OPT_Wdeprecated_declarations,
-			 "type is deprecated (declared at %s:%d): %s",
-			 xloc.file, xloc.line, msg);
+			 "type is deprecated (declared at %r%s:%d%R): %s",
+			 "locus", xloc.file, xloc.line, msg);
 	      else
 		warning (OPT_Wdeprecated_declarations,
-			 "type is deprecated (declared at %s:%d)",
-			 xloc.file, xloc.line);
+			 "type is deprecated (declared at %r%s:%d%R)",
+			 "locus", xloc.file, xloc.line);
 	    }
 	}
       else
@@ -11627,6 +12013,23 @@ warn_deprecated_use (tree node, tree attr)
 	    }
 	}
     }
+}
+
+/* Return true if REF has a COMPONENT_REF with a bit-field field declaration
+   somewhere in it.  */
+
+bool
+contains_bitfld_component_ref_p (const_tree ref)
+{
+  while (handled_component_p (ref))
+    {
+      if (TREE_CODE (ref) == COMPONENT_REF
+          && DECL_BIT_FIELD (TREE_OPERAND (ref, 1)))
+        return true;
+      ref = TREE_OPERAND (ref, 0);
+    }
+
+  return false;
 }
 
 #include "gt-tree.h"

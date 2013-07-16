@@ -1,6 +1,5 @@
 /* Command line option handling.
-   Copyright (C) 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -23,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "input.h"
 #include "vec.h"
+#include "obstack.h"
 
 /* Specifies how a switch's VAR_VALUE relates to its FLAG_VAR.  */
 enum cl_var_type {
@@ -304,6 +304,12 @@ extern const char **in_fnames;
 /* The count of input filenames.  */
 
 extern unsigned num_in_fnames;
+
+extern char *opts_concat (const char *first, ...);
+
+/* Obstack for option strings.  */
+
+extern struct obstack opts_obstack;
 
 size_t find_opt (const char *input, unsigned int lang_mask);
 extern int integral_argument (const char *arg);

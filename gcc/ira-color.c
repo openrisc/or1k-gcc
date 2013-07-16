@@ -1,6 +1,5 @@
 /* IRA allocation based on graph coloring.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -30,6 +29,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "flags.h"
 #include "sbitmap.h"
 #include "bitmap.h"
+#include "hash-table.h"
 #include "hard-reg-set.h"
 #include "basic-block.h"
 #include "expr.h"
@@ -174,33 +174,36 @@ static vec<ira_allocno_t> allocno_stack_vec;
 /* Vector of unique allocno hard registers.  */
 static vec<allocno_hard_regs_t> allocno_hard_regs_vec;
 
-/* Returns hash value for allocno hard registers V.  */
-static hashval_t
-allocno_hard_regs_hash (const void *v)
+struct allocno_hard_regs_hasher : typed_noop_remove <allocno_hard_regs>
 {
-  const struct allocno_hard_regs *hv = (const struct allocno_hard_regs *) v;
+  typedef allocno_hard_regs value_type;
+  typedef allocno_hard_regs compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
 
+/* Returns hash value for allocno hard registers V.  */
+inline hashval_t
+allocno_hard_regs_hasher::hash (const value_type *hv)
+{
   return iterative_hash (&hv->set, sizeof (HARD_REG_SET), 0);
 }
 
 /* Compares allocno hard registers V1 and V2.  */
-static int
-allocno_hard_regs_eq (const void *v1, const void *v2)
+inline bool
+allocno_hard_regs_hasher::equal (const value_type *hv1, const compare_type *hv2)
 {
-  const struct allocno_hard_regs *hv1 = (const struct allocno_hard_regs *) v1;
-  const struct allocno_hard_regs *hv2 = (const struct allocno_hard_regs *) v2;
-
   return hard_reg_set_equal_p (hv1->set, hv2->set);
 }
 
 /* Hash table of unique allocno hard registers.  */
-static htab_t allocno_hard_regs_htab;
+static hash_table <allocno_hard_regs_hasher> allocno_hard_regs_htab;
 
 /* Return allocno hard registers in the hash table equal to HV.  */
 static allocno_hard_regs_t
 find_hard_regs (allocno_hard_regs_t hv)
 {
-  return (allocno_hard_regs_t) htab_find (allocno_hard_regs_htab, hv);
+  return allocno_hard_regs_htab.find (hv);
 }
 
 /* Insert allocno hard registers HV in the hash table (if it is not
@@ -208,11 +211,11 @@ find_hard_regs (allocno_hard_regs_t hv)
 static allocno_hard_regs_t
 insert_hard_regs (allocno_hard_regs_t hv)
 {
-  PTR *slot = htab_find_slot (allocno_hard_regs_htab, hv, INSERT);
+  allocno_hard_regs **slot = allocno_hard_regs_htab.find_slot (hv, INSERT);
 
   if (*slot == NULL)
     *slot = hv;
-  return (allocno_hard_regs_t) *slot;
+  return *slot;
 }
 
 /* Initialize data concerning allocno hard registers.  */
@@ -220,8 +223,7 @@ static void
 init_allocno_hard_regs (void)
 {
   allocno_hard_regs_vec.create (200);
-  allocno_hard_regs_htab
-    = htab_create (200, allocno_hard_regs_hash, allocno_hard_regs_eq, NULL);
+  allocno_hard_regs_htab.create (200);
 }
 
 /* Add (or update info about) allocno hard registers with SET and
@@ -259,7 +261,7 @@ finish_allocno_hard_regs (void)
        allocno_hard_regs_vec.iterate (i, &hv);
        i++)
     ira_free (hv);
-  htab_delete (allocno_hard_regs_htab);
+  allocno_hard_regs_htab.dispose ();
   allocno_hard_regs_vec.release ();
 }
 
@@ -2516,8 +2518,7 @@ improve_allocation (void)
     }
 }
 
-/* Sort allocnos according to their priorities which are calculated
-   analogous to ones in file `global.c'.  */
+/* Sort allocnos according to their priorities.  */
 static int
 allocno_priority_compare_func (const void *v1p, const void *v2p)
 {

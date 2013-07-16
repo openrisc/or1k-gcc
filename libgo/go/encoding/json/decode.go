@@ -87,6 +87,7 @@ func (e *UnmarshalTypeError) Error() string {
 
 // An UnmarshalFieldError describes a JSON object key that
 // led to an unexported (and therefore unwritable) struct field.
+// (No longer used; kept for compatibility.)
 type UnmarshalFieldError struct {
 	Key   string
 	Type  reflect.Type
@@ -125,13 +126,12 @@ func (d *decodeState) unmarshal(v interface{}) (err error) {
 	}()
 
 	rv := reflect.ValueOf(v)
-	pv := rv
-	if pv.Kind() != reflect.Ptr || pv.IsNil() {
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return &InvalidUnmarshalError{reflect.TypeOf(v)}
 	}
 
 	d.scan.reset()
-	// We decode rv not pv.Elem because the Unmarshaler interface
+	// We decode rv not rv.Elem because the Unmarshaler interface
 	// test must be applied at the top level of the value.
 	d.value(rv)
 	return d.savedError
@@ -329,14 +329,18 @@ func (d *decodeState) array(v reflect.Value) {
 
 	// Check type of target.
 	switch v.Kind() {
+	case reflect.Interface:
+		if v.NumMethod() == 0 {
+			// Decoding into nil interface?  Switch to non-reflect code.
+			v.Set(reflect.ValueOf(d.arrayInterface()))
+			return
+		}
+		// Otherwise it's invalid.
+		fallthrough
 	default:
 		d.saveError(&UnmarshalTypeError{"array", v.Type()})
 		d.off--
 		d.next()
-		return
-	case reflect.Interface:
-		// Decoding into nil interface?  Switch to non-reflect code.
-		v.Set(reflect.ValueOf(d.arrayInterface()))
 		return
 	case reflect.Array:
 	case reflect.Slice:
@@ -423,36 +427,27 @@ func (d *decodeState) object(v reflect.Value) {
 	v = pv
 
 	// Decoding into nil interface?  Switch to non-reflect code.
-	iv := v
-	if iv.Kind() == reflect.Interface {
-		iv.Set(reflect.ValueOf(d.objectInterface()))
+	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
+		v.Set(reflect.ValueOf(d.objectInterface()))
 		return
 	}
 
 	// Check type of target: struct or map[string]T
-	var (
-		mv reflect.Value
-		sv reflect.Value
-	)
 	switch v.Kind() {
 	case reflect.Map:
-		// map must have string type
+		// map must have string kind
 		t := v.Type()
-		if t.Key() != reflect.TypeOf("") {
+		if t.Key().Kind() != reflect.String {
 			d.saveError(&UnmarshalTypeError{"object", v.Type()})
 			break
 		}
-		mv = v
-		if mv.IsNil() {
-			mv.Set(reflect.MakeMap(t))
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(t))
 		}
 	case reflect.Struct:
-		sv = v
+
 	default:
 		d.saveError(&UnmarshalTypeError{"object", v.Type()})
-	}
-
-	if !mv.IsValid() && !sv.IsValid() {
 		d.off--
 		d.next() // skip over { } in input
 		return
@@ -484,8 +479,8 @@ func (d *decodeState) object(v reflect.Value) {
 		var subv reflect.Value
 		destring := false // whether the value is wrapped in a string to be decoded first
 
-		if mv.IsValid() {
-			elemType := mv.Type().Elem()
+		if v.Kind() == reflect.Map {
+			elemType := v.Type().Elem()
 			if !mapElem.IsValid() {
 				mapElem = reflect.New(elemType).Elem()
 			} else {
@@ -494,7 +489,7 @@ func (d *decodeState) object(v reflect.Value) {
 			subv = mapElem
 		} else {
 			var f *field
-			fields := cachedTypeFields(sv.Type())
+			fields := cachedTypeFields(v.Type())
 			for i := range fields {
 				ff := &fields[i]
 				if ff.name == key {
@@ -506,7 +501,7 @@ func (d *decodeState) object(v reflect.Value) {
 				}
 			}
 			if f != nil {
-				subv = sv
+				subv = v
 				destring = f.quoted
 				for _, i := range f.index {
 					if subv.Kind() == reflect.Ptr {
@@ -516,15 +511,6 @@ func (d *decodeState) object(v reflect.Value) {
 						subv = subv.Elem()
 					}
 					subv = subv.Field(i)
-				}
-			} else {
-				// To give a good error, a quick scan for unexported fields in top level.
-				st := sv.Type()
-				for i := 0; i < st.NumField(); i++ {
-					f := st.Field(i)
-					if f.PkgPath != "" && strings.EqualFold(f.Name, key) {
-						d.saveError(&UnmarshalFieldError{key, st, f})
-					}
 				}
 			}
 		}
@@ -544,10 +530,12 @@ func (d *decodeState) object(v reflect.Value) {
 		} else {
 			d.value(subv)
 		}
+
 		// Write value back to map;
 		// if using struct, subv points into struct already.
-		if mv.IsValid() {
-			mv.SetMapIndex(reflect.ValueOf(key), subv)
+		if v.Kind() == reflect.Map {
+			kv := reflect.ValueOf(key).Convert(v.Type().Key())
+			v.SetMapIndex(kv, subv)
 		}
 
 		// Next token must be , or }.
@@ -633,7 +621,11 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 		case reflect.Bool:
 			v.SetBool(value)
 		case reflect.Interface:
-			v.Set(reflect.ValueOf(value))
+			if v.NumMethod() == 0 {
+				v.Set(reflect.ValueOf(value))
+			} else {
+				d.saveError(&UnmarshalTypeError{"bool", v.Type()})
+			}
 		}
 
 	case '"': // string
@@ -663,7 +655,11 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 		case reflect.String:
 			v.SetString(string(s))
 		case reflect.Interface:
-			v.Set(reflect.ValueOf(string(s)))
+			if v.NumMethod() == 0 {
+				v.Set(reflect.ValueOf(string(s)))
+			} else {
+				d.saveError(&UnmarshalTypeError{"string", v.Type()})
+			}
 		}
 
 	default: // number
@@ -690,6 +686,10 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 			n, err := d.convertNumber(s)
 			if err != nil {
 				d.saveError(err)
+				break
+			}
+			if v.NumMethod() != 0 {
+				d.saveError(&UnmarshalTypeError{"number", v.Type()})
 				break
 			}
 			v.Set(reflect.ValueOf(n))

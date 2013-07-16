@@ -1,7 +1,5 @@
 /* Prototypes of target machine for GNU compiler.  MIPS version.
-   Copyright (C) 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1989-2013 Free Software Foundation, Inc.
    Contributed by A. Lichnewsky (lich@inria.inria.fr).
    Changed by Michael Meissner	(meissner@osf.org).
    64-bit r4000 support by Ian Lance Taylor (ian@cygnus.com) and
@@ -213,23 +211,6 @@ extern rtx mips_strip_unspec_address (rtx);
 extern void mips_move_integer (rtx, rtx, unsigned HOST_WIDE_INT);
 extern bool mips_legitimize_move (enum machine_mode, rtx, rtx);
 
-extern int m16_uimm3_b (rtx, enum machine_mode);
-extern int m16_simm4_1 (rtx, enum machine_mode);
-extern int m16_nsimm4_1 (rtx, enum machine_mode);
-extern int m16_simm5_1 (rtx, enum machine_mode);
-extern int m16_nsimm5_1 (rtx, enum machine_mode);
-extern int m16_uimm5_4 (rtx, enum machine_mode);
-extern int m16_nuimm5_4 (rtx, enum machine_mode);
-extern int m16_simm8_1 (rtx, enum machine_mode);
-extern int m16_nsimm8_1 (rtx, enum machine_mode);
-extern int m16_uimm8_1 (rtx, enum machine_mode);
-extern int m16_nuimm8_1 (rtx, enum machine_mode);
-extern int m16_uimm8_m1_1 (rtx, enum machine_mode);
-extern int m16_uimm8_4 (rtx, enum machine_mode);
-extern int m16_nuimm8_4 (rtx, enum machine_mode);
-extern int m16_simm8_8 (rtx, enum machine_mode);
-extern int m16_nsimm8_8 (rtx, enum machine_mode);
-
 extern rtx mips_subword (rtx, bool);
 extern bool mips_split_move_p (rtx, rtx, enum mips_split_type);
 extern void mips_split_move (rtx, rtx, enum mips_split_type);
@@ -352,6 +333,17 @@ extern void mips_expand_vec_reduc (rtx, rtx, rtx (*)(rtx, rtx, rtx));
 extern void mips_expand_vec_minmax (rtx, rtx, rtx,
 				    rtx (*) (rtx, rtx, rtx), bool);
 
+extern bool mips_signed_immediate_p (unsigned HOST_WIDE_INT, int, int);
+extern bool mips_unsigned_immediate_p (unsigned HOST_WIDE_INT, int, int);
+extern const char *umips_output_save_restore (bool, rtx);
+extern bool umips_save_restore_pattern_p (bool, rtx);
+extern bool umips_load_store_pair_p (bool, rtx *);
+extern void umips_output_load_store_pair (bool, rtx *);
+extern bool umips_movep_target_p (rtx, rtx);
+extern bool umips_12bit_offset_address_p (rtx, enum machine_mode);
+extern bool lwsp_swsp_address_p (rtx, enum machine_mode);
+extern bool m16_based_address_p (rtx, enum machine_mode,
+			         int (*)(rtx_def*, machine_mode)); 
 extern rtx mips_expand_thread_pointer (rtx);
 
 extern bool mips_eh_uses (unsigned int);

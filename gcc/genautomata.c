@@ -1,6 +1,5 @@
 /* Pipeline hazard description translator.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    Written by Vladimir Makarov <vmakarov@redhat.com>
 
@@ -1673,6 +1672,10 @@ gen_regexp_sequence (const char *str)
   int i;
 
   sequence_vect = get_str_vect (str, &els_num, ',', TRUE);
+  if (els_num == -1)
+    fatal ("unbalanced parentheses in reservation `%s'", str);
+  if (sequence_vect == NULL)
+    fatal ("invalid reservation `%s'", str);
   if (els_num > 1)
     {
       sequence = XCREATENODEVAR (struct regexp, sizeof (struct regexp)

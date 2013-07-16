@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -40,6 +40,7 @@ package body Ch4 is
       Attribute_Class        => True,
       Attribute_External_Tag => True,
       Attribute_Img          => True,
+      Attribute_Loop_Entry   => True,
       Attribute_Stub_Type    => True,
       Attribute_Version      => True,
       Attribute_Type_Key     => True,
@@ -49,6 +50,13 @@ package body Ch4 is
    --  the attribute should not be analyzed as the beginning of a parameters
    --  list because it may denote a slice operation (X'Img (1 .. 2)) or
    --  a type conversion (X'Class (Y)).
+
+   --  Note: Loop_Entry is in this list because, although it can take an
+   --  optional argument (the loop name), we can't distinguish that at parse
+   --  time from the case where no loop name is given and a legitimate index
+   --  expression is present. So we parse the argument as an indexed component
+   --  and the semantic analysis sorts out this syntactic ambiguity based on
+   --  the type and form of the expression.
 
    --  Note that this map designates the minimum set of attributes where a
    --  construct in parentheses that is not an argument can appear right
@@ -503,33 +511,75 @@ package body Ch4 is
             Set_Attribute_Name (Name_Node, Attr_Name);
 
             --  Scan attribute arguments/designator. We skip this if we know
-            --  that the attribute cannot have an argument.
+            --  that the attribute cannot have an argument (see documentation
+            --  of Is_Parameterless_Attribute for further details).
 
             if Token = Tok_Left_Paren
               and then not
                 Is_Parameterless_Attribute (Get_Attribute_Id (Attr_Name))
             then
-               Set_Expressions (Name_Node, New_List);
-               Scan; -- past left paren
+               --  Attribute Update contains an array or record association
+               --  list which provides new values for various components or
+               --  elements. The list is parsed as an aggregate, and we get
+               --  better error handling by knowing that in the parser.
 
-               loop
-                  declare
-                     Expr : constant Node_Id := P_Expression_If_OK;
+               if Attr_Name = Name_Update then
+                  Set_Expressions (Name_Node, New_List);
+                  Append (P_Aggregate, Expressions (Name_Node));
 
-                  begin
-                     if Token = Tok_Arrow then
-                        Error_Msg_SC
-                          ("named parameters not permitted for attributes");
-                        Scan; -- past junk arrow
+               --  All other cases of parsing attribute arguments
 
-                     else
-                        Append (Expr, Expressions (Name_Node));
-                        exit when not Comma_Present;
-                     end if;
-                  end;
-               end loop;
+               else
+                  Set_Expressions (Name_Node, New_List);
+                  Scan; -- past left paren
 
-               T_Right_Paren;
+                  loop
+                     declare
+                        Expr : constant Node_Id := P_Expression_If_OK;
+                        Rnam : Node_Id;
+
+                     begin
+                        --  Case of => for named notation
+
+                        if Token = Tok_Arrow then
+
+                           --  Named notation allowed only for the special
+                           --  case of System'Restriction_Set (No_Dependence =>
+                           --  unit_NAME), in which case construct a parameter
+                           --  assocation node and append to the arguments.
+
+                           if Attr_Name = Name_Restriction_Set
+                             and then Nkind (Expr) = N_Identifier
+                             and then Chars (Expr) = Name_No_Dependence
+                           then
+                              Scan; -- past arrow
+                              Rnam := P_Name;
+                              Append_To (Expressions (Name_Node),
+                                Make_Parameter_Association (Sloc (Rnam),
+                                  Selector_Name             => Expr,
+                                  Explicit_Actual_Parameter => Rnam));
+                              exit;
+
+                           --  For all other cases named notation is illegal
+
+                           else
+                              Error_Msg_SC
+                                ("named parameters not permitted "
+                                 & "for attributes");
+                              Scan; -- past junk arrow
+                           end if;
+
+                        --  Here for normal case (not => for named parameter)
+
+                        else
+                           Append (Expr, Expressions (Name_Node));
+                           exit when not Comma_Present;
+                        end if;
+                     end;
+                  end loop;
+
+                  T_Right_Paren;
+               end if;
             end if;
 
             goto Scan_Name_Extension;
@@ -679,16 +729,17 @@ package body Ch4 is
 
          if Token = Tok_Arrow then
             Error_Msg
-              ("expect identifier in parameter association",
-                Sloc (Expr_Node));
+              ("expect identifier in parameter association", Sloc (Expr_Node));
             Scan;  -- past arrow
 
          elsif not Comma_Present then
             T_Right_Paren;
+
             Prefix_Node := Name_Node;
             Name_Node := New_Node (N_Indexed_Component, Sloc (Prefix_Node));
             Set_Prefix (Name_Node, Prefix_Node);
             Set_Expressions (Name_Node, Arg_List);
+
             goto Scan_Name_Extension;
          end if;
 
@@ -1233,11 +1284,16 @@ package body Ch4 is
       Lparen_Sloc := Token_Ptr;
       T_Left_Paren;
 
+      --  Note on parentheses count. For cases like an if expression, the
+      --  parens here really count as real parentheses for the paren count,
+      --  so we adjust the paren count accordingly after scanning the expr.
+
       --  If expression
 
       if Token = Tok_If then
          Expr_Node := P_If_Expression;
          T_Right_Paren;
+         Set_Paren_Count (Expr_Node, Paren_Count (Expr_Node) + 1);
          return Expr_Node;
 
       --  Case expression
@@ -1245,6 +1301,7 @@ package body Ch4 is
       elsif Token = Tok_Case then
          Expr_Node := P_Case_Expression;
          T_Right_Paren;
+         Set_Paren_Count (Expr_Node, Paren_Count (Expr_Node) + 1);
          return Expr_Node;
 
       --  Quantified expression
@@ -1252,6 +1309,7 @@ package body Ch4 is
       elsif Token = Tok_For then
          Expr_Node := P_Quantified_Expression;
          T_Right_Paren;
+         Set_Paren_Count (Expr_Node, Paren_Count (Expr_Node) + 1);
          return Expr_Node;
 
       --  Note: the mechanism used here of rescanning the initial expression
@@ -1801,12 +1859,15 @@ package body Ch4 is
 
    --  RELATION ::=
    --    SIMPLE_EXPRESSION [not] in MEMBERSHIP_CHOICE_LIST
+   --  | RAISE_EXPRESSION
 
    --  MEMBERSHIP_CHOICE_LIST ::=
    --    MEMBERSHIP_CHOICE {'|' MEMBERSHIP CHOICE}
 
    --  MEMBERSHIP_CHOICE ::=
    --    CHOICE_EXPRESSION | RANGE | SUBTYPE_MARK
+
+   --  RAISE_EXPRESSION ::= raise exception_NAME [with string_EXPRESSION]
 
    --  On return, Expr_Form indicates the categorization of the expression
 
@@ -1822,6 +1883,15 @@ package body Ch4 is
       Optok        : Source_Ptr;
 
    begin
+      --  First check for raise expression
+
+      if Token = Tok_Raise then
+         Expr_Form := EF_Non_Simple;
+         return P_Raise_Expression;
+      end if;
+
+      --  All other cases
+
       Node1 := P_Simple_Expression;
 
       if Token not in Token_Class_Relop then
@@ -2911,6 +2981,16 @@ package body Ch4 is
          Set_Expression
            (Alloc_Node,
             P_Subtype_Indication (Type_Node, Null_Exclusion_Present));
+
+         --  AI05-0104: An explicit null exclusion is not allowed for an
+         --  allocator without initialization. In previous versions of the
+         --  language it just raises constraint error.
+
+         if Ada_Version >= Ada_2012 and then Null_Exclusion_Present then
+            Error_Msg_N
+              ("an allocator with a subtype indication "
+               & "cannot have a null exclusion", Alloc_Node);
+         end if;
       end if;
 
       return Alloc_Node;

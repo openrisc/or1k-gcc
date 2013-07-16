@@ -1,5 +1,5 @@
 /* Fixed-point arithmetic support.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -80,6 +80,30 @@ check_real_for_fixed_mode (REAL_VALUE_TYPE *real_value, enum machine_mode mode)
     return FIXED_GT_MAX_EPS;
   return FIXED_OK;
 }
+
+
+/* Construct a CONST_FIXED from a bit payload and machine mode MODE.
+   The bits in PAYLOAD are sign-extended/zero-extended according to MODE.  */
+
+FIXED_VALUE_TYPE
+fixed_from_double_int (double_int payload, enum machine_mode mode)
+{
+  FIXED_VALUE_TYPE value;
+
+  gcc_assert (GET_MODE_BITSIZE (mode) <= HOST_BITS_PER_DOUBLE_INT);
+
+  if (SIGNED_SCALAR_FIXED_POINT_MODE_P (mode))
+    value.data = payload.sext (1 + GET_MODE_IBIT (mode) + GET_MODE_FBIT (mode));
+  else if (UNSIGNED_SCALAR_FIXED_POINT_MODE_P (mode))
+    value.data = payload.zext (GET_MODE_IBIT (mode) + GET_MODE_FBIT (mode));
+  else
+    gcc_unreachable();
+
+  value.mode = mode;
+
+  return value;
+}
+
 
 /* Initialize from a decimal or hexadecimal string.  */
 
@@ -545,14 +569,14 @@ do_fixed_divide (FIXED_VALUE_TYPE *f, const FIXED_VALUE_TYPE *a,
 	  int leftmost_mod = (mod.high < 0);
 
 	  /* Shift left mod by 1 bit.  */
-	  mod = mod.llshift (1, HOST_BITS_PER_DOUBLE_INT);
+	  mod = mod.lshift (1);
 
 	  /* Test the leftmost bit of s to add to mod.  */
 	  if (s.high < 0)
 	    mod.low += 1;
 
 	  /* Shift left quo_s by 1 bit.  */
-	  quo_s = quo_s.llshift (1, HOST_BITS_PER_DOUBLE_INT);
+	  quo_s = quo_s.lshift (1);
 
 	  /* Try to calculate (mod - pos_b).  */
 	  temp = mod - pos_b;
@@ -564,7 +588,7 @@ do_fixed_divide (FIXED_VALUE_TYPE *f, const FIXED_VALUE_TYPE *a,
 	    }
 
 	  /* Shift left s by 1 bit.  */
-	  s = s.llshift (1, HOST_BITS_PER_DOUBLE_INT);
+	  s = s.lshift (1);
 
 	}
 

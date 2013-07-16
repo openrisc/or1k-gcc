@@ -1,4 +1,4 @@
-##  Copyright (C) 2012 Free Software Foundation, Inc.
+##  Copyright (C) 2012-2013 Free Software Foundation, Inc.
 ##  Contributed by Richard Henderson <rth@redhat.com>.
 ##
 ##  This file is part of the GNU Atomic Library (libatomic).
@@ -40,6 +40,7 @@ AM_CCASFLAGS = $(XCFLAGS)
 AM_LDFLAGS = $(XLDFLAGS) $(SECTION_LDFLAGS) $(OPT_LDFLAGS)
 
 toolexeclib_LTLIBRARIES = libatomic.la
+noinst_LTLIBRARIES = libatomic_convenience.la
 
 if LIBAT_BUILD_VERSIONED_SHLIB
 if LIBAT_BUILD_VERSIONED_SHLIB_GNU
@@ -134,3 +135,6 @@ IFUNC_OPTIONS	     = -mcx16
 libatomic_la_LIBADD += $(addsuffix _16_1_.lo,$(SIZEOBJS))
 endif
 endif
+
+libatomic_convenience_la_SOURCES = $(libatomic_la_SOURCES)
+libatomic_convenience_la_LIBADD = $(libatomic_la_LIBADD)

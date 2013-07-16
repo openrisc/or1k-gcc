@@ -1,8 +1,5 @@
 /* Move registers around to reduce number of move instructions needed.
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -616,10 +613,10 @@ copy_src_to_dest (rtx insn, rtx src, rtx dest)
   int src_regno;
   int dest_regno;
 
-  /* A REG_LIVE_LENGTH of -1 indicates the register is equivalent to a constant
-     or memory location and is used infrequently; a REG_LIVE_LENGTH of -2 is
-     parameter when there is no frame pointer that is not allocated a register.
-     For now, we just reject them, rather than incrementing the live length.  */
+  /* A REG_LIVE_LENGTH of -1 indicates the register must not go into
+     a hard register, e.g. because it crosses as setjmp.  See the
+     comment in regstat.c:regstat_bb_compute_ri.  Don't try to apply
+     any transformations to such regs.  */
 
   if (REG_P (src)
       && REG_LIVE_LENGTH (REGNO (src)) > 0
@@ -1380,7 +1377,6 @@ struct rtl_opt_pass pass_regmove =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_df_finish | TODO_verify_rtl_sharing |
-  TODO_ggc_collect                      /* todo_flags_finish */
+  TODO_df_finish | TODO_verify_rtl_sharing /* todo_flags_finish */
  }
 };

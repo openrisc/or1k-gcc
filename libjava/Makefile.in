@@ -99,6 +99,7 @@ am__aclocal_m4_deps = $(top_srcdir)/libltdl/acinclude.m4 \
 	$(top_srcdir)/../config/lib-ld.m4 \
 	$(top_srcdir)/../config/lib-link.m4 \
 	$(top_srcdir)/../config/lib-prefix.m4 \
+	$(top_srcdir)/../config/libstdc++-raw-cxx.m4 \
 	$(top_srcdir)/../config/lthostflags.m4 \
 	$(top_srcdir)/../config/multi.m4 \
 	$(top_srcdir)/../config/no-executables.m4 \
@@ -619,6 +620,8 @@ LIBMATHSPEC = @LIBMATHSPEC@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBSTDCXXSPEC = @LIBSTDCXXSPEC@
+LIBSTDCXX_RAW_CXX_CXXFLAGS = @LIBSTDCXX_RAW_CXX_CXXFLAGS@
+LIBSTDCXX_RAW_CXX_LDFLAGS = @LIBSTDCXX_RAW_CXX_LDFLAGS@
 LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
@@ -938,7 +941,7 @@ CORE_PACKAGE_SOURCE_FILES_LO = $(filter-out $(LOWER_PACKAGE_FILES_LO),$(ALL_PACK
 @BUILD_SUBLIBS_FALSE@LIBJAVA_CORE_EXTRA = 
 @BUILD_SUBLIBS_TRUE@LIBJAVA_CORE_EXTRA = @LIBGCJ_SUBLIB_CORE_EXTRA_DEPS@
 dbexec_LTLIBRARIES = libjvm.la
-pkgconfigdir = $(libdir)/pkgconfig
+pkgconfigdir = $(toolexeclibdir)/pkgconfig
 jardir = $(datadir)/java
 jar_DATA = libgcj-$(gcc_version).jar libgcj-tools-$(gcc_version).jar \
 	$(am__append_5)
@@ -1133,11 +1136,9 @@ lib_gnu_awt_xlib_la_DEPENDENCIES = libgcj-$(gcc_version).jar libgcj.la \
 	$(lib_gnu_awt_xlib_la_LIBADD) $(am__append_21)
 lib_gnu_awt_xlib_la_CPPFLAGS = \
 	$(AM_CPPFLAGS) \
-	-I../libstdc++-v3/include \
-	-I../libstdc++-v3/include/$(target_noncanonical) \
-	-I$(srcdir)/../libstdc++-v3/libsupc++
+	$(LIBSTDCXX_RAW_CXX_CXXFLAGS)
 
-lib_gnu_awt_xlib_la_LDFLAGS = ../libstdc++-v3/src/libstdc++.la \
+lib_gnu_awt_xlib_la_LDFLAGS = $(LIBSTDCXX_RAW_CXX_LDFLAGS) \
 	@X_PRE_LIBS@ @X_LIBS@ -lX11 @X_EXTRA_LIBS@ \
         -rpath $(toolexeclibdir) $(LIBJAVA_LDFLAGS_NOUNDEF) \
         -version-info `grep -v '^\#' $(srcdir)/libtool-version` $(LIBGCJ_LD_SYMBOLIC)
@@ -4358,6 +4359,7 @@ classpath/java/lang/ArithmeticException.java \
 classpath/java/lang/ArrayIndexOutOfBoundsException.java \
 classpath/java/lang/ArrayStoreException.java \
 classpath/java/lang/AssertionError.java \
+classpath/java/lang/AutoCloseable.java \
 classpath/java/lang/Boolean.java \
 classpath/java/lang/Byte.java \
 classpath/java/lang/CharSequence.java \
@@ -4416,6 +4418,7 @@ java/lang/PosixProcess.java \
 classpath/java/lang/Process.java \
 classpath/java/lang/ProcessBuilder.java \
 classpath/java/lang/Readable.java \
+classpath/java/lang/ReflectiveOperationException.java \
 classpath/java/lang/Runnable.java \
 java/lang/Runtime.java \
 classpath/java/lang/RuntimeException.java \

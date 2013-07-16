@@ -1,3 +1,240 @@
+2013-07-13  Lubos Lunak  <l.lunak@suse.cz>
+
+	PR c++/55203
+	* c-common.c (c_common_attribute_table): Add warn_unused.
+	(handle_warn_unused_attribute): New.
+
+2013-07-10  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-ppoutput.c (scan_translation_unit): Call account_for_newlines
+	for all CPP_TOKEN_FLD_STR tokens, not just CPP_COMMENT.
+
+2013-07-10  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/57869
+	* c.opt: Add Wconditionally-supported.
+
+2013-07-08  Graham Stott  <graham.stott@btinternet.com>
+
+	* c-family/array-notation-common.c (length_mismatch_in_expr_p): Delete
+	unused variables l_length and l_node.
+
+2013-07-04  Joern Rennecke <joern.rennecke@embecosm.com>
+
+	PR c/57821
+	* c-common.c (complete_array_type): Delay folding first index
+	like other indices.  When folding, check for index overflow.
+
+2013-06-27  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR c++/57509
+	* c-common.h (c_build_vec_perm_expr): New complain argument.
+	* c-common.c (c_build_vec_perm_expr): Likewise.
+	Use save_expr also in C++.
+
+2013-06-22  Gabriel Dos Reis  <gdr@integrable-solutions.net>
+
+	* c-common.c (c_common_nodes_and_builtins): Use cxx11 in lieu of cxx0x.
+	* c-cppbuiltin.c (c_cpp_builtins): Likewise.
+	* c-opts.c (c_common_post_options): Likewise.
+
+2013-06-21  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* array-notation-common.c (length_mismatch_in_expr): Changed the
+	parameter type's from a dynamic array to a vec_tree.  Also removed
+	the size parameters.
+	* c-common.h (length_mismatch_in_expr_p): Fixed prototype's as per
+	the change above.
+
+2013-06-21  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-common.h (struct cilkplus_an_parts): New structure.
+	(struct cilkplus_an_loop_parts): Likewise.
+	(cilkplus_extract_an_triplets): New prototype.
+	(fix_sec_implicit_args): Likewise.
+	* array-notation-common.c (cilkplus_extract_an_triplets): New function.
+	(fix_sec_implicit_args): Likewise.
+
+2013-06-20  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* array-notation-common.c (find_inv_trees): Removed an unwanted
+	typecasting.
+	* c-common.h (struct inv_list::additional_tcodes): Changed type from
+	enum rid to enum tree_code.
+
+2013-06-11  Jan Hubicka  <jh@suse.cz>
+
+	* c-common.c (handle_alias_ifunc_attribute): Do not set
+	DECL_EXTERNAL for weakref variables.
+	* c-pragma.c (handle_pragma_weak): Make sure aliases
+	are not declared as external.
+
+2013-06-07  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* array-notation-common.c (length_mismatch_in_expr_p): Moved this
+	function from c/c-array-notation.c.
+	(is_cilkplus_reduce_builtin): Likewise.
+	(find_rank): Likewise.
+	(extract_array_notation_exprs): Likewise.
+	(replace_array_notations): Likewise.
+	(find_inv_trees): Likewise.
+	(replace_inv_trees): Likewise.
+	(contains_array_notation_expr): Likewise.
+	(find_correct_array_notation_type): Likewise.
+	* c-common.h (struct inv_list): Moved this struct from the file
+	c/c-array-notation.c and added a new field called additional tcodes.
+	(length_mismatch_in_expr_p): New prototype.
+	(is_cilkplus_reduce_builtin): Likewise.
+	(find_rank): Likewise.
+	(extract_array_notation_exprs): Likewise.
+	(replace_array_notation): Likewise.
+	(find_inv_trees): Likewise.
+	(replace_inv_trees): Likewise.
+	(find_correct_array_notation_type): Likewise.
+
+2013-05-28  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	* c-common.c (c_define_builtins): When cilkplus is enabled, the
+	function array_notation_init_builtins is called.
+	(c_common_init_ts): Added ARRAY_NOTATION_REF as typed.
+	* c-common.def (ARRAY_NOTATION_REF): New tree.
+	* c-common.h (build_array_notation_expr): New function declaration.
+	(build_array_notation_ref): Likewise.
+	(extract_sec_implicit_index_arg): New extern declaration.
+	(is_sec_implicit_index_fn): Likewise.
+	(ARRAY_NOTATION_CHECK): New define.
+	(ARRAY_NOTATION_ARRAY): Likewise.
+	(ARRAY_NOTATION_START): Likewise.
+	(ARRAY_NOTATION_LENGTH): Likewise.
+	(ARRAY_NOTATION_STRIDE): Likewise.
+	* c-pretty-print.c (pp_c_postifix_expression): Added a new case for
+	ARRAY_NOTATION_REF.
+	(pp_c_expression): Likewise.
+	* c.opt (flag_enable_cilkplus): New flag.
+	* array-notation-common.c: New file.
+
+2013-05-14  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/57274
+	* c-common.c (verify_tree): Don't recurse into SIZEOF_EXPR.
+
+2013-05-10  Marc Glisse  <marc.glisse@inria.fr>
+
+	* c-common.c (vector_types_convertible_p): No TYPE_PRECISION for
+	vectors.
+
+2013-05-07  Han Shen  <shenhan@google.com>
+
+	* c-cppbuiltin.c (c_cpp_builtins): Added "__SSP_STRONG__=3".
+
+2013-04-29  Senthil Kumar Selvaraj  <senthil_kumar.selvaraj@atmel.com>
+
+	* c-common.c (check_user_alignment): Emit error for negative values.
+
+2013-04-24  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* c-opts.c (set_std_cxx11): Use CLK_CXX1Y and CLK_GNUCXX1Y.
+
+2013-04-24  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* c-cppbuiltin.c (c_cpp_builtins): Do not define
+	__GXX_EXPERIMENTAL_CXX1Y__.
+
+2013-04-24  Paolo Carlini  <paolo.carlini@oracle.com>
+            Manuel Lopez-Ibanez  <manu@gcc.gnu.org>
+
+	* c.opt ([Wpointer-arith]): Enabled by -Wpedantic, as documented.
+	* c-common.c (pointer_int_sum): Change -Wpointer-arith pedwarns
+	to simply use OPT_Wpointer_arith.
+	(c_sizeof_or_alignof_type): Likewise.
+
+2013-04-24  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* c-cppbuiltin.c (c_cpp_builtins): Define __GXX_EXPERIMENTAL_CXX1Y__.
+
+2013-04-12  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-format.c (gcc_diag_char_table, gcc_tdiag_char_table,
+	gcc_cdiag_char_table, gcc_cxxdiag_char_table): Add %r and %R format
+	specifiers.
+
+2013-04-07  Steven Bosscher  <steven@gcc.gnu.org>
+
+	* c-pragma.c (add_to_renaming_pragma_list): Fix leading comment.
+
+2013-04-03  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* c-common.c (pointer_int_sum): Remove dead code.
+
+2013-03-09  Richard Sandiford  <rdsandiford@googlemail.com>
+
+	PR middle-end/56524
+	* c-common.c (handle_optimize_attribute): Don't call
+	save_optabs_if_changed.
+
+2013-03-05  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/56461
+	* c-pch.c (pch_init): Free target_validity at the end.
+
+2013-03-04  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-pretty-print.c (pp_c_pretty_printer_init): Clear pp->flags.
+
+2013-02-28  Konstantin Serebryany  <konstantin.s.serebryany@gmail.com>
+	    Jakub Jelinek  <jakub@redhat.com>
+
+	PR sanitizer/56454
+	* c-common.c (handle_no_sanitize_address_attribute): New function.
+	(c_common_attribute_table): Add no_sanitize_address attribute.
+	(handle_no_address_safety_analysis_attribute): Add
+	no_sanitize_address attribute, not no_address_safety_analysis
+	attribute.
+
+2013-02-18  Aldy Hernandez  <aldyh@redhat.com>
+
+	PR target/52555
+	* c-common.c (handle_optimize_attribute): Call
+	save_optabs_if_changed.
+
+2013-02-18  Jakub Jelinek  <jakub@redhat.com>
+	    Steven Bosscher  <steven@gcc.gnu.org>
+
+	PR pch/54117
+	* c-opts.c (c_common_post_options): If debug info is enabled
+	and non-dwarf*, refuse to load PCH files and when writing PCH
+	file warn.
+
+2013-02-05  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/56167
+	* c-common.c (handle_error_attribute): Fix condition.
+
+2013-01-30  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/55742
+	* c-common.c (handle_target_attribute): Revert 2012-12-26 change.
+
+2013-01-18  Jason Merrill  <jason@redhat.com>
+
+	PR target/54908
+	* c.opt (-fextern-tls-init): New.
+	* c-opts.c (c_common_post_options): Handle it.
+
+2013-01-09  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/48418
+	* c-common.c (c_fully_fold_internal): Warn for LSHIFT_EXPR and
+	RSHIFT_EXPR, if orig_op1 isn't INTEGER_CST, op1 is INTEGER_CST
+	and is either negative or bigger or equal to type precision
+	of the first operand.
+
+2012-12-03  Marek Polacek  <polacek@redhat.com>
+
+	PR c/55570
+	* c-common.c (check_user_alignment): Swap order of tests,
+	check TREE_CODE first.
+
 2012-11-29  Ed Smith-Rowland  <3dw4rd@verizon.net>
 
 	PR c++/52654
@@ -2344,7 +2581,7 @@
 	* c-common.c: Include gt-c-family-c-common.h.
 	* c-pragma.c: Include gt-c-family-c-pragma.h.
 
-Copyright (C) 2010, 2011 Free Software Foundation, Inc.
+Copyright (C) 2010-2013 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

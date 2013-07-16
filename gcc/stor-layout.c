@@ -1,7 +1,5 @@
 /* C-compiler utilities for types and variables storage layout
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1996, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -99,32 +97,6 @@ variable_size (tree size)
 
 /* An array of functions used for self-referential size computation.  */
 static GTY(()) vec<tree, va_gc> *size_functions;
-
-/* Look inside EXPR into simple arithmetic operations involving constants.
-   Return the outermost non-arithmetic or non-constant node.  */
-
-static tree
-skip_simple_constant_arithmetic (tree expr)
-{
-  while (true)
-    {
-      if (UNARY_CLASS_P (expr))
-	expr = TREE_OPERAND (expr, 0);
-      else if (BINARY_CLASS_P (expr))
-	{
-	  if (TREE_CONSTANT (TREE_OPERAND (expr, 1)))
-	    expr = TREE_OPERAND (expr, 0);
-	  else if (TREE_CONSTANT (TREE_OPERAND (expr, 0)))
-	    expr = TREE_OPERAND (expr, 1);
-	  else
-	    break;
-	}
-      else
-	break;
-    }
-
-  return expr;
-}
 
 /* Similar to copy_tree_r but do not copy component references involving
    PLACEHOLDER_EXPRs.  These nodes are spotted in find_placeholder_in_expr
@@ -318,6 +290,8 @@ finalize_size_functions (void)
 
   for (i = 0; size_functions && size_functions->iterate (i, &fndecl); i++)
     {
+      allocate_struct_function (fndecl, false);
+      set_cfun (NULL);
       dump_function (TDI_original, fndecl);
       gimplify_function_tree (fndecl);
       dump_function (TDI_generic, fndecl);
@@ -477,6 +451,18 @@ unsigned int
 get_mode_alignment (enum machine_mode mode)
 {
   return MIN (BIGGEST_ALIGNMENT, MAX (1, mode_base_align[mode]*BITS_PER_UNIT));
+}
+
+/* Return the precision of the mode, or for a complex or vector mode the
+   precision of the mode of its elements.  */
+
+unsigned int
+element_precision (enum machine_mode mode)
+{
+  if (COMPLEX_MODE_P (mode) || VECTOR_MODE_P (mode))
+    mode = GET_MODE_INNER (mode);
+
+  return GET_MODE_PRECISION (mode);
 }
 
 /* Return the natural mode of an array, given that it is SIZE bytes in
@@ -2648,10 +2634,14 @@ bit_field_mode_iterator
 {
   if (!bitregion_end_)
     {
-      /* We can assume that any aligned chunk of UNITS bits that overlaps
-	 the bitfield is mapped and won't trap.  */
-      unsigned HOST_WIDE_INT units = MIN (align, MAX (BIGGEST_ALIGNMENT,
-						      BITS_PER_WORD));
+      /* We can assume that any aligned chunk of ALIGN bits that overlaps
+	 the bitfield is mapped and won't trap, provided that ALIGN isn't
+	 too large.  The cap is the biggest required alignment for data,
+	 or at least the word size.  And force one such chunk at least.  */
+      unsigned HOST_WIDE_INT units
+	= MIN (align, MAX (BIGGEST_ALIGNMENT, BITS_PER_WORD));
+      if (bitsize <= 0)
+	bitsize = 1;
       bitregion_end_ = bitpos + bitsize + units - 1;
       bitregion_end_ -= bitregion_end_ % units + 1;
     }

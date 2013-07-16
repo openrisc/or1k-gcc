@@ -1,5 +1,5 @@
 /* alloc.c -- Memory allocation without mmap.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,7 @@ POSSIBILITY OF SUCH DAMAGE.  */
 
 #include <errno.h>
 #include <stdlib.h>
+#include <sys/types.h>
 
 #include "backtrace.h"
 #include "internal.h"

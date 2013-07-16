@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -39,16 +39,19 @@ package body Ch6 is
    function P_Return_Object_Declaration  return Node_Id;
 
    procedure P_Return_Subtype_Indication (Decl_Node : Node_Id);
-   --  Decl_Node is a N_Object_Declaration.
-   --  Set the Null_Exclusion_Present and Object_Definition fields of
-   --  Decl_Node.
+   --  Decl_Node is a N_Object_Declaration. Set the Null_Exclusion_Present and
+   --  Object_Definition fields of Decl_Node.
 
    procedure Check_Junk_Semicolon_Before_Return;
-
    --  Check for common error of junk semicolon before RETURN keyword of
-   --  function specification. If present, skip over it with appropriate
-   --  error message, leaving Scan_Ptr pointing to the RETURN after. This
-   --  routine also deals with a possibly misspelled version of Return.
+   --  function specification. If present, skip over it with appropriate error
+   --  message, leaving Scan_Ptr pointing to the RETURN after. This routine
+   --  also deals with a possibly misspelled version of Return.
+
+   procedure No_Constraint_Maybe_Expr_Func;
+   --  Called after scanning return subtype to check for missing constraint,
+   --  taking into account the possibility of an occurrence of an expression
+   --  function where the IS has been forgotten.
 
    ----------------------------------------
    -- Check_Junk_Semicolon_Before_Return --
@@ -76,6 +79,52 @@ package body Ch6 is
       end if;
    end Check_Junk_Semicolon_Before_Return;
 
+   -----------------------------------
+   -- No_Constraint_Maybe_Expr_Func --
+   -----------------------------------
+
+   procedure No_Constraint_Maybe_Expr_Func is
+   begin
+      --  If we have a left paren at the start of the line, then assume this is
+      --  the case of an expression function with missing IS. We do not have to
+      --  diagnose the missing IS, that is done elsewhere. We do this game in
+      --  Ada 2012 mode where expression functions are legal.
+
+      if Token = Tok_Left_Paren
+        and Ada_Version >= Ada_2012
+        and Token_Is_At_Start_Of_Line
+      then
+         --  One exception if we have "(token .." then this is a constraint
+
+         declare
+            Scan_State : Saved_Scan_State;
+
+         begin
+            Save_Scan_State (Scan_State);
+            Scan; -- past left paren
+            Scan; -- past following token
+
+            --  If we have "(token .." then restore scan state and treat as
+            --  unexpected constraint.
+
+            if Token = Tok_Dot_Dot then
+               Restore_Scan_State (Scan_State);
+               No_Constraint;
+
+            --  Otherwise we treat this as an expression function
+
+            else
+               Restore_Scan_State (Scan_State);
+            end if;
+         end;
+
+      --  Otherwise use standard routine to check for no constraint present
+
+      else
+         No_Constraint;
+      end if;
+   end No_Constraint_Maybe_Expr_Func;
+
    -----------------------------------------------------
    -- 6.1  Subprogram (Also 6.3, 8.5.4, 10.1.3, 12.3) --
    -----------------------------------------------------
@@ -101,7 +150,7 @@ package body Ch6 is
    --  PARAMETER_AND_RESULT_PROFILE ::= [FORMAL_PART] return SUBTYPE_MARK
 
    --  SUBPROGRAM_BODY ::=
-   --    SUBPROGRAM_SPECIFICATION is
+   --    SUBPROGRAM_SPECIFICATION [ASPECT_SPECIFICATIONS] is
    --      DECLARATIVE_PART
    --    begin
    --      HANDLED_SEQUENCE_OF_STATEMENTS
@@ -385,7 +434,7 @@ package body Ch6 is
 
          else
             Result_Node := P_Subtype_Mark;
-            No_Constraint;
+            No_Constraint_Maybe_Expr_Func;
          end if;
 
       else
@@ -592,15 +641,26 @@ package body Ch6 is
          elsif Aspect_Specifications_Present then
             goto Subprogram_Declaration;
 
-         --  Here we have a missing IS or missing semicolon, we always guess
-         --  a missing semicolon, since we are pretty good at fixing up a
-         --  semicolon which should really be an IS
+         --  Here we have a missing IS or missing semicolon
 
          else
-            Error_Msg_AP -- CODEFIX
-              ("|missing "";""");
-            SIS_Missing_Semicolon_Message := Get_Msg_Id;
-            goto Subprogram_Declaration;
+            --  If the next token is a left paren at the start of a line, then
+            --  this is almost certainly the start of the expression for an
+            --  expression function, so in this case guess a missing IS.
+
+            if Token = Tok_Left_Paren and then Token_Is_At_Start_Of_Line then
+               Error_Msg_AP -- CODEFIX
+                 ("missing IS");
+
+            --  In all other cases, we guess a missing semicolon, since we are
+            --  good at fixing up a semicolon which should really be an IS.
+
+            else
+               Error_Msg_AP -- CODEFIX
+                 ("|missing "";""");
+               SIS_Missing_Semicolon_Message := Get_Msg_Id;
+               goto Subprogram_Declaration;
+            end if;
          end if;
       end if;
 
@@ -624,6 +684,15 @@ package body Ch6 is
             Stub_Node :=
               New_Node (N_Subprogram_Body_Stub, Sloc (Specification_Node));
             Set_Specification (Stub_Node, Specification_Node);
+
+            --  The specification has been parsed as part of a subprogram
+            --  declaration, and aspects have already been collected.
+
+            if Is_Non_Empty_List (Aspects) then
+               Set_Parent (Aspects, Stub_Node);
+               Set_Aspect_Specifications (Stub_Node, Aspects);
+            end if;
+
             Scan; -- past SEPARATE
             Pop_Scope_Stack;
             TF_Semicolon;
@@ -767,6 +836,22 @@ package body Ch6 is
                        ("expression function is an Ada 2012 feature!");
                      Error_Msg_SC
                        ("\unit must be compiled with -gnat2012 switch!");
+                  end if;
+
+                  --  Catch an illegal placement of the aspect specification
+                  --  list:
+
+                  --    function_specification
+                  --      [aspect_specification] is (expression);
+
+                  --  This case is correctly processed by the parser because
+                  --  the expression function first appears as a subprogram
+                  --  declaration to the parser.
+
+                  if Is_Non_Empty_List (Aspects) then
+                     Error_Msg
+                       ("aspect specifications must come after parenthesized "
+                        & "expression", Sloc (First (Aspects)));
                   end if;
 
                   --  Parse out expression and build expression function
@@ -954,7 +1039,7 @@ package body Ch6 is
 
          else
             Result_Node := P_Subtype_Mark;
-            No_Constraint;
+            No_Constraint_Maybe_Expr_Func;
          end if;
 
          Set_Null_Exclusion_Present (Specification_Node, Result_Not_Null);
@@ -1721,13 +1806,8 @@ package body Ch6 is
          Scan; -- past ALIASED
          Set_Aliased_Present (Decl_Node);
 
-         if Ada_Version < Ada_2012 then
-            Error_Msg_SC -- CODEFIX
-              ("ALIASED not allowed in extended return in Ada 2012?");
-         else
-            Error_Msg_SC -- CODEFIX
-              ("ALIASED not allowed in extended return");
-         end if;
+         --  The restrictions on the use of aliased in an extended return
+         --  are semantic, not syntactic.
 
          if Token = Tok_Constant then
             Scan; -- past CONSTANT

@@ -1,7 +1,5 @@
 /* Separate lexical analyzer for GNU C++.
-   Copyright (C) 1987, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Hacked by Michael Tiemann (tiemann@cygnus.com)
 
 This file is part of GCC.
@@ -173,7 +171,7 @@ init_reswords (void)
   tree id;
   int mask = 0;
 
-  if (cxx_dialect < cxx0x)
+  if (cxx_dialect < cxx11)
     mask |= D_CXX0X;
   if (flag_no_asm)
     mask |= D_ASM | D_EXT;

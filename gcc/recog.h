@@ -1,6 +1,5 @@
 /* Declarations for interface to insn recognizer and insn-output.c.
-   Copyright (C) 1987, 1996, 1997, 1998, 1999, 2000, 2001, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -180,7 +179,7 @@ extern int which_alternative;
 
 /* The following vectors hold the results from insn_extract.  */
 
-struct recog_data
+struct recog_data_d
 {
   /* It is very tempting to make the 5 operand related arrays into a
      structure and index on that.  However, to be source compatible
@@ -246,7 +245,7 @@ struct recog_data
   rtx insn;
 };
 
-extern struct recog_data recog_data;
+extern struct recog_data_d recog_data;
 
 /* Contains a vector of operand_alternative structures for every operand.
    Set up by preprocess_constraints.  */

@@ -1,7 +1,5 @@
 /* Definitions of target machine for GNU compiler, for DEC Alpha.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2004, 2005, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
    Contributed by Richard Kenner (kenner@vlsi1.ultra.nyu.edu)
 
 This file is part of GCC.
@@ -778,7 +776,8 @@ extern int alpha_memory_latency;
    They give nonzero only if REGNO is a hard reg of the suitable class
    or a pseudo reg currently allocated to a suitable hard reg.
    Since they use reg_renumber, they are safe only once reg_renumber
-   has been allocated, which happens in local-alloc.c.  */
+   has been allocated, which happens in reginfo.c during register
+   allocation.  */
 
 #define REGNO_OK_FOR_INDEX_P(REGNO) 0
 #define REGNO_OK_FOR_BASE_P(REGNO) \
@@ -920,26 +919,6 @@ do {									     \
 
 #define FLOAT_STORE_FLAG_VALUE(MODE) \
   REAL_VALUE_ATOF ((TARGET_FLOAT_VAX ? "0.5" : "2.0"), (MODE))
-
-/* Canonicalize a comparison from one we don't have to one we do have.  */
-
-#define CANONICALIZE_COMPARISON(CODE,OP0,OP1) \
-  do {									\
-    if (((CODE) == GE || (CODE) == GT || (CODE) == GEU || (CODE) == GTU) \
-	&& (REG_P (OP1) || (OP1) == const0_rtx))		\
-      {									\
-	rtx tem = (OP0);						\
-	(OP0) = (OP1);							\
-	(OP1) = tem;							\
-	(CODE) = swap_condition (CODE);					\
-      }									\
-    if (((CODE) == LT || (CODE) == LTU)					\
-	&& CONST_INT_P (OP1) && INTVAL (OP1) == 256)			\
-      {									\
-	(CODE) = (CODE) == LT ? LE : LEU;				\
-	(OP1) = GEN_INT (255);						\
-      }									\
-  } while (0)
 
 /* Specify the machine mode that pointers have.
    After generation of rtl, the compiler makes no further distinction

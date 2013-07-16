@@ -1,6 +1,6 @@
 // 2005-07-22  Paolo Carlini  <pcarlini@suse.de>
 
-// Copyright (C) 2005, 2006, 2007, 2009 Free Software Foundation
+// Copyright (C) 2005-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -19,7 +19,11 @@
 
 // 27.6.1.2.3 basic_istream::operator>>
 
-// { dg-xfail-run-if "not supported on OR1K newlib" { or1k-*-elf } }
+// { dg-options "-DMAX_SIZE=466" { target simulator } }
+
+#ifndef MAX_SIZE
+#define MAX_SIZE 666
+#endif
 
 #include <istream>
 #include <string>
@@ -72,7 +76,7 @@ void test01()
   const char filename[] = "inserters_extractors-4.txt";
 
   const unsigned nchunks = 10;
-  const wstring data = prepare(666, nchunks);
+  const wstring data = prepare(MAX_SIZE, nchunks);
 
   wofstream ofstrm;
   ofstrm.open(filename);

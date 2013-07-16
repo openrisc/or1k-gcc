@@ -1,7 +1,5 @@
 /* Definitions of target machine for GCC for IA-32.
-   Copyright (C) 1988, 1992, 1994, 1995, 1996, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -41,6 +39,8 @@ extern void ix86_output_addr_diff_elt (FILE *, int, int);
 
 extern enum calling_abi ix86_cfun_abi (void);
 extern enum calling_abi ix86_function_type_abi (const_tree);
+
+extern void ix86_reset_previous_fndecl (void);
 
 #ifdef RTX_CODE
 extern int standard_80387_constant_p (rtx);
@@ -209,7 +209,7 @@ extern void init_cumulative_args (CUMULATIVE_ARGS *, tree, rtx, tree, int);
 #endif	/* RTX_CODE  */
 
 #ifdef TREE_CODE
-extern int ix86_data_alignment (tree, int);
+extern int ix86_data_alignment (tree, int, bool);
 extern unsigned int ix86_local_alignment (tree, enum machine_mode,
 					  unsigned int);
 extern unsigned int ix86_minimum_alignment (tree, enum machine_mode,
@@ -262,6 +262,7 @@ extern void i386_pe_end_function (FILE *, const char *, tree);
 extern void i386_pe_assemble_visibility (tree, int);
 extern tree i386_pe_mangle_decl_assembler_name (tree, tree);
 extern tree i386_pe_mangle_assembler_name (const char *);
+extern void i386_pe_record_stub (const char *);
 
 extern void i386_pe_seh_init (FILE *);
 extern void i386_pe_seh_end_prologue (FILE *);

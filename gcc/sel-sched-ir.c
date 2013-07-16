@@ -1,6 +1,5 @@
 /* Instruction scheduling pass.  Selective scheduler and pipeliner.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1066,6 +1065,9 @@ return_nop_to_pool (insn_t nop, bool full_tidying)
   gcc_assert (INSN_IN_STREAM_P (nop));
   sel_remove_insn (nop, false, full_tidying);
 
+  /* We'll recycle this nop.  */
+  INSN_DELETED_P (nop) = 0;
+
   if (nop_pool.n == nop_pool.s)
     nop_pool.v = XRESIZEVEC (rtx, nop_pool.v,
                              (nop_pool.s = 2 * nop_pool.s + 1));
@@ -1867,8 +1869,12 @@ merge_expr (expr_t to, expr_t from, insn_t split_point)
   /* Make sure that speculative pattern is propagated into exprs that
      have non-speculative one.  This will provide us with consistent
      speculative bits and speculative patterns inside expr.  */
-  if (EXPR_SPEC_DONE_DS (to) == 0
-      && EXPR_SPEC_DONE_DS (from) != 0)
+  if ((EXPR_SPEC_DONE_DS (from) != 0
+       && EXPR_SPEC_DONE_DS (to) == 0)
+      /* Do likewise for volatile insns, so that we always retain
+	 the may_trap_p bit on the resulting expression.  */
+      || (VINSN_MAY_TRAP_P (EXPR_VINSN (from))
+	  && !VINSN_MAY_TRAP_P (EXPR_VINSN (to))))
     change_vinsn_in_expr (to, EXPR_VINSN (from));
 
   merge_expr_data (to, from, split_point);
@@ -3926,31 +3932,19 @@ sel_remove_insn (insn_t insn, bool only_disconnect, bool full_tidying)
     }
 
   if (only_disconnect)
-    {
-      insn_t prev = PREV_INSN (insn);
-      insn_t next = NEXT_INSN (insn);
-      basic_block bb = BLOCK_FOR_INSN (insn);
-
-      NEXT_INSN (prev) = next;
-      PREV_INSN (next) = prev;
-
-      if (BB_HEAD (bb) == insn)
-        {
-          gcc_assert (BLOCK_FOR_INSN (prev) == bb);
-          BB_HEAD (bb) = prev;
-        }
-      if (BB_END (bb) == insn)
-        BB_END (bb) = prev;
-    }
+    remove_insn (insn);
   else
     {
-      remove_insn (insn);
+      delete_insn (insn);
       clear_expr (INSN_EXPR (insn));
     }
 
-  /* It is necessary to null this fields before calling add_insn ().  */
+  /* It is necessary to NULL these fields in case we are going to re-insert
+     INSN into the insns stream, as will usually happen in the ONLY_DISCONNECT
+     case, but also for NOPs that we will return to the nop pool.  */
   PREV_INSN (insn) = NULL_RTX;
   NEXT_INSN (insn) = NULL_RTX;
+  set_block_for_insn (insn, NULL);
 
   return tidy_control_flow (bb, full_tidying);
 }
@@ -5017,7 +5011,7 @@ free_sched_pools (void)
 
   free_alloc_pool (sched_lists_pool);
   gcc_assert (succs_info_pool.top == -1);
-  for (i = 0; i < succs_info_pool.max_top; i++)
+  for (i = 0; i <= succs_info_pool.max_top; i++)
     {
       succs_info_pool.stack[i].succs_ok.release ();
       succs_info_pool.stack[i].succs_other.release ();

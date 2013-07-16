@@ -1,6 +1,5 @@
 /* Java(TM) language-specific utility routines.
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2010, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -420,7 +419,8 @@ put_decl_node (tree node, int verbosity)
 	      if (TREE_CODE (TREE_TYPE (node)) == METHOD_TYPE)
 		args = TREE_CHAIN (args);
 	      put_decl_string ("(", 1);
-	      for ( ; args != end_params_node;  args = TREE_CHAIN (args), i++)
+	      for ( ; args != NULL_TREE && args != end_params_node;
+		   args = TREE_CHAIN (args), i++)
 		{
 		  if (i > 0)
 		    put_decl_string (",", 1);

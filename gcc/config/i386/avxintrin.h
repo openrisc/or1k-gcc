@@ -1,4 +1,4 @@
-/* Copyright (C) 2008, 2009 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2013 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -27,6 +27,15 @@
 #ifndef _IMMINTRIN_H_INCLUDED
 # error "Never use <avxintrin.h> directly; include <immintrin.h> instead."
 #endif
+
+#ifndef _AVXINTRIN_H_INCLUDED
+#define _AVXINTRIN_H_INCLUDED
+
+#ifndef __AVX__
+#pragma GCC push_options
+#pragma GCC target("avx")
+#define __DISABLE_AVX__
+#endif /* __AVX__ */
 
 /* Internal data types for implementing the intrinsics.  */
 typedef double __v4df __attribute__ ((__vector_size__ (32)));
@@ -1424,3 +1433,10 @@ _mm256_castsi128_si256 (__m128i __A)
 {
   return (__m256i) __builtin_ia32_si256_si ((__v4si)__A);
 }
+
+#ifdef __DISABLE_AVX__
+#undef __DISABLE_AVX__
+#pragma GCC pop_options
+#endif /* __DISABLE_AVX__ */
+
+#endif /* _AVXINTRIN_H_INCLUDED */

@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on picoChip processors.
-   Copyright (C) 2001, 2008, 2009, 2010, 2011   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Picochip Ltd. (http://www.picochip.com)
    Maintained by Daniel Towner (daniel.towner@picochip.com) and
    Hariharan Sandanagobalane (hariharan@picochip.com)
@@ -187,7 +187,7 @@ struct vliw_state picochip_current_vliw_state;
 
 /* Save/restore recog_data. */
 static int picochip_saved_which_alternative;
-static struct recog_data picochip_saved_recog_data;
+static struct recog_data_d picochip_saved_recog_data;
 
 /* Determine which ALU to use for the instruction in
    picochip_current_prescan_insn. */
@@ -3150,7 +3150,7 @@ picochip_save_recog_data (void)
 {
   picochip_saved_which_alternative = which_alternative;
   memcpy (&picochip_saved_recog_data, &recog_data,
-	  sizeof (struct recog_data));
+	  sizeof (struct recog_data_d));
 }
 
 /* Restore some of the contents of global variable recog_data. */
@@ -3159,7 +3159,7 @@ picochip_restore_recog_data (void)
 {
   which_alternative = picochip_saved_which_alternative;
   memcpy (&recog_data, &picochip_saved_recog_data,
-	  sizeof (struct recog_data));
+	  sizeof (struct recog_data_d));
 }
 
 /* Ensure that no var tracking notes are emitted in the middle of a

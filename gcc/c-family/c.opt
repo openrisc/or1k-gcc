@@ -1,6 +1,5 @@
 ; Options for the C, ObjC, C++ and ObjC++ front ends.
-; Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-; 2011, 2012 Free Software Foundation, Inc.
+; Copyright (C) 2003-2013 Free Software Foundation, Inc.
 ;
 ; This file is part of GCC.
 ;
@@ -320,6 +319,10 @@ Wcomments
 C ObjC C++ ObjC++ Warning Alias(Wcomment)
 Synonym for -Wcomment
 
+Wconditionally-supported
+C++ ObjC++ Var(warn_conditionally_supported) Warning
+Warn for conditionally-supported constructs
+
 Wconversion
 C ObjC C++ ObjC++ Var(warn_conversion) Warning
 Warn for implicit type conversions that may change a value
@@ -615,7 +618,7 @@ C++ ObjC++ Var(warn_pmf2ptr) Init(1) Warning
 Warn when converting the type of pointers to member functions
 
 Wpointer-arith
-C ObjC C++ ObjC++ Var(warn_pointer_arith) Warning
+C ObjC C++ ObjC++ Var(warn_pointer_arith) Warning LangEnabledBy(C ObjC C++ ObjC++,Wpedantic)
 Warn about function pointer arithmetic
 
 Wpointer-sign
@@ -844,6 +847,10 @@ fcanonical-system-headers
 C ObjC C++ ObjC++
 Where shorter, use canonicalized paths to systems headers.
 
+fcilkplus
+C ObjC C++ ObjC++ LTO Report Var(flag_enable_cilkplus) Init(0)
+Enable Cilk Plus
+
 fcheck-new
 C++ ObjC++ Var(flag_check_new)
 Check the return value of new
@@ -914,6 +921,9 @@ finput-charset=
 C ObjC C++ ObjC++ Joined RejectNegative
 -finput-charset=<cset>	Specify the default character set for source files
 
+fextern-tls-init
+C++ ObjC++ Var(flag_extern_tls_init) Init(-1)
+Support dynamic initialization of thread-local variables in a different translation unit
 
 fexternal-templates
 C++ ObjC++ Ignore Warn(switch %qs is no longer supported)

@@ -1,7 +1,5 @@
 /* Top level of GCC compilers (cc1, cc1plus, etc.)
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012  Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -29,6 +27,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "coretypes.h"
 #include "tm.h"
 #include "line-map.h"
+#include "hash-table.h"
 #include "input.h"
 #include "tree.h"
 #include "rtl.h"
@@ -137,8 +136,8 @@ rest_of_decl_compilation (tree decl,
 	/* A quirk of the initial implementation of aliases required that the
 	   user add "extern" to all of them.  Which is silly, but now
 	   historical.  Do note that the symbol is in fact locally defined.  */
-	if (!lookup_attribute ("weakref", DECL_ATTRIBUTES (decl)))
-	  DECL_EXTERNAL (decl) = 0;
+	DECL_EXTERNAL (decl) = 0;
+	TREE_STATIC (decl) = 1;
 	assemble_alias (decl, alias);
       }
   }
@@ -408,7 +407,7 @@ static struct rtl_opt_pass pass_rest_of_compilation =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_ggc_collect                      /* todo_flags_finish */
+  0                                     /* todo_flags_finish */
  }
 };
 
@@ -434,7 +433,7 @@ static struct rtl_opt_pass pass_postreload =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_ggc_collect | TODO_verify_rtl_sharing /* todo_flags_finish */
+  TODO_verify_rtl_sharing               /* todo_flags_finish */
  }
 };
 
@@ -581,27 +580,33 @@ struct pass_registry
   struct opt_pass *pass;
 };
 
+/* Helper for pass_registry hash table.  */
+
+struct pass_registry_hasher : typed_noop_remove <pass_registry>
+{
+  typedef pass_registry value_type;
+  typedef pass_registry compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
+
 /* Pass registry hash function.  */
 
-static hashval_t
-passr_hash (const void *p)
+inline hashval_t
+pass_registry_hasher::hash (const value_type *s)
 {
-  const struct pass_registry *const s = (const struct pass_registry *const) p;
   return htab_hash_string (s->unique_name);
 }
 
 /* Hash equal function  */
 
-static int
-passr_eq (const void *p1, const void *p2)
+inline bool
+pass_registry_hasher::equal (const value_type *s1, const compare_type *s2)
 {
-  const struct pass_registry *const s1 = (const struct pass_registry *const) p1;
-  const struct pass_registry *const s2 = (const struct pass_registry *const) p2;
-
   return !strcmp (s1->unique_name, s2->unique_name);
 }
 
-static htab_t name_to_pass_map = NULL;
+static hash_table <pass_registry_hasher> name_to_pass_map;
 
 /* Register PASS with NAME.  */
 
@@ -611,11 +616,11 @@ register_pass_name (struct opt_pass *pass, const char *name)
   struct pass_registry **slot;
   struct pass_registry pr;
 
-  if (!name_to_pass_map)
-    name_to_pass_map = htab_create (256, passr_hash, passr_eq, NULL);
+  if (!name_to_pass_map.is_created ())
+    name_to_pass_map.create (256);
 
   pr.unique_name = name;
-  slot = (struct pass_registry **) htab_find_slot (name_to_pass_map, &pr, INSERT);
+  slot = name_to_pass_map.find_slot (&pr, INSERT);
   if (!*slot)
     {
       struct pass_registry *new_pr;
@@ -636,10 +641,9 @@ static vec<char_ptr> pass_tab = vNULL;
 
 /* Callback function for traversing NAME_TO_PASS_MAP.  */
 
-static int
-pass_traverse (void **slot, void *data ATTRIBUTE_UNUSED)
+int
+passes_pass_traverse (pass_registry **p, void *data ATTRIBUTE_UNUSED)
 {
-  struct pass_registry **p = (struct pass_registry **)slot;
   struct opt_pass *pass = (*p)->pass;
 
   gcc_assert (pass->static_pass_number > 0);
@@ -660,7 +664,7 @@ create_pass_tab (void)
     return;
 
   pass_tab.safe_grow_cleared (passes_by_id_size + 1);
-  htab_traverse (name_to_pass_map, pass_traverse, NULL);
+  name_to_pass_map.traverse <void *, passes_pass_traverse> (NULL);
 }
 
 static bool override_gate_status (struct opt_pass *, tree, bool);
@@ -714,7 +718,7 @@ dump_passes (void)
 
   create_pass_tab();
 
-  FOR_EACH_DEFINED_FUNCTION (n)
+  FOR_EACH_FUNCTION (n)
     if (DECL_STRUCT_FUNCTION (n->symbol.decl))
       {
 	node = n;
@@ -745,8 +749,7 @@ get_pass_by_name (const char *name)
   struct pass_registry **slot, pr;
 
   pr.unique_name = name;
-  slot = (struct pass_registry **) htab_find_slot (name_to_pass_map,
-                                                   &pr, NO_INSERT);
+  slot = name_to_pass_map.find_slot (&pr, NO_INSERT);
 
   if (!slot || !*slot)
     return NULL;
@@ -1297,6 +1300,7 @@ init_optimization_passes (void)
   NEXT_PASS (pass_lower_eh);
   NEXT_PASS (pass_build_cfg);
   NEXT_PASS (pass_warn_function_return);
+  NEXT_PASS (pass_expand_omp);
   NEXT_PASS (pass_build_cgraph_edges);
   *p = NULL;
 
@@ -1309,10 +1313,8 @@ init_optimization_passes (void)
       struct opt_pass **p = &pass_early_local_passes.pass.sub;
       NEXT_PASS (pass_fixup_cfg);
       NEXT_PASS (pass_init_datastructures);
-      NEXT_PASS (pass_expand_omp);
 
       NEXT_PASS (pass_build_ssa);
-      NEXT_PASS (pass_lower_vector);
       NEXT_PASS (pass_early_warn_uninitialized);
       NEXT_PASS (pass_rebuild_cgraph_edges);
       NEXT_PASS (pass_inline_parameters);
@@ -1395,16 +1397,17 @@ init_optimization_passes (void)
 	 They ensure memory accesses are not indirect wherever possible.  */
       NEXT_PASS (pass_strip_predict_hints);
       NEXT_PASS (pass_rename_ssa_copies);
+      NEXT_PASS (pass_copy_prop);
       NEXT_PASS (pass_complete_unrolli);
       NEXT_PASS (pass_ccp);
       /* After CCP we rewrite no longer addressed locals into SSA
 	 form if possible.  */
+      NEXT_PASS (pass_phiprop);
       NEXT_PASS (pass_forwprop);
       /* pass_build_alias is a dummy pass that ensures that we
 	 execute TODO_rebuild_alias at this point.  */
       NEXT_PASS (pass_build_alias);
       NEXT_PASS (pass_return_slot);
-      NEXT_PASS (pass_phiprop);
       NEXT_PASS (pass_fre);
       NEXT_PASS (pass_copy_prop);
       NEXT_PASS (pass_merge_phi);
@@ -1472,6 +1475,7 @@ init_optimization_passes (void)
 	      NEXT_PASS (pass_dce_loop);
 	    }
 	  NEXT_PASS (pass_iv_canon);
+	  NEXT_PASS (pass_parallelize_loops);
 	  NEXT_PASS (pass_if_conversion);
 	  NEXT_PASS (pass_vectorize);
 	    {
@@ -1481,7 +1485,6 @@ init_optimization_passes (void)
           NEXT_PASS (pass_predcom);
 	  NEXT_PASS (pass_complete_unroll);
 	  NEXT_PASS (pass_slp_vectorize);
-	  NEXT_PASS (pass_parallelize_loops);
 	  NEXT_PASS (pass_loop_prefetch);
 	  NEXT_PASS (pass_iv_optimize);
 	  NEXT_PASS (pass_lim);
@@ -1490,7 +1493,6 @@ init_optimization_passes (void)
       NEXT_PASS (pass_lower_vector_ssa);
       NEXT_PASS (pass_cse_reciprocals);
       NEXT_PASS (pass_reassoc);
-      NEXT_PASS (pass_vrp);
       NEXT_PASS (pass_strength_reduction);
       NEXT_PASS (pass_dominator);
       /* The only const/copy propagation opportunities left after
@@ -1499,6 +1501,7 @@ init_optimization_passes (void)
 	 only examines PHIs to discover const/copy propagation
 	 opportunities.  */
       NEXT_PASS (pass_phi_only_cprop);
+      NEXT_PASS (pass_vrp);
       NEXT_PASS (pass_cd_dce);
       NEXT_PASS (pass_tracer);
 
@@ -1533,15 +1536,15 @@ init_optimization_passes (void)
       /* Perform simple scalar cleanup which is constant/copy propagation.  */
       NEXT_PASS (pass_ccp);
       NEXT_PASS (pass_object_sizes);
+      /* Fold remaining builtins.  */
+      NEXT_PASS (pass_fold_builtins);
       /* Copy propagation also copy-propagates constants, this is necessary
-         to forward object-size results properly.  */
+         to forward object-size and builtin folding results properly.  */
       NEXT_PASS (pass_copy_prop);
+      NEXT_PASS (pass_dce);
       NEXT_PASS (pass_asan);
       NEXT_PASS (pass_tsan);
       NEXT_PASS (pass_rename_ssa_copies);
-      NEXT_PASS (pass_dce);
-      /* Fold remaining builtins.  */
-      NEXT_PASS (pass_fold_builtins);
       /* ???  We do want some kind of loop invariant motion, but we possibly
          need to adjust LIM to be more friendly towards preserving accurate
 	 debug information here.  */
@@ -1556,6 +1559,7 @@ init_optimization_passes (void)
       NEXT_PASS (pass_tm_memopt);
       NEXT_PASS (pass_tm_edges);
     }
+  NEXT_PASS (pass_lower_vector);
   NEXT_PASS (pass_lower_complex_O0);
   NEXT_PASS (pass_asan_O0);
   NEXT_PASS (pass_tsan_O0);
@@ -1705,7 +1709,7 @@ do_per_function (void (*callback) (void *data), void *data)
     {
       struct cgraph_node *node;
       FOR_EACH_DEFINED_FUNCTION (node)
-	if (gimple_has_body_p (node->symbol.decl)
+	if (node->symbol.analyzed && gimple_has_body_p (node->symbol.decl)
 	    && (!node->clone_of || node->symbol.decl != node->clone_of->symbol.decl))
 	  {
 	    push_cfun (DECL_STRUCT_FUNCTION (node->symbol.decl));
@@ -1785,9 +1789,8 @@ execute_function_dump (void *data ATTRIBUTE_UNUSED)
       fflush (dump_file);
 
       if ((cfun->curr_properties & PROP_cfg)
-	  && (cfun->curr_properties & PROP_rtl)
 	  && (dump_flags & TDF_GRAPH))
-	print_rtl_graph_with_bb (dump_file_name, cfun->decl);
+	print_graph_cfg (dump_file_name, cfun);
     }
 }
 
@@ -1921,10 +1924,7 @@ execute_function_todo (void *data)
   /* Always cleanup the CFG before trying to update SSA.  */
   if (flags & TODO_cleanup_cfg)
     {
-      bool cleanup = cleanup_tree_cfg ();
-
-      if (cleanup && (cfun->curr_properties & PROP_ssa))
-	flags |= TODO_remove_unused_locals;
+      cleanup_tree_cfg ();
 
       /* When cleanup_tree_cfg merges consecutive blocks, it may
 	 perform some simplistic propagation when removing single
@@ -2020,9 +2020,6 @@ execute_todo (unsigned int flags)
       fflush (dump_file);
     }
 
-  if (flags & TODO_ggc_collect)
-    ggc_collect ();
-
   /* Now that the dumping has been done, we can get rid of the optional
      df problems.  */
   if (flags & TODO_df_finish)
@@ -2069,11 +2066,17 @@ pass_init_dump_file (struct opt_pass *pass)
   /* If a dump file name is present, open it if enabled.  */
   if (pass->static_pass_number != -1)
     {
+      timevar_push (TV_DUMP);
       bool initializing_dump = !dump_initialized_p (pass->static_pass_number);
       dump_file_name = get_dump_file_name (pass->static_pass_number);
       dump_start (pass->static_pass_number, &dump_flags);
       if (dump_file && current_function_decl)
         dump_function_header (dump_file, current_function_decl, dump_flags);
+      if (initializing_dump
+	  && dump_file && (dump_flags & TDF_GRAPH)
+	  && cfun && (cfun->curr_properties & PROP_cfg))
+	clean_graph_dump_file (dump_file_name);
+      timevar_pop (TV_DUMP);
       return initializing_dump;
     }
   else
@@ -2086,6 +2089,8 @@ pass_init_dump_file (struct opt_pass *pass)
 void
 pass_fini_dump_file (struct opt_pass *pass)
 {
+  timevar_push (TV_DUMP);
+
   /* Flush and close dump file.  */
   if (dump_file_name)
     {
@@ -2094,6 +2099,7 @@ pass_fini_dump_file (struct opt_pass *pass)
     }
 
   dump_finish (pass->static_pass_number);
+  timevar_pop (TV_DUMP);
 }
 
 /* After executing the pass, apply expected changes to the function
@@ -2185,6 +2191,10 @@ execute_one_ipa_transform_pass (struct cgraph_node *node,
   pass_fini_dump_file (pass);
 
   current_pass = NULL;
+
+  /* Signal this is a suitable GC collection point.  */
+  if (!(todo_after & TODO_do_not_ggc_collect))
+    ggc_collect ();
 }
 
 /* For the current function, execute all ipa transforms. */
@@ -2250,7 +2260,6 @@ override_gate_status (struct opt_pass *pass, tree func, bool gate_status)
 bool
 execute_one_pass (struct opt_pass *pass)
 {
-  bool initializing_dump;
   unsigned int todo_after = 0;
 
   bool gate_status;
@@ -2308,7 +2317,7 @@ execute_one_pass (struct opt_pass *pass)
      This is a hack until the new folder is ready.  */
   in_gimple_form = (cfun && (cfun->curr_properties & PROP_trees)) != 0;
 
-  initializing_dump = pass_init_dump_file (pass);
+  pass_init_dump_file (pass);
 
   /* Run pre-pass verification.  */
   execute_todo (pass->todo_flags_start);
@@ -2334,16 +2343,6 @@ execute_one_pass (struct opt_pass *pass)
     timevar_pop (pass->tv_id);
 
   do_per_function (update_properties_after_pass, pass);
-
-  if (initializing_dump
-      && dump_file
-      && (dump_flags & TDF_GRAPH)
-      && cfun
-      && (cfun->curr_properties & (PROP_cfg | PROP_rtl))
-	  == (PROP_cfg | PROP_rtl))
-    {
-      clean_graph_dump_file (dump_file_name);
-    }
 
   if (profile_report && cfun && (cfun->curr_properties & PROP_cfg))
     check_profile_consistency (pass->static_pass_number, 0, true);
@@ -2372,6 +2371,10 @@ execute_one_pass (struct opt_pass *pass)
 		|| pass->type != RTL_PASS);
 
   current_pass = NULL;
+
+  /* Signal this is a suitable GC collection point.  */
+  if (!((todo_after | pass->todo_flags_finish) & TODO_do_not_ggc_collect))
+    ggc_collect ();
 
   return true;
 }
@@ -2458,6 +2461,7 @@ ipa_write_summaries (void)
   lto_symtab_encoder_t encoder;
   int i, order_pos;
   struct varpool_node *vnode;
+  struct cgraph_node *node;
   struct cgraph_node **order;
 
   if (!flag_generate_lto || seen_error ())
@@ -2489,13 +2493,15 @@ ipa_write_summaries (void)
 	  renumber_gimple_stmt_uids ();
 	  pop_cfun ();
 	}
-      if (node->analyzed)
+      if (node->symbol.definition)
         lto_set_symtab_encoder_in_partition (encoder, (symtab_node)node);
     }
 
+  FOR_EACH_DEFINED_FUNCTION (node)
+    if (node->symbol.alias)
+      lto_set_symtab_encoder_in_partition (encoder, (symtab_node)node);
   FOR_EACH_DEFINED_VARIABLE (vnode)
-    if ((!vnode->alias || vnode->alias_of))
-      lto_set_symtab_encoder_in_partition (encoder, (symtab_node)vnode);
+    lto_set_symtab_encoder_in_partition (encoder, (symtab_node)vnode);
 
   ipa_write_summaries_1 (compute_ltrans_boundary (encoder));
 
@@ -2561,7 +2567,7 @@ ipa_write_optimization_summaries (lto_symtab_encoder_t encoder)
 
 	 For functions newly born at WPA stage we need to initialize
 	 the uids here.  */
-      if (node->analyzed
+      if (node->symbol.definition
 	  && gimple_has_body_p (node->symbol.decl))
 	{
 	  push_cfun (DECL_STRUCT_FUNCTION (node->symbol.decl));
@@ -2779,6 +2785,8 @@ dump_properties (FILE *dump, unsigned int props)
     fprintf (dump, "PROP_gimple_lomp\n");
   if (props & PROP_gimple_lcx)
     fprintf (dump, "PROP_gimple_lcx\n");
+  if (props & PROP_gimple_lvec)
+    fprintf (dump, "PROP_gimple_lvec\n");
   if (props & PROP_cfglayout)
     fprintf (dump, "PROP_cfglayout\n");
 }

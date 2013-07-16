@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -56,6 +56,7 @@ package Checks is
    function Index_Checks_Suppressed           (E : Entity_Id) return Boolean;
    function Length_Checks_Suppressed          (E : Entity_Id) return Boolean;
    function Overflow_Checks_Suppressed        (E : Entity_Id) return Boolean;
+   function Predicate_Checks_Suppressed       (E : Entity_Id) return Boolean;
    function Range_Checks_Suppressed           (E : Entity_Id) return Boolean;
    function Storage_Checks_Suppressed         (E : Entity_Id) return Boolean;
    function Tag_Checks_Suppressed             (E : Entity_Id) return Boolean;
@@ -74,7 +75,7 @@ package Checks is
    --  is False, then the status of the check can be determined simply by
    --  examining Scope_Suppress, so this routine is not called in that case.
 
-   function Overflow_Check_Mode return Overflow_Check_Type;
+   function Overflow_Check_Mode return Overflow_Mode_Type;
    --  Returns current overflow checking mode, taking into account whether
    --  we are inside an assertion expression.
 
@@ -93,6 +94,8 @@ package Checks is
    --  Sets Do_Overflow_Check flag in node N, and handles possible local raise.
    --  Always call this routine rather than calling Set_Do_Overflow_Check to
    --  set an explicit value of True, to ensure handling the local raise case.
+   --  Note that this call has no effect for MOD, REM, and unary "+" for which
+   --  overflow is never possible in any case.
 
    procedure Activate_Range_Check (N : Node_Id);
    pragma Inline (Activate_Range_Check);
@@ -129,8 +132,11 @@ package Checks is
    --  are enabled, then this procedure generates a check that the specified
    --  address has an alignment consistent with the alignment of the object,
    --  raising PE if this is not the case. The resulting check (if one is
-   --  generated) is inserted before node N. check is also made for the case of
-   --  a clear overlay situation that the size of the overlaying object is not
+   --  generated) is prepended to the Actions list of N_Freeze_Entity node N.
+   --  Note that the check references E'Alignment, so it cannot be emitted
+   --  before N (its freeze node), otherwise this would cause an illegal
+   --  access before elaboration error in GIGI. For the case of a clear overlay
+   --  situation, we also check that the size of the overlaying object is not
    --  larger than the overlaid object.
 
    procedure Apply_Arithmetic_Overflow_Check (N : Node_Id);

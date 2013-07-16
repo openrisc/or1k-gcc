@@ -1,6 +1,5 @@
 /* Generic helper function for repacking arrays.
-   Copyright 2003, 2004, 2005, 2007, 2009, 2010, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Paul Brook <paul@nowt.org>
 
 This file is part of the GNU Fortran runtime library (libgfortran).
@@ -48,6 +47,9 @@ internal_pack (gfc_array_char * source)
   int packed;
   index_type size;
   index_type type_size;
+
+  if (source->base_addr == NULL)
+    return NULL;
 
   type_size = GFC_DTYPE_TYPE_SIZE(source);
   size = GFC_DESCRIPTOR_SIZE (source);

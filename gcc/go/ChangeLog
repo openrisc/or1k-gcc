@@ -1,3 +1,41 @@
+2013-06-18  Ian Lance Taylor  <iant@google.com>
+
+	* go-gcc.cc (Gcc_backend::immutable_struct): Add is_hidden
+	parameter.
+	(Gcc_backend::immutable_struct_set_init): Likewise.
+
+2013-05-16  Jason Merrill  <jason@redhat.com>
+
+	* Make-lang.in (go1$(exeext)): Use link mutex.
+
+2013-01-16  Shenghou Ma  <minux.ma@gmail.com>
+
+	* gospec.c: pass -u pthread_create to linker when static linking.
+
+2012-12-21  Ian Lance Taylor  <iant@google.com>
+
+	PR bootstrap/54659
+	* go-system.h: Don't include <cstdio>.
+
+2012-12-18  Ian Lance Taylor  <iant@google.com>
+
+	PR go/55201
+	* gospec.c: Revert last patch.
+
+2012-12-18  Andreas Schwab  <schwab@linux-m68k.org>
+
+	PR go/55201
+	* gospec.c (LIBATOMIC): Define.
+	(LIBATOMIC_PROFILE): Define.
+	(lang_specific_driver): Add LIBATOMIC[_PROFILE] option.
+
+2012-11-29  Ian Lance Taylor  <iant@google.com>
+
+	* go-gcc.cc: Include "output.h".
+	(global_variable): Add is_unique_section parameter.
+	(global_variable_set_init): Adjust unique section if necessary.
+	* Make-lang.in (go/go-gcc.o): Add dependency on output.h.
+
 2012-11-17  Diego Novillo  <dnovillo@google.com>
 
 	Adjust for new vec API (http://gcc.gnu.org/wiki/cxx-conversion/cxx-vec)

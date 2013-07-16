@@ -1,4 +1,4 @@
-// Copyright (C) 2012 Free Software Foundation
+// Copyright (C) 2012-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -37,6 +37,7 @@ void test01()
   typedef std::allocator_traits<alloc_type> traits_type;
   typedef std::forward_list<T, alloc_type> test_type;
   test_type v(alloc_type{});
+  v.push_front(T());
   VERIFY( v.max_size() == traits_type::max_size(v.get_allocator()) );
 }
 

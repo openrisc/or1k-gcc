@@ -259,7 +259,7 @@ TOOLS_LIBS = targext.o link.o ../../ggc-none.o ../../libcommon-target.a \
 # manufacturer, and operating system and assign each of those to its own
 # variable.
 host:=$(subst -, ,$(host_canonical))
-targ:=$(subst -, ,$(target))
+targ:=$(subst -, ,$(subst -gnu, ,$(target_alias)))
 arch:=$(word 1,$(targ))
 ifeq ($(words $(targ)),2)
   manu:=
@@ -273,7 +273,7 @@ endif
 # Both . and srcdir are used, in that order,
 # so that tm.h and config.h will be found in the compilation
 # subdirectory rather than in the source directory.
-INCLUDES = -I- -I. -I.. -I$(srcdir)/ada -I$(srcdir) -I$(srcdir)/../include
+INCLUDES = -I- -I. -I.. -I$(srcdir)/ada -I$(srcdir) -I$(srcdir)/../include $(GMPINC)
 
 ADA_INCLUDES = -I- -I. -I$(srcdir)/ada
 
@@ -283,11 +283,11 @@ ADA_INCLUDES = -I- -I. -I$(srcdir)/ada
 ifneq ($(findstring vxworks,$(osys)),)
   INCLUDES_FOR_SUBDIR = -iquote . -iquote .. -iquote ../.. \
 			-iquote $(fsrcdir)/ada \
-			-I$(fsrcdir)/../include
+			-I$(fsrcdir)/../include $(GMPINC)
 else
   INCLUDES_FOR_SUBDIR = -iquote . -iquote .. -iquote ../.. \
 			-iquote $(fsrcdir)/ada -iquote $(fsrcdir) \
-			-I$(fsrcdir)/../include
+			-I$(fsrcdir)/../include $(GMPINC)
 endif
 
 ADA_INCLUDES_FOR_SUBDIR = -I. -I$(fsrcdir)/ada
@@ -515,8 +515,6 @@ ifeq ($(strip $(filter-out e500% powerpc% wrs vxworks,$(targ))),)
   s-osprim.adb<s-osprim-vxworks.adb \
   s-parame.ads<s-parame-vxworks.ads \
   s-parame.adb<s-parame-vxworks.adb \
-  s-stchop.ads<s-stchop-limit.ads \
-  s-stchop.adb<s-stchop-vxworks.adb \
   s-taprop.adb<s-taprop-vxworks.adb \
   s-tasinf.ads<s-tasinf-vxworks.ads \
   s-taspri.ads<s-taspri-vxworks.ads \
@@ -526,6 +524,19 @@ ifeq ($(strip $(filter-out e500% powerpc% wrs vxworks,$(targ))),)
   g-stsifd.adb<g-stsifd-sockets.adb \
   $(ATOMICS_TARGET_PAIRS) \
   $(ATOMICS_BUILTINS_TARGET_PAIRS)
+
+  # VxWorks 5 and 6 both use the same target triplet making them
+  # indistinguishable in the context of this make file. Package
+  # System.Stack_Checking.Operations is not needed on VxWorks 6 as it leads to
+  # an undefined symbol when building a dynamic shared library. To alleviate
+  # this problem and distinguish this case, we use the THREAD_KIND and include
+  # the package only in kernel mode.
+
+  ifeq ($(strip $(filter-out default,$(THREAD_KIND))),)
+    LIBGNAT_TARGET_PAIRS += \
+      s-stchop.ads<s-stchop-limit.ads \
+      s-stchop.adb<s-stchop-vxworks.adb
+  endif
 
   TOOLS_TARGET_PAIRS=\
   mlib-tgt-specific.adb<mlib-tgt-specific-vxworks.adb \
@@ -770,7 +781,7 @@ ifeq ($(strip $(filter-out %86 wrs vxworksae vxworksmils,$(targ))),)
 endif
 
 # Sparc VxWorks
-ifeq ($(strip $(filter-out sparc% wrs vx%,$(targ))),)
+ifeq ($(strip $(filter-out sparc% leon% wrs vx%,$(targ))),)
   LIBGNAT_TARGET_PAIRS = \
   a-intnam.ads<a-intnam-vxworks.ads \
   a-numaux.ads<a-numaux-vxworks.ads \
@@ -797,7 +808,7 @@ ifeq ($(strip $(filter-out sparc% wrs vx%,$(targ))),)
   mlib-tgt-specific.adb<mlib-tgt-specific-vxworks.adb \
   indepsw.adb<indepsw-gnu.adb
 
-  ifeq ($(arch),sparc)
+  ifeq ($(strip $(filter-out sparc erc32 leon leon3, $(arch))),)
     # 32-bits
     LIBGNAT_TARGET_PAIRS += \
     s-vxwork.ads<s-vxwork-sparc.ads \
@@ -984,7 +995,7 @@ ifeq ($(strip $(filter-out mips% wrs vx%,$(targ))),)
   EXTRA_LIBGNAT_OBJS+=vx_stack_info.o
 endif
 
-ifeq ($(strip $(filter-out arm% linux-androideabi,$(arch) $(osys)-$(word 4,$(targ)))),)
+ifeq ($(strip $(filter-out arm% androideabi,$(arch) $(osys))),)
   LIBGNAT_TARGET_PAIRS = \
   a-intnam.ads<a-intnam-linux.ads \
   s-inmaop.adb<s-inmaop-posix.adb \
@@ -1087,7 +1098,7 @@ ifeq ($(strip $(filter-out sparc% sun solaris%,$(targ))),)
 endif
 
 # x86 and x86-64 solaris
-ifeq ($(strip $(filter-out %86 %x86_64 solaris2%,$(arch) $(osys))),)
+ifeq ($(strip $(filter-out %86 %x86_64 %amd64 solaris2%,$(arch) $(osys))),)
   LIBGNAT_TARGET_PAIRS_COMMON = \
   a-intnam.ads<a-intnam-solaris.ads \
   s-inmaop.adb<s-inmaop-posix.adb \
@@ -1535,6 +1546,7 @@ ifeq ($(strip $(filter-out alpha64 ia64 dec hp vms% openvms% alphavms%,$(targ)))
       $(ATOMICS_BUILTINS_TARGET_PAIRS)
 
     EXTRA_LIBGNAT_SRCS+=tb-ivms.c
+    override GNATRTL_ALTIVEC_OBJS=
 
     TOOLS_TARGET_PAIRS= \
       mlib-tgt-specific.adb<mlib-tgt-specific-vms-ia64.adb \
@@ -1580,7 +1592,7 @@ ifeq ($(strip $(filter-out alpha64 ia64 dec hp vms% openvms% alphavms%,$(targ)))
 endif
 
 # *-elf
-ifeq ($(strip $(filter-out avr none powerpc% eabispe leon% erc32% unknown elf,$(targ))),)
+ifeq ($(strip $(filter-out lmp avr none powerpc% eabispe leon% erc32% unknown elf,$(targ))),)
   TOOLS_TARGET_PAIRS=\
   mlib-tgt-specific.adb<mlib-tgt-specific-xi.adb \
   indepsw.adb<indepsw-gnu.adb
@@ -2308,7 +2320,7 @@ endif
 # LIBGNAT_SRCS is the list of all C files (including headers) of the runtime
 # library.  LIBGNAT_OBJS is the list of object files for libgnat.
 # thread.c is special as put into GNATRTL_TASKING_OBJS by Makefile.rtl
-LIBGNAT_OBJS = adadecode.o adaint.o argv.o arit64.o aux-io.o 		\
+LIBGNAT_OBJS = adadecode.o adaint.o argv.o aux-io.o 			\
   cal.o cio.o cstreams.o ctrl_c.o					\
   env.o errno.o exit.o expect.o final.o 				\
   init.o initialize.o locales.o mkdir.o					\
@@ -2351,13 +2363,16 @@ ADA_EXCLUDE_SRCS =\
   s-bbsuer.ads s-bbsule.ads s-bbthqu.adb s-bbthqu.ads s-bbthre.adb \
   s-bbthre.ads s-bbtiev.adb s-bbtiev.ads s-bbtime.adb s-bbtime.ads \
   s-bcprmu.adb s-bcprmu.ads s-btstch.adb s-btstch.ads \
+  s-init.ads s-init.adb \
   s-po32gl.adb s-po32gl.ads \
   s-stache.adb s-stache.ads \
   s-thread.ads \
   s-vxwexc.adb s-vxwexc.ads s-vxwext.adb s-vxwext.ads \
   s-win32.ads  s-winext.ads \
   g-regist.adb g-regist.ads g-sse.ads    g-ssvety.ads \
-  i-vxwoio.adb i-vxwoio.ads i-vxwork.ads
+  i-vxwoio.adb i-vxwoio.ads i-vxwork.ads \
+  g-allein.ads g-alleve.ads g-altcon.ads g-alveop.adb g-alvety.ads \
+  g-alleve.adb g-altcon.adb g-altive.ads g-alveop.ads g-alvevi.ads
 
 # ADA_EXCLUDE_SRCS without the sources used by the target
 ADA_EXCLUDE_FILES=$(filter-out \
@@ -2505,11 +2520,11 @@ gnatlink-re: ../stamp-tools link.o targext.o gnatmake-re
 
 # Likewise for the tools
 ../../gnatmake$(exeext): $(P) b_gnatm.o link.o targext.o $(GNATMAKE_OBJS)
-	$(GCC_LINK) $(ALL_CFLAGS) $(LDFLAGS) -o $@ b_gnatm.o $(GNATMAKE_OBJS) \
+	+$(GCC_LINK) $(ALL_CFLAGS) $(LDFLAGS) -o $@ b_gnatm.o $(GNATMAKE_OBJS) \
 		    $(TOOLS_LIBS)
 
 ../../gnatlink$(exeext): $(P) b_gnatl.o link.o targext.o $(GNATLINK_OBJS)
-	$(GCC_LINK) $(ALL_CFLAGS) $(LDFLAGS) -o $@ b_gnatl.o $(GNATLINK_OBJS) \
+	+$(GCC_LINK) $(ALL_CFLAGS) $(LDFLAGS) -o $@ b_gnatl.o $(GNATLINK_OBJS) \
 		    $(TOOLS_LIBS)
 
 ../stamp-gnatlib-$(RTSDIR):

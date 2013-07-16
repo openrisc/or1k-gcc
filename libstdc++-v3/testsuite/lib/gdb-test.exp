@@ -1,4 +1,4 @@
-#   Copyright (C) 2009, 2011, 2012 Free Software Foundation, Inc.
+#   Copyright (C) 2009-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -219,7 +219,9 @@ proc gdb_batch_check {command pattern} {
     set gdb_name $::env(GUALITY_GDB_NAME)
     set cmd "$gdb_name -nw -nx -quiet -batch -ex \"$command\""
     send_log "Spawning: $cmd\n"
-    set res [remote_spawn target "$cmd"]
+    if [catch { set res [remote_spawn target "$cmd"] } ] {
+	return 0
+    }
     if { $res < 0 || $res == "" } {
 	return 0
     }

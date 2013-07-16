@@ -1,6 +1,6 @@
 // Custom pointer adapter and sample storage policies
 
-// Copyright (C) 2008, 2009, 2010 Free Software Foundation, Inc.
+// Copyright (C) 2008-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -43,6 +43,7 @@
 #include <ext/cast.h>
 #include <ext/type_traits.h>
 #if __cplusplus >= 201103L
+# include <bits/move.h>
 # include <bits/ptr_traits.h>
 #endif
 

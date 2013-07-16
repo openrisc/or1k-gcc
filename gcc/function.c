@@ -1,7 +1,5 @@
 /* Expands front end tree to back end RTL for GCC.
-   Copyright (C) 1987, 1988, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010, 2011, 2012  Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1917,10 +1915,8 @@ instantiate_virtual_regs (void)
       {
 	/* These patterns in the instruction stream can never be recognized.
 	   Fortunately, they shouldn't contain virtual registers either.  */
-	if (GET_CODE (PATTERN (insn)) == USE
+        if (GET_CODE (PATTERN (insn)) == USE
 	    || GET_CODE (PATTERN (insn)) == CLOBBER
-	    || GET_CODE (PATTERN (insn)) == ADDR_VEC
-	    || GET_CODE (PATTERN (insn)) == ADDR_DIFF_VEC
 	    || GET_CODE (PATTERN (insn)) == ASM_INPUT)
 	  continue;
 	else if (DEBUG_INSN_P (insn))
@@ -4402,6 +4398,15 @@ invoke_set_current_function_hook (tree fndecl)
 	}
 
       targetm.set_current_function (fndecl);
+      this_fn_optabs = this_target_optabs;
+
+      if (opts != optimization_default_node)
+	{
+	  init_tree_optimization_optabs (opts);
+	  if (TREE_OPTIMIZATION_OPTABS (opts))
+	    this_fn_optabs = (struct target_optabs *)
+	      TREE_OPTIMIZATION_OPTABS (opts);
+	}
     }
 }
 
@@ -4481,7 +4486,6 @@ get_last_funcdef_no (void)
 void
 allocate_struct_function (tree fndecl, bool abstract_p)
 {
-  tree result;
   tree fntype = fndecl ? TREE_TYPE (fndecl) : NULL_TREE;
 
   cfun = ggc_alloc_cleared_function ();
@@ -4500,8 +4504,13 @@ allocate_struct_function (tree fndecl, bool abstract_p)
       DECL_STRUCT_FUNCTION (fndecl) = cfun;
       cfun->decl = fndecl;
       current_function_funcdef_no = get_next_funcdef_no ();
+    }
 
-      result = DECL_RESULT (fndecl);
+  invoke_set_current_function_hook (fndecl);
+
+  if (fndecl != NULL_TREE)
+    {
+      tree result = DECL_RESULT (fndecl);
       if (!abstract_p && aggregate_value_p (result, fndecl))
 	{
 #ifdef PCC_STATIC_STRUCT_RETURN
@@ -4520,8 +4529,6 @@ allocate_struct_function (tree fndecl, bool abstract_p)
          but is this worth the hassle?  */
       cfun->can_throw_non_call_exceptions = flag_non_call_exceptions;
     }
-
-  invoke_set_current_function_hook (fndecl);
 }
 
 /* This is like allocate_struct_function, but pushes a new cfun for FNDECL
@@ -4973,8 +4980,6 @@ do_warn_unused_parameter (tree fn)
       warning (OPT_Wunused_parameter, "unused parameter %q+D", decl);
 }
 
-static GTY(()) rtx initial_trampoline;
-
 /* Generate RTL for the end of the current function.  */
 
 void
@@ -5084,6 +5089,7 @@ expand_function_end (void)
 	     amount.  BLKmode results are handled using the group load/store
 	     machinery.  */
 	  if (TYPE_MODE (TREE_TYPE (decl_result)) != BLKmode
+	      && REG_P (real_decl_rtl)
 	      && targetm.calls.return_in_msb (TREE_TYPE (decl_result)))
 	    {
 	      emit_move_insn (gen_rtx_REG (GET_MODE (decl_rtl),
@@ -5588,12 +5594,17 @@ prepare_shrink_wrap (basic_block entry_block)
 static void
 emit_use_return_register_into_block (basic_block bb)
 {
-  rtx seq;
+  rtx seq, insn;
   start_sequence ();
   use_return_register ();
   seq = get_insns ();
   end_sequence ();
-  emit_insn_before (seq, BB_END (bb));
+  insn = BB_END (bb);
+#ifdef HAVE_cc0
+  if (reg_mentioned_p (cc0_rtx, PATTERN (insn)))
+    insn = prev_cc0_setter (insn);
+#endif
+  emit_insn_before (seq, insn);
 }
 
 
@@ -6031,7 +6042,7 @@ thread_prologue_and_epilogue_insns (void)
       if (pic_offset_table_rtx)
 	add_to_hard_reg_set (&set_up_by_prologue.set, Pmode,
 			     PIC_OFFSET_TABLE_REGNUM);
-      if (stack_realign_drap && crtl->drap_reg)
+      if (crtl->drap_reg)
 	add_to_hard_reg_set (&set_up_by_prologue.set,
 			     GET_MODE (crtl->drap_reg),
 			     REGNO (crtl->drap_reg));
@@ -6257,8 +6268,10 @@ thread_prologue_and_epilogue_insns (void)
 		    break;
 		if (e)
 		  {
-		    copy_bb = create_basic_block (NEXT_INSN (BB_END (e->src)),
-						  NULL_RTX, e->src);
+                    /* Make sure we insert after any barriers.  */
+                    rtx end = get_last_bb_insn (e->src);
+                    copy_bb = create_basic_block (NEXT_INSN (end),
+                                                  NULL_RTX, e->src);
 		    BB_COPY_PARTITION (copy_bb, e->src);
 		  }
 		else
@@ -6525,7 +6538,7 @@ epilogue_done:
       basic_block simple_return_block_cold = NULL;
       edge pending_edge_hot = NULL;
       edge pending_edge_cold = NULL;
-      basic_block exit_pred = EXIT_BLOCK_PTR->prev_bb;
+      basic_block exit_pred;
       int i;
 
       gcc_assert (entry_edge != orig_entry_edge);
@@ -6553,6 +6566,12 @@ epilogue_done:
 	    else
 	      pending_edge_cold = e;
 	  }
+      
+      /* Save a pointer to the exit's predecessor BB for use in
+         inserting new BBs at the end of the function. Do this
+         after the call to split_block above which may split
+         the original exit pred.  */
+      exit_pred = EXIT_BLOCK_PTR->prev_bb;
 
       FOR_EACH_VEC_ELT (unconverted_simple_returns, i, e)
 	{
@@ -6986,9 +7005,8 @@ struct rtl_opt_pass pass_thread_prologue_and_epilogue =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   TODO_verify_flow,                     /* todo_flags_start */
-  TODO_df_verify |
-  TODO_df_finish | TODO_verify_rtl_sharing |
-  TODO_ggc_collect                      /* todo_flags_finish */
+  TODO_df_verify | TODO_df_finish
+  | TODO_verify_rtl_sharing             /* todo_flags_finish */
  }
 };
 

@@ -1,7 +1,6 @@
 /* Web construction code for GNU compiler.
    Contributed by Jan Hubicka.
-   Copyright (C) 2001, 2002, 2004, 2006, 2007, 2008, 2010, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -133,14 +132,24 @@ union_match_dups (rtx insn, struct web_entry *def_entry,
       ref = type == OP_IN ? use_link : def_link;
       entry = type == OP_IN ? use_entry : def_entry;
       for (; *ref; ref++)
-	if (DF_REF_LOC (*ref) == recog_data.operand_loc[op])
-	  break;
+	{
+	  rtx *l = DF_REF_LOC (*ref);
+	  if (l == recog_data.operand_loc[op])
+	    break;
+	  if (l && DF_REF_REAL_LOC (*ref) == recog_data.operand_loc[op])
+	    break;
+	}
 
       if (!*ref && type == OP_INOUT)
 	{
 	  for (ref = use_link, entry = use_entry; *ref; ref++)
-	    if (DF_REF_LOC (*ref) == recog_data.operand_loc[op])
-	      break;
+	    {
+	      rtx *l = DF_REF_LOC (*ref);
+	      if (l == recog_data.operand_loc[op])
+		break;
+	      if (l && DF_REF_REAL_LOC (*ref) == recog_data.operand_loc[op])
+		break;
+	    }
 	}
 
       gcc_assert (*ref);

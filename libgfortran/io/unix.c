@@ -1,6 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012
-   Free Software Foundation, Inc.
+/* Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    F2003 I/O support contributed by Jerry DeLisle
 
@@ -32,7 +30,10 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #include <stdlib.h>
 #include <limits.h>
 
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <assert.h>
@@ -214,6 +215,8 @@ typedef struct
   /* Cached stat(2) values.  */
   dev_t st_dev;
   ino_t st_ino;
+
+  bool unbuffered;  /* Buffer should be flushed after each I/O statement.  */
 }
 unix_stream;
 
@@ -354,7 +357,10 @@ raw_size (unix_stream * s)
   int ret = fstat (s->fd, &statbuf);
   if (ret == -1)
     return ret;
-  return statbuf.st_size;
+  if (S_ISREG (statbuf.st_mode))
+    return statbuf.st_size;
+  else
+    return 0;
 }
 
 static int
@@ -441,7 +447,7 @@ raw_init (unix_stream * s)
 Buffered I/O functions. These functions have the same semantics as the
 raw I/O functions above, except that they are buffered in order to
 improve performance. The buffer must be flushed when switching from
-reading to writing and vice versa. Only supported for regular files.
+reading to writing and vice versa.
 *********************************************************************/
 
 static int
@@ -967,11 +973,26 @@ open_internal4 (char *base, int length, gfc_offset offset)
 }
 
 
+/* "Unbuffered" really means I/O statement buffering. For formatted
+   I/O, the fbuf manages this, and then uses raw I/O. For unformatted
+   I/O, buffered I/O is used, and the buffer is flushed at the end of
+   each I/O statement, where this function is called.  */
+
+int
+flush_if_unbuffered (stream* s)
+{
+  unix_stream* us = (unix_stream*) s;
+  if (us->unbuffered)
+    return sflush (s);
+  return 0;
+}
+
+
 /* fd_to_stream()-- Given an open file descriptor, build a stream
  * around it. */
 
 static stream *
-fd_to_stream (int fd)
+fd_to_stream (int fd, bool unformatted)
 {
   struct stat statbuf;
   unix_stream *s;
@@ -997,7 +1018,15 @@ fd_to_stream (int fd)
 	    || s->fd == STDERR_FILENO)))
     buf_init (s);
   else
-    raw_init (s);
+    {
+      if (unformatted)
+	{
+	  s->unbuffered = true;
+	  buf_init (s);
+	}
+      else
+	raw_init (s);
+    }
 
   return (stream *) s;
 }
@@ -1363,7 +1392,7 @@ open_external (st_parameter_open *opp, unit_flags *flags)
     return NULL;
   fd = fix_fd (fd);
 
-  return fd_to_stream (fd);
+  return fd_to_stream (fd, flags->form == FORM_UNFORMATTED);
 }
 
 
@@ -1373,7 +1402,7 @@ open_external (st_parameter_open *opp, unit_flags *flags)
 stream *
 input_stream (void)
 {
-  return fd_to_stream (STDIN_FILENO);
+  return fd_to_stream (STDIN_FILENO, false);
 }
 
 
@@ -1389,7 +1418,7 @@ output_stream (void)
   setmode (STDOUT_FILENO, O_BINARY);
 #endif
 
-  s = fd_to_stream (STDOUT_FILENO);
+  s = fd_to_stream (STDOUT_FILENO, false);
   return s;
 }
 
@@ -1406,7 +1435,7 @@ error_stream (void)
   setmode (STDERR_FILENO, O_BINARY);
 #endif
 
-  s = fd_to_stream (STDERR_FILENO);
+  s = fd_to_stream (STDERR_FILENO, false);
   return s;
 }
 

@@ -1,5 +1,5 @@
 /* Dynamic testing for abstract is-a relationships.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Contributed by Lawrence Crowl.
 
 This file is part of GCC.
@@ -181,7 +181,7 @@ template <typename T, typename U>
 inline T *
 as_a (U *p)
 {
-  gcc_assert (is_a <T> (p));
+  gcc_checking_assert (is_a <T> (p));
   return is_a_helper <T>::cast (p);
 }
 

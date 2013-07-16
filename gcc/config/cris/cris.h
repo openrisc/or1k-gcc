@@ -1,6 +1,5 @@
 /* Definitions for GCC.  Part of the machine description for CRIS.
-   Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008,
-   2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1998-2013 Free Software Foundation, Inc.
    Contributed by Axis Communications.  Written by Hans-Peter Nilsson.
 
 This file is part of GCC.
@@ -577,7 +576,8 @@ enum reg_class
 #define INDEX_REG_CLASS GENERAL_REGS
 
 /* Since it uses reg_renumber, it is safe only once reg_renumber
-   has been allocated, which happens in local-alloc.c.  */
+   has been allocated, which happens in reginfo.c during register
+   allocation.  */
 #define REGNO_OK_FOR_BASE_P(REGNO)					\
  ((REGNO) <= CRIS_LAST_GENERAL_REGISTER					\
   || (REGNO) == ARG_POINTER_REGNUM					\

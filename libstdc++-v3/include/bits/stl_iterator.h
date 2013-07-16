@@ -1,8 +1,6 @@
 // Iterators -*- C++ -*-
 
-// Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-// 2010, 2011, 2012
-// Free Software Foundation, Inc.
+// Copyright (C) 2001-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -65,6 +63,7 @@
 #include <bits/cpp_type_traits.h>
 #include <ext/type_traits.h>
 #include <bits/move.h>
+#include <bits/ptr_traits.h>
 
 namespace std _GLIBCXX_VISIBILITY(default)
 {
@@ -734,6 +733,21 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       	       (std::__are_same<_Iter, typename _Container::pointer>::__value),
 		      _Container>::__type>& __i)
         : _M_current(__i.base()) { }
+
+#if __cplusplus >= 201103L
+      __normal_iterator<typename _Container::pointer, _Container>
+      _M_const_cast() const
+      {
+	using _PTraits = std::pointer_traits<typename _Container::pointer>;
+	return __normal_iterator<typename _Container::pointer, _Container>
+	  (_PTraits::pointer_to(const_cast<typename _PTraits::element_type&>
+				(*_M_current)));
+      }
+#else
+      __normal_iterator
+      _M_const_cast() const
+      { return *this; }
+#endif
 
       // Forward iterator requirements
       reference

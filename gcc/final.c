@@ -1,8 +1,5 @@
 /* Convert RTL to assembler code and output it, for GNU compiler.
-   Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -203,6 +200,9 @@ rtx current_insn_predicate;
 /* True if printing into -fdump-final-insns= dump.  */   
 bool final_insns_dump_p;
 
+/* True if profile_function should be called, but hasn't been called yet.  */
+static bool need_profile_function;
+
 static int asm_insn_count (rtx);
 static void profile_function (FILE *);
 static void profile_after_prologue (FILE *);
@@ -391,18 +391,8 @@ get_attr_length_1 (rtx insn, int (*fallback_fn) (rtx))
 	return 0;
 
       case CALL_INSN:
-	length = fallback_fn (insn);
-	break;
-
       case JUMP_INSN:
-	body = PATTERN (insn);
-	if (GET_CODE (body) == ADDR_VEC || GET_CODE (body) == ADDR_DIFF_VEC)
-	  {
-	    /* Alignment is machine-dependent and should be handled by
-	       ADDR_VEC_ALIGN.  */
-	  }
-	else
-	  length = fallback_fn (insn);
+	length = fallback_fn (insn);
 	break;
 
       case INSN:
@@ -821,8 +811,7 @@ struct rtl_opt_pass pass_compute_alignments =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_verify_rtl_sharing
-  | TODO_ggc_collect                    /* todo_flags_finish */
+  TODO_verify_rtl_sharing               /* todo_flags_finish */
  }
 };
 
@@ -1020,7 +1009,7 @@ shorten_branches (rtx first)
 	  int min_align;
 	  addr_diff_vec_flags flags;
 
-	  if (!JUMP_P (insn)
+	  if (! JUMP_TABLE_DATA_P (insn)
 	      || GET_CODE (PATTERN (insn)) != ADDR_DIFF_VEC)
 	    continue;
 	  pat = PATTERN (insn);
@@ -1094,7 +1083,7 @@ shorten_branches (rtx first)
 	continue;
 
       body = PATTERN (insn);
-      if (GET_CODE (body) == ADDR_VEC || GET_CODE (body) == ADDR_DIFF_VEC)
+      if (JUMP_TABLE_DATA_P (insn))
 	{
 	  /* This only takes room if read-only data goes into the text
 	     section.  */
@@ -1185,6 +1174,29 @@ shorten_branches (rtx first)
 	  if (LABEL_P (insn))
 	    {
 	      int log = LABEL_TO_ALIGNMENT (insn);
+
+#ifdef CASE_VECTOR_SHORTEN_MODE
+	      /* If the mode of a following jump table was changed, we
+		 may need to update the alignment of this label.  */
+	      rtx next;
+	      bool next_is_jumptable;
+
+	      next = next_nonnote_insn (insn);
+	      next_is_jumptable = next && JUMP_TABLE_DATA_P (next);
+	      if ((JUMP_TABLES_IN_TEXT_SECTION
+		   || readonly_data_section == text_section)
+		  && next_is_jumptable)
+		{
+		  int newlog = ADDR_VEC_ALIGN (next);
+		  if (newlog != log)
+		    {
+		      log = newlog;
+		      LABEL_TO_ALIGNMENT (insn) = log;
+		      something_changed = 1;
+		    }
+		}
+#endif
+
 	      if (log > insn_current_align)
 		{
 		  int align = 1 << log;
@@ -1207,7 +1219,8 @@ shorten_branches (rtx first)
 	  INSN_ADDRESSES (uid) = insn_current_address;
 
 #ifdef CASE_VECTOR_SHORTEN_MODE
-	  if (optimize && JUMP_P (insn)
+	  if (optimize
+	      && JUMP_TABLE_DATA_P (insn)
 	      && GET_CODE (PATTERN (insn)) == ADDR_DIFF_VEC)
 	    {
 	      rtx body = PATTERN (insn);
@@ -1458,7 +1471,7 @@ typedef struct debug_prefix_map
 } debug_prefix_map;
 
 /* Linked list of such structures.  */
-debug_prefix_map *debug_prefix_maps;
+static debug_prefix_map *debug_prefix_maps;
 
 
 /* Record a debug file prefix mapping.  ARG is the argument to
@@ -1648,12 +1661,14 @@ reemit_insn_block_notes (void)
      test and compare insns.  */
 
 void
-final_start_function (rtx first ATTRIBUTE_UNUSED, FILE *file,
+final_start_function (rtx first, FILE *file,
 		      int optimize_p ATTRIBUTE_UNUSED)
 {
   block_depth = 0;
 
   this_is_asm_operands = 0;
+
+  need_profile_function = false;
 
   last_filename = LOCATION_FILE (prologue_location);
   last_linenum = LOCATION_LINE (prologue_location);
@@ -1675,7 +1690,41 @@ final_start_function (rtx first ATTRIBUTE_UNUSED, FILE *file,
   /* The Sun386i and perhaps other machines don't work right
      if the profiling code comes after the prologue.  */
   if (targetm.profile_before_prologue () && crtl->profile)
-    profile_function (file);
+    {
+      if (targetm.asm_out.function_prologue
+	  == default_function_pro_epilogue
+#ifdef HAVE_prologue
+	  && HAVE_prologue
+#endif
+	 )
+	{
+	  rtx insn;
+	  for (insn = first; insn; insn = NEXT_INSN (insn))
+	    if (!NOTE_P (insn))
+	      {
+		insn = NULL_RTX;
+		break;
+	      }
+	    else if (NOTE_KIND (insn) == NOTE_INSN_BASIC_BLOCK
+		     || NOTE_KIND (insn) == NOTE_INSN_FUNCTION_BEG)
+	      break;
+	    else if (NOTE_KIND (insn) == NOTE_INSN_DELETED
+		     || NOTE_KIND (insn) == NOTE_INSN_VAR_LOCATION)
+	      continue;
+	    else
+	      {
+		insn = NULL_RTX;
+		break;
+	      }
+
+	  if (insn)
+	    need_profile_function = true;
+	  else
+	    profile_function (file);
+	}
+      else
+	profile_function (file);
+    }
 
   /* If debugging, assign block numbers to all of the blocks in this
      function.  */
@@ -2055,6 +2104,12 @@ final_scan_insn (rtx insn, FILE *file, int optimize_p ATTRIBUTE_UNUSED,
 	  break;
 
 	case NOTE_INSN_BASIC_BLOCK:
+	  if (need_profile_function)
+	    {
+	      profile_function (asm_out_file);
+	      need_profile_function = false;
+	    }
+
 	  if (targetm.asm_out.unwind_emit)
 	    targetm.asm_out.unwind_emit (asm_out_file, insn);
 
@@ -2110,6 +2165,12 @@ final_scan_insn (rtx insn, FILE *file, int optimize_p ATTRIBUTE_UNUSED,
 	  break;
 
 	case NOTE_INSN_FUNCTION_BEG:
+	  if (need_profile_function)
+	    {
+	      profile_function (asm_out_file);
+	      need_profile_function = false;
+	    }
+
 	  app_disable ();
 	  if (!DECL_IGNORED_P (current_function_decl))
 	    debug_hooks->end_prologue (last_linenum, last_filename);
@@ -2333,7 +2394,7 @@ final_scan_insn (rtx insn, FILE *file, int optimize_p ATTRIBUTE_UNUSED,
 	/* Detect insns that are really jump-tables
 	   and output them as such.  */
 
-	if (GET_CODE (body) == ADDR_VEC || GET_CODE (body) == ADDR_DIFF_VEC)
+        if (JUMP_TABLE_DATA_P (insn))
 	  {
 #if !(defined(ASM_OUTPUT_ADDR_VEC) || defined(ASM_OUTPUT_ADDR_DIFF_VEC))
 	    int vlen, idx;
@@ -3369,8 +3430,21 @@ do_assembler_dialects (const char *p, int *dialect)
            DIALECT_NUMBER of strings ending with '|'.  */
         for (i = 0; i < dialect_number; i++)
           {
-            while (*p && *p != '}' && *p++ != '|')
-	      ;
+            while (*p && *p != '}')
+	      {
+		if (*p == '|')
+		  {
+		    p++;
+		    break;
+		  }
+
+		/* Skip over any character after a percent sign.  */
+		if (*p == '%')
+		  p++;
+		if (*p)
+		  p++;
+	      }
+
             if (*p == '}')
 	      break;
           }
@@ -3391,8 +3465,19 @@ do_assembler_dialects (const char *p, int *dialect)
 		  output_operand_lossage ("unterminated assembly dialect alternative");
 		  break;
 		}
+
+	      /* Skip over any character after a percent sign.  */
+	      if (*p == '%' && p[1])
+		{
+		  p += 2;
+		  continue;
+		}
+
+	      if (*p++ == '}')
+		break;
             }
-          while (*p++ != '}');
+          while (1);
+
           *dialect = 0;
         }
       else
@@ -3485,11 +3570,17 @@ output_asm_insn (const char *templ, rtx *operands)
 #endif
 
       case '%':
-	/* %% outputs a single %.  */
-	if (*p == '%')
+	/* %% outputs a single %.  %{, %} and %| print {, } and | respectively
+	   if ASSEMBLER_DIALECT defined and these characters have a special
+	   meaning as dialect delimiters.*/
+	if (*p == '%'
+#ifdef ASSEMBLER_DIALECT
+	    || *p == '{' || *p == '}' || *p == '|'
+#endif
+	    )
 	  {
+	    putc (*p, asm_out_file);
 	    p++;
-	    putc (c, asm_out_file);
 	  }
 	/* %= outputs a number which is unique to each insn in the entire
 	   compilation.  This is useful for making local labels that are
@@ -4083,28 +4174,12 @@ int
 leaf_function_p (void)
 {
   rtx insn;
-  rtx link;
 
   if (crtl->profile || profile_arc_flag)
     return 0;
 
   for (insn = get_insns (); insn; insn = NEXT_INSN (insn))
     {
-      if (CALL_P (insn)
-	  && ! SIBLING_CALL_P (insn))
-	return 0;
-      if (NONJUMP_INSN_P (insn)
-	  && GET_CODE (PATTERN (insn)) == SEQUENCE
-	  && CALL_P (XVECEXP (PATTERN (insn), 0, 0))
-	  && ! SIBLING_CALL_P (XVECEXP (PATTERN (insn), 0, 0)))
-	return 0;
-    }
-  for (link = crtl->epilogue_delay_list;
-       link;
-       link = XEXP (link, 1))
-    {
-      insn = XEXP (link, 0);
-
       if (CALL_P (insn)
 	  && ! SIBLING_CALL_P (insn))
 	return 0;
@@ -4183,11 +4258,6 @@ leaf_renumber_regs (rtx first)
   for (insn = first; insn; insn = NEXT_INSN (insn))
     if (INSN_P (insn))
       leaf_renumber_regs_insn (PATTERN (insn));
-  for (insn = crtl->epilogue_delay_list;
-       insn;
-       insn = XEXP (insn, 1))
-    if (INSN_P (XEXP (insn, 0)))
-      leaf_renumber_regs_insn (PATTERN (XEXP (insn, 0)));
 }
 
 /* Scan IN_RTX and its subexpressions, and renumber all regs into those
@@ -4355,7 +4425,7 @@ struct rtl_opt_pass pass_final =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_ggc_collect                      /* todo_flags_finish */
+  0                                     /* todo_flags_finish */
  }
 };
 

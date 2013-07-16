@@ -1,6 +1,5 @@
 /* A pass for lowering trees to RTL.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1292,6 +1291,12 @@ clear_tree_used (tree block)
     clear_tree_used (t);
 }
 
+enum {
+  SPCT_FLAG_DEFAULT = 1,
+  SPCT_FLAG_ALL = 2,
+  SPCT_FLAG_STRONG = 3
+};
+
 /* Examine TYPE and determine a bit mask of the following features.  */
 
 #define SPCT_HAS_LARGE_CHAR_ARRAY	1
@@ -1361,7 +1366,8 @@ stack_protect_decl_phase (tree decl)
   if (bits & SPCT_HAS_SMALL_CHAR_ARRAY)
     has_short_buffer = true;
 
-  if (flag_stack_protect == 2)
+  if (flag_stack_protect == SPCT_FLAG_ALL
+      || flag_stack_protect == SPCT_FLAG_STRONG)
     {
       if ((bits & (SPCT_HAS_SMALL_CHAR_ARRAY | SPCT_HAS_LARGE_CHAR_ARRAY))
 	  && !(bits & SPCT_HAS_AGGREGATE))
@@ -1515,6 +1521,27 @@ estimated_stack_frame_size (struct cgraph_node *node)
   return size;
 }
 
+/* Helper routine to check if a record or union contains an array field. */
+
+static int
+record_or_union_type_has_array_p (const_tree tree_type)
+{
+  tree fields = TYPE_FIELDS (tree_type);
+  tree f;
+
+  for (f = fields; f; f = DECL_CHAIN (f))
+    if (TREE_CODE (f) == FIELD_DECL)
+      {
+	tree field_type = TREE_TYPE (f);
+	if (RECORD_OR_UNION_TYPE_P (field_type)
+	    && record_or_union_type_has_array_p (field_type))
+	  return 1;
+	if (TREE_CODE (field_type) == ARRAY_TYPE)
+	  return 1;
+      }
+  return 0;
+}
+
 /* Expand all variables used in the function.  */
 
 static rtx
@@ -1526,6 +1553,7 @@ expand_used_vars (void)
   struct pointer_map_t *ssa_name_decls;
   unsigned i;
   unsigned len;
+  bool gen_stack_protect_signal = false;
 
   /* Compute the phase of the stack frame for this function.  */
   {
@@ -1576,6 +1604,24 @@ expand_used_vars (void)
 	}
     }
   pointer_map_destroy (ssa_name_decls);
+
+  if (flag_stack_protect == SPCT_FLAG_STRONG)
+    FOR_EACH_LOCAL_DECL (cfun, i, var)
+      if (!is_global_var (var))
+	{
+	  tree var_type = TREE_TYPE (var);
+	  /* Examine local referenced variables that have their addresses taken,
+	     contain an array, or are arrays.  */
+	  if (TREE_CODE (var) == VAR_DECL
+	      && (TREE_CODE (var_type) == ARRAY_TYPE
+		  || TREE_ADDRESSABLE (var)
+		  || (RECORD_OR_UNION_TYPE_P (var_type)
+		      && record_or_union_type_has_array_p (var_type))))
+	    {
+	      gen_stack_protect_signal = true;
+	      break;
+	    }
+	}
 
   /* At this point all variables on the local_decls with TREE_USED
      set are not associated with any block scope.  Lay them out.  */
@@ -1663,12 +1709,26 @@ expand_used_vars (void)
 	dump_stack_var_partition ();
     }
 
-  /* There are several conditions under which we should create a
-     stack guard: protect-all, alloca used, protected decls present.  */
-  if (flag_stack_protect == 2
-      || (flag_stack_protect
-	  && (cfun->calls_alloca || has_protected_decls)))
-    create_stack_guard ();
+  switch (flag_stack_protect)
+    {
+    case SPCT_FLAG_ALL:
+      create_stack_guard ();
+      break;
+
+    case SPCT_FLAG_STRONG:
+      if (gen_stack_protect_signal
+	  || cfun->calls_alloca || has_protected_decls)
+	create_stack_guard ();
+      break;
+
+    case SPCT_FLAG_DEFAULT:
+      if (cfun->calls_alloca || has_protected_decls)
+	create_stack_guard();
+      break;
+
+    default:
+      ;
+    }
 
   /* Assign rtl to each variable based on these partitions.  */
   if (stack_vars_num > 0)
@@ -1887,9 +1947,14 @@ expand_gimple_cond (basic_block bb, gimple stmt)
      be cleaned up by combine.  But some pattern matchers like if-conversion
      work better when there's only one compare, so make up for this
      here as special exception if TER would have made the same change.  */
-  if (gimple_cond_single_var_p (stmt)
-      && SA.values
+  if (SA.values
       && TREE_CODE (op0) == SSA_NAME
+      && TREE_CODE (TREE_TYPE (op0)) == BOOLEAN_TYPE
+      && TREE_CODE (op1) == INTEGER_CST
+      && ((gimple_cond_code (stmt) == NE_EXPR
+	   && integer_zerop (op1))
+	  || (gimple_cond_code (stmt) == EQ_EXPR
+	      && integer_onep (op1)))
       && bitmap_bit_p (SA.values, SSA_NAME_VERSION (op0)))
     {
       gimple second = SSA_NAME_DEF_STMT (op0);
@@ -2623,6 +2688,8 @@ expand_debug_parm_decl (tree decl)
 	      reg = gen_raw_REG (GET_MODE (reg), OUTGOING_REGNO (REGNO (reg)));
 	      incoming = replace_equiv_address_nv (incoming, reg);
 	    }
+	  else
+	    incoming = copy_rtx (incoming);
 	}
 #endif
 
@@ -2638,7 +2705,7 @@ expand_debug_parm_decl (tree decl)
 	  || (GET_CODE (XEXP (incoming, 0)) == PLUS
 	      && XEXP (XEXP (incoming, 0), 0) == virtual_incoming_args_rtx
 	      && CONST_INT_P (XEXP (XEXP (incoming, 0), 1)))))
-    return incoming;
+    return copy_rtx (incoming);
 
   return NULL_RTX;
 }
@@ -3705,6 +3772,56 @@ expand_debug_source_expr (tree exp)
   return op0;
 }
 
+/* Ensure INSN_VAR_LOCATION_LOC (insn) doesn't have unbound complexity.
+   Allow 4 levels of rtl nesting for most rtl codes, and if we see anything
+   deeper than that, create DEBUG_EXPRs and emit DEBUG_INSNs before INSN.  */
+
+static void
+avoid_complex_debug_insns (rtx insn, rtx *exp_p, int depth)
+{
+  rtx exp = *exp_p;
+
+  if (exp == NULL_RTX)
+    return;
+
+  if ((OBJECT_P (exp) && !MEM_P (exp)) || GET_CODE (exp) == CLOBBER)
+    return;
+
+  if (depth == 4)
+    {
+      /* Create DEBUG_EXPR (and DEBUG_EXPR_DECL).  */
+      rtx dval = make_debug_expr_from_rtl (exp);
+
+      /* Emit a debug bind insn before INSN.  */
+      rtx bind = gen_rtx_VAR_LOCATION (GET_MODE (exp),
+				       DEBUG_EXPR_TREE_DECL (dval), exp,
+				       VAR_INIT_STATUS_INITIALIZED);
+
+      emit_debug_insn_before (bind, insn);
+      *exp_p = dval;
+      return;
+    }
+
+  const char *format_ptr = GET_RTX_FORMAT (GET_CODE (exp));
+  int i, j;
+  for (i = 0; i < GET_RTX_LENGTH (GET_CODE (exp)); i++)
+    switch (*format_ptr++)
+      {
+      case 'e':
+	avoid_complex_debug_insns (insn, &XEXP (exp, i), depth + 1);
+	break;
+
+      case 'E':
+      case 'V':
+	for (j = 0; j < XVECLEN (exp, i); j++)
+	  avoid_complex_debug_insns (insn, &XVECEXP (exp, i, j), depth + 1);
+	break;
+
+      default:
+	break;
+      }
+}
+
 /* Expand the _LOCs in debug insns.  We run this after expanding all
    regular insns, so that any variables referenced in the function
    will have their DECL_RTLs set.  */
@@ -3725,7 +3842,7 @@ expand_debug_locations (void)
     if (DEBUG_INSN_P (insn))
       {
 	tree value = (tree)INSN_VAR_LOCATION_LOC (insn);
-	rtx val;
+	rtx val, prev_insn, insn2;
 	enum machine_mode mode;
 
 	if (value == NULL_TREE)
@@ -3754,6 +3871,9 @@ expand_debug_locations (void)
 	  }
 
 	INSN_VAR_LOCATION_LOC (insn) = val;
+	prev_insn = PREV_INSN (insn);
+	for (insn2 = insn; insn2 != prev_insn; insn2 = PREV_INSN (insn2))
+	  avoid_complex_debug_insns (insn2, &INSN_VAR_LOCATION_LOC (insn2), 0);
       }
 
   flag_strict_aliasing = save_strict_alias;
@@ -4799,11 +4919,12 @@ struct rtl_opt_pass pass_expand =
   0,                                    /* static_pass_number */
   TV_EXPAND,				/* tv_id */
   PROP_ssa | PROP_gimple_leh | PROP_cfg
-    | PROP_gimple_lcx,			/* properties_required */
+    | PROP_gimple_lcx
+    | PROP_gimple_lvec,			/* properties_required */
   PROP_rtl,                             /* properties_provided */
   PROP_ssa | PROP_trees,		/* properties_destroyed */
   TODO_verify_ssa | TODO_verify_flow
     | TODO_verify_stmts,		/* todo_flags_start */
-  TODO_ggc_collect			/* todo_flags_finish */
+  0					/* todo_flags_finish */
  }
 };

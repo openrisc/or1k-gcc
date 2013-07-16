@@ -1,7 +1,6 @@
 /* Subroutines for insn-output.c for Windows NT.
    Contributed by Douglas Rupp (drupp@cs.washington.edu)
-   Copyright (C) 1995, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 1995-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -31,7 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "flags.h"
 #include "tm_p.h"
 #include "diagnostic-core.h"
-#include "hashtab.h"
+#include "hash-table.h"
 #include "langhooks.h"
 #include "ggc.h"
 #include "target.h"
@@ -251,8 +250,9 @@ i386_pe_assemble_visibility (tree decl,
   if (!decl
       || !lookup_attribute ("visibility", DECL_ATTRIBUTES (decl)))
     return;
-  warning (OPT_Wattributes, "visibility attribute not supported "
-	   "in this configuration; ignored");
+  if (!DECL_ARTIFICIAL (decl))
+    warning (OPT_Wattributes, "visibility attribute not supported "
+			      "in this configuration; ignored");
 }
 
 /* This is used as a target hook to modify the DECL_ASSEMBLER_NAME
@@ -449,7 +449,7 @@ i386_pe_reloc_rw_mask (void)
 unsigned int
 i386_pe_section_type_flags (tree decl, const char *name, int reloc)
 {
-  static htab_t htab;
+  static hash_table <pointer_hash <unsigned int> > htab;
   unsigned int flags;
   unsigned int **slot;
 
@@ -460,8 +460,8 @@ i386_pe_section_type_flags (tree decl, const char *name, int reloc)
   /* The names we put in the hashtable will always be the unique
      versions given to us by the stringtable, so we can just use
      their addresses as the keys.  */
-  if (!htab)
-    htab = htab_create (31, htab_hash_pointer, htab_eq_pointer, NULL);
+  if (!htab.is_created ())
+    htab.create (31);
 
   if (decl && TREE_CODE (decl) == FUNCTION_DECL)
     flags = SECTION_CODE;
@@ -476,11 +476,11 @@ i386_pe_section_type_flags (tree decl, const char *name, int reloc)
 	flags |= SECTION_PE_SHARED;
     }
 
-  if (decl && DECL_ONE_ONLY (decl))
+  if (decl && DECL_P (decl) && DECL_ONE_ONLY (decl))
     flags |= SECTION_LINKONCE;
 
   /* See if we already have an entry for this section.  */
-  slot = (unsigned int **) htab_find_slot (htab, name, INSERT);
+  slot = htab.find_slot ((unsigned int *)name, INSERT);
   if (!*slot)
     {
       *slot = (unsigned int *) xmalloc (sizeof (unsigned int));
@@ -646,7 +646,17 @@ struct GTY(()) export_list
   int is_data;		/* used to type tag exported symbols.  */
 };
 
+/* Keep a list of stub symbols.  */
+
+struct GTY(()) stub_list
+{
+  struct stub_list *next;
+  const char *name;
+};
+
 static GTY(()) struct export_list *export_head;
+
+static GTY(()) struct stub_list *stub_head;
 
 /* Assemble an export symbol entry.  We need to keep a list of
    these, so that we can output the export list at the end of the
@@ -678,14 +688,55 @@ i386_pe_maybe_record_exported_symbol (tree decl, const char *name, int is_data)
   export_head = p;
 }
 
+void
+i386_pe_record_stub (const char *name)
+{
+  struct stub_list *p;
+
+  if (!name || *name == 0)
+    return;
+
+  p = stub_head;
+  while (p != NULL)
+    {
+      if (p->name[0] == *name
+          && !strcmp (p->name, name))
+	return;
+      p = p->next;
+    }
+
+  p = ggc_alloc_stub_list ();
+  p->next = stub_head;
+  p->name = name;
+  stub_head = p;
+}
+
+
 #ifdef CXX_WRAP_SPEC_LIST
+
+/* Hashtable helpers.  */
+
+struct wrapped_symbol_hasher : typed_noop_remove <char>
+{
+  typedef char value_type;
+  typedef char compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+  static inline void remove (value_type *);
+};
+
+inline hashval_t
+wrapped_symbol_hasher::hash (const value_type *v)
+{
+  return htab_hash_string (v);
+}
 
 /*  Hash table equality helper function.  */
 
-static int
-wrapper_strcmp (const void *x, const void *y)
+inline bool
+wrapped_symbol_hasher::equal (const value_type *x, const compare_type *y)
 {
-  return !strcmp ((const char *) x, (const char *) y);
+  return !strcmp (x, y);
 }
 
 /* Search for a function named TARGET in the list of library wrappers
@@ -699,7 +750,7 @@ static const char *
 i386_find_on_wrapper_list (const char *target)
 {
   static char first_time = 1;
-  static htab_t wrappers;
+  static hash_table <wrapped_symbol_hasher> wrappers;
 
   if (first_time)
     {
@@ -712,8 +763,7 @@ i386_find_on_wrapper_list (const char *target)
       char *bufptr;
       /* Breaks up the char array into separated strings
          strings and enter them into the hash table.  */
-      wrappers = htab_create_alloc (8, htab_hash_string, wrapper_strcmp,
-	0, xcalloc, free);
+      wrappers.create (8);
       for (bufptr = wrapper_list_buffer; *bufptr; ++bufptr)
 	{
 	  char *found = NULL;
@@ -726,12 +776,12 @@ i386_find_on_wrapper_list (const char *target)
 	  if (*bufptr)
 	    *bufptr = 0;
 	  if (found)
-	    *htab_find_slot (wrappers, found, INSERT) = found;
+	    *wrappers.find_slot (found, INSERT) = found;
 	}
       first_time = 0;
     }
 
-  return (const char *) htab_find (wrappers, target);
+  return wrappers.find (target);
 }
 
 #endif /* CXX_WRAP_SPEC_LIST */
@@ -779,6 +829,30 @@ i386_pe_file_end (void)
 	  fprintf (asm_out_file, "\t.ascii \" -export:\\\"%s\\\"%s\"\n",
 		   default_strip_name_encoding (q->name),
 		   (q->is_data ? ",data" : ""));
+	}
+    }
+
+  if (stub_head)
+    {
+      struct stub_list *q;
+
+      for (q = stub_head; q != NULL; q = q->next)
+	{
+	  const char *name = q->name;
+	  const char *oname;
+
+	  if (name[0] == '*')
+	    ++name;
+	  oname = name;
+	  if (name[0] == '.')
+	    ++name;
+	  if (strncmp (name, "refptr.", 7) != 0)
+	    continue;
+	  name += 7;
+	  fprintf (asm_out_file, "\t.section\t.rdata$%s, \"dr\"\n"
+	  		   "\t.globl\t%s\n"
+			   "\t.linkonce\tdiscard\n", oname, oname);
+	  fprintf (asm_out_file, "%s:\n\t.quad\t%s\n", oname, name);
 	}
     }
 }

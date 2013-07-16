@@ -1,5 +1,4 @@
-/* Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+/* Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    Namelist transfer functions contributed by Paul Thomas
    F2003 I/O support contributed by Jerry DeLisle
@@ -402,7 +401,7 @@ read_sf (st_parameter_dt *dtp, int * length)
 
 
 /* Function for reading the next couple of bytes from the current
-   file, advancing the current position. We return FAILURE on end of record or
+   file, advancing the current position. We return NULL on end of record or
    end of file. This function is only for formatted I/O, unformatted uses
    read_block_direct.
 
@@ -642,7 +641,7 @@ read_block_direct (st_parameter_dt *dtp, void *buf, size_t nbytes)
 
       have_read_subrecord = sread (dtp->u.p.current_unit->s, 
 				   buf + have_read_record, to_read_subrecord);
-      if (unlikely (have_read_subrecord) < 0)
+      if (unlikely (have_read_subrecord < 0))
 	{
 	  generate_error (&dtp->common, LIBERROR_OS, NULL);
 	  return;
@@ -775,7 +774,7 @@ write_block (st_parameter_dt *dtp, int length)
    called for unformatted files.  There are three cases to consider:
    Stream I/O, unformatted direct, unformatted sequential.  */
 
-static try
+static bool
 write_buf (st_parameter_dt *dtp, void *buf, size_t nbytes)
 {
 
@@ -791,12 +790,12 @@ write_buf (st_parameter_dt *dtp, void *buf, size_t nbytes)
       if (unlikely (have_written < 0))
 	{
 	  generate_error (&dtp->common, LIBERROR_OS, NULL);
-	  return FAILURE;
+	  return false;
 	}
 
       dtp->u.p.current_unit->strm_pos += (gfc_offset) have_written; 
 
-      return SUCCESS;
+      return true;
     }
 
   /* Unformatted direct access.  */
@@ -806,23 +805,23 @@ write_buf (st_parameter_dt *dtp, void *buf, size_t nbytes)
       if (unlikely (dtp->u.p.current_unit->bytes_left < (gfc_offset) nbytes))
 	{
 	  generate_error (&dtp->common, LIBERROR_DIRECT_EOR, NULL);
-	  return FAILURE;
+	  return false;
 	}
 
       if (buf == NULL && nbytes == 0)
-	return SUCCESS;
+	return true;
 
       have_written = swrite (dtp->u.p.current_unit->s, buf, nbytes); 
       if (unlikely (have_written < 0))
 	{
 	  generate_error (&dtp->common, LIBERROR_OS, NULL);
-	  return FAILURE;
+	  return false;
 	}
 
       dtp->u.p.current_unit->strm_pos += (gfc_offset) have_written;
       dtp->u.p.current_unit->bytes_left -= (gfc_offset) have_written;
 
-      return SUCCESS;
+      return true;
     }
 
   /* Unformatted sequential.  */
@@ -855,7 +854,7 @@ write_buf (st_parameter_dt *dtp, void *buf, size_t nbytes)
       if (unlikely (to_write_subrecord < 0))
 	{
 	  generate_error (&dtp->common, LIBERROR_OS, NULL);
-	  return FAILURE;
+	  return false;
 	}
 
       dtp->u.p.current_unit->strm_pos += (gfc_offset) to_write_subrecord; 
@@ -872,9 +871,114 @@ write_buf (st_parameter_dt *dtp, void *buf, size_t nbytes)
   if (unlikely (short_record))
     {
       generate_error (&dtp->common, LIBERROR_SHORT_RECORD, NULL);
-      return FAILURE;
+      return false;
     }
-  return SUCCESS;
+  return true;
+}
+
+
+/* Reverse memcpy - used for byte swapping.  */
+
+static void
+reverse_memcpy (void *dest, const void *src, size_t n)
+{
+  char *d, *s;
+  size_t i;
+
+  d = (char *) dest;
+  s = (char *) src + n - 1;
+
+  /* Write with ascending order - this is likely faster
+     on modern architectures because of write combining.  */
+  for (i=0; i<n; i++)
+      *(d++) = *(s--);
+}
+
+
+/* Utility function for byteswapping an array, using the bswap
+   builtins if possible. dest and src can overlap completely, or then
+   they must point to separate objects; partial overlaps are not
+   allowed.  */
+
+static void
+bswap_array (void *dest, const void *src, size_t size, size_t nelems)
+{
+  const char *ps; 
+  char *pd;
+
+  switch (size)
+    {
+    case 1:
+      break;
+    case 2:
+      for (size_t i = 0; i < nelems; i++)
+	((uint16_t*)dest)[i] = __builtin_bswap16 (((uint16_t*)src)[i]);
+      break;
+    case 4:
+      for (size_t i = 0; i < nelems; i++)
+	((uint32_t*)dest)[i] = __builtin_bswap32 (((uint32_t*)src)[i]);
+      break;
+    case 8:
+      for (size_t i = 0; i < nelems; i++)
+	((uint64_t*)dest)[i] = __builtin_bswap64 (((uint64_t*)src)[i]);
+      break;
+    case 12:
+      ps = src;
+      pd = dest;
+      for (size_t i = 0; i < nelems; i++)
+	{
+	  uint32_t tmp;
+	  memcpy (&tmp, ps, 4);
+	  *(uint32_t*)pd = __builtin_bswap32 (*(uint32_t*)(ps + 8));
+	  *(uint32_t*)(pd + 4) = __builtin_bswap32 (*(uint32_t*)(ps + 4));
+	  *(uint32_t*)(pd + 8) = __builtin_bswap32 (tmp);
+	  ps += size;
+	  pd += size;
+	}
+      break;
+    case 16:
+      ps = src;
+      pd = dest;
+      for (size_t i = 0; i < nelems; i++)
+	{
+	  uint64_t tmp;
+	  memcpy (&tmp, ps, 8);
+	  *(uint64_t*)pd = __builtin_bswap64 (*(uint64_t*)(ps + 8));
+	  *(uint64_t*)(pd + 8) = __builtin_bswap64 (tmp);
+	  ps += size;
+	  pd += size;
+	}
+      break;
+    default:
+      pd = dest;
+      if (dest != src)
+	{
+	  ps = src;
+	  for (size_t i = 0; i < nelems; i++)
+	    {
+	      reverse_memcpy (pd, ps, size);
+	      ps += size;
+	      pd += size;
+	    }
+	}
+      else
+	{
+	  /* In-place byte swap.  */
+	  for (size_t i = 0; i < nelems; i++)
+	    {
+	      char tmp, *low = pd, *high = pd + size - 1;
+	      for (size_t j = 0; j < size/2; j++)
+		{
+		  tmp = *low;
+		  *low = *high;
+		  *high = tmp;
+		  low++;
+		  high--;
+		}
+	      pd += size;
+	    }
+	}
+    }
 }
 
 
@@ -884,44 +988,27 @@ static void
 unformatted_read (st_parameter_dt *dtp, bt type,
 		  void *dest, int kind, size_t size, size_t nelems)
 {
-  if (likely (dtp->u.p.current_unit->flags.convert == GFC_CONVERT_NATIVE)
-      || kind == 1)
-    {
-      if (type == BT_CHARACTER)
-	size *= GFC_SIZE_OF_CHAR_KIND(kind);
-      read_block_direct (dtp, dest, size * nelems);
-    }
-  else
-    {
-      char buffer[16];
-      char *p;
-      size_t i;
+  if (type == BT_CHARACTER)
+    size *= GFC_SIZE_OF_CHAR_KIND(kind);
+  read_block_direct (dtp, dest, size * nelems);
 
-      p = dest;
-
+  if (unlikely (dtp->u.p.current_unit->flags.convert == GFC_CONVERT_SWAP)
+      && kind != 1)
+    {
       /* Handle wide chracters.  */
-      if (type == BT_CHARACTER && kind != 1)
-	{
-	  nelems *= size;
-	  size = kind;
-	}
+      if (type == BT_CHARACTER)
+  	{
+  	  nelems *= size;
+  	  size = kind;
+  	}
 
       /* Break up complex into its constituent reals.  */
-      if (type == BT_COMPLEX)
-	{
-	  nelems *= 2;
-	  size /= 2;
-	}
-      
-      /* By now, all complex variables have been split into their
-	 constituent reals.  */
-      
-      for (i = 0; i < nelems; i++)
-	{
- 	  read_block_direct (dtp, buffer, size);
- 	  reverse_memcpy (p, buffer, size);
- 	  p += size;
- 	}
+      else if (type == BT_COMPLEX)
+  	{
+  	  nelems *= 2;
+  	  size /= 2;
+  	}
+      bswap_array (dest, dest, size, nelems);
     }
 }
 
@@ -945,9 +1032,10 @@ unformatted_write (st_parameter_dt *dtp, bt type,
     }
   else
     {
-      char buffer[16];
+#define BSWAP_BUFSZ 512
+      char buffer[BSWAP_BUFSZ];
       char *p;
-      size_t i;
+      size_t nrem;
 
       p = source;
 
@@ -968,12 +1056,21 @@ unformatted_write (st_parameter_dt *dtp, bt type,
       /* By now, all complex variables have been split into their
 	 constituent reals.  */
 
-      for (i = 0; i < nelems; i++)
+      nrem = nelems;
+      do
 	{
-	  reverse_memcpy(buffer, p, size);
- 	  p += size;
-	  write_buf (dtp, buffer, size);
+	  size_t nc;
+	  if (size * nrem > BSWAP_BUFSZ)
+	    nc = BSWAP_BUFSZ / size;
+	  else
+	    nc = nrem;
+
+	  bswap_array (buffer, p, size, nc);
+	  write_buf (dtp, buffer, size * nc);
+	  p += size * nc;
+	  nrem -= nc;
 	}
+      while (nrem > 0);
     }
 }
 
@@ -2153,15 +2250,22 @@ us_read (st_parameter_dt *dtp, int continued)
 	}
     }
   else
+    {
+      uint32_t u32;
+      uint64_t u64;
       switch (nr)
 	{
 	case sizeof(GFC_INTEGER_4):
-	  reverse_memcpy (&i4, &i, sizeof (i4));
+	  memcpy (&u32, &i, sizeof (u32));
+	  u32 = __builtin_bswap32 (u32);
+	  memcpy (&i4, &u32, sizeof (i4));
 	  i = i4;
 	  break;
 
 	case sizeof(GFC_INTEGER_8):
-	  reverse_memcpy (&i8, &i, sizeof (i8));
+	  memcpy (&u64, &i, sizeof (u64));
+	  u64 = __builtin_bswap64 (u64);
+	  memcpy (&i8, &u64, sizeof (i8));
 	  i = i8;
 	  break;
 
@@ -2169,6 +2273,7 @@ us_read (st_parameter_dt *dtp, int continued)
 	  runtime_error ("Illegal value for record marker");
 	  break;
 	}
+    }
 
   if (i >= 0)
     {
@@ -3036,7 +3141,6 @@ write_us_marker (st_parameter_dt *dtp, const gfc_offset buf)
   size_t len;
   GFC_INTEGER_4 buf4;
   GFC_INTEGER_8 buf8;
-  char p[sizeof (GFC_INTEGER_8)];
 
   if (compile_options.record_marker == 0)
     len = sizeof (GFC_INTEGER_4);
@@ -3065,18 +3169,22 @@ write_us_marker (st_parameter_dt *dtp, const gfc_offset buf)
     }
   else
     {
+      uint32_t u32;
+      uint64_t u64;
       switch (len)
 	{
 	case sizeof (GFC_INTEGER_4):
 	  buf4 = buf;
-	  reverse_memcpy (p, &buf4, sizeof (GFC_INTEGER_4));
-	  return swrite (dtp->u.p.current_unit->s, p, len);
+	  memcpy (&u32, &buf4, sizeof (u32));
+	  u32 = __builtin_bswap32 (u32);
+	  return swrite (dtp->u.p.current_unit->s, &u32, len);
 	  break;
 
 	case sizeof (GFC_INTEGER_8):
 	  buf8 = buf;
-	  reverse_memcpy (p, &buf8, sizeof (GFC_INTEGER_8));
-	  return swrite (dtp->u.p.current_unit->s, p, len);
+	  memcpy (&u64, &buf8, sizeof (u64));
+	  u64 = __builtin_bswap64 (u64);
+	  return swrite (dtp->u.p.current_unit->s, &u64, len);
 	  break;
 
 	default:
@@ -3099,17 +3207,6 @@ next_record_w_unf (st_parameter_dt *dtp, int next_subrecord)
   m = dtp->u.p.current_unit->recl_subrecord
     - dtp->u.p.current_unit->bytes_left_subrecord;
 
-  /* Write the length tail.  If we finish a record containing
-     subrecords, we write out the negative length.  */
-
-  if (dtp->u.p.current_unit->continued)
-    m_write = -m;
-  else
-    m_write = m;
-
-  if (unlikely (write_us_marker (dtp, m_write) < 0))
-    goto io_error;
-
   if (compile_options.record_marker == 0)
     record_marker = sizeof (GFC_INTEGER_4);
   else
@@ -3118,7 +3215,7 @@ next_record_w_unf (st_parameter_dt *dtp, int next_subrecord)
   /* Seek to the head and overwrite the bogus length with the real
      length.  */
 
-  if (unlikely (sseek (dtp->u.p.current_unit->s, - m - 2 * record_marker, 
+  if (unlikely (sseek (dtp->u.p.current_unit->s, - m - record_marker, 
 		       SEEK_CUR) < 0))
     goto io_error;
 
@@ -3132,8 +3229,18 @@ next_record_w_unf (st_parameter_dt *dtp, int next_subrecord)
 
   /* Seek past the end of the current record.  */
 
-  if (unlikely (sseek (dtp->u.p.current_unit->s, m + record_marker, 
-		       SEEK_CUR) < 0))
+  if (unlikely (sseek (dtp->u.p.current_unit->s, m, SEEK_CUR) < 0))
+    goto io_error;
+
+  /* Write the length tail.  If we finish a record containing
+     subrecords, we write out the negative length.  */
+
+  if (dtp->u.p.current_unit->continued)
+    m_write = -m;
+  else
+    m_write = m;
+
+  if (unlikely (write_us_marker (dtp, m_write) < 0))
     goto io_error;
 
   return;
@@ -3395,6 +3502,7 @@ next_record (st_parameter_dt *dtp, int done)
     pre_position (dtp);
 
   fbuf_flush (dtp->u.p.current_unit, dtp->u.p.mode);
+  flush_if_unbuffered (dtp->u.p.current_unit->s);
 }
 
 
@@ -3713,22 +3821,6 @@ st_set_nml_var_dim (st_parameter_dt *dtp, GFC_INTEGER_4 n_dim,
   GFC_DIMENSION_SET(nml->dim[n],lbound,ubound,stride);
 }
 
-/* Reverse memcpy - used for byte swapping.  */
-
-void reverse_memcpy (void *dest, const void *src, size_t n)
-{
-  char *d, *s;
-  size_t i;
-
-  d = (char *) dest;
-  s = (char *) src + n - 1;
-
-  /* Write with ascending order - this is likely faster
-     on modern architectures because of write combining.  */
-  for (i=0; i<n; i++)
-      *(d++) = *(s--);
-}
-
 
 /* Once upon a time, a poor innocent Fortran program was reading a
    file, when suddenly it hit the end-of-file (EOF).  Unfortunately
@@ -3748,7 +3840,7 @@ hit_eof (st_parameter_dt * dtp)
       case NO_ENDFILE:
       case AT_ENDFILE:
         generate_error (&dtp->common, LIBERROR_END, NULL);
-	if (!is_internal_unit (dtp))
+	if (!is_internal_unit (dtp) && !dtp->u.p.namelist_mode)
 	  {
 	    dtp->u.p.current_unit->endfile = AFTER_ENDFILE;
 	    dtp->u.p.current_unit->current_record = 0;

@@ -1,7 +1,5 @@
 /* If-conversion support.
-   Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010,
-   2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -68,6 +66,9 @@
 #define IFCVT_MULTIPLE_DUMPS 1
 
 #define NULL_BLOCK	((basic_block) NULL)
+
+/* True if after combine pass.  */
+static bool ifcvt_after_combine;
 
 /* # of IF-THEN or IF-THEN-ELSE blocks we looked at  */
 static int num_possible_if_blocks;
@@ -143,11 +144,24 @@ cheap_bb_rtx_cost_p (const_basic_block bb, int scale, int max_cost)
   rtx insn = BB_HEAD (bb);
   bool speed = optimize_bb_for_speed_p (bb);
 
+  /* Set scale to REG_BR_PROB_BASE to void the identical scaling
+     applied to insn_rtx_cost when optimizing for size.  Only do
+     this after combine because if-conversion might interfere with
+     passes before combine.
+
+     Use optimize_function_for_speed_p instead of the pre-defined
+     variable speed to make sure it is set to same value for all
+     basic blocks in one if-conversion transformation.  */
+  if (!optimize_function_for_speed_p (cfun) && ifcvt_after_combine)
+    scale = REG_BR_PROB_BASE;
   /* Our branch probability/scaling factors are just estimates and don't
      account for cases where we can get speculation for free and other
      secondary benefits.  So we fudge the scale factor to make speculating
-     appear a little more profitable.  */
-  scale += REG_BR_PROB_BASE / 8;
+     appear a little more profitable when optimizing for performance.  */
+  else
+    scale += REG_BR_PROB_BASE / 8;
+
+
   max_cost *= scale;
 
   while (1)
@@ -966,6 +980,8 @@ end_ifcvt_sequence (struct noce_if_info *if_info)
 
   set_used_flags (if_info->x);
   set_used_flags (if_info->cond);
+  set_used_flags (if_info->a);
+  set_used_flags (if_info->b);
   unshare_all_rtl_in_chain (seq);
   end_sequence ();
 
@@ -2493,6 +2509,12 @@ noce_process_if_block (struct noce_if_info *if_info)
 	  || ! noce_operand_ok (SET_SRC (set_b))
 	  || reg_overlap_mentioned_p (x, SET_SRC (set_b))
 	  || modified_between_p (SET_SRC (set_b), insn_b, jump)
+	  /* Avoid extending the lifetime of hard registers on small
+	     register class machines.  */
+	  || (REG_P (SET_SRC (set_b))
+	      && HARD_REGISTER_P (SET_SRC (set_b))
+	      && targetm.small_register_classes_for_mode_p
+		   (GET_MODE (SET_SRC (set_b))))
 	  /* Likewise with X.  In particular this can happen when
 	     noce_get_condition looks farther back in the instruction
 	     stream than one might expect.  */
@@ -3469,7 +3491,7 @@ cond_exec_find_if_block (struct ce_if_block * ce_info)
      code processing.  ??? we should fix this in the future.  */
   if (EDGE_COUNT (then_bb->succs) == 0)
     {
-      if (single_pred_p (else_bb))
+      if (single_pred_p (else_bb) && else_bb != EXIT_BLOCK_PTR)
 	{
 	  rtx last_insn = BB_END (then_bb);
 
@@ -3899,10 +3921,9 @@ find_if_case_1 (basic_block test_bb, edge then_edge, edge else_edge)
   if (new_bb)
     {
       df_bb_replace (then_bb_index, new_bb);
-      /* Since the fallthru edge was redirected from test_bb to new_bb,
-         we need to ensure that new_bb is in the same partition as
-         test bb (you can not fall through across section boundaries).  */
-      BB_COPY_PARTITION (new_bb, test_bb);
+      /* This should have been done above via force_nonfallthru_and_redirect
+         (possibly called from redirect_edge_and_branch_force).  */
+      gcc_checking_assert (BB_PARTITION (new_bb) == BB_PARTITION (test_bb));
     }
 
   num_true_changes++;
@@ -4332,10 +4353,11 @@ dead_or_predicable (basic_block test_bb, basic_block merge_bb,
   return FALSE;
 }
 
-/* Main entry point for all if-conversion.  */
+/* Main entry point for all if-conversion.  AFTER_COMBINE is true if
+   we are after combine pass.  */
 
 static void
-if_convert (void)
+if_convert (bool after_combine)
 {
   basic_block bb;
   int pass;
@@ -4346,6 +4368,8 @@ if_convert (void)
       df_live_set_all_dirty ();
     }
 
+  /* Record whether we are after combine pass.  */
+  ifcvt_after_combine = after_combine;
   num_possible_if_blocks = 0;
   num_updated_if_blocks = 0;
   num_true_changes = 0;
@@ -4449,7 +4473,7 @@ rest_of_handle_if_conversion (void)
 	  dump_flow_info (dump_file, dump_flags);
 	}
       cleanup_cfg (CLEANUP_EXPENSIVE);
-      if_convert ();
+      if_convert (false);
     }
 
   cleanup_cfg (0);
@@ -4490,7 +4514,7 @@ gate_handle_if_after_combine (void)
 static unsigned int
 rest_of_handle_if_after_combine (void)
 {
-  if_convert ();
+  if_convert (true);
   return 0;
 }
 
@@ -4510,8 +4534,7 @@ struct rtl_opt_pass pass_if_after_combine =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_df_finish | TODO_verify_rtl_sharing |
-  TODO_ggc_collect                      /* todo_flags_finish */
+  TODO_df_finish | TODO_verify_rtl_sharing /* todo_flags_finish */
  }
 };
 
@@ -4526,7 +4549,7 @@ gate_handle_if_after_reload (void)
 static unsigned int
 rest_of_handle_if_after_reload (void)
 {
-  if_convert ();
+  if_convert (true);
   return 0;
 }
 
@@ -4547,7 +4570,6 @@ struct rtl_opt_pass pass_if_after_reload =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_df_finish | TODO_verify_rtl_sharing |
-  TODO_ggc_collect                      /* todo_flags_finish */
+  TODO_df_finish | TODO_verify_rtl_sharing /* todo_flags_finish */
  }
 };

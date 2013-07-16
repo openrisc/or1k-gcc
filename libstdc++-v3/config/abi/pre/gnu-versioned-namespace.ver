@@ -1,7 +1,6 @@
 ## Linker script for GNU namespace versioning.
 ##
-## Copyright (C) 2002, 2003, 2004, 2005, 2007, 2009, 2011, 2012
-## Free Software Foundation, Inc.
+## Copyright (C) 2002-2013 Free Software Foundation, Inc.
 ##
 ## This file is part of the libstdc++ version 3 distribution.
 ##
@@ -54,9 +53,6 @@ GLIBCXX_7.0 {
 
     # function-scope static objects requires a guard variable.
     _ZGVNSt*;
-
-    # construction vtable
-    _ZTCNSt*;
 
     # VTT structure
     _ZTTNSt*;
@@ -235,6 +231,12 @@ CXXABI_2.0 {
     _ZTISt17bad_function_call;
     _ZTSSt17bad_function_call;
     _ZTVSt17bad_function_call;
+
+    __cxa_throw_bad_array_new_length;
+    _Z*St20bad_array_new_length*;
+
+    __cxa_throw_bad_array_length;
+    _Z*St16bad_array_length*;
 
     # Default function.
     _ZSt11_Hash_bytesPKv*;

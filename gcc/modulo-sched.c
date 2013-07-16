@@ -1,6 +1,5 @@
 /* Swing Modulo Scheduling implementation.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
    Contributed by Ayal Zaks and Mustafa Hagog <zaks,mustafa@il.ibm.com>
 
 This file is part of GCC.
@@ -1361,7 +1360,7 @@ sms_schedule (void)
 
   loop_optimizer_init (LOOPS_HAVE_PREHEADERS
 		       | LOOPS_HAVE_RECORDED_EXITS);
-  if (number_of_loops () <= 1)
+  if (number_of_loops (cfun) <= 1)
     {
       loop_optimizer_finalize ();
       return;  /* There are no loops to schedule.  */
@@ -1385,7 +1384,7 @@ sms_schedule (void)
 
   /* Allocate memory to hold the DDG array one entry for each loop.
      We use loop->num as index into this array.  */
-  g_arr = XCNEWVEC (ddg_ptr, number_of_loops ());
+  g_arr = XCNEWVEC (ddg_ptr, number_of_loops (cfun));
 
   if (dump_file)
   {
@@ -3370,7 +3369,6 @@ struct rtl_opt_pass pass_sms =
   0,                                    /* todo_flags_start */
   TODO_df_finish
     | TODO_verify_flow
-    | TODO_verify_rtl_sharing
-    | TODO_ggc_collect                  /* todo_flags_finish */
+    | TODO_verify_rtl_sharing           /* todo_flags_finish */
  }
 };

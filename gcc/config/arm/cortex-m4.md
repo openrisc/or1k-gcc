@@ -1,5 +1,5 @@
 ;; ARM Cortex-M4 pipeline description
-;; Copyright (C) 2010 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2013 Free Software Foundation, Inc.
 ;; Contributed by CodeSourcery.
 ;;
 ;; This file is part of GCC.
@@ -31,7 +31,10 @@
 ;; ALU and multiply is one cycle.
 (define_insn_reservation "cortex_m4_alu" 1
   (and (eq_attr "tune" "cortexm4")
-       (eq_attr "type" "alu,alu_shift,alu_shift_reg,mult"))
+       (ior (eq_attr "type" "alu_reg,simple_alu_imm,simple_alu_shift,\
+                             alu_shift,alu_shift_reg")
+	    (ior (eq_attr "mul32" "yes")
+		 (eq_attr "mul64" "yes"))))
   "cortex_m4_ex")
 
 ;; Byte, half-word and word load is two cycles.
@@ -83,6 +86,10 @@
   (and (eq_attr "tune" "cortexm4")
        (eq_attr "type" "store4"))
   "cortex_m4_ex*5")
+
+(define_bypass 1 "cortex_m4_load1"
+                 "cortex_m4_store1_1,cortex_m4_store1_2"
+                 "arm_no_early_store_addr_dep")
 
 ;; If the address of load or store depends on the result of the preceding
 ;; instruction, the latency is increased by one.

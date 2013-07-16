@@ -1,6 +1,5 @@
 /* Data flow functions for trees.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@redhat.com>
 
 This file is part of GCC.
@@ -363,8 +362,8 @@ get_or_create_ssa_default_def (struct function *fn, tree var)
   tree ddef = ssa_default_def (fn, var);
   if (ddef == NULL_TREE)
     {
-      ddef = make_ssa_name (var, gimple_build_nop ());
-      set_ssa_default_def (cfun, var, ddef);
+      ddef = make_ssa_name_fn (fn, var, gimple_build_nop ());
+      set_ssa_default_def (fn, var, ddef);
     }
   return ddef;
 }
@@ -434,9 +433,8 @@ get_ref_base_and_extent (tree exp, HOST_WIDE_INT *poffset,
 	    if (this_offset && TREE_CODE (this_offset) == INTEGER_CST)
 	      {
 		double_int doffset = tree_to_double_int (this_offset);
-		doffset = doffset.alshift (BITS_PER_UNIT == 8
-					   ? 3 : exact_log2 (BITS_PER_UNIT),
-					   HOST_BITS_PER_DOUBLE_INT);
+		doffset = doffset.lshift (BITS_PER_UNIT == 8
+					  ? 3 : exact_log2 (BITS_PER_UNIT));
 		doffset += tree_to_double_int (DECL_FIELD_BIT_OFFSET (field));
 		bit_offset = bit_offset + doffset;
 
@@ -502,9 +500,8 @@ get_ref_base_and_extent (tree exp, HOST_WIDE_INT *poffset,
 		  = (TREE_INT_CST (index) - TREE_INT_CST (low_bound))
 		    .sext (TYPE_PRECISION (TREE_TYPE (index)));
 		doffset *= tree_to_double_int (unit_size);
-		doffset = doffset.alshift (BITS_PER_UNIT == 8
-					   ? 3 : exact_log2 (BITS_PER_UNIT),
-					   HOST_BITS_PER_DOUBLE_INT);
+		doffset = doffset.lshift (BITS_PER_UNIT == 8
+					  ? 3 : exact_log2 (BITS_PER_UNIT));
 		bit_offset = bit_offset + doffset;
 
 		/* An array ref with a constant index up in the structure
@@ -553,9 +550,8 @@ get_ref_base_and_extent (tree exp, HOST_WIDE_INT *poffset,
 	      else
 		{
 		  double_int off = mem_ref_offset (exp);
-		  off = off.alshift (BITS_PER_UNIT == 8
-				     ? 3 : exact_log2 (BITS_PER_UNIT),
-				     HOST_BITS_PER_DOUBLE_INT);
+		  off = off.lshift (BITS_PER_UNIT == 8
+				    ? 3 : exact_log2 (BITS_PER_UNIT));
 		  off = off + bit_offset;
 		  if (off.fits_shwi ())
 		    {
@@ -584,9 +580,8 @@ get_ref_base_and_extent (tree exp, HOST_WIDE_INT *poffset,
 	      else
 		{
 		  double_int off = mem_ref_offset (exp);
-		  off = off.alshift (BITS_PER_UNIT == 8
-				     ? 3 : exact_log2 (BITS_PER_UNIT),
-				     HOST_BITS_PER_DOUBLE_INT);
+		  off = off.lshift (BITS_PER_UNIT == 8
+				    ? 3 : exact_log2 (BITS_PER_UNIT));
 		  off += bit_offset;
 		  if (off.fits_shwi ())
 		    {

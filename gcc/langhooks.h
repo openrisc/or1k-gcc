@@ -1,6 +1,5 @@
 /* The lang_hooks data structure.
-   Copyright 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -408,8 +407,10 @@ struct lang_hooks
 
   struct lang_hooks_for_lto lto;
 
-  /* Returns the generic parameters of an instantiation of
-     a generic type or decl, e.g. C++ template instantiation.  */
+  /* Returns a TREE_VEC of the generic parameters of an instantiation of
+     a generic type or decl, e.g. C++ template instantiation.  If
+     TREE_CHAIN of the return value is set, it is an INTEGER_CST
+     indicating how many of the elements are non-default.  */
   tree (*get_innermost_generic_parms) (const_tree);
 
   /* Returns the TREE_VEC of arguments of an instantiation

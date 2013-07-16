@@ -1,6 +1,5 @@
 /* GCC core type declarations.
-   Copyright (C) 2002, 2004, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -58,10 +57,13 @@ typedef struct rtvec_def *rtvec;
 typedef const struct rtvec_def *const_rtvec;
 union tree_node;
 typedef union tree_node *tree;
+typedef const union tree_node *const_tree;
 union gimple_statement_d;
 typedef union gimple_statement_d *gimple;
-typedef const union tree_node *const_tree;
 typedef const union gimple_statement_d *const_gimple;
+typedef gimple gimple_seq;
+struct gimple_stmt_iterator_d;
+typedef struct gimple_stmt_iterator_d gimple_stmt_iterator;
 union section;
 typedef union section section;
 struct gcc_options;
@@ -72,7 +74,8 @@ struct cl_decoded_option;
 struct cl_option_handlers;
 struct diagnostic_context;
 typedef struct diagnostic_context diagnostic_context;
-typedef gimple gimple_seq;
+struct pretty_print_info;
+typedef struct pretty_print_info pretty_printer;
 
 /* Address space number for named address space support.  */
 typedef unsigned char addr_space_t;

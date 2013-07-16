@@ -1,6 +1,5 @@
 /* Subroutines for insn-output.c for Tensilica's Xtensa architecture.
-   Copyright 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Bob Wilson (bwilson@tensilica.com) at Tensilica.
 
 This file is part of GCC.
@@ -1651,7 +1650,7 @@ xtensa_emit_loop_end (rtx insn, rtx *operands)
 	  {
 	    rtx body = PATTERN (insn);
 
-	    if (GET_CODE (body) == JUMP_INSN)
+	    if (JUMP_P (body))
 	      {
 		output_asm_insn (TARGET_DENSITY ? "nop.n" : "nop", operands);
 		done = 1;

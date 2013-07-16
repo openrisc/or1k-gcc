@@ -221,13 +221,14 @@ endif
 toolexeclibgoexpdir = $(toolexeclibgodir)/exp
 
 toolexeclibgoexp_DATA = \
+	exp/cookiejar.gox \
 	exp/ebnf.gox \
 	exp/html.gox \
 	$(exp_inotify_gox) \
 	exp/norm.gox \
 	exp/proxy.gox \
+	exp/ssa.gox \
 	exp/terminal.gox \
-	exp/types.gox \
 	exp/utf8string.gox
 
 toolexeclibgoexphtmldir = $(toolexeclibgoexpdir)/html
@@ -251,10 +252,12 @@ toolexeclibgogo_DATA = \
 	go/ast.gox \
 	go/build.gox \
 	go/doc.gox \
+	go/format.gox \
 	go/parser.gox \
 	go/printer.gox \
 	go/scanner.gox \
-	go/token.gox
+	go/token.gox \
+	go/types.gox
 
 toolexeclibgohashdir = $(toolexeclibgodir)/hash
 
@@ -450,6 +453,7 @@ runtime_files = \
 	runtime/go-deferred-recover.c \
 	runtime/go-eface-compare.c \
 	runtime/go-eface-val-compare.c \
+	runtime/go-fieldtrack.c \
 	runtime/go-getgoroot.c \
 	runtime/go-int-array-to-string.c \
 	runtime/go-int-to-string.c \
@@ -483,7 +487,6 @@ runtime_files = \
 	runtime/go-strplus.c \
 	runtime/go-strslice.c \
 	runtime/go-traceback.c \
-	runtime/go-trampoline.c \
 	runtime/go-type-complex.c \
 	runtime/go-type-eface.c \
 	runtime/go-type-error.c \
@@ -499,6 +502,7 @@ runtime_files = \
 	runtime/go-unwind.c \
 	runtime/chan.c \
 	runtime/cpuprof.c \
+	runtime/env_posix.c \
 	runtime/lfstack.c \
 	$(runtime_lock_files) \
 	runtime/mcache.c \
@@ -678,7 +682,7 @@ go_net_fd_os_file = go/net/fd_linux.go
 go_net_newpollserver_file = go/net/newpollserver_unix.go
 else # !LIBGO_IS_LINUX && !LIBGO_IS_RTEMS
 if LIBGO_IS_NETBSD
-go_net_fd_os_file = go/net/fd_netbsd.go
+go_net_fd_os_file = go/net/fd_bsd.go
 go_net_newpollserver_file = go/net/newpollserver_unix.go
 else # !LIBGO_IS_NETBSD && !LIBGO_IS_LINUX && !LIBGO_IS_RTEMS
 # By default use select with pipes.  Most systems should have
@@ -749,9 +753,16 @@ go_net_interface_file = go/net/interface_stub.go
 endif
 endif
 
+if LIBGO_IS_LINUX
+go_net_cloexec_file = go/net/sock_cloexec.go
+else
+go_net_cloexec_file = go/net/sys_cloexec.go
+endif
+
 go_net_files = \
 	go/net/cgo_unix.go \
 	$(go_net_cgo_file) \
+	$(go_net_cloexec_file) \
 	go/net/dial.go \
 	go/net/dnsclient.go \
 	go/net/dnsclient_unix.go \
@@ -836,13 +847,13 @@ if LIBGO_IS_OPENBSD
 go_os_stat_file = go/os/stat_atim.go
 else
 if LIBGO_IS_DARWIN
-go_os_stat_file = go/os/stat_atimspec.go
+go_os_stat_file = go/os/stat_atimespec.go
 else
 if LIBGO_IS_FREEBSD
-go_os_stat_file = go/os/stat_atimspec.go
+go_os_stat_file = go/os/stat_atimespec.go
 else
 if LIBGO_IS_NETBSD
-go_os_stat_file = go/os/stat_atimspec.go
+go_os_stat_file = go/os/stat_atimespec.go
 else
 go_os_stat_file = go/os/stat.go
 endif
@@ -850,6 +861,12 @@ endif
 endif
 endif
 endif
+endif
+
+if LIBGO_IS_LINUX
+go_os_pipe_file = go/os/pipe_linux.go
+else
+go_os_pipe_file = go/os/pipe_bsd.go
 endif
 
 go_os_files = \
@@ -868,6 +885,7 @@ go_os_files = \
 	go/os/getwd.go \
 	go/os/path.go \
 	go/os/path_unix.go \
+	$(go_os_pipe_file) \
 	go/os/proc.go \
 	$(go_os_stat_file) \
 	go/os/str.go \
@@ -1022,6 +1040,7 @@ go_compress_bzip2_files = \
 go_compress_flate_files = \
 	go/compress/flate/copy.go \
 	go/compress/flate/deflate.go \
+	go/compress/flate/fixedhuff.go \
 	go/compress/flate/huffman_bit_writer.go \
 	go/compress/flate/huffman_code.go \
 	go/compress/flate/inflate.go \
@@ -1193,6 +1212,9 @@ go_encoding_xml_files = \
 	go/encoding/xml/typeinfo.go \
 	go/encoding/xml/xml.go
 
+go_exp_cookiejar_files = \
+	go/exp/cookiejar/jar.go \
+	go/exp/cookiejar/storage.go
 go_exp_ebnf_files = \
 	go/exp/ebnf/ebnf.go \
 	go/exp/ebnf/parser.go
@@ -1215,8 +1237,10 @@ go_exp_inotify_files = \
 go_exp_locale_collate_files = \
 	go/exp/locale/collate/colelem.go \
 	go/exp/locale/collate/collate.go \
+	go/exp/locale/collate/colltab.go \
 	go/exp/locale/collate/contract.go \
 	go/exp/locale/collate/export.go \
+	go/exp/locale/collate/sort.go \
 	go/exp/locale/collate/table.go \
 	go/exp/locale/collate/tables.go \
 	go/exp/locale/collate/trie.go
@@ -1241,23 +1265,18 @@ go_exp_proxy_files = \
 	go/exp/proxy/per_host.go \
 	go/exp/proxy/proxy.go \
 	go/exp/proxy/socks5.go
+go_exp_ssa_files = \
+	go/exp/ssa/blockopt.go \
+	go/exp/ssa/doc.go \
+	go/exp/ssa/func.go \
+	go/exp/ssa/sanity.go \
+	go/exp/ssa/ssa.go \
+	go/exp/ssa/literal.go \
+	go/exp/ssa/print.go \
+	go/exp/ssa/util.go
 go_exp_terminal_files = \
 	go/exp/terminal/terminal.go \
 	go/exp/terminal/util.go
-go_exp_types_files = \
-	go/exp/types/builtins.go \
-	go/exp/types/check.go \
-	go/exp/types/const.go \
-	go/exp/types/conversions.go \
-	go/exp/types/errors.go \
-	go/exp/types/exportdata.go \
-	go/exp/types/expr.go \
-	go/exp/types/gcimporter.go \
-	go/exp/types/operand.go \
-	go/exp/types/predicates.go \
-	go/exp/types/stmt.go \
-	go/exp/types/types.go \
-	go/exp/types/universe.go
 go_exp_utf8string_files = \
 	go/exp/utf8string/string.go
 
@@ -1283,6 +1302,8 @@ go_go_doc_files = \
 	go/go/doc/filter.go \
 	go/go/doc/reader.go \
 	go/go/doc/synopsis.go
+go_go_format_files = \
+	go/go/format/format.go
 go_go_parser_files = \
 	go/go/parser/interface.go \
 	go/go/parser/parser.go
@@ -1296,6 +1317,24 @@ go_go_token_files = \
 	go/go/token/position.go \
 	go/go/token/serialize.go \
 	go/go/token/token.go
+go_go_types_files = \
+	go/go/types/api.go \
+	go/go/types/builtins.go \
+	go/go/types/check.go \
+	go/go/types/const.go \
+	go/go/types/conversions.go \
+	go/go/types/errors.go \
+	go/go/types/exportdata.go \
+	go/go/types/expr.go \
+	go/go/types/gcimporter.go \
+	go/go/types/objects.go \
+	go/go/types/operand.go \
+	go/go/types/predicates.go \
+	go/go/types/resolve.go \
+	go/go/types/scope.go \
+	go/go/types/stmt.go \
+	go/go/types/types.go \
+	go/go/types/universe.go
 
 go_hash_adler32_files = \
 	go/hash/adler32/adler32.go
@@ -1383,6 +1422,7 @@ go_math_rand_files = \
 go_mime_multipart_files = \
 	go/mime/multipart/formdata.go \
 	go/mime/multipart/multipart.go \
+	go/mime/multipart/quotedprintable.go \
 	go/mime/multipart/writer.go
 
 go_net_http_files = \
@@ -1455,6 +1495,7 @@ go_os_signal_files = \
 
 go_os_user_files = \
 	go/os/user/user.go \
+	go/os/user/lookup.go \
 	go/os/user/lookup_unix.go
 
 go_path_filepath_files = \
@@ -1614,6 +1655,13 @@ endif
 endif
 endif
 
+# Define socket functions.
+if LIBGO_IS_SOLARIS
+syscall_socket_os_file = go/syscall/socket_xnet.go
+else
+syscall_socket_os_file = go/syscall/socket_posix.go
+endif
+
 # Support for uname.
 if LIBGO_IS_SOLARIS
 if LIBGO_IS_386
@@ -1647,6 +1695,20 @@ else
 syscall_lsf_file =
 endif
 
+# GNU/Linux specific utimesnano support.
+if LIBGO_IS_LINUX
+syscall_utimesnano_file = go/syscall/libcall_linux_utimesnano.go
+else
+syscall_utimesnano_file = go/syscall/libcall_posix_utimesnano.go
+endif
+
+# Test files.
+if LIBGO_IS_LINUX
+syscall_creds_test_file = go/syscall/creds_test.go
+else
+syscall_creds_test_file =
+endif
+
 go_base_syscall_files = \
 	go/syscall/env_unix.go \
 	go/syscall/syscall_errno.go \
@@ -1666,9 +1728,11 @@ go_base_syscall_files = \
 	$(syscall_errstr_file) \
 	$(syscall_size_file) \
 	$(syscall_socket_file) \
+	$(syscall_socket_os_file) \
 	$(syscall_uname_file) \
 	$(syscall_netlink_file) \
 	$(syscall_lsf_file) \
+	$(syscall_utimesnano_file) \
 	$(GO_LIBCALL_OS_FILE) \
 	$(GO_LIBCALL_OS_ARCH_FILE) \
 	$(GO_SYSCALL_OS_FILE) \
@@ -1684,12 +1748,23 @@ go_syscall_c_files = \
 	go/syscall/signame.c \
 	$(syscall_wait_c_file)
 
+go_syscall_test_files = \
+	$(syscall_creds_test_file) \
+	go/syscall/passfd_test.go
+
 libcalls.go: s-libcalls; @true
-s-libcalls: Makefile go/syscall/mksyscall.awk $(go_base_syscall_files)
+s-libcalls: libcalls-list go/syscall/mksyscall.awk $(go_base_syscall_files)
 	rm -f libcalls.go.tmp
-	files=`echo $^ | sed -e 's/Makefile//' -e 's|[^ ]*go/syscall/mksyscall.awk||'`; \
+	files=`echo $^ | sed -e 's/libcalls-list//' -e 's|[^ ]*go/syscall/mksyscall.awk||'`; \
 	$(AWK) -f $(srcdir)/go/syscall/mksyscall.awk $${files} > libcalls.go.tmp
 	$(SHELL) $(srcdir)/../move-if-change libcalls.go.tmp libcalls.go
+	$(STAMP) $@
+
+libcalls-list: s-libcalls-list; @true
+s-libcalls-list: Makefile
+	rm -f libcalls-list.tmp
+	echo $(go_base_syscall_files) > libcalls-list.tmp
+	$(SHELL) $(srcdir)/../move-if-change libcalls-list.tmp libcalls-list
 	$(STAMP) $@
 
 syscall_arch.go: s-syscall_arch; @true
@@ -1821,6 +1896,7 @@ libgo_go_objs = \
 	encoding/json.lo \
 	encoding/pem.lo \
 	encoding/xml.lo \
+	exp/cookiejar.lo \
 	exp/ebnf.lo \
 	exp/html.lo \
 	exp/html/atom.lo \
@@ -1828,17 +1904,19 @@ libgo_go_objs = \
 	exp/locale/collate/build.lo \
 	exp/norm.lo \
 	exp/proxy.lo \
+	exp/ssa.lo \
 	exp/terminal.lo \
-	exp/types.lo \
 	exp/utf8string.lo \
 	html/template.lo \
 	go/ast.lo \
 	go/build.lo \
 	go/doc.lo \
+	go/format.lo \
 	go/parser.lo \
 	go/printer.lo \
 	go/scanner.lo \
 	go/token.lo \
+	go/types.lo \
 	hash/adler32.lo \
 	hash/crc32.lo \
 	hash/crc64.lo \
@@ -1897,6 +1975,7 @@ libgo_la_LDFLAGS = \
 
 libgo_la_LIBADD = \
 	$(libgo_go_objs) ../libbacktrace/libbacktrace.la \
+	../libatomic/libatomic_convenience.la \
 	$(LIBFFI) $(PTHREAD_LIBS) $(MATH_LIBS) $(NET_LIBS)
 
 libgobegin_a_SOURCES = \
@@ -1926,19 +2005,13 @@ BUILDPACKAGE = \
 	files=`echo $^ | sed -e 's/[^ ]*\.gox//g'`; \
 	$(LTGOCOMPILE) -I . -c -fgo-pkgpath=`echo $@ | sed -e 's/.lo$$//' -e 's/-go$$//'` -o $@ $$files
 
-if LIBGO_IS_RTEMS
-use_dejagnu = yes
-else
-use_dejagnu = no
-endif
-
 GOTESTFLAGS =
 
 # Check a package.
 CHECK = \
 	GC="$(GOC) $(GOCFLAGS) $($(subst /,_,$@)_GOCFLAGS) -L `${PWD_COMMAND}` -L `${PWD_COMMAND}`/.libs"; \
 	export GC; \
-	GOLIBS="$(MATH_LIBS) $(NET_LIBS)"; \
+	GOLIBS="$(MATH_LIBS) $(NET_LIBS) $(LIBS)"; \
 	export GOLIBS; \
 	RUNTESTFLAGS="$(RUNTESTFLAGS)"; \
 	export RUNTESTFLAGS; \
@@ -1950,10 +2023,10 @@ CHECK = \
 	export LD_LIBRARY_PATH; \
 	$(MKDIR_P) $(@D); \
 	rm -f $@-testsum $@-testlog; \
-	if test "$(use_dejagnu)" = "yes"; then \
-	  $(SHELL) $(srcdir)/testsuite/gotest --dejagnu=yes --basedir=$(srcdir) --srcdir=$(srcdir)/go/$(@D) --pkgpath="$(@D)" --pkgfiles="$(go_$(subst /,_,$(@D))_files)" --testname="$(@D)" --goarch="$(GOARCH)" $(GOTESTFLAGS); \
+	if test "$(USE_DEJAGNU)" = "yes"; then \
+	  $(SHELL) $(srcdir)/testsuite/gotest --dejagnu=yes --basedir=$(srcdir) --srcdir=$(srcdir)/go/$(@D) --pkgpath="$(@D)" --pkgfiles="$(go_$(subst /,_,$(@D))_files)" --testname="$(@D)" --goarch="$(GOARCH)" $(GOTESTFLAGS) $(go_$(subst /,_,$(@D))_test_files); \
 	else \
-	  if $(SHELL) $(srcdir)/testsuite/gotest --basedir=$(srcdir) --srcdir=$(srcdir)/go/$(@D) --pkgpath="$(@D)" --pkgfiles="$(go_$(subst /,_,$(@D))_files)" --goarch="$(GOARCH)" $(GOTESTFLAGS) >>$@-testlog 2>&1; then \
+	  if $(SHELL) $(srcdir)/testsuite/gotest --basedir=$(srcdir) --srcdir=$(srcdir)/go/$(@D) --pkgpath="$(@D)" --pkgfiles="$(go_$(subst /,_,$(@D))_files)" --goarch="$(GOARCH)" $(GOTESTFLAGS) $(go_$(subst /,_,$(@D))_test_files) >>$@-testlog 2>&1; then \
 	    echo "PASS: $(@D)" >> $@-testlog; \
 	    echo "PASS: $(@D)"; \
 	    echo "PASS: $(@D)" > $@-testsum; \
@@ -2657,6 +2730,15 @@ encoding/xml/check: $(CHECK_DEPS)
 	@$(CHECK)
 .PHONY: encoding/xml/check
 
+@go_include@ exp/cookiejar.lo.dep
+exp/cookiejar.lo.dep: $(go_exp_cookiejar_files)
+	$(BUILDDEPS)
+exp/cookiejar.lo: $(go_exp_cookiejar_files)
+	$(BUILDPACKAGE)
+exp/cookiejar/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: exp/cookiejar/check
+
 @go_include@ exp/ebnf.lo.dep
 exp/ebnf.lo.dep: $(go_exp_ebnf_files)
 	$(BUILDDEPS)
@@ -2720,6 +2802,15 @@ exp/proxy/check: $(CHECK_DEPS)
 	@$(CHECK)
 .PHONY: exp/proxy/check
 
+@go_include@ exp/ssa.lo.dep
+exp/ssa.lo.dep: $(go_exp_ssa_files)
+	$(BUILDDEPS)
+exp/ssa.lo: $(go_exp_ssa_files)
+	$(BUILDPACKAGE)
+exp/ssa/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: exp/ssa/check
+
 @go_include@ exp/terminal.lo.dep
 exp/terminal.lo.dep: $(go_exp_terminal_files)
 	$(BUILDDEPS)
@@ -2728,15 +2819,6 @@ exp/terminal.lo: $(go_exp_terminal_files)
 exp/terminal/check: $(CHECK_DEPS)
 	@$(CHECK)
 .PHONY: exp/terminal/check
-
-@go_include@ exp/types.lo.dep
-exp/types.lo.dep: $(go_exp_types_files)
-	$(BUILDDEPS)
-exp/types.lo: $(go_exp_types_files)
-	$(BUILDPACKAGE)
-exp/types/check: $(CHECK_DEPS)
-	@$(CHECK)
-.PHONY: exp/types/check
 
 @go_include@ exp/utf8string.lo.dep
 exp/utf8string.lo.dep: $(go_exp_utf8string_files)
@@ -2801,6 +2883,15 @@ go/doc/check: $(CHECK_DEPS)
 	@$(CHECK)
 .PHONY: go/doc/check
 
+@go_include@ go/format.lo.dep
+go/format.lo.dep: $(go_go_format_files)
+	$(BUILDDEPS)
+go/format.lo: $(go_go_format_files)
+	$(BUILDPACKAGE)
+go/format/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: go/format/check
+
 @go_include@ go/parser.lo.dep
 go/parser.lo.dep: $(go_go_parser_files)
 	$(BUILDDEPS)
@@ -2836,6 +2927,15 @@ go/token.lo: $(go_go_token_files)
 go/token/check: $(CHECK_DEPS)
 	@$(CHECK)
 .PHONY: go/token/check
+
+@go_include@ go/types.lo.dep
+go/types.lo.dep: $(go_go_types_files)
+	$(BUILDDEPS)
+go/types.lo: $(go_go_types_files)
+	$(BUILDPACKAGE)
+go/types/check: $(CHECK_DEPS)
+	@$(CHECK)
+.PHONY: go/types/check
 
 @go_include@ hash/adler32.lo.dep
 hash/adler32.lo.dep: $(go_hash_adler32_files)
@@ -3449,6 +3549,8 @@ encoding/pem.gox: encoding/pem.lo
 encoding/xml.gox: encoding/xml.lo
 	$(BUILDGOX)
 
+exp/cookiejar.gox: exp/cookiejar.lo
+	$(BUILDGOX)
 exp/ebnf.gox: exp/ebnf.lo
 	$(BUILDGOX)
 exp/html.gox: exp/html.lo
@@ -3465,9 +3567,9 @@ exp/norm.gox: exp/norm.lo
 	$(BUILDGOX)
 exp/proxy.gox: exp/proxy.lo
 	$(BUILDGOX)
-exp/terminal.gox: exp/terminal.lo
+exp/ssa.gox: exp/ssa.lo
 	$(BUILDGOX)
-exp/types.gox: exp/types.lo
+exp/terminal.gox: exp/terminal.lo
 	$(BUILDGOX)
 exp/utf8string.gox: exp/utf8string.lo	
 	$(BUILDGOX)
@@ -3481,6 +3583,8 @@ go/build.gox: go/build.lo
 	$(BUILDGOX)
 go/doc.gox: go/doc.lo
 	$(BUILDGOX)
+go/format.gox: go/format.lo
+	$(BUILDGOX)
 go/parser.gox: go/parser.lo
 	$(BUILDGOX)
 go/printer.gox: go/printer.lo
@@ -3488,6 +3592,8 @@ go/printer.gox: go/printer.lo
 go/scanner.gox: go/scanner.lo
 	$(BUILDGOX)
 go/token.gox: go/token.lo
+	$(BUILDGOX)
+go/types.gox: go/types.lo
 	$(BUILDGOX)
 
 hash/adler32.gox: hash/adler32.lo
@@ -3680,6 +3786,7 @@ TEST_PACKAGES = \
 	encoding/json/check \
 	encoding/pem/check \
 	encoding/xml/check \
+	exp/cookiejar/check \
 	exp/ebnf/check \
 	exp/html/check \
 	exp/html/atom/check \
@@ -3689,17 +3796,17 @@ TEST_PACKAGES = \
 	exp/norm/check \
 	exp/proxy/check \
 	exp/terminal/check \
-	exp/types/check \
 	exp/utf8string/check \
 	html/template/check \
 	go/ast/check \
 	$(go_build_check_omitted_since_it_calls_6g) \
 	go/doc/check \
+	go/format/check \
 	go/parser/check \
 	go/printer/check \
 	go/scanner/check \
 	go/token/check \
-	$(go_types_check_omitted_since_it_calls_6g) \
+	go/types/check \
 	hash/adler32/check \
 	hash/crc32/check \
 	hash/crc64/check \
@@ -3755,7 +3862,10 @@ check-head:
 	@echo >> libgo.head
 
 check-tail: check-recursive check-multi
-	@lib=`${PWD_COMMAND} | sed -e 's,^.*/\([^/][^/]*\)$$,\1,'`; \
+	@if test "$(USE_DEJAGNU)" = "yes"; then \
+	  exit 0; \
+	fi; \
+	lib=`${PWD_COMMAND} | sed -e 's,^.*/\([^/][^/]*\)$$,\1,'`; \
 	for dir in . $(MULTIDIRS); do \
 	  mv ../$${dir}/$${lib}/libgo.sum ../$${dir}/$${lib}/libgo.sum.sep; \
 	  mv ../$${dir}/$${lib}/libgo.log ../$${dir}/$${lib}/libgo.log.sep; \

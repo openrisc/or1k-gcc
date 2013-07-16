@@ -1,5 +1,4 @@
-/* Copyright (C) 2012
-   Free Software Foundation, Inc.
+/* Copyright (C) 2012-2013 Free Software Foundation, Inc.
    Contributed by Georg-Johann Lay (avr@gjlay.de)
 
    This file is part of GCC.
@@ -69,6 +68,7 @@ comparator (const void *va, const void *vb)
 static void
 print_mcus (size_t n_mcus)
 {
+  int duplicate = 0;
   size_t i;
     
   if (!n_mcus)
@@ -79,16 +79,29 @@ print_mcus (size_t n_mcus)
   printf ("@*@var{mcu}@tie{}=");
 
   for (i = 0; i < n_mcus; i++)
-    printf (" @code{%s}%s", mcu_name[i], i == n_mcus-1 ? ".\n\n" : ",");
+    {
+      printf (" @code{%s}%s", mcu_name[i], i == n_mcus-1 ? ".\n\n" : ",");
+
+      if (i && !strcmp (mcu_name[i], mcu_name[i-1]))
+        {
+          /* Sanity-check: Fail on devices that are present more than once.  */
+
+          duplicate = 1;
+          fprintf (stderr, "error: duplicate device: %s\n", mcu_name[i]);
+        }
+    }
+
+  if (duplicate)
+    exit (1);
 }
 
 int main (void)
 {
   enum avr_arch arch = ARCH_UNKNOWN;
   size_t i, n_mcus = 0;
-  const struct mcu_type_s *mcu;
+  const avr_mcu_t *mcu;
 
-  printf ("@c Copyright (C) 2012 Free Software Foundation, Inc.\n");
+  printf ("@c Copyright (C) 2012-2013 Free Software Foundation, Inc.\n");
   printf ("@c This is part of the GCC manual.\n");
   printf ("@c For copying conditions, see the file "
           "gcc/doc/include/fdl.texi.\n\n");

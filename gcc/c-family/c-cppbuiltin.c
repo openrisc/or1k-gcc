@@ -1,6 +1,5 @@
 /* Define builtin-in macros for the C family front ends.
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -714,7 +713,7 @@ c_cpp_builtins (cpp_reader *pfile)
 	cpp_define (pfile, "__DEPRECATED");
       if (flag_rtti)
 	cpp_define (pfile, "__GXX_RTTI");
-      if (cxx_dialect >= cxx0x)
+      if (cxx_dialect >= cxx11)
         cpp_define (pfile, "__GXX_EXPERIMENTAL_CXX0X__");
     }
   /* Note that we define this for C as well, so that we know if
@@ -889,6 +888,8 @@ c_cpp_builtins (cpp_reader *pfile)
   /* Make the choice of the stack protector runtime visible to source code.
      The macro names and values here were chosen for compatibility with an
      earlier implementation, i.e. ProPolice.  */
+  if (flag_stack_protect == 3)
+    cpp_define (pfile, "__SSP_STRONG__=3");
   if (flag_stack_protect == 2)
     cpp_define (pfile, "__SSP_ALL__=2");
   else if (flag_stack_protect == 1)

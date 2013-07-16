@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -214,6 +214,27 @@ package body Treepr is
    --  Visit_Elist is called to process an element list in the case where
    --  descendents are to be printed. Prefix_Str is to be added to all
    --  printed lines.
+
+   -------
+   -- p --
+   -------
+
+   function p (N : Union_Id) return Node_Or_Entity_Id is
+   begin
+      case N is
+         when List_Low_Bound .. List_High_Bound - 1 =>
+            return Nlists.Parent (List_Id (N));
+
+         when Node_Range =>
+            return Atree.Parent (Node_Or_Entity_Id (N));
+
+         when others =>
+            Write_Int (Int (N));
+            Write_Str (" is not a Node_Id or List_Id value");
+            Write_Eol;
+            return Empty;
+      end case;
+   end p;
 
    --------
    -- pe --
@@ -684,6 +705,54 @@ package body Treepr is
          Write_Field29_Name (Ent);
          Write_Str (" = ");
          Print_Field (Field29 (Ent));
+         Print_Eol;
+      end if;
+
+      if Field_Present (Field30 (Ent)) then
+         Print_Str (Prefix);
+         Write_Field30_Name (Ent);
+         Write_Str (" = ");
+         Print_Field (Field30 (Ent));
+         Print_Eol;
+      end if;
+
+      if Field_Present (Field31 (Ent)) then
+         Print_Str (Prefix);
+         Write_Field31_Name (Ent);
+         Write_Str (" = ");
+         Print_Field (Field31 (Ent));
+         Print_Eol;
+      end if;
+
+      if Field_Present (Field32 (Ent)) then
+         Print_Str (Prefix);
+         Write_Field32_Name (Ent);
+         Write_Str (" = ");
+         Print_Field (Field32 (Ent));
+         Print_Eol;
+      end if;
+
+      if Field_Present (Field33 (Ent)) then
+         Print_Str (Prefix);
+         Write_Field33_Name (Ent);
+         Write_Str (" = ");
+         Print_Field (Field33 (Ent));
+         Print_Eol;
+      end if;
+
+      if Field_Present (Field34 (Ent)) then
+         Print_Str (Prefix);
+         Write_Field34_Name (Ent);
+         Write_Str (" = ");
+         Print_Field (Field34 (Ent));
+         Print_Eol;
+      end if;
+
+      if Field_Present (Field35 (Ent)) then
+         Print_Str (Prefix);
+         Write_Field35_Name (Ent);
+         Write_Str (" = ");
+         Print_Field (Field35 (Ent));
          Print_Eol;
       end if;
 

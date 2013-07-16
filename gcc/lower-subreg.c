@@ -1,6 +1,5 @@
 /* Decompose multiword subregs.
-   Copyright (C) 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2007-2013 Free Software Foundation, Inc.
    Contributed by Richard Henderson <rth@redhat.com>
 		  Ian Lance Taylor <iant@google.com>
 
@@ -58,9 +57,9 @@ along with GCC; see the file COPYING3.  If not see
    to do this.
 
    This pass only splits moves with modes that are wider than
-   word_mode and ASHIFTs, LSHIFTRTs and ZERO_EXTENDs with integer
-   modes that are twice the width of word_mode.  The latter could be
-   generalized if there was a need to do this, but the trend in
+   word_mode and ASHIFTs, LSHIFTRTs, ASHIFTRTs and ZERO_EXTENDs with
+   integer modes that are twice the width of word_mode.  The latter
+   could be generalized if there was a need to do this, but the trend in
    architectures is to not need this.
 
    There are two useful preprocessor defines for use by maintainers:
@@ -153,7 +152,7 @@ compute_splitting_shift (bool speed_p, struct cost_rtxes *rtxes,
 			 bool *splitting, enum rtx_code code,
 			 int word_move_zero_cost, int word_move_cost)
 {
-  int wide_cost, narrow_cost, i;
+  int wide_cost, narrow_cost, upper_cost, i;
 
   for (i = 0; i < BITS_PER_WORD; i++)
     {
@@ -164,13 +163,20 @@ compute_splitting_shift (bool speed_p, struct cost_rtxes *rtxes,
       else
 	narrow_cost = shift_cost (speed_p, rtxes, code, word_mode, i);
 
+      if (code != ASHIFTRT)
+	upper_cost = word_move_zero_cost;
+      else if (i == BITS_PER_WORD - 1)
+	upper_cost = word_move_cost;
+      else
+	upper_cost = shift_cost (speed_p, rtxes, code, word_mode,
+				 BITS_PER_WORD - 1);
+
       if (LOG_COSTS)
 	fprintf (stderr, "%s %s by %d: original cost %d, split cost %d + %d\n",
 		 GET_MODE_NAME (twice_word_mode), GET_RTX_NAME (code),
-		 i + BITS_PER_WORD, wide_cost, narrow_cost,
-		 word_move_zero_cost);
+		 i + BITS_PER_WORD, wide_cost, narrow_cost, upper_cost);
 
-      if (FORCE_LOWERING || wide_cost >= narrow_cost + word_move_zero_cost)
+      if (FORCE_LOWERING || wide_cost >= narrow_cost + upper_cost)
 	splitting[i] = true;
     }
 }
@@ -248,6 +254,9 @@ compute_costs (bool speed_p, struct cost_rtxes *rtxes)
 			       word_move_zero_cost, word_move_cost);
       compute_splitting_shift (speed_p, rtxes,
 			       choices[speed_p].splitting_lshiftrt, LSHIFTRT,
+			       word_move_zero_cost, word_move_cost);
+      compute_splitting_shift (speed_p, rtxes,
+			       choices[speed_p].splitting_ashiftrt, ASHIFTRT,
 			       word_move_zero_cost, word_move_cost);
     }
 }
@@ -344,7 +353,7 @@ simple_move (rtx insn, bool speed_p)
      registers.  That means that we can't decompose if this is a
      non-integer mode for which there is no integer mode of the same
      size.  */
-  mode = GET_MODE (SET_SRC (set));
+  mode = GET_MODE (SET_DEST (set));
   if (!SCALAR_INT_MODE_P (mode)
       && (mode_for_size (GET_MODE_SIZE (mode) * BITS_PER_UNIT, MODE_INT, 0)
 	  == BLKmode))
@@ -1060,7 +1069,13 @@ resolve_simple_move (rtx set, rtx insn)
 
   emit_insn_before (insns, insn);
 
-  delete_insn (insn);
+  /* If we get here via self-recutsion, then INSN is not yet in the insns
+     chain and delete_insn will fail.  We only want to remove INSN from the
+     current sequence.  See PR56738.  */
+  if (in_sequence_p ())
+    remove_insn (insn);
+  else
+    delete_insn (insn);
 
   return insns;
 }
@@ -1154,6 +1169,7 @@ find_decomposable_shift_zext (rtx insn, bool speed_p)
   op = SET_SRC (set);
   if (GET_CODE (op) != ASHIFT
       && GET_CODE (op) != LSHIFTRT
+      && GET_CODE (op) != ASHIFTRT
       && GET_CODE (op) != ZERO_EXTEND)
     return false;
 
@@ -1174,6 +1190,8 @@ find_decomposable_shift_zext (rtx insn, bool speed_p)
     {
       bool *splitting = (GET_CODE (op) == ASHIFT
 			 ? choices[speed_p].splitting_ashift
+			 : GET_CODE (op) == ASHIFTRT
+			 ? choices[speed_p].splitting_ashiftrt
 			 : choices[speed_p].splitting_lshiftrt);
       if (!CONST_INT_P (XEXP (op, 1))
 	  || !IN_RANGE (INTVAL (XEXP (op, 1)), BITS_PER_WORD,
@@ -1201,7 +1219,7 @@ resolve_shift_zext (rtx insn)
   rtx op;
   rtx op_operand;
   rtx insns;
-  rtx src_reg, dest_reg, dest_zero;
+  rtx src_reg, dest_reg, dest_upper, upper_src = NULL_RTX;
   int src_reg_num, dest_reg_num, offset1, offset2, src_offset;
 
   set = single_set (insn);
@@ -1211,6 +1229,7 @@ resolve_shift_zext (rtx insn)
   op = SET_SRC (set);
   if (GET_CODE (op) != ASHIFT
       && GET_CODE (op) != LSHIFTRT
+      && GET_CODE (op) != ASHIFTRT
       && GET_CODE (op) != ZERO_EXTEND)
     return NULL_RTX;
 
@@ -1224,7 +1243,8 @@ resolve_shift_zext (rtx insn)
   /* src_reg_num is the number of the word mode register which we
      are operating on.  For a left shift and a zero_extend on little
      endian machines this is register 0.  */
-  src_reg_num = GET_CODE (op) == LSHIFTRT ? 1 : 0;
+  src_reg_num = (GET_CODE (op) == LSHIFTRT || GET_CODE (op) == ASHIFTRT)
+		? 1 : 0;
 
   if (WORDS_BIG_ENDIAN
       && GET_MODE_SIZE (GET_MODE (op_operand)) > UNITS_PER_WORD)
@@ -1244,12 +1264,17 @@ resolve_shift_zext (rtx insn)
   dest_reg = simplify_gen_subreg_concatn (word_mode, SET_DEST (set),
                                           GET_MODE (SET_DEST (set)),
                                           offset1);
-  dest_zero = simplify_gen_subreg_concatn (word_mode, SET_DEST (set),
-                                           GET_MODE (SET_DEST (set)),
-                                           offset2);
+  dest_upper = simplify_gen_subreg_concatn (word_mode, SET_DEST (set),
+					    GET_MODE (SET_DEST (set)),
+					    offset2);
   src_reg = simplify_gen_subreg_concatn (word_mode, op_operand,
                                          GET_MODE (op_operand),
                                          src_offset);
+  if (GET_CODE (op) == ASHIFTRT
+      && INTVAL (XEXP (op, 1)) != 2 * BITS_PER_WORD - 1)
+    upper_src = expand_shift (RSHIFT_EXPR, word_mode, copy_rtx (src_reg),
+			      BITS_PER_WORD - 1, NULL_RTX, 0);
+
   if (GET_CODE (op) != ZERO_EXTEND)
     {
       int shift_count = INTVAL (XEXP (op, 1));
@@ -1258,12 +1283,17 @@ resolve_shift_zext (rtx insn)
 				LSHIFT_EXPR : RSHIFT_EXPR,
 				word_mode, src_reg,
 				shift_count - BITS_PER_WORD,
-				dest_reg, 1);
+				dest_reg, GET_CODE (op) != ASHIFTRT);
     }
 
   if (dest_reg != src_reg)
     emit_move_insn (dest_reg, src_reg);
-  emit_move_insn (dest_zero, CONST0_RTX (word_mode));
+  if (GET_CODE (op) != ASHIFTRT)
+    emit_move_insn (dest_upper, CONST0_RTX (word_mode));
+  else if (INTVAL (XEXP (op, 1)) == 2 * BITS_PER_WORD - 1)
+    emit_move_insn (dest_upper, copy_rtx (src_reg));
+  else
+    emit_move_insn (dest_upper, upper_src);
   insns = get_insns ();
 
   end_sequence ();
@@ -1329,7 +1359,8 @@ dump_choices (bool speed_p, const char *description)
 	   GET_MODE_NAME (twice_word_mode));
 
   dump_shift_choices (ASHIFT, choices[speed_p].splitting_ashift);
-  dump_shift_choices (LSHIFTRT, choices[speed_p].splitting_ashift);
+  dump_shift_choices (LSHIFTRT, choices[speed_p].splitting_lshiftrt);
+  dump_shift_choices (ASHIFTRT, choices[speed_p].splitting_ashiftrt);
   fprintf (dump_file, "\n");
 }
 
@@ -1674,7 +1705,6 @@ struct rtl_opt_pass pass_lower_subreg =
   0,                                    /* properties_provided */
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
-  TODO_ggc_collect |
   TODO_verify_flow                      /* todo_flags_finish */
  }
 };
@@ -1696,7 +1726,6 @@ struct rtl_opt_pass pass_lower_subreg2 =
   0,                                    /* properties_destroyed */
   0,                                    /* todo_flags_start */
   TODO_df_finish | TODO_verify_rtl_sharing |
-  TODO_ggc_collect |
   TODO_verify_flow                      /* todo_flags_finish */
  }
 };

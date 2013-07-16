@@ -1,5 +1,5 @@
 ;; Faraday FA606TE Pipeline Description
-;; Copyright (C) 2010 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2013 Free Software Foundation, Inc.
 ;; Written by Mingfeng Wu, based on ARM926EJ-S Pipeline Description.
 ;;
 ;; This file is part of GCC.
@@ -62,7 +62,7 @@
 ;; ALU operations
 (define_insn_reservation "606te_alu_op" 1
  (and (eq_attr "tune" "fa606te")
-      (eq_attr "type" "alu,alu_shift,alu_shift_reg"))
+      (eq_attr "type" "alu_reg,simple_alu_imm,simple_alu_shift,alu_shift,alu_shift_reg"))
  "fa606te_core")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -71,22 +71,22 @@
 
 (define_insn_reservation "606te_mult1" 2
  (and (eq_attr "tune" "fa606te")
-      (eq_attr "insn" "smlalxy"))
+      (eq_attr "type" "smlalxy"))
  "fa606te_core")
 
 (define_insn_reservation "606te_mult2" 3
  (and (eq_attr "tune" "fa606te")
-      (eq_attr "insn" "smlaxy,smulxy,smulwy,smlawy"))
+      (eq_attr "type" "smlaxy,smulxy,smulwy,smlawy"))
  "fa606te_core*2")
 
 (define_insn_reservation "606te_mult3" 4
  (and (eq_attr "tune" "fa606te")
-      (eq_attr "insn" "mul,mla,muls,mlas"))
+      (eq_attr "type" "mul,mla,muls,mlas"))
  "fa606te_core*3")
 
 (define_insn_reservation "606te_mult4" 5
  (and (eq_attr "tune" "fa606te")
-      (eq_attr "insn" "umull,umlal,smull,smlal,umulls,umlals,smulls,smlals"))
+      (eq_attr "type" "umull,umlal,smull,smlal,umulls,umlals,smulls,smlals"))
  "fa606te_core*4")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

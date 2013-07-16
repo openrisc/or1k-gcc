@@ -1,6 +1,5 @@
 /* IO Code translation/library interface
-   Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Paul Brook
 
 This file is part of GCC.
@@ -1364,6 +1363,9 @@ gfc_trans_inquire (gfc_code * code)
   if (p->id)
     mask2 |= set_parameter_ref (&block, &post_block,var, IOPARM_inquire_id,
 				p->id);
+  if (p->iqstream)
+    mask2 |= set_string (&block, &post_block, var, IOPARM_inquire_iqstream,
+			 p->iqstream);
 
   if (mask2)
     mask |= set_parameter_const (&block, var, IOPARM_inquire_flags2, mask2);
@@ -1780,6 +1782,8 @@ build_dt (tree function, gfc_code * code)
 	  mask |= set_string (&block, &post_block, var, IOPARM_dt_namelist_name,
 			      nmlname);
 
+	  gfc_free_expr (nmlname);
+
 	  if (last_dt == READ)
 	    mask |= IOPARM_dt_namelist_read_mode;
 
@@ -2022,20 +2026,8 @@ transfer_expr (gfc_se * se, gfc_typespec * ts, tree addr_expr, gfc_code * code)
       && ts->u.derived != NULL
       && (ts->is_iso_c == 1 || ts->u.derived->ts.is_iso_c == 1))
     {
-      /* C_PTR and C_FUNPTR have private components which means they can not
-         be printed.  However, if -std=gnu and not -pedantic, allow
-         the component to be printed to help debugging.  */
-      if (gfc_notification_std (GFC_STD_GNU) != SILENT)
-	{
-	  gfc_error_now ("Derived type '%s' at %L has PRIVATE components",
-			 ts->u.derived->name, code != NULL ? &(code->loc) : 
-			 &gfc_current_locus);
-	  return;
-	}
-
-      ts->type = ts->u.derived->ts.type;
-      ts->kind = ts->u.derived->ts.kind;
-      ts->f90_type = ts->u.derived->ts.f90_type;
+      ts->type = BT_INTEGER;
+      ts->kind = gfc_index_integer_kind;
     }
   
   kind = ts->kind;

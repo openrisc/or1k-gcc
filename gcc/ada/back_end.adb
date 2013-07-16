@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -244,11 +244,6 @@ package body Back_End is
 
             elsif Switch_Chars (First .. Last) = "fdump-scos" then
                Opt.Generate_SCO := True;
-
-            --  Back end switch -fdebug-instances also enables instance table
-            --  SCO generation.
-
-            elsif Switch_Chars (First .. Last) = "fdebug-instances" then
                Opt.Generate_SCO_Instance_Table := True;
 
             end if;
@@ -344,18 +339,6 @@ package body Back_End is
          Next_Arg := Next_Arg + 1;
       end loop;
    end Scan_Compiler_Arguments;
-
-   -----------------------------
-   -- Register_Back_End_Types --
-   -----------------------------
-
-   procedure Register_Back_End_Types (Call_Back : Register_Type_Proc) is
-      procedure Enumerate_Modes (Call_Back : Register_Type_Proc);
-      pragma Import (C, Enumerate_Modes, "enumerate_modes");
-
-   begin
-      Enumerate_Modes (Call_Back);
-   end Register_Back_End_Types;
 
    -------------------------------
    -- Gen_Or_Update_Object_File --

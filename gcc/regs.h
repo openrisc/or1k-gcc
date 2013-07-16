@@ -1,7 +1,5 @@
 /* Define per-register tables for data flow info and register allocation.
-   Copyright (C) 1987, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2003, 2004, 2005, 2006, 2007, 2008, 2010 Free Software
-   Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -91,6 +89,8 @@ REG_N_SETS (int regno)
 #define SET_REG_N_SETS(N,V) (regstat_n_sets_and_refs[N].sets = V)
 #define INC_REG_N_SETS(N,V) (regstat_n_sets_and_refs[N].sets += V)
 
+/* Given a REG, return TRUE if the reg is a PARM_DECL, FALSE otherwise.  */
+extern bool reg_is_parm_p (rtx);
 
 /* Functions defined in regstat.c.  */
 extern void regstat_init_n_sets_and_refs (void);
@@ -176,21 +176,17 @@ extern size_t reg_info_p_size;
 
 #define REG_N_THROWING_CALLS_CROSSED(N) (reg_info_p[N].throw_calls_crossed)
 
-/* Total number of instructions at which (REG n) is live.  The larger
-   this is, the less priority (REG n) gets for allocation in a hard
-   register (in global-alloc).  This is set in df-problems.c whenever
-   register info is requested and remains valid for the rest of the
-   compilation of the function; it is used to control register
-   allocation.
+/* Total number of instructions at which (REG n) is live.
+   
+   This is set in regstat.c whenever register info is requested and
+   remains valid for the rest of the compilation of the function; it is
+   used to control register allocation.  The larger this is, the less
+   priority (REG n) gets for allocation in a hard register (in IRA in
+   priority-coloring mode).
 
-   local-alloc.c may alter this number to change the priority.
-
-   Negative values are special.
-   -1 is used to mark a pseudo reg which has a constant or memory equivalent
-   and is used infrequently enough that it should not get a hard register.
-   -2 is used to mark a pseudo reg for a parameter, when a frame pointer
-   is not required.  global.c makes an allocno for this but does
-   not try to assign a hard register to it.  */
+   Negative values are special: -1 is used to mark a pseudo reg that
+   should not be allocated to a hard register, because it crosses a
+   setjmp call.  */
 
 #define REG_LIVE_LENGTH(N)  (reg_info_p[N].live_length)
 

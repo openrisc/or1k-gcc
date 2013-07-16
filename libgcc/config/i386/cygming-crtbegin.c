@@ -1,5 +1,5 @@
 /* crtbegin object for windows32 targets.
-   Copyright (C) 2007, 2009, 2010, 2011  Free Software Foundation, Inc.
+   Copyright (C) 2007-2013 Free Software Foundation, Inc.
 
    Contributed by Danny Smith <dannysmith@users.sourceforge.net>
 
@@ -46,14 +46,36 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
 #define LIBGCJ_SONAME "libgcj_s.dll"
 #endif
 
-
+#if DWARF2_UNWIND_INFO
 /* Make the declarations weak.  This is critical for
    _Jv_RegisterClasses because it lives in libgcj.a  */
-extern void __register_frame_info (const void *, struct object *)
+extern void __register_frame_info (__attribute__((unused)) const void *,
+				   __attribute__((unused)) struct object *)
 				   TARGET_ATTRIBUTE_WEAK;
-extern void *__deregister_frame_info (const void *)
+extern void *__deregister_frame_info (__attribute__((unused)) const void *)
 				      TARGET_ATTRIBUTE_WEAK;
-extern void _Jv_RegisterClasses (const void *) TARGET_ATTRIBUTE_WEAK;
+TARGET_ATTRIBUTE_WEAK void
+__register_frame_info (__attribute__((unused)) const void *p,
+		       __attribute__((unused)) struct object *o)
+{
+}
+
+TARGET_ATTRIBUTE_WEAK void *
+__deregister_frame_info (__attribute__((unused)) const void *p)
+{
+  return (void*) 0;
+}
+#endif /* DWARF2_UNWIND_INFO */
+
+#if TARGET_USE_JCR_SECTION
+extern void _Jv_RegisterClasses (__attribute__((unused)) const void *)
+  TARGET_ATTRIBUTE_WEAK;
+
+TARGET_ATTRIBUTE_WEAK void
+_Jv_RegisterClasses (__attribute__((unused)) const void *p)
+{
+}
+#endif /* TARGET_USE_JCR_SECTION */
 
 #if defined(HAVE_LD_RO_RW_SECTION_MIXING)
 # define EH_FRAME_SECTION_CONST const

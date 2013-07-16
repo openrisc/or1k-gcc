@@ -1,6 +1,5 @@
 /* Help friends in C++.
-   Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2007, 2008, 2010, 2011  Free Software Foundation, Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -231,8 +230,8 @@ make_friend_class (tree type, tree friend_type, bool complain)
 	 (possibly cv-qualified) class type, that class is declared as a
 	 friend; otherwise, the friend declaration is ignored.
 
-         So don't complain in C++0x mode.  */
-      if (cxx_dialect < cxx0x)
+         So don't complain in C++11 mode.  */
+      if (cxx_dialect < cxx11)
 	pedwarn (input_location, complain ? 0 : OPT_Wpedantic,
 		 "invalid type %qT declared %<friend%>", friend_type);
       return;
@@ -486,8 +485,7 @@ do_friend (tree ctype, tree declarator, tree decl,
 	 to be a friend, so we do lookup here even if CTYPE is in
 	 the process of being defined.  */
       if (class_template_depth
-	  || COMPLETE_TYPE_P (ctype)
-	  || (CLASS_TYPE_P (ctype) && TYPE_BEING_DEFINED (ctype)))
+	  || COMPLETE_OR_OPEN_TYPE_P (ctype))
 	{
 	  if (DECL_TEMPLATE_INFO (decl))
 	    /* DECL is a template specialization.  No need to

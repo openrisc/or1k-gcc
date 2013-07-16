@@ -1,5 +1,5 @@
 /* Next Runtime (ABI-2) private.
-   Copyright (C) 2011 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
 
    Contributed by Iain Sandoe and based, in part, on an implementation in
    'branches/apple/trunk' contributed by Apple Computer Inc.
@@ -1639,7 +1639,9 @@ build_v2_build_objc_method_call (int super_flag, tree method_prototype,
 			       fold_convert (rcv_p, integer_zero_node), 1);
 
 #ifdef OBJCPLUS
-      ret_val = build_conditional_expr (ifexp, ret_val, ftree, tf_warning_or_error);
+      ret_val = build_conditional_expr (input_location,
+					ifexp, ret_val, ftree,
+					tf_warning_or_error);
 #else
      /* ??? CHECKME.   */
       ret_val = build_conditional_expr (input_location,

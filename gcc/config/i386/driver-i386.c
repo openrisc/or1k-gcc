@@ -1,6 +1,5 @@
 /* Subroutines for the gcc driver.
-   Copyright (C) 2006, 2007, 2008, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -518,7 +517,10 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 
   if (!arch)
     {
-      if (vendor == signature_AMD_ebx)
+      if (vendor == signature_AMD_ebx
+	  || vendor == signature_CENTAUR_ebx
+	  || vendor == signature_CYRIX_ebx
+	  || vendor == signature_NSC_ebx)
 	cache = detect_caches_amd (ext_level);
       else if (vendor == signature_INTEL_ebx)
 	{
@@ -560,6 +562,37 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 	processor = PROCESSOR_K6;
       else
 	processor = PROCESSOR_PENTIUM;
+    }
+  else if (vendor == signature_CENTAUR_ebx)
+    {
+      if (arch)
+	{
+	  switch (family)
+	    {
+	    case 6:
+	      if (model > 9)
+		/* Use the default detection procedure.  */
+		processor = PROCESSOR_GENERIC32;
+	      else if (model == 9)
+		cpu = "c3-2";
+	      else if (model >= 6)
+		cpu = "c3";
+	      else
+		processor = PROCESSOR_GENERIC32;
+	      break;
+	    case 5:
+	      if (has_3dnow)
+		cpu = "winchip2";
+	      else if (has_mmx)
+		cpu = "winchip2-c6";
+	      else
+		processor = PROCESSOR_GENERIC32;
+	      break;
+	    default:
+	      /* We have no idea.  */
+	      processor = PROCESSOR_GENERIC32;
+	    }
+	}
     }
   else
     {
@@ -640,8 +673,14 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 		/* Assume Sandy Bridge.  */
 		cpu = "corei7-avx";
 	      else if (has_sse4_2)
-		/* Assume Core i7.  */
-		cpu = "corei7";
+		{
+		  if (has_movbe)
+		    /* Assume SLM.  */
+		    cpu = "slm";
+		  else
+		    /* Assume Core i7.  */
+		    cpu = "corei7";
+		}
 	      else if (has_ssse3)
 		{
 		  if (has_movbe)
@@ -752,10 +791,17 @@ const char *host_detect_local_cpu (int argc, const char **argv)
 
   if (arch)
     {
+      const char *mmx = has_mmx ? " -mmmx" : " -mno-mmx";
+      const char *mmx3dnow = has_3dnow ? " -m3dnow" : " -mno-3dnow";
+      const char *sse = has_sse ? " -msse" : " -mno-sse";
+      const char *sse2 = has_sse2 ? " -msse2" : " -mno-sse2";
+      const char *sse3 = has_sse3 ? " -msse3" : " -mno-sse3";
+      const char *ssse3 = has_ssse3 ? " -mssse3" : " -mno-ssse3";
+      const char *sse4a = has_sse4a ? " -msse4a" : " -mno-sse4a";
       const char *cx16 = has_cmpxchg16b ? " -mcx16" : " -mno-cx16";
       const char *sahf = has_lahf_lm ? " -msahf" : " -mno-sahf";
       const char *movbe = has_movbe ? " -mmovbe" : " -mno-movbe";
-      const char *ase = has_aes ? " -maes" : " -mno-aes";
+      const char *aes = has_aes ? " -maes" : " -mno-aes";
       const char *pclmul = has_pclmul ? " -mpclmul" : " -mno-pclmul";
       const char *popcnt = has_popcnt ? " -mpopcnt" : " -mno-popcnt";
       const char *abm = has_abm ? " -mabm" : " -mno-abm";
@@ -783,7 +829,8 @@ const char *host_detect_local_cpu (int argc, const char **argv)
       const char *xsave = has_xsave ? " -mxsave" : " -mno-xsave";
       const char *xsaveopt = has_xsaveopt ? " -mxsaveopt" : " -mno-xsaveopt";
 
-      options = concat (options, cx16, sahf, movbe, ase, pclmul,
+      options = concat (options, mmx, mmx3dnow, sse, sse2, sse3, ssse3,
+			sse4a, cx16, sahf, movbe, aes, pclmul,
 			popcnt, abm, lwp, fma, fma4, xop, bmi, bmi2,
 			tbm, avx, avx2, sse4_2, sse4_1, lzcnt, rtm,
 			hle, rdrnd, f16c, fsgsbase, rdseed, prfchw, adx,

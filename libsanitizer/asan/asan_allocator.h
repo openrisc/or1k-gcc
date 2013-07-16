@@ -15,11 +15,32 @@
 
 #include "asan_internal.h"
 #include "asan_interceptors.h"
+#include "sanitizer_common/sanitizer_list.h"
+
+// We are in the process of transitioning from the old allocator (version 1)
+// to a new one (version 2). The change is quite intrusive so both allocators
+// will co-exist in the source base for a while. The actual allocator is chosen
+// at build time by redefining this macro.
+#ifndef ASAN_ALLOCATOR_VERSION
+# if (ASAN_LINUX && !ASAN_ANDROID) || ASAN_MAC || ASAN_WINDOWS
+#  define ASAN_ALLOCATOR_VERSION 2
+# else
+#  define ASAN_ALLOCATOR_VERSION 1
+# endif
+#endif  // ASAN_ALLOCATOR_VERSION
 
 namespace __asan {
 
+enum AllocType {
+  FROM_MALLOC = 1,  // Memory block came from malloc, calloc, realloc, etc.
+  FROM_NEW = 2,     // Memory block came from operator new.
+  FROM_NEW_BR = 3   // Memory block came from operator new [ ]
+};
+
 static const uptr kNumberOfSizeClasses = 255;
 struct AsanChunk;
+
+void InitializeAllocator();
 
 class AsanChunkView {
  public:
@@ -32,16 +53,37 @@ class AsanChunkView {
   uptr FreeTid();
   void GetAllocStack(StackTrace *stack);
   void GetFreeStack(StackTrace *stack);
-  bool AddrIsInside(uptr addr, uptr access_size, uptr *offset);
-  bool AddrIsAtLeft(uptr addr, uptr access_size, uptr *offset);
-  bool AddrIsAtRight(uptr addr, uptr access_size, uptr *offset);
+  bool AddrIsInside(uptr addr, uptr access_size, sptr *offset) {
+    if (addr >= Beg() && (addr + access_size) <= End()) {
+      *offset = addr - Beg();
+      return true;
+    }
+    return false;
+  }
+  bool AddrIsAtLeft(uptr addr, uptr access_size, sptr *offset) {
+    (void)access_size;
+    if (addr < Beg()) {
+      *offset = Beg() - addr;
+      return true;
+    }
+    return false;
+  }
+  bool AddrIsAtRight(uptr addr, uptr access_size, sptr *offset) {
+    if (addr + access_size > End()) {
+      *offset = addr - End();
+      return true;
+    }
+    return false;
+  }
+
  private:
   AsanChunk *const chunk_;
 };
 
 AsanChunkView FindHeapChunkByAddress(uptr address);
 
-class AsanChunkFifoList {
+// List of AsanChunks with total size.
+class AsanChunkFifoList: public IntrusiveList<AsanChunk> {
  public:
   explicit AsanChunkFifoList(LinkerInitialized) { }
   AsanChunkFifoList() { clear(); }
@@ -50,25 +92,31 @@ class AsanChunkFifoList {
   AsanChunk *Pop();
   uptr size() { return size_; }
   void clear() {
-    first_ = last_ = 0;
+    IntrusiveList<AsanChunk>::clear();
     size_ = 0;
   }
  private:
-  AsanChunk *first_;
-  AsanChunk *last_;
   uptr size_;
 };
 
 struct AsanThreadLocalMallocStorage {
   explicit AsanThreadLocalMallocStorage(LinkerInitialized x)
-      : quarantine_(x) { }
+#if ASAN_ALLOCATOR_VERSION == 1
+      : quarantine_(x)
+#endif
+      { }
   AsanThreadLocalMallocStorage() {
     CHECK(REAL(memset));
     REAL(memset)(this, 0, sizeof(AsanThreadLocalMallocStorage));
   }
 
+#if ASAN_ALLOCATOR_VERSION == 1
   AsanChunkFifoList quarantine_;
   AsanChunk *free_lists_[kNumberOfSizeClasses];
+#else
+  uptr quarantine_cache[16];
+  uptr allocator2_cache[96 * (512 * 8 + 16)];  // Opaque.
+#endif
   void CommitBack();
 };
 
@@ -156,8 +204,9 @@ class FakeStack {
   FakeFrameLifo call_stack_;
 };
 
-void *asan_memalign(uptr alignment, uptr size, StackTrace *stack);
-void asan_free(void *ptr, StackTrace *stack);
+void *asan_memalign(uptr alignment, uptr size, StackTrace *stack,
+                    AllocType alloc_type);
+void asan_free(void *ptr, StackTrace *stack, AllocType alloc_type);
 
 void *asan_malloc(uptr size, StackTrace *stack);
 void *asan_calloc(uptr nmemb, uptr size, StackTrace *stack);
@@ -172,6 +221,8 @@ uptr asan_malloc_usable_size(void *ptr, StackTrace *stack);
 uptr asan_mz_size(const void *ptr);
 void asan_mz_force_lock();
 void asan_mz_force_unlock();
+
+void PrintInternalAllocatorStats();
 
 }  // namespace __asan
 #endif  // ASAN_ALLOCATOR_H

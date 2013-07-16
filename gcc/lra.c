@@ -1,6 +1,5 @@
 /* LRA (local register allocator) driver and LRA utilities.
-   Copyright (C) 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -44,32 +43,32 @@ along with GCC; see the file COPYING3.	If not see
 
    Here is block diagram of LRA passes:
 
-	  ---------------------
-	 | Undo inheritance    |      ---------------	     ---------------
-	 | for spilled pseudos)|     | Memory-memory |	    | New (and old) |
-	 | and splits (for     |<----| move coalesce |<-----|	 pseudos    |
-	 | pseudos got the     |      ---------------	    |	assignment  |
-  Start	 |  same  hard regs)   |			     ---------------
-    |	  ---------------------					    ^
-    V		  |		 ----------------		    |
- -----------	  V		| Update virtual |		    |
-|  Remove   |----> ------------>|    register	 |		    |
-| scratches |	  ^		|  displacements |		    |
- -----------	  |		 ----------------		    |
-		  |			 |			    |
-		  |			 V	   New		    |
-	 ----------------    No	   ------------	 pseudos   -------------------
-	| Spilled pseudo | change |Constraints:| or insns | Inheritance/split |
-	|    to memory	 |<-------|    RTL     |--------->|  transformations  |
-	|  substitution	 |	  | transfor-  |	  |    in EBB scope   |
-	 ----------------	  |  mations   |	   -------------------
-		|		    ------------
-		V
+                                ------------------------
+           ---------------     | Undo inheritance for   |     ---------------
+          | Memory-memory |    | spilled pseudos,       |    | New (and old) |
+          | move coalesce |<---| splits for pseudos got |<-- |   pseudos     |
+           ---------------     | the same hard regs,    |    |  assignment   |
+  Start           |            | and optional reloads   |     ---------------
+    |             |             ------------------------            ^
+    V             |              ----------------                   |
+ -----------      V             | Update virtual |                  |
+|  Remove   |----> ------------>|    register    |                  |
+| scratches |     ^             |  displacements |                  |
+ -----------      |              ----------------                   |
+                  |                      |                          |
+                  |                      V         New              |
+         ----------------    No    ------------  pseudos   -------------------
+        | Spilled pseudo | change |Constraints:| or insns | Inheritance/split |
+        |    to memory   |<-------|    RTL     |--------->|  transformations  |
+        |  substitution  |        | transfor-  |          |    in EBB scope   |
+         ----------------         |  mations   |           -------------------
+                |                   ------------
+                V
     -------------------------
    | Hard regs substitution, |
    |  devirtalization, and   |------> Finish
    | restoring scratches got |
-   |	     memory	     |
+   |         memory          |
     -------------------------
 
    To speed up the process:
@@ -195,7 +194,7 @@ lra_create_new_reg (enum machine_mode md_mode, rtx original,
   new_reg
     = lra_create_new_reg_with_unique_value (md_mode, original, rclass, title);
   if (original != NULL_RTX && REG_P (original))
-    lra_reg_info[REGNO (new_reg)].val = lra_reg_info[REGNO (original)].val;
+    lra_assign_reg_val (REGNO (original), REGNO (new_reg));
   return new_reg;
 }
 
@@ -243,6 +242,42 @@ lra_delete_dead_insn (rtx insn)
   lra_set_insn_deleted (insn);
 }
 
+/* Emit insn x = y + z.  Return NULL if we failed to do it.
+   Otherwise, return the insn.  We don't use gen_add3_insn as it might
+   clobber CC.  */
+static rtx
+emit_add3_insn (rtx x, rtx y, rtx z)
+{
+  rtx insn, last;
+
+  last = get_last_insn ();
+  insn = emit_insn (gen_rtx_SET (VOIDmode, x,
+				 gen_rtx_PLUS (GET_MODE (y), y, z)));
+  if (recog_memoized (insn) < 0)
+    {
+      delete_insns_since (last);
+      insn = NULL_RTX;
+    }
+  return insn;
+}
+
+/* Emit insn x = x + y.  Return the insn.  We use gen_add2_insn as the
+   last resort.  */
+static rtx
+emit_add2_insn (rtx x, rtx y)
+{
+  rtx insn;
+
+  insn = emit_add3_insn (x, x, y);
+  if (insn == NULL_RTX)
+    {
+      insn = gen_add2_insn (x, y);
+      if (insn != NULL_RTX)
+	emit_insn (insn);
+    }
+  return insn;
+}
+
 /* Target checks operands through operand predicates to recognize an
    insn.  We should have a special precaution to generate add insns
    which are frequent results of elimination.
@@ -261,10 +296,10 @@ lra_emit_add (rtx x, rtx y, rtx z)
   rtx a1, a2, base, index, disp, scale, index_scale;
   bool ok_p;
 
-  insn = gen_add3_insn (x, y, z);
+  insn = emit_add3_insn (x, y, z);
   old = max_reg_num ();
   if (insn != NULL_RTX)
-    emit_insn (insn);
+    ;
   else
     {
       disp = a2 = NULL_RTX;
@@ -307,12 +342,14 @@ lra_emit_add (rtx x, rtx y, rtx z)
 	  || (disp != NULL_RTX && ! CONSTANT_P (disp))
 	  || (scale != NULL_RTX && ! CONSTANT_P (scale)))
 	{
-	  /* Its is not an address generation.	Probably we have no 3 op
-	     add.  Last chance is to use 2-op add insn.	 */
+	  /* Probably we have no 3 op add.  Last chance is to use 2-op
+	     add insn.  To succeed, don't move Z to X as an address
+	     segment always comes in Y.  Otherwise, we might fail when
+	     adding the address segment to register.  */
 	  lra_assert (x != y && x != z);
-	  emit_move_insn (x, z);
-	  insn = gen_add2_insn (x, y);
-	  emit_insn (insn);
+	  emit_move_insn (x, y);
+	  insn = emit_add2_insn (x, z);
+	  lra_assert (insn != NULL_RTX);
 	}
       else
 	{
@@ -323,8 +360,8 @@ lra_emit_add (rtx x, rtx y, rtx z)
 	      /* Generate x = index_scale; x = x + base.  */
 	      lra_assert (index_scale != NULL_RTX && base != NULL_RTX);
 	      emit_move_insn (x, index_scale);
-	      insn = gen_add2_insn (x, base);
-	      emit_insn (insn);
+	      insn = emit_add2_insn (x, base);
+	      lra_assert (insn != NULL_RTX);
 	    }
 	  else if (scale == NULL_RTX)
 	    {
@@ -338,14 +375,14 @@ lra_emit_add (rtx x, rtx y, rtx z)
 		  delete_insns_since (last);
 		  /* Generate x = disp; x = x + base.  */
 		  emit_move_insn (x, disp);
-		  insn = gen_add2_insn (x, base);
-		  emit_insn (insn);
+		  insn = emit_add2_insn (x, base);
+		  lra_assert (insn != NULL_RTX);
 		}
 	      /* Generate x = x + index.  */
 	      if (index != NULL_RTX)
 		{
-		  insn = gen_add2_insn (x, index);
-		  emit_insn (insn);
+		  insn = emit_add2_insn (x, index);
+		  lra_assert (insn != NULL_RTX);
 		}
 	    }
 	  else
@@ -356,16 +393,12 @@ lra_emit_add (rtx x, rtx y, rtx z)
 	      ok_p = false;
 	      if (recog_memoized (insn) >= 0)
 		{
-		  insn = gen_add2_insn (x, disp);
+		  insn = emit_add2_insn (x, disp);
 		  if (insn != NULL_RTX)
 		    {
-		      emit_insn (insn);
-		      insn = gen_add2_insn (x, disp);
+		      insn = emit_add2_insn (x, disp);
 		      if (insn != NULL_RTX)
-			{
-			  emit_insn (insn);
-			  ok_p = true;
-			}
+			ok_p = true;
 		    }
 		}
 	      if (! ok_p)
@@ -373,10 +406,10 @@ lra_emit_add (rtx x, rtx y, rtx z)
 		  delete_insns_since (last);
 		  /* Generate x = disp; x = x + base; x = x + index_scale.  */
 		  emit_move_insn (x, disp);
-		  insn = gen_add2_insn (x, base);
-		  emit_insn (insn);
-		  insn = gen_add2_insn (x, index_scale);
-		  emit_insn (insn);
+		  insn = emit_add2_insn (x, base);
+		  lra_assert (insn != NULL_RTX);
+		  insn = emit_add2_insn (x, index_scale);
+		  lra_assert (insn != NULL_RTX);
 		}
 	    }
 	}
@@ -1393,6 +1426,7 @@ initialize_lra_reg_info_element (int i)
   lra_reg_info[i].last_reload = 0;
   lra_reg_info[i].restore_regno = -1;
   lra_reg_info[i].val = get_new_reg_value ();
+  lra_reg_info[i].offset = 0;
   lra_reg_info[i].copies = NULL;
 }
 
@@ -1620,18 +1654,10 @@ add_regs_to_insn_regno_info (lra_insn_recog_data_t data, rtx x, int uid,
 static int
 get_insn_freq (rtx insn)
 {
-  basic_block bb;
+  basic_block bb = BLOCK_FOR_INSN (insn);
 
-  if ((bb = BLOCK_FOR_INSN (insn)) != NULL)
-    return REG_FREQ_FROM_BB (bb);
-  else
-    {
-      lra_assert (lra_insn_recog_data[INSN_UID (insn)]
-		  ->insn_static_data->n_operands == 0);
-      /* We don't care about such insn, e.g. it might be jump with
-	 addr_vec.  */
-      return 1;
-    }
+  gcc_checking_assert (bb != NULL);
+  return REG_FREQ_FROM_BB (bb);
 }
 
 /* Invalidate all reg info of INSN with DATA and execution frequency
@@ -2000,8 +2026,6 @@ check_rtl (bool final_p)
     if (NONDEBUG_INSN_P (insn)
 	&& GET_CODE (PATTERN (insn)) != USE
 	&& GET_CODE (PATTERN (insn)) != CLOBBER
-	&& GET_CODE (PATTERN (insn)) != ADDR_VEC
-	&& GET_CODE (PATTERN (insn)) != ADDR_DIFF_VEC
 	&& GET_CODE (PATTERN (insn)) != ASM_INPUT)
       {
 	if (final_p)
@@ -2151,6 +2175,9 @@ update_inc_notes (void)
 /* Set to 1 while in lra.  */
 int lra_in_progress;
 
+/* Start of pseudo regnos before the LRA.  */
+int lra_new_regno_start;
+
 /* Start of reload pseudo regnos before the new spill pass.  */
 int lra_constraint_new_regno_start;
 
@@ -2160,9 +2187,15 @@ bitmap_head lra_inheritance_pseudos;
 /* Split regnos before the new spill pass.  */
 bitmap_head lra_split_regs;
 
-/* Reload pseudo regnos before the new assign pass which still can be
-   spilled after the assinment pass.  */
+/* Reload pseudo regnos before the new assignmnet pass which still can
+   be spilled after the assinment pass as memory is also accepted in
+   insns for the reload pseudos.  */
 bitmap_head lra_optional_reload_pseudos;
+
+/* Pseudo regnos used for subreg reloads before the new assignment
+   pass.  Such pseudos still can be spilled after the assinment
+   pass.  */
+bitmap_head lra_subreg_reload_pseudos;
 
 /* First UID of insns generated before a new spill pass.  */
 int lra_constraint_new_insn_uid_start;
@@ -2210,6 +2243,10 @@ lra (FILE *f)
 
   timevar_push (TV_LRA);
 
+  /* Make sure that the last insn is a note.  Some subsequent passes
+     need it.  */
+  emit_note (NOTE_INSN_DELETED);
+
   COPY_HARD_REG_SET (lra_no_alloc_regs, ira_no_alloc_regs);
 
   init_reg_info ();
@@ -2235,7 +2272,7 @@ lra (FILE *f)
      so set up lra_constraint_new_regno_start before its call to
      permit changing reg classes for pseudos created by this
      simplification.  */
-  lra_constraint_new_regno_start = max_reg_num ();
+  lra_constraint_new_regno_start = lra_new_regno_start = max_reg_num ();
   remove_scratches ();
   scratch_p = lra_constraint_new_regno_start != max_reg_num ();
 
@@ -2265,12 +2302,17 @@ lra (FILE *f)
   bitmap_initialize (&lra_inheritance_pseudos, &reg_obstack);
   bitmap_initialize (&lra_split_regs, &reg_obstack);
   bitmap_initialize (&lra_optional_reload_pseudos, &reg_obstack);
+  bitmap_initialize (&lra_subreg_reload_pseudos, &reg_obstack);
   live_p = false;
+  if (get_frame_size () != 0 && crtl->stack_alignment_needed)
+    /* If we have a stack frame, we must align it now.  The stack size
+       may be a part of the offset computation for register
+       elimination.  */
+    assign_stack_local (BLKmode, 0, crtl->stack_alignment_needed);
   for (;;)
     {
       for (;;)
 	{
-	  bitmap_clear (&lra_optional_reload_pseudos);
 	  /* We should try to assign hard registers to scratches even
 	     if there were no RTL transformations in
 	     lra_constraints.  */
@@ -2290,6 +2332,8 @@ lra (FILE *f)
 	  /* Do inheritance only for regular algorithms.  */
 	  if (! lra_simple_p)
 	    lra_inheritance ();
+	  if (live_p)
+	    lra_clear_live_ranges ();
 	  /* We need live ranges for lra_assign -- so build them.  */
 	  lra_create_live_ranges (true);
 	  live_p = true;
@@ -2302,13 +2346,26 @@ lra (FILE *f)
 	    lra_assign ();
 	  else
 	    {
-	      /* Do coalescing only for regular algorithms.  */
-	      if (! lra_assign () && lra_coalesce ())
-		live_p = false;
+	      bool spill_p = !lra_assign ();
+
 	      if (lra_undo_inheritance ())
 		live_p = false;
+	      if (spill_p)
+		{
+		  if (! live_p)
+		    {
+		      lra_create_live_ranges (true);
+		      live_p = true;
+		    }
+		  if (lra_coalesce ())
+		    live_p = false;
+		}
+	      if (! live_p)
+		lra_clear_live_ranges ();
 	    }
+	  bitmap_clear (&lra_optional_reload_pseudos);
 	}
+      bitmap_clear (&lra_subreg_reload_pseudos);
       bitmap_clear (&lra_inheritance_pseudos);
       bitmap_clear (&lra_split_regs);
       if (! lra_need_for_spills_p ())
@@ -2332,7 +2389,8 @@ lra (FILE *f)
   lra_eliminate (true);
   lra_final_code_change ();
   lra_in_progress = 0;
-  lra_clear_live_ranges ();
+  if (live_p)
+    lra_clear_live_ranges ();
   lra_live_ranges_finish ();
   lra_constraints_finish ();
   finish_reg_info ();

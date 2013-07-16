@@ -1,5 +1,5 @@
 ;; ARM 926EJ-S Pipeline Description
-;; Copyright (C) 2003, 2007 Free Software Foundation, Inc.
+;; Copyright (C) 2003-2013 Free Software Foundation, Inc.
 ;; Written by CodeSourcery, LLC.
 ;;
 ;; This file is part of GCC.
@@ -58,7 +58,7 @@
 ;; ALU operations with no shifted operand
 (define_insn_reservation "9_alu_op" 1 
  (and (eq_attr "tune" "arm926ejs")
-      (eq_attr "type" "alu,alu_shift"))
+      (eq_attr "type" "alu_reg,simple_alu_imm,simple_alu_shift,alu_shift"))
  "e,m,w")
 
 ;; ALU operations with a shift-by-register operand
@@ -81,32 +81,32 @@
 
 (define_insn_reservation "9_mult1" 3
  (and (eq_attr "tune" "arm926ejs")
-      (eq_attr "insn" "smlalxy,mul,mla"))
+      (eq_attr "type" "smlalxy,mul,mla"))
  "e*2,m,w")
 
 (define_insn_reservation "9_mult2" 4
  (and (eq_attr "tune" "arm926ejs")
-      (eq_attr "insn" "muls,mlas"))
+      (eq_attr "type" "muls,mlas"))
  "e*3,m,w")
 
 (define_insn_reservation "9_mult3" 4
  (and (eq_attr "tune" "arm926ejs")
-      (eq_attr "insn" "umull,umlal,smull,smlal"))
+      (eq_attr "type" "umull,umlal,smull,smlal"))
  "e*3,m,w")
 
 (define_insn_reservation "9_mult4" 5
  (and (eq_attr "tune" "arm926ejs")
-      (eq_attr "insn" "umulls,umlals,smulls,smlals"))
+      (eq_attr "type" "umulls,umlals,smulls,smlals"))
  "e*4,m,w")
 
 (define_insn_reservation "9_mult5" 2
  (and (eq_attr "tune" "arm926ejs")
-      (eq_attr "insn" "smulxy,smlaxy,smlawx"))
+      (eq_attr "type" "smulxy,smlaxy,smlawx"))
  "e,m,w")
 
 (define_insn_reservation "9_mult6" 3
  (and (eq_attr "tune" "arm926ejs")
-      (eq_attr "insn" "smlalxy"))
+      (eq_attr "type" "smlalxy"))
  "e*2,m,w")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

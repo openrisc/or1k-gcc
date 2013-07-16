@@ -24,8 +24,8 @@ runtime_gotraceback(void)
 static int32	argc;
 static byte**	argv;
 
-extern Slice os_Args asm ("os.Args");
-extern Slice syscall_Envs asm ("syscall.Envs");
+extern Slice os_Args __asm__ (GOSYM_PREFIX "os.Args");
+extern Slice syscall_Envs __asm__ (GOSYM_PREFIX "syscall.Envs");
 
 void (*runtime_sysargs)(int32, uint8**);
 
@@ -77,33 +77,6 @@ runtime_goenvs_unix(void)
 	syscall_Envs.__values = (void*)s;
 	syscall_Envs.__count = n;
 	syscall_Envs.__capacity = n;
-}
-
-const byte*
-runtime_getenv(const char *s)
-{
-	int32 i, j, len;
-	const byte *v, *bs;
-	String* envv;
-	int32 envc;
-
-	bs = (const byte*)s;
-	len = runtime_findnull(bs);
-	envv = (String*)syscall_Envs.__values;
-	envc = syscall_Envs.__count;
-	for(i=0; i<envc; i++){
-		if(envv[i].len <= len)
-			continue;
-		v = (const byte*)envv[i].str;
-		for(j=0; j<len; j++)
-			if(bs[j] != v[j])
-				goto nomatch;
-		if(v[len] != '=')
-			goto nomatch;
-		return v+len+1;
-	nomatch:;
-	}
-	return nil;
 }
 
 int32
@@ -159,10 +132,12 @@ runtime_cputicks(void)
 }
 
 bool
-runtime_showframe(String s)
+runtime_showframe(String s, bool current)
 {
 	static int32 traceback = -1;
-	
+
+	if(current && runtime_m()->throwing > 0)
+		return 1;
 	if(traceback < 0)
 		traceback = runtime_gotraceback();
 	return traceback > 1 || (__builtin_memchr(s.str, '.', s.len) != nil && __builtin_memcmp(s.str, "runtime.", 7) != 0);
@@ -199,7 +174,7 @@ runtime_tickspersecond(void)
 }
 
 int64 runtime_pprof_runtime_cyclesPerSecond(void)
-     asm("runtime_pprof.runtime_cyclesPerSecond");
+     __asm__ (GOSYM_PREFIX "runtime_pprof.runtime_cyclesPerSecond");
 
 int64
 runtime_pprof_runtime_cyclesPerSecond(void)

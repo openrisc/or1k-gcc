@@ -1,6 +1,5 @@
 /* Various declarations for language-independent pretty-print subroutines.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -24,6 +23,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "coretypes.h"
 #include "intl.h"
 #include "pretty-print.h"
+#include "diagnostic-color.h"
 
 #if HAVE_ICONV
 #include <iconv.h>
@@ -96,6 +96,58 @@ pp_write_text_to_stream (pretty_printer *pp)
 {
   const char *text = pp_formatted_text (pp);
   fputs (text, pp->buffer->stream);
+  pp_clear_output_area (pp);
+}
+
+/* As pp_write_text_to_stream, but for GraphViz label output.
+
+   Flush the formatted text of pretty-printer PP onto the attached stream.
+   Replace characters in PPF that have special meaning in a GraphViz .dot
+   file.
+   
+   This routine is not very fast, but it doesn't have to be as this is only
+   be used by routines dumping intermediate representations in graph form.  */
+
+void
+pp_write_text_as_dot_label_to_stream (pretty_printer *pp, bool for_record)
+{
+  const char *text = pp_formatted_text (pp);
+  const char *p = text;
+  FILE *fp = pp->buffer->stream;
+
+  while (*p)
+    {
+      switch (*p)
+	{
+	/* Print newlines as a left-aligned newline.  */
+	case '\n':
+	  fputs ("\\l\\\n", fp);
+	  break;
+
+	/* A pipe is only special for record-shape nodes.  */
+	case '|':
+	  if (for_record)
+	    fputc ('\\', fp);
+	  fputc (*p, fp);
+	  break;
+
+	/* The following characters always have to be escaped
+	   for use in labels.  */
+	case '{':
+	case '}':
+	case '<':
+	case '>':
+	case '"':
+	case ' ':
+	  fputc ('\\', fp);
+	  /* fall through */
+	default:
+	  fputc (*p, fp);
+	  break;
+	}
+      p++;
+    }
+
   pp_clear_output_area (pp);
 }
 
@@ -175,6 +227,8 @@ pp_base_indent (pretty_printer *pp)
    %c: character.
    %s: string.
    %p: pointer.
+   %r: if pp_show_color(pp), switch to color identified by const char *.
+   %R: if pp_show_color(pp), reset color.
    %m: strerror(text->err_no) - does not consume a value from args_ptr.
    %%: '%'.
    %<: opening quote.
@@ -249,17 +303,36 @@ pp_base_format (pretty_printer *pp, text_info *text)
 	  continue;
 
 	case '<':
-	  obstack_grow (&buffer->chunk_obstack,
-			open_quote, strlen (open_quote));
-	  p++;
-	  continue;
+	  {
+	    obstack_grow (&buffer->chunk_obstack,
+			  open_quote, strlen (open_quote));
+	    const char *colorstr
+	      = colorize_start (pp_show_color (pp), "quote");
+	    obstack_grow (&buffer->chunk_obstack, colorstr, strlen (colorstr));
+	    p++;
+	    continue;
+	  }
 
 	case '>':
+	  {
+	    const char *colorstr = colorize_stop (pp_show_color (pp));
+	    obstack_grow (&buffer->chunk_obstack, colorstr, strlen (colorstr));
+	  }
+	  /* FALLTHRU */
 	case '\'':
 	  obstack_grow (&buffer->chunk_obstack,
 			close_quote, strlen (close_quote));
 	  p++;
 	  continue;
+
+	case 'R':
+	  {
+	    const char *colorstr = colorize_stop (pp_show_color (pp));
+	    obstack_grow (&buffer->chunk_obstack, colorstr,
+			  strlen (colorstr));
+	    p++;
+	    continue;
+	  }
 
 	case 'm':
 	  {
@@ -415,10 +488,19 @@ pp_base_format (pretty_printer *pp, text_info *text)
       gcc_assert (!wide || precision == 0);
 
       if (quote)
-	pp_string (pp, open_quote);
+	{
+	  pp_string (pp, open_quote);
+	  pp_string (pp, colorize_start (pp_show_color (pp), "quote"));
+	}
 
       switch (*p)
 	{
+	case 'r':
+	  pp_string (pp, colorize_start (pp_show_color (pp),
+					 va_arg (*text->args_ptr,
+						 const char *)));
+	  break;
+
 	case 'c':
 	  pp_character (pp, va_arg (*text->args_ptr, int));
 	  break;
@@ -512,7 +594,10 @@ pp_base_format (pretty_printer *pp, text_info *text)
 	}
 
       if (quote)
-	pp_string (pp, close_quote);
+	{
+	  pp_string (pp, colorize_stop (pp_show_color (pp)));
+	  pp_string (pp, close_quote);
+	}
 
       obstack_1grow (&buffer->chunk_obstack, '\0');
       *formatters[argno] = XOBFINISH (&buffer->chunk_obstack, const char *);

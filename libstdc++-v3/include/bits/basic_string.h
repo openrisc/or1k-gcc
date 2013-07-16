@@ -1,8 +1,6 @@
 // Components for manipulating sequences of characters -*- C++ -*-
 
-// Copyright (C) 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-// 2006, 2007, 2008, 2009, 2010, 2011
-// Free Software Foundation, Inc.
+// Copyright (C) 1997-2013 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -2769,10 +2767,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *
    *  Stores characters from @a __is into @a __str until @a __delim is
    *  found, the end of the stream is encountered, or str.max_size()
-   *  is reached.  If is.width() is non-zero, that is the limit on the
-   *  number of characters stored into @a __str.  Any previous
-   *  contents of @a __str are erased.  If @a __delim was encountered,
-   *  it is extracted but not stored into @a __str.
+   *  is reached.  Any previous contents of @a __str are erased.  If
+   *  @a __delim is encountered, it is extracted but not stored into
+   *  @a __str.
    */
   template<typename _CharT, typename _Traits, typename _Alloc>
     basic_istream<_CharT, _Traits>&
@@ -2787,10 +2784,9 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
    *
    *  Stores characters from is into @a __str until &apos;\n&apos; is
    *  found, the end of the stream is encountered, or str.max_size()
-   *  is reached.  If __is.width() is non-zero, that is the limit on
-   *  the number of characters stored into @a __str.  Any previous
-   *  contents of @a __str are erased.  If end of line was
-   *  encountered, it is extracted but not stored into @a __str.
+   *  is reached.  Any previous contents of @a __str are erased.  If
+   *  end of line is encountered, it is extracted but not stored into
+   *  @a __str.
    */
   template<typename _CharT, typename _Traits, typename _Alloc>
     inline basic_istream<_CharT, _Traits>&
@@ -3053,6 +3049,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { return std::_Hash_impl::hash(__s.data(), __s.length()); }
     };
 
+  template<>
+    struct __is_fast_hash<hash<string>> : std::false_type
+    { };
+
 #ifdef _GLIBCXX_USE_WCHAR_T
   /// std::hash specialization for wstring.
   template<>
@@ -3064,6 +3064,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { return std::_Hash_impl::hash(__s.data(),
                                      __s.length() * sizeof(wchar_t)); }
     };
+
+  template<>
+    struct __is_fast_hash<hash<wstring>> : std::false_type
+    { };
 #endif
 #endif /* _GLIBCXX_COMPATIBILITY_CXX0X */
 
@@ -3079,6 +3083,10 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
                                      __s.length() * sizeof(char16_t)); }
     };
 
+  template<>
+    struct __is_fast_hash<hash<u16string>> : std::false_type
+    { };
+
   /// std::hash specialization for u32string.
   template<>
     struct hash<u32string>
@@ -3089,10 +3097,46 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       { return std::_Hash_impl::hash(__s.data(),
                                      __s.length() * sizeof(char32_t)); }
     };
+
+  template<>
+    struct __is_fast_hash<hash<u32string>> : std::false_type
+    { };
 #endif
 
+#if __cplusplus > 201103L
+
+  inline namespace literals
+  {
+  inline namespace string_literals
+  {
+
+    inline basic_string<char>
+    operator"" s(const char* __str, size_t __len)
+    { return basic_string<char>{__str, __len}; }
+
+#ifdef _GLIBCXX_USE_WCHAR_T
+    inline basic_string<wchar_t>
+    operator"" s(const wchar_t* __str, size_t __len)
+    { return basic_string<wchar_t>{__str, __len}; }
+#endif
+
+#ifdef _GLIBCXX_USE_C99_STDINT_TR1
+    inline basic_string<char16_t>
+    operator"" s(const char16_t* __str, size_t __len)
+    { return basic_string<char16_t>{__str, __len}; }
+
+    inline basic_string<char32_t>
+    operator"" s(const char32_t* __str, size_t __len)
+    { return basic_string<char32_t>{__str, __len}; }
+#endif
+
+  } // inline namespace string_literals
+  } // inline namespace literals
+
+#endif // __cplusplus > 201103L
+
 _GLIBCXX_END_NAMESPACE_VERSION
-} // namespace
+} // namespace std
 
 #endif // C++11
 

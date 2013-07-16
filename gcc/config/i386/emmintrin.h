@@ -1,5 +1,4 @@
-/* Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+/* Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -28,12 +27,14 @@
 #ifndef _EMMINTRIN_H_INCLUDED
 #define _EMMINTRIN_H_INCLUDED
 
-#ifndef __SSE2__
-# error "SSE2 instruction set not enabled"
-#else
-
 /* We need definitions from the SSE header files*/
 #include <xmmintrin.h>
+
+#ifndef __SSE2__
+#pragma GCC push_options
+#pragma GCC target("sse2")
+#define __DISABLE_SSE2__
+#endif /* __SSE2__ */
 
 /* SSE2 */
 typedef double __v2df __attribute__ ((__vector_size__ (16)));
@@ -1516,6 +1517,9 @@ _mm_castsi128_pd(__m128i __A)
   return (__m128d) __A;
 }
 
-#endif /* __SSE2__  */
+#ifdef __DISABLE_SSE2__
+#undef __DISABLE_SSE2__
+#pragma GCC pop_options
+#endif /* __DISABLE_SSE2__ */
 
 #endif /* _EMMINTRIN_H_INCLUDED */

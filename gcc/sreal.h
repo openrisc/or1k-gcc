@@ -1,5 +1,5 @@
 /* Definitions for simple data type for positive real numbers.
-   Copyright (C) 2002, 2003, 2007 Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -53,6 +53,8 @@ typedef struct sreal
 } sreal;
 
 extern void dump_sreal (FILE *, sreal *);
+extern void debug (sreal &ref);
+extern void debug (sreal *ptr);
 extern sreal *sreal_init (sreal *, unsigned HOST_WIDE_INT, signed int);
 extern HOST_WIDE_INT sreal_to_int (sreal *);
 extern int sreal_compare (sreal *, sreal *);

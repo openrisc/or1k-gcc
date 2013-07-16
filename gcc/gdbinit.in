@@ -1,5 +1,4 @@
-# Copyright (C) 2001, 2002, 2003, 2004, 2006,
-# 2008, 2010, 2012 Free Software Foundation, Inc.
+# Copyright (C) 2001-2013 Free Software Foundation, Inc.
 #
 # This file is part of GCC.
 #
@@ -167,7 +166,7 @@ including the global binding level.
 end
 
 define pbb
-set dump_bb ($, stderr, 0)
+set debug ($)
 end
 
 document pbb
@@ -185,6 +184,8 @@ end
 # Define some macros helpful to gdb when it is expanding macros.
 macro define __FILE__ "gdb"
 macro define __LINE__ 1
+macro define __FUNCTION__ "gdb"
+macro define __null 0
 
 # Gracefully handle aborts in functions used from gdb.
 set unwindonsignal on

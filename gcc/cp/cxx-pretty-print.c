@@ -1,6 +1,5 @@
 /* Implementation of subroutines for the GNU C++ pretty-printer.
-   Copyright (C) 2003, 2004, 2005, 2007, 2008,
-   2009, 2010, 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -261,7 +260,7 @@ pp_cxx_nested_name_specifier (cxx_pretty_printer *pp, tree t)
 {
   if (!SCOPE_FILE_SCOPE_P (t) && t != pp->enclosing_scope)
     {
-      tree scope = TYPE_P (t) ? TYPE_CONTEXT (t) : DECL_CONTEXT (t);
+      tree scope = get_containing_scope (t);
       pp_cxx_nested_name_specifier (pp, scope);
       pp_cxx_template_keyword_if_needed (pp, scope, t);
       pp_cxx_unqualified_id (pp, t);
@@ -309,7 +308,7 @@ pp_cxx_qualified_id (cxx_pretty_printer *pp, tree t)
 
     default:
       {
-	tree scope = TYPE_P (t) ? TYPE_CONTEXT (t) : DECL_CONTEXT (t);
+	tree scope = get_containing_scope (t);
 	if (scope != pp->enclosing_scope)
 	  {
 	    pp_cxx_nested_name_specifier (pp, scope);
@@ -531,7 +530,7 @@ pp_cxx_postfix_expression (cxx_pretty_printer *pp, tree t)
 	    if (TREE_CODE (object) == ADDR_EXPR)
 	      object = TREE_OPERAND (object, 0);
 
-	    if (TREE_CODE (TREE_TYPE (object)) != POINTER_TYPE)
+	    if (!TYPE_PTR_P (TREE_TYPE (object)))
 	      {
 		pp_cxx_postfix_expression (pp, object);
 		pp_cxx_dot (pp);
@@ -1163,6 +1162,16 @@ pp_cxx_expression (cxx_pretty_printer *pp, tree t)
 	  }
       }
       break;
+      
+    case LAMBDA_EXPR:
+      pp_cxx_ws_string (pp, "<lambda>");
+      break;
+
+    case PAREN_EXPR:
+      pp_cxx_left_paren (pp);
+      pp_cxx_expression (pp, TREE_OPERAND (t, 0));
+      pp_cxx_right_paren (pp);
+      break;
 
     default:
       pp_c_expression (pp_c_base (pp), t);
@@ -1355,7 +1364,7 @@ pp_cxx_ptr_operator (cxx_pretty_printer *pp, tree t)
 	pp_cxx_ptr_operator (pp, TREE_TYPE (t));
       pp_c_attributes_display (pp_c_base (pp),
 			       TYPE_ATTRIBUTES (TREE_TYPE (t)));
-      if (TREE_CODE (t) == POINTER_TYPE)
+      if (TYPE_PTR_P (t))
 	{
 	  pp_star (pp);
 	  pp_cxx_cv_qualifier_seq (pp, t);

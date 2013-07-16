@@ -1,5 +1,4 @@
-;; Copyright (C) 2005, 2006, 2007, 2008, 2010, 2011, 2012
-;; Free Software Foundation, Inc.
+;; Copyright (C) 2005-2013 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -1132,8 +1131,7 @@
   "ISA_HAS_L<SHORT:SIZE><U>X"
   "l<SHORT:size><u>x\t%0,%2(%1)"
   [(set_attr "type"	"load")
-   (set_attr "mode"	"<GPR:MODE>")
-   (set_attr "length"	"4")])
+   (set_attr "mode"	"<GPR:MODE>")])
 
 (define_expand "mips_lhx"
   [(match_operand:SI 0 "register_operand")
@@ -1166,8 +1164,7 @@
   "ISA_HAS_L<GPR:SIZE>X"
   "l<GPR:size>x\t%0,%2(%1)"
   [(set_attr "type"	"load")
-   (set_attr "mode"	"<GPR:MODE>")
-   (set_attr "length"	"4")])
+   (set_attr "mode"	"<GPR:MODE>")])
 
 (define_insn "*mips_lw<u>x_<P:mode>_ext"
   [(set (match_operand:DI 0 "register_operand" "=d")
@@ -1177,8 +1174,7 @@
   "ISA_HAS_LW<U>X && TARGET_64BIT"
   "lw<u>x\t%0,%2(%1)"
   [(set_attr "type"	"load")
-   (set_attr "mode"	"DI")
-   (set_attr "length"	"4")])
+   (set_attr "mode"	"DI")])
 
 ;; Table 2-8. MIPS DSP ASE Instructions: Branch
 ;; BPOSGE32

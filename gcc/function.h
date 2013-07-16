@@ -1,7 +1,5 @@
 /* Structure for saving state for a nested function.
-   Copyright (C) 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1989-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -341,10 +339,6 @@ struct GTY(()) rtl_data {
 
   /* For reorg.  */
 
-  /* If some insns can be deferred to the delay slots of the epilogue, the
-     delay list for them is recorded here.  */
-  rtx epilogue_delay_list;
-
   /* Nonzero if function being compiled called builtin_return_addr or
      builtin_frame_address with nonzero count.  */
   bool accesses_prior_frames;
@@ -393,7 +387,8 @@ struct GTY(()) rtl_data {
   bool arg_pointer_save_area_init;
 
   /* Nonzero if current function must be given a frame pointer.
-     Set in global.c if anything is allocated on the stack there.  */
+     Set in reload1.c or lra-eliminations.c if anything is allocated
+     on the stack there.  */
   bool frame_pointer_needed;
 
   /* When set, expand should optimize for speed.  */
@@ -450,6 +445,15 @@ struct GTY(()) rtl_data {
      uses leaf registers.  This is valid after reload (specifically after
      sched2) and is useful only if the port defines LEAF_REGISTERS.  */
   bool uses_only_leaf_regs;
+
+  /* Nonzero if the function being compiled has undergone hot/cold partitioning
+     (under flag_reorder_blocks_and_partition) and has at least one cold
+     block.  */
+  bool has_bb_partition;
+
+  /* Nonzero if the function being compiled has completed the bb reordering
+     pass.  */
+  bool bb_reorder_complete;
 
   /* Like regs_ever_live, but 1 if a reg is set or clobbered from an
      asm.  Unlike regs_ever_live, elements of this array corresponding
@@ -704,6 +708,23 @@ extern void set_cfun (struct function *new_cfun);
 extern void push_cfun (struct function *new_cfun);
 extern void pop_cfun (void);
 extern void instantiate_decl_rtl (rtx x);
+
+/* Return the loop tree of FN.  */
+
+inline struct loops *
+loops_for_fn (struct function *fn)
+{
+  return fn->x_current_loops;
+}
+
+/* Set the loop tree of FN to LOOPS.  */
+
+inline void
+set_loops_for_fn (struct function *fn, struct loops *loops)
+{
+  gcc_checking_assert (fn->x_current_loops == NULL || loops == NULL);
+  fn->x_current_loops = loops;
+}
 
 /* For backward compatibility... eventually these should all go away.  */
 #define current_function_funcdef_no (cfun->funcdef_no)

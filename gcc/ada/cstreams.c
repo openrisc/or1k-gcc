@@ -31,10 +31,6 @@
 
 /* Routines required for implementing routines in Interfaces.C.Streams.  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifdef __vxworks
 #include "vxWorks.h"
 #endif
@@ -49,6 +45,10 @@ extern "C" {
 #endif
 
 #include "adaint.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifdef VMS
 #include <unixlib.h>
@@ -256,6 +256,35 @@ __gnat_full_name (char *nam, char *buffer)
 
   return buffer;
 }
+
+#ifdef _WIN64
+  /* On Windows 64 we want to use the fseek/fteel supporting large files. This
+     issue is due to the fact that a long on Win64 is still a 32 bits value */
+__int64
+__gnat_ftell64 (FILE *stream)
+{
+  return _ftelli64 (stream);
+}
+
+int
+__gnat_fseek64 (FILE *stream, __int64 offset, int origin)
+{
+  return _fseeki64 (stream, offset, origin);
+}
+
+#else
+long
+__gnat_ftell64 (FILE *stream)
+{
+  return ftell (stream);
+}
+
+int
+__gnat_fseek64 (FILE *stream, long offset, int origin)
+{
+  return fseek (stream, offset, origin);
+}
+#endif
 
 #ifdef __cplusplus
 }

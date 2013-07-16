@@ -1,6 +1,5 @@
 /* Various declarations for language-independent pretty-print subroutines.
-   Copyright (C) 2002, 2003, 2004, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -132,7 +131,6 @@ typedef struct
 /* The type of a hook that formats client-specific data onto a pretty_pinter.
    A client-supplied formatter returns true if everything goes well,
    otherwise it returns false.  */
-typedef struct pretty_print_info pretty_printer;
 typedef bool (*printer_fn) (pretty_printer *, text_info *, const char *,
 			    int, bool, bool, bool);
 
@@ -152,6 +150,9 @@ typedef bool (*printer_fn) (pretty_printer *, text_info *, const char *,
 /* True if identifiers are translated to the locale character set on
    output.  */
 #define pp_translate_identifiers(PP) pp_base (PP)->translate_identifiers
+
+/* True if colors should be shown.  */
+#define pp_show_color(PP) pp_base (PP)->show_color
 
 /* The data structure that contains the bare minimum required to do
    proper pretty-printing.  Clients may derived from this structure
@@ -196,6 +197,9 @@ struct pretty_print_info
   /* Nonzero means identifiers are translated to the locale character
      set on output.  */
   bool translate_identifiers;
+
+  /* Nonzero means that text should be colorized.  */
+  bool show_color;
 };
 
 #define pp_set_line_maximum_length(PP, L) \
@@ -343,7 +347,8 @@ extern void pp_base_indent (pretty_printer *);
 extern void pp_base_newline (pretty_printer *);
 extern void pp_base_character (pretty_printer *, int);
 extern void pp_base_string (pretty_printer *, const char *);
-extern void pp_write_text_to_stream (pretty_printer *pp);
+extern void pp_write_text_to_stream (pretty_printer *);
+extern void pp_write_text_as_dot_label_to_stream (pretty_printer *, bool);
 extern void pp_base_maybe_space (pretty_printer *);
 
 /* Switch into verbatim mode and return the old mode.  */

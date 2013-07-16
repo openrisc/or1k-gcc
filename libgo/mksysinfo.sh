@@ -168,6 +168,12 @@ enum {
 #ifdef TIOCGWINSZ
   TIOCGWINSZ_val = TIOCGWINSZ,
 #endif
+#ifdef TIOCNOTTY
+  TIOCNOTTY_val = TIOCNOTTY,
+#endif
+#ifdef TIOCSCTTY
+  TIOCSCTTY_val = TIOCSCTTY,
+#endif
 };
 EOF
 
@@ -297,6 +303,18 @@ for m in IP_PKTINFO IPV6_V6ONLY IPPROTO_IPV6 IPV6_JOIN_GROUP IPV6_LEAVE_GROUP IP
     echo "const $m = 0" >> ${OUT}
   fi
 done
+for m in SOCK_CLOEXEC SOCK_NONBLOCK; do
+  if ! grep "^const $m " ${OUT} >/dev/null 2>&1; then
+    echo "const $m = -1" >> ${OUT}
+  fi
+done
+
+# The syscall package requires AF_LOCAL.
+if ! grep '^const AF_LOCAL ' ${OUT} >/dev/null 2>&1; then
+  if grep '^const AF_UNIX ' ${OUT} >/dev/null 2>&1; then
+    echo "const AF_LOCAL = AF_UNIX" >> ${OUT}
+  fi
+fi
 
 # pathconf constants.
 grep '^const __PC' gen-sysinfo.go |
@@ -418,8 +436,10 @@ echo "type Socklen_t _socklen_t" >> ${OUT}
 sizeof_int=`grep '^const ___SIZEOF_INT__ = ' gen-sysinfo.go | sed -e 's/.*= //'`
 if test "$sizeof_int" = "4"; then
   echo "type _C_int int32" >> ${OUT}
+  echo "type _C_uint uint32" >> ${OUT}
 elif test "$sizeof_int" = "8"; then
   echo "type _C_int int64" >> ${OUT}
+  echo "type _C_uint uint64" >> ${OUT}
 else
   echo 1>&2 "mksysinfo.sh: could not determine size of int (got $sizeof_int)"
   exit 1
@@ -723,6 +743,16 @@ grep '^const _TIOC' gen-sysinfo.go | \
 if ! grep '^const TIOCGWINSZ' ${OUT} >/dev/null 2>&1; then
   if grep '^const _TIOCGWINSZ_val' ${OUT} >/dev/null 2>&1; then
     echo 'const TIOCGWINSZ = _TIOCGWINSZ_val' >> ${OUT}
+  fi
+fi
+if ! grep '^const TIOCNOTTY' ${OUT} >/dev/null 2>&1; then
+  if grep '^const _TIOCNOTTY_val' ${OUT} >/dev/null 2>&1; then
+    echo 'const TIOCNOTTY = _TIOCNOTTY_val' >> ${OUT}
+  fi
+fi
+if ! grep '^const TIOCSCTTY' ${OUT} >/dev/null 2>&1; then
+  if grep '^const _TIOCSCTTY_val' ${OUT} >/dev/null 2>&1; then
+    echo 'const TIOCSCTTY = _TIOCSCTTY_val' >> ${OUT}
   fi
 fi
 

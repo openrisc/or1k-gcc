@@ -1,7 +1,5 @@
 /* Control flow graph building code for GNU compiler.
-   Copyright (C) 1987, 1988, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -53,19 +51,15 @@ inside_basic_block_p (const_rtx insn)
     case CODE_LABEL:
       /* Avoid creating of basic block for jumptables.  */
       return (NEXT_INSN (insn) == 0
-	      || !JUMP_P (NEXT_INSN (insn))
-	      || (GET_CODE (PATTERN (NEXT_INSN (insn))) != ADDR_VEC
-		  && GET_CODE (PATTERN (NEXT_INSN (insn))) != ADDR_DIFF_VEC));
+	      || ! JUMP_TABLE_DATA_P (NEXT_INSN (insn)));
 
     case JUMP_INSN:
-      return (GET_CODE (PATTERN (insn)) != ADDR_VEC
-	      && GET_CODE (PATTERN (insn)) != ADDR_DIFF_VEC);
-
     case CALL_INSN:
     case INSN:
     case DEBUG_INSN:
       return true;
 
+    case JUMP_TABLE_DATA:
     case BARRIER:
     case NOTE:
       return false;
@@ -89,9 +83,7 @@ control_flow_insn_p (const_rtx insn)
       return false;
 
     case JUMP_INSN:
-      /* Jump insn always causes control transfer except for tablejumps.  */
-      return (GET_CODE (PATTERN (insn)) != ADDR_VEC
-	      && GET_CODE (PATTERN (insn)) != ADDR_DIFF_VEC);
+      return true;
 
     case CALL_INSN:
       /* Noreturn and sibling call instructions terminate the basic blocks
@@ -115,8 +107,9 @@ control_flow_insn_p (const_rtx insn)
 	return false;
       break;
 
+    case JUMP_TABLE_DATA:
     case BARRIER:
-      /* It is nonsense to reach barrier when looking for the
+      /* It is nonsense to reach this when looking for the
 	 end of basic block, but before dead code is eliminated
 	 this may happen.  */
       return false;
@@ -552,8 +545,7 @@ compute_outgoing_frequencies (basic_block b)
 	  probability = INTVAL (XEXP (note, 0));
 	  e = BRANCH_EDGE (b);
 	  e->probability = probability;
-	  e->count = ((b->count * probability + REG_BR_PROB_BASE / 2)
-		      / REG_BR_PROB_BASE);
+	  e->count = apply_probability (b->count, probability);
 	  f = FALLTHRU_EDGE (b);
 	  f->probability = REG_BR_PROB_BASE - probability;
 	  f->count = b->count - e->count;
@@ -590,8 +582,7 @@ compute_outgoing_frequencies (basic_block b)
 
   if (b->count)
     FOR_EACH_EDGE (e, ei, b->succs)
-      e->count = ((b->count * e->probability + REG_BR_PROB_BASE / 2)
-		  / REG_BR_PROB_BASE);
+      e->count = apply_probability (b->count, e->probability);
 }
 
 /* Assume that some pass has inserted labels or control flow

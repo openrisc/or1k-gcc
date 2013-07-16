@@ -1,5 +1,4 @@
-/* Copyright (C) 2002, 2003, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+/* Copyright (C) 2002-2013 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    F2003 I/O support contributed by Jerry DeLisle
 
@@ -92,7 +91,9 @@ set_integer (void *dest, GFC_INTEGER_LARGEST value, int length)
 GFC_UINTEGER_LARGEST
 si_max (int length)
 {
+#if defined HAVE_GFC_REAL_16 || defined HAVE_GFC_REAL_10
   GFC_UINTEGER_LARGEST value;
+#endif
 
   switch (length)
       {

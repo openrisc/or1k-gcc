@@ -11,7 +11,8 @@ TEST=all-gcc
 # nohup nice make -j25 -l36 -f ../gcc/contrib/config-list.mk > make.out 2>&1 &
 #
 # v850e1-elf is rejected by config.sub
-LIST = alpha-linux-gnu alpha-freebsd6 alpha-netbsd alpha-openbsd \
+LIST = aarch64-elf aarch64-linux-gnu \
+  alpha-linux-gnu alpha-freebsd6 alpha-netbsd alpha-openbsd \
   alpha64-dec-vms alpha-dec-vms am33_2.0-linux \
   arm-wrs-vxworks arm-netbsdelf \
   arm-linux-androideabi arm-uclinux_eabi arm-eabi \
@@ -66,7 +67,8 @@ LIST = alpha-linux-gnu alpha-freebsd6 alpha-netbsd alpha-openbsd \
   x86_64-elfOPT-with-fpmath=sse x86_64-freebsd6 x86_64-netbsd \
   x86_64-knetbsd-gnu x86_64-w64-mingw32 \
   x86_64-mingw32OPT-enable-sjlj-exceptions=yes xstormy16-elf xtensa-elf \
-  xtensa-linux sparc-sun-solaris2.9 i686-solaris2.9 \
+  xtensa-linux \
+  sparc-sun-solaris2.9OPT-enable-obsolete i686-solaris2.9OPT-enable-obsolete \
   i686-interix3OPT-enable-obsolete score-elfOPT-enable-obsolete
 
 LOGFILES = $(patsubst %,log/%-make.out,$(LIST))

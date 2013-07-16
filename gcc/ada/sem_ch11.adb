@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2011, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -266,7 +266,7 @@ package body Sem_Ch11 is
                        and then Scope (Entity (Id)) = Current_Scope
                      then
                         Error_Msg_NE
-                          ("?exception & is never raised", Entity (Id), Id);
+                          ("exception & is never raised?r?", Entity (Id), Id);
                      end if;
 
                      if Present (Renamed_Entity (Entity (Id))) then
@@ -276,9 +276,9 @@ package body Sem_Ch11 is
                            if Warn_On_Obsolescent_Feature then
                               Error_Msg_N
                                 ("Numeric_Error is an " &
-                                 "obsolescent feature (RM J.6(1))?", Id);
+                                 "obsolescent feature (RM J.6(1))?j?", Id);
                               Error_Msg_N
-                                ("\use Constraint_Error instead?", Id);
+                                ("\use Constraint_Error instead?j?", Id);
                            end if;
                         end if;
                      end if;
@@ -345,7 +345,7 @@ package body Sem_Ch11 is
                                               N_Others_Choice)
             then
                Error_Msg_N
-                 ("useless handler contains only a reraise statement?",
+                 ("useless handler contains only a reraise statement?r?",
                   Handler);
             end if;
 
@@ -424,6 +424,60 @@ package body Sem_Ch11 is
       end if;
    end Analyze_Handled_Statements;
 
+   ------------------------------
+   -- Analyze_Raise_Expression --
+   ------------------------------
+
+   procedure Analyze_Raise_Expression (N : Node_Id) is
+      Exception_Id   : constant Node_Id := Name (N);
+      Exception_Name : Entity_Id        := Empty;
+
+   begin
+      Check_SPARK_Restriction ("raise expression is not allowed", N);
+
+      --  Check exception restrictions on the original source
+
+      if Comes_From_Source (N) then
+         Check_Restriction (No_Exceptions, N);
+      end if;
+
+      Analyze (Exception_Id);
+
+      if Is_Entity_Name (Exception_Id) then
+         Exception_Name := Entity (Exception_Id);
+      end if;
+
+      if No (Exception_Name)
+        or else Ekind (Exception_Name) /= E_Exception
+      then
+         Error_Msg_N
+           ("exception name expected in raise statement", Exception_Id);
+      else
+         Set_Is_Raised (Exception_Name);
+      end if;
+
+      --  Deal with RAISE WITH case
+
+      if Present (Expression (N)) then
+         Check_Compiler_Unit (Expression (N));
+         Analyze_And_Resolve (Expression (N), Standard_String);
+      end if;
+
+      --  Check obsolescent use of Numeric_Error
+
+      if Exception_Name = Standard_Numeric_Error then
+         Check_Restriction (No_Obsolescent_Features, Exception_Id);
+      end if;
+
+      --  Kill last assignment indication
+
+      Kill_Current_Values (Last_Assignment_Only => True);
+
+      --  Set type as Any_Type since we have no information at all on the type
+
+      Set_Etype (N, Any_Type);
+   end Analyze_Raise_Expression;
+
    -----------------------------
    -- Analyze_Raise_Statement --
    -----------------------------
@@ -445,8 +499,7 @@ package body Sem_Ch11 is
       end if;
 
       --  Check for useless assignment to OUT or IN OUT scalar preceding the
-      --  raise. Right now we only look at assignment statements, we could do
-      --  more.
+      --  raise. Right now only look at assignment statements, could do more???
 
       if Is_List_Member (N) then
          declare
@@ -496,11 +549,11 @@ package body Sem_Ch11 is
 
                   if No (Exception_Handlers (Par)) then
                      Error_Msg_N
-                       ("?assignment to pass-by-copy formal " &
-                        "may have no effect", P);
+                       ("assignment to pass-by-copy formal " &
+                        "may have no effect??", P);
                      Error_Msg_N
-                       ("\?RAISE statement may result in abnormal return" &
-                        " (RM 6.4.1(17))", P);
+                       ("\RAISE statement may result in abnormal return" &
+                        " (RM 6.4.1(17))??", P);
                   end if;
                end if;
             end if;

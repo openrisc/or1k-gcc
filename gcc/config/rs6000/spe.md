@@ -1,6 +1,5 @@
 ;; e500 SPE description
-;; Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2011, 2012
-;; Free Software Foundation, Inc.
+;; Copyright (C) 2002-2013 Free Software Foundation, Inc.
 ;; Contributed by Aldy Hernandez (aldy@quesejoda.com)
 
 ;; This file is part of GCC.
@@ -2605,8 +2604,8 @@
    && TARGET_HARD_FLOAT && TARGET_E500_DOUBLE && TARGET_LONG_DOUBLE_128"
   "
 {
-  const int hi_word = FLOAT_WORDS_BIG_ENDIAN ? 0 : GET_MODE_SIZE (DFmode);
-  const int lo_word = FLOAT_WORDS_BIG_ENDIAN ? GET_MODE_SIZE (DFmode) : 0;
+  const int hi_word = LONG_DOUBLE_LARGE_FIRST ? 0 : GET_MODE_SIZE (DFmode);
+  const int lo_word = LONG_DOUBLE_LARGE_FIRST ? GET_MODE_SIZE (DFmode) : 0;
   operands[3] = gen_reg_rtx (DFmode);
   operands[4] = gen_reg_rtx (CCFPmode);
   operands[5] = simplify_gen_subreg (DFmode, operands[0], TFmode, hi_word);
@@ -2628,8 +2627,8 @@
    && TARGET_HARD_FLOAT && TARGET_E500_DOUBLE && TARGET_LONG_DOUBLE_128"
   "
 {
-  const int hi_word = FLOAT_WORDS_BIG_ENDIAN ? 0 : GET_MODE_SIZE (DFmode);
-  const int lo_word = FLOAT_WORDS_BIG_ENDIAN ? GET_MODE_SIZE (DFmode) : 0;
+  const int hi_word = LONG_DOUBLE_LARGE_FIRST ? 0 : GET_MODE_SIZE (DFmode);
+  const int lo_word = LONG_DOUBLE_LARGE_FIRST ? GET_MODE_SIZE (DFmode) : 0;
   operands[3] = gen_reg_rtx (DFmode);
   operands[4] = gen_reg_rtx (CCFPmode);
   operands[5] = simplify_gen_subreg (DFmode, operands[0], TFmode, hi_word);

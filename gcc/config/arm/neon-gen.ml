@@ -1,5 +1,5 @@
 (* Auto-generate ARM Neon intrinsics header file.
-   Copyright (C) 2006, 2007, 2009 Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
    Contributed by CodeSourcery.
 
    This file is part of GCC.
@@ -121,6 +121,7 @@ let rec signed_ctype = function
   | T_uint16 | T_int16 -> T_intHI
   | T_uint32 | T_int32 -> T_intSI
   | T_uint64 | T_int64 -> T_intDI
+  | T_float16 -> T_floatHF
   | T_float32 -> T_floatSF
   | T_poly8 -> T_intQI
   | T_poly16 -> T_intHI
@@ -275,8 +276,8 @@ let rec mode_suffix elttype shape =
     let mode = mode_of_elt elttype shape in
     string_of_mode mode
   with MixedMode (dst, src) ->
-    let dstmode = mode_of_elt dst shape
-    and srcmode = mode_of_elt src shape in
+    let dstmode = mode_of_elt ~argpos:0 dst shape
+    and srcmode = mode_of_elt ~argpos:1 src shape in
     string_of_mode dstmode ^ string_of_mode srcmode
 
 let get_shuffle features =
@@ -290,17 +291,26 @@ let print_feature_test_start features =
   try
     match List.find (fun feature ->
                        match feature with Requires_feature _ -> true
+                                        | Requires_arch _ -> true
+                                        | Requires_FP_bit _ -> true
                                         | _ -> false)
                      features with
-      Requires_feature feature -> 
+      Requires_feature feature ->
         Format.printf "#ifdef __ARM_FEATURE_%s@\n" feature
+    | Requires_arch arch ->
+        Format.printf "#if __ARM_ARCH >= %d@\n" arch
+    | Requires_FP_bit bit ->
+        Format.printf "#if ((__ARM_FP & 0x%X) != 0)@\n"
+                      (1 lsl bit)
     | _ -> assert false
   with Not_found -> assert true
 
 let print_feature_test_end features =
   let feature =
-    List.exists (function Requires_feature x -> true
-                                        |  _ -> false) features in
+    List.exists (function Requires_feature _ -> true
+                          | Requires_arch _ -> true
+                          | Requires_FP_bit _ -> true
+                          |  _ -> false) features in
   if feature then Format.printf "#endif@\n"
 
 
@@ -361,6 +371,7 @@ let deftypes () =
     "__builtin_neon_hi", "int", 16, 4;
     "__builtin_neon_si", "int", 32, 2;
     "__builtin_neon_di", "int", 64, 1;
+    "__builtin_neon_hf", "float", 16, 4;
     "__builtin_neon_sf", "float", 32, 2;
     "__builtin_neon_poly8", "poly", 8, 8;
     "__builtin_neon_poly16", "poly", 16, 4;
@@ -437,7 +448,7 @@ let _ =
 "/* ARM NEON intrinsics include file. This file is generated automatically";
 "   using neon-gen.ml.  Please do not edit manually.";
 "";
-"   Copyright (C) 2006, 2007, 2009 Free Software Foundation, Inc.";
+"   Copyright (C) 2006-2013 Free Software Foundation, Inc.";
 "   Contributed by CodeSourcery.";
 "";
 "   This file is part of GCC.";

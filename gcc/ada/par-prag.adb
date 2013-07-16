@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2012, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2013, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -155,9 +155,7 @@ function Prag (Pragma_Node : Node_Id; Semi : Source_Ptr) return Node_Id is
 
    begin
       if Nkind (Expression (Arg)) /= N_Identifier
-        or else (Chars (Argx) /= Name_On
-                   and then
-                 Chars (Argx) /= Name_Off)
+        or else not Nam_In (Chars (Argx), Name_On, Name_Off)
       then
          Error_Msg_Name_2 := Name_On;
          Error_Msg_Name_3 := Name_Off;
@@ -234,18 +232,16 @@ function Prag (Pragma_Node : Node_Id; Semi : Source_Ptr) return Node_Id is
          Id := Chars (Arg);
          Expr := Expression (Arg);
 
-         if Id = No_Name
-           and then Nkind (Expr) = N_Identifier
-         then
-            case Get_Restriction_Id (Chars (Expr)) is
-               when No_Obsolescent_Features =>
+         if Id = No_Name and then Nkind (Expr) = N_Identifier then
+            case Chars (Expr) is
+               when Name_No_Obsolescent_Features =>
                   Set_Restriction (No_Obsolescent_Features, Pragma_Node);
                   Restriction_Warnings (No_Obsolescent_Features) :=
                     Prag_Id = Pragma_Restriction_Warnings;
 
-               when SPARK =>
-                  Set_Restriction (SPARK, Pragma_Node);
-                  Restriction_Warnings (SPARK) :=
+               when Name_SPARK | Name_SPARK_05 =>
+                  Set_Restriction (SPARK_05, Pragma_Node);
+                  Restriction_Warnings (SPARK_05) :=
                     Prag_Id = Pragma_Restriction_Warnings;
 
                when others =>
@@ -935,7 +931,10 @@ begin
                      end if;
 
                      if J = Slen then
-                        Set_Style_Check_Options (Options, OK, Ptr);
+                        if not Ignore_Style_Checks_Pragmas then
+                           Set_Style_Check_Options (Options, OK, Ptr);
+                        end if;
+
                         exit;
 
                      else
@@ -955,17 +954,23 @@ begin
                OK := False;
 
             elsif Chars (A) = Name_All_Checks then
-               if GNAT_Mode then
-                  Stylesw.Set_GNAT_Style_Check_Options;
-               else
-                  Stylesw.Set_Default_Style_Check_Options;
+               if not Ignore_Style_Checks_Pragmas then
+                  if GNAT_Mode then
+                     Stylesw.Set_GNAT_Style_Check_Options;
+                  else
+                     Stylesw.Set_Default_Style_Check_Options;
+                  end if;
                end if;
 
             elsif Chars (A) = Name_On then
-               Style_Check := True;
+               if not Ignore_Style_Checks_Pragmas then
+                  Style_Check := True;
+               end if;
 
             elsif Chars (A) = Name_Off then
-               Style_Check := False;
+               if not Ignore_Style_Checks_Pragmas then
+                  Style_Check := False;
+               end if;
 
             else
                OK := False;
@@ -1020,8 +1025,15 @@ begin
       --  set well before any semantic analysis is performed. Note that we
       --  ignore this pragma if debug flag -gnatd.i is set.
 
+      --  Also note that the "one argument" case may have two arguments if the
+      --  second one is a reason argument.
+
       when Pragma_Warnings =>
-         if Arg_Count = 1 and then not Debug_Flag_Dot_I then
+         if not Debug_Flag_Dot_I
+           and then (Arg_Count = 1
+                      or else (Arg_Count = 2
+                                and then Chars (Arg2) = Name_Reason))
+         then
             Check_No_Identifier (Arg1);
 
             declare
@@ -1092,7 +1104,9 @@ begin
       --  entirely in Sem_Prag, and no further checking is done by Par.
 
       when Pragma_Abort_Defer                    |
+           Pragma_Abstract_State                 |
            Pragma_Assertion_Policy               |
+           Pragma_Assume                         |
            Pragma_Assume_No_Invalid_Values       |
            Pragma_AST_Entry                      |
            Pragma_All_Calls_Remote               |
@@ -1105,13 +1119,14 @@ begin
            Pragma_Attach_Handler                 |
            Pragma_Attribute_Definition           |
            Pragma_Check                          |
+           Pragma_Check_Float_Overflow           |
            Pragma_Check_Name                     |
            Pragma_Check_Policy                   |
            Pragma_CIL_Constructor                |
            Pragma_Compile_Time_Error             |
            Pragma_Compile_Time_Warning           |
            Pragma_Compiler_Unit                  |
-           Pragma_Contract_Case                  |
+           Pragma_Contract_Cases                 |
            Pragma_Convention_Identifier          |
            Pragma_CPP_Class                      |
            Pragma_CPP_Constructor                |
@@ -1127,6 +1142,7 @@ begin
            Pragma_Controlled                     |
            Pragma_Convention                     |
            Pragma_Debug_Policy                   |
+           Pragma_Depends                        |
            Pragma_Detect_Blocking                |
            Pragma_Default_Storage_Pool           |
            Pragma_Disable_Atomic_Synchronization |
@@ -1152,6 +1168,7 @@ begin
            Pragma_Fast_Math                      |
            Pragma_Finalize_Storage_Only          |
            Pragma_Float_Representation           |
+           Pragma_Global                         |
            Pragma_Ident                          |
            Pragma_Implementation_Defined         |
            Pragma_Implemented                    |
@@ -1188,12 +1205,15 @@ begin
            Pragma_Lock_Free                      |
            Pragma_Locking_Policy                 |
            Pragma_Long_Float                     |
-           Pragma_Loop_Assertion                 |
+           Pragma_Loop_Invariant                 |
+           Pragma_Loop_Optimize                  |
+           Pragma_Loop_Variant                   |
            Pragma_Machine_Attribute              |
            Pragma_Main                           |
            Pragma_Main_Storage                   |
            Pragma_Memory_Size                    |
            Pragma_No_Body                        |
+           Pragma_No_Inline                      |
            Pragma_No_Return                      |
            Pragma_No_Run_Time                    |
            Pragma_No_Strict_Aliasing             |
@@ -1202,7 +1222,8 @@ begin
            Pragma_Ordered                        |
            Pragma_Optimize                       |
            Pragma_Optimize_Alignment             |
-           Pragma_Overflow_Checks                |
+           Pragma_Overflow_Mode                  |
+           Pragma_Overriding_Renamings           |
            Pragma_Pack                           |
            Pragma_Partition_Elaboration_Policy   |
            Pragma_Passive                        |
@@ -1230,6 +1251,7 @@ begin
            Pragma_Remote_Call_Interface          |
            Pragma_Remote_Types                   |
            Pragma_Restricted_Run_Time            |
+           Pragma_Rational                       |
            Pragma_Ravenscar                      |
            Pragma_Reviewable                     |
            Pragma_Share_Generic                  |
@@ -1238,6 +1260,7 @@ begin
            Pragma_Short_Circuit_And_Or           |
            Pragma_Short_Descriptors              |
            Pragma_Simple_Storage_Pool_Type       |
+           Pragma_SPARK_Mode                     |
            Pragma_Storage_Size                   |
            Pragma_Storage_Unit                   |
            Pragma_Static_Elaboration_Desired     |

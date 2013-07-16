@@ -2,10 +2,14 @@
 
 # Script to compare testsuite failures against a list of known-to-fail
 # tests.
+#
+# NOTE: This script is used in installations that are running Python 2.4.
+#       Please stick to syntax features available in 2.4 and earlier
+#       versions.
 
 # Contributed by Diego Novillo <dnovillo@google.com>
 #
-# Copyright (C) 2011, 2012 Free Software Foundation, Inc.
+# Copyright (C) 2011-2013 Free Software Foundation, Inc.
 #
 # This file is part of GCC.
 #
@@ -37,13 +41,21 @@ executed it will:
 1- Determine the target built: TARGET
 2- Determine the source directory: SRCDIR
 3- Look for a failure manifest file in
-   <SRCDIR>/contrib/testsuite-management/<TARGET>.xfail
+   <SRCDIR>/<MANIFEST_SUBDIR>/<MANIFEST_NAME>.xfail
 4- Collect all the <tool>.sum files from the build tree.
 5- Produce a report stating:
    a- Failures expected in the manifest but not present in the build.
    b- Failures in the build not expected in the manifest.
 6- If all the build failures are expected in the manifest, it exits
    with exit code 0.  Otherwise, it exits with error code 1.
+
+Manifest files contain expected DejaGNU results that are otherwise
+treated as failures.
+They may also contain additional text:
+
+# This is a comment.  - self explanatory
+@include file         - the file is a path relative to the includer
+@remove result text   - result text is removed from the expected set
 """
 
 import datetime
@@ -54,14 +66,23 @@ import sys
 
 # Handled test results.
 _VALID_TEST_RESULTS = [ 'FAIL', 'UNRESOLVED', 'XPASS', 'ERROR' ]
+_VALID_TEST_RESULTS_REX = re.compile("%s" % "|".join(_VALID_TEST_RESULTS))
 
-# Pattern for naming manifest files.  The first argument should be
-# the toplevel GCC source directory.  The second argument is the
-# target triple used during the build.
-_MANIFEST_PATH_PATTERN = '%s/contrib/testsuite-management/%s.xfail'
+# Subdirectory of srcdir in which to find the manifest file.
+_MANIFEST_SUBDIR = 'contrib/testsuite-management'
+
+# Pattern for naming manifest files.
+# The first argument should be the toplevel GCC(/GNU tool) source directory.
+# The second argument is the manifest subdir.
+# The third argument is the manifest target, which defaults to the target
+# triplet used during the build.
+_MANIFEST_PATH_PATTERN = '%s/%s/%s.xfail'
+
+# The options passed to the program.
+_OPTIONS = None
 
 def Error(msg):
-  print >>sys.stderr, '\nerror: %s' % msg
+  print >>sys.stderr, 'error: %s' % msg
   sys.exit(1)
 
 
@@ -98,20 +119,15 @@ class TestResult(object):
 
   def __init__(self, summary_line, ordinal=-1):
     try:
-      self.attrs = ''
-      if '|' in summary_line:
-        (self.attrs, summary_line) = summary_line.split('|', 1)
+      (self.attrs, summary_line) = SplitAttributesFromSummaryLine(summary_line)
       try:
         (self.state,
          self.name,
-         self.description) = re.match(r' *([A-Z]+):\s*(\S+)\s+(.*)',
+         self.description) = re.match(r'([A-Z]+):\s*(\S+)\s*(.*)',
                                       summary_line).groups()
       except:
         print 'Failed to parse summary line: "%s"' % summary_line
         raise
-      self.attrs = self.attrs.strip()
-      self.state = self.state.strip()
-      self.description = self.description.strip()
       self.ordinal = ordinal
     except ValueError:
       Error('Cannot parse summary line "%s"' % summary_line)
@@ -175,27 +191,85 @@ def GetMakefileValue(makefile_name, value_name):
   return None
 
 
-def ValidBuildDirectory(builddir, target):
+def ValidBuildDirectory(builddir):
   if (not os.path.exists(builddir) or
-      not os.path.exists('%s/Makefile' % builddir) or
-      (not os.path.exists('%s/build-%s' % (builddir, target)) and
-       not os.path.exists('%s/%s' % (builddir, target)))):
+      not os.path.exists('%s/Makefile' % builddir)):
     return False
   return True
 
 
+def IsComment(line):
+  """Return True if line is a comment."""
+  return line.startswith('#')
+
+
+def SplitAttributesFromSummaryLine(line):
+  """Splits off attributes from a summary line, if present."""
+  if '|' in line and not _VALID_TEST_RESULTS_REX.match(line):
+    (attrs, line) = line.split('|', 1)
+    attrs = attrs.strip()
+  else:
+    attrs = ''
+  line = line.strip()
+  return (attrs, line)
+
+
 def IsInterestingResult(line):
-  """Return True if the given line is one of the summary lines we care about."""
-  line = line.strip()
-  if line.startswith('#'):
-    return False
-  if '|' in line:
-    (_, line) = line.split('|', 1)
-  line = line.strip()
-  for result in _VALID_TEST_RESULTS:
-    if line.startswith(result):
-      return True
-  return False
+  """Return True if line is one of the summary lines we care about."""
+  (_, line) = SplitAttributesFromSummaryLine(line)
+  return bool(_VALID_TEST_RESULTS_REX.match(line))
+
+
+def IsInclude(line):
+  """Return True if line is an include of another file."""
+  return line.startswith("@include ")
+
+
+def GetIncludeFile(line, includer):
+  """Extract the name of the include file from line."""
+  includer_dir = os.path.dirname(includer)
+  include_file = line[len("@include "):]
+  return os.path.join(includer_dir, include_file.strip())
+
+
+def IsNegativeResult(line):
+  """Return True if line should be removed from the expected results."""
+  return line.startswith("@remove ")
+
+
+def GetNegativeResult(line):
+  """Extract the name of the negative result from line."""
+  line = line[len("@remove "):]
+  return line.strip()
+
+
+def ParseManifestWorker(result_set, manifest_path):
+  """Read manifest_path, adding the contents to result_set."""
+  if _OPTIONS.verbosity >= 1:
+    print 'Parsing manifest file %s.' % manifest_path
+  manifest_file = open(manifest_path)
+  for line in manifest_file:
+    line = line.strip()
+    if line == "":
+      pass
+    elif IsComment(line):
+      pass
+    elif IsNegativeResult(line):
+      result_set.remove(TestResult(GetNegativeResult(line)))
+    elif IsInclude(line):
+      ParseManifestWorker(result_set, GetIncludeFile(line, manifest_path))
+    elif IsInterestingResult(line):
+      result_set.add(TestResult(line))
+    else:
+      Error('Unrecognized line in manifest file: %s' % line)
+  manifest_file.close()
+
+
+def ParseManifest(manifest_path):
+  """Create a set of TestResult instances from the given manifest file."""
+  result_set = set()
+  ParseManifestWorker(result_set, manifest_path)
+  return result_set
 
 
 def ParseSummary(sum_fname):
@@ -220,7 +294,7 @@ def ParseSummary(sum_fname):
   return result_set
 
 
-def GetManifest(manifest_name):
+def GetManifest(manifest_path):
   """Build a set of expected failures from the manifest file.
 
   Each entry in the manifest file should have the format understood
@@ -228,8 +302,8 @@ def GetManifest(manifest_name):
 
   If no manifest file exists for this target, it returns an empty set.
   """
-  if os.path.exists(manifest_name):
-    return ParseSummary(manifest_name)
+  if os.path.exists(manifest_path):
+    return ParseManifest(manifest_path)
   else:
     return set()
 
@@ -237,8 +311,9 @@ def GetManifest(manifest_name):
 def CollectSumFiles(builddir):
   sum_files = []
   for root, dirs, files in os.walk(builddir):
-    if '.svn' in dirs:
-      dirs.remove('.svn')
+    for ignored in ('.svn', '.git'):
+      if ignored in dirs:
+        dirs.remove(ignored)
     for fname in files:
       if fname.endswith('.sum'):
         sum_files.append(os.path.join(root, fname))
@@ -281,15 +356,40 @@ def CompareResults(manifest, actual):
   return actual_vs_manifest, manifest_vs_actual
 
 
-def GetBuildData(options):
-  target = GetMakefileValue('%s/Makefile' % options.build_dir, 'target_alias=')
-  srcdir = GetMakefileValue('%s/Makefile' % options.build_dir, 'srcdir =')
-  if not ValidBuildDirectory(options.build_dir, target):
-    Error('%s is not a valid GCC top level build directory.' %
-          options.build_dir)
+def GetManifestPath(srcdir, target, user_provided_must_exist):
+  """Return the full path to the manifest file."""
+  manifest_path = _OPTIONS.manifest
+  if manifest_path:
+    if user_provided_must_exist and not os.path.exists(manifest_path):
+      Error('Manifest does not exist: %s' % manifest_path)
+    return manifest_path
+  else:
+    if not srcdir:
+      Error('Could not determine the location of GCC\'s source tree. '
+            'The Makefile does not contain a definition for "srcdir".')
+    if not target:
+      Error('Could not determine the target triplet for this build. '
+            'The Makefile does not contain a definition for "target_alias".')
+    return _MANIFEST_PATH_PATTERN % (srcdir, _MANIFEST_SUBDIR, target)
+
+
+def GetBuildData():
+  if not ValidBuildDirectory(_OPTIONS.build_dir):
+    # If we have been given a set of results to use, we may
+    # not be inside a valid GCC build directory.  In that case,
+    # the user must provide both a manifest file and a set
+    # of results to check against it.
+    if not _OPTIONS.results or not _OPTIONS.manifest:
+      Error('%s is not a valid GCC top level build directory. '
+            'You must use --manifest and --results to do the validation.' %
+            _OPTIONS.build_dir)
+    else:
+      return None, None
+  srcdir = GetMakefileValue('%s/Makefile' % _OPTIONS.build_dir, 'srcdir =')
+  target = GetMakefileValue('%s/Makefile' % _OPTIONS.build_dir, 'target_alias=')
   print 'Source directory: %s' % srcdir
   print 'Build target:     %s' % target
-  return srcdir, target, True
+  return srcdir, target
 
 
 def PrintSummary(msg, summary):
@@ -320,8 +420,9 @@ def PerformComparison(expected, actual, ignore_missing_failures):
   if not ignore_missing_failures and len(expected_vs_actual) > 0:
     PrintSummary('Expected results not present in this build (fixed tests)'
                  '\n\nNOTE: This is not a failure.  It just means that these '
-                 'tests were expected\nto fail, but they worked in this '
-                 'configuration.\n', expected_vs_actual)
+                 'tests were expected\nto fail, but either they worked in '
+                 'this configuration or they were not\npresent at all.\n',
+                 expected_vs_actual)
 
   if tests_ok:
     print '\nSUCCESS: No unexpected failures.'
@@ -329,42 +430,32 @@ def PerformComparison(expected, actual, ignore_missing_failures):
   return tests_ok
 
 
-def CheckExpectedResults(options):
-  if not options.manifest:
-    (srcdir, target, valid_build) = GetBuildData(options)
-    if not valid_build:
-      return False
-    manifest_name = _MANIFEST_PATH_PATTERN % (srcdir, target)
-  else:
-    manifest_name = options.manifest
-    if not os.path.exists(manifest_name):
-      Error('Manifest file %s does not exist.' % manifest_name)
-
-  print 'Manifest:         %s' % manifest_name
-  manifest = GetManifest(manifest_name)
-  sum_files = GetSumFiles(options.results, options.build_dir)
+def CheckExpectedResults():
+  srcdir, target = GetBuildData()
+  manifest_path = GetManifestPath(srcdir, target, True)
+  print 'Manifest:         %s' % manifest_path
+  manifest = GetManifest(manifest_path)
+  sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.build_dir)
   actual = GetResults(sum_files)
 
-  if options.verbosity >= 1:
+  if _OPTIONS.verbosity >= 1:
     PrintSummary('Tests expected to fail', manifest)
     PrintSummary('\nActual test results', actual)
 
-  return PerformComparison(manifest, actual, options.ignore_missing_failures)
+  return PerformComparison(manifest, actual, _OPTIONS.ignore_missing_failures)
 
 
-def ProduceManifest(options):
-  (srcdir, target, valid_build) = GetBuildData(options)
-  if not valid_build:
-    return False
-
-  manifest_name = _MANIFEST_PATH_PATTERN % (srcdir, target)
-  if os.path.exists(manifest_name) and not options.force:
+def ProduceManifest():
+  (srcdir, target) = GetBuildData()
+  manifest_path = GetManifestPath(srcdir, target, False)
+  print 'Manifest:         %s' % manifest_path
+  if os.path.exists(manifest_path) and not _OPTIONS.force:
     Error('Manifest file %s already exists.\nUse --force to overwrite.' %
-          manifest_name)
+          manifest_path)
 
-  sum_files = GetSumFiles(options.results, options.build_dir)
+  sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.build_dir)
   actual = GetResults(sum_files)
-  manifest_file = open(manifest_name, 'w')
+  manifest_file = open(manifest_path, 'w')
   for result in sorted(actual):
     print result
     manifest_file.write('%s\n' % result)
@@ -373,18 +464,16 @@ def ProduceManifest(options):
   return True
 
 
-def CompareBuilds(options):
-  (srcdir, target, valid_build) = GetBuildData(options)
-  if not valid_build:
-    return False
+def CompareBuilds():
+  (srcdir, target) = GetBuildData()
 
-  sum_files = GetSumFiles(options.results, options.build_dir)
+  sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.build_dir)
   actual = GetResults(sum_files)
 
-  clean_sum_files = GetSumFiles(None, options.clean_build)
+  clean_sum_files = GetSumFiles(_OPTIONS.results, _OPTIONS.clean_build)
   clean = GetResults(clean_sum_files)
 
-  return PerformComparison(clean, actual, options.ignore_missing_failures)
+  return PerformComparison(clean, actual, _OPTIONS.ignore_missing_failures)
 
 
 def Main(argv):
@@ -417,7 +506,8 @@ def Main(argv):
   parser.add_option('--manifest', action='store', type='string',
                     dest='manifest', default=None,
                     help='Name of the manifest file to use (default = '
-                    'taken from contrib/testsuite-managment/<target_alias>.xfail)')
+                    'taken from '
+                    'contrib/testsuite-managment/<target_alias>.xfail)')
   parser.add_option('--produce_manifest', action='store_true',
                     dest='produce_manifest', default=False,
                     help='Produce the manifest for the current '
@@ -430,14 +520,15 @@ def Main(argv):
                     '.sum files collected from the build directory).')
   parser.add_option('--verbosity', action='store', dest='verbosity',
                     type='int', default=0, help='Verbosity level (default = 0)')
-  (options, _) = parser.parse_args(argv[1:])
+  global _OPTIONS
+  (_OPTIONS, _) = parser.parse_args(argv[1:])
 
-  if options.produce_manifest:
-    retval = ProduceManifest(options)
-  elif options.clean_build:
-    retval = CompareBuilds(options)
+  if _OPTIONS.produce_manifest:
+    retval = ProduceManifest()
+  elif _OPTIONS.clean_build:
+    retval = CompareBuilds()
   else:
-    retval = CheckExpectedResults(options)
+    retval = CheckExpectedResults()
 
   if retval:
     return 0

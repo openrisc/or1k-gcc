@@ -1,6 +1,5 @@
 /* Definitions for the shared dumpfile.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2013 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -35,8 +34,6 @@ enum tree_dump_index
   TDI_original,			/* dump each function before optimizing it */
   TDI_generic,			/* dump each function after genericizing it */
   TDI_nested,			/* dump each function after unnesting it */
-  TDI_vcg,			/* create a VCG graph file for each
-				   function's flowgraph.  */
   TDI_tree_all,                 /* enable all the GENERIC/GIMPLE dumps.  */
   TDI_rtl_all,                  /* enable all the RTL dumps.  */
   TDI_ipa_all,                  /* enable all the IPA dumps.  */
@@ -128,7 +125,6 @@ extern FILE *dump_begin (int, int *);
 extern void dump_end (int, FILE *);
 extern int dump_start (int, int *);
 extern void dump_finish (int);
-extern void dump_node (const_tree, int, FILE *);
 extern int dump_switch_p (const char *);
 extern int opt_info_switch_p (const char *);
 extern const char *dump_flag_name (int);
@@ -144,6 +140,9 @@ extern void print_combine_total_stats (void);
 extern unsigned int dump_register (const char *, const char *, const char *,
                                    int, int);
 extern bool enable_rtl_dump_file (void);
+
+/* In tree-dump.c  */
+extern void dump_node (const_tree, int, FILE *);
 
 /* In combine.c  */
 extern void dump_combine_total_stats (FILE *);

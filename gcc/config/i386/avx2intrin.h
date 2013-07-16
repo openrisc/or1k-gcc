@@ -1,5 +1,4 @@
-/* Copyright (C) 2011
-   Free Software Foundation, Inc.
+/* Copyright (C) 2011-2013 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -25,6 +24,15 @@
 #ifndef _IMMINTRIN_H_INCLUDED
 # error "Never use <avx2intrin.h> directly; include <immintrin.h> instead."
 #endif
+
+#ifndef _AVX2INTRIN_H_INCLUDED
+#define _AVX2INTRIN_H_INCLUDED
+
+#ifndef __AVX2__
+#pragma GCC push_options
+#pragma GCC target("avx2")
+#define __DISABLE_AVX2__
+#endif /* __AVX2__ */
 
 /* Sum absolute 8-bit integer difference of adjacent groups of 4
    byte integers in the first 2 operands.  Starting offsets within
@@ -922,7 +930,7 @@ _mm256_broadcastsd_pd (__m128d __X)
 
 extern __inline __m256i
 __attribute__ ((__gnu_inline__, __always_inline__, __artificial__))
-_mm_broadcastsi128_si256 (__m128i __X)
+_mm256_broadcastsi128_si256 (__m128i __X)
 {
   return (__m256i) __builtin_ia32_vbroadcastsi256 ((__v2di)__X);
 }
@@ -1872,3 +1880,10 @@ _mm256_mask_i64gather_epi32 (__m128i src, int const *base,
 					   (__v4si)(__m128i)MASK,  \
 					   (int)SCALE)
 #endif  /* __OPTIMIZE__ */
+
+#ifdef __DISABLE_AVX2__
+#undef __DISABLE_AVX2__
+#pragma GCC pop_options
+#endif /* __DISABLE_AVX2__ */
+
+#endif /* _AVX2INTRIN_H_INCLUDED */

@@ -1,7 +1,5 @@
 /* params.def - Run-time parameters.
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Written by Mark Mitchell <mark@codesourcery.com>.
 
 This file is part of GCC.
@@ -111,7 +109,7 @@ DEFPARAM (PARAM_MIN_INLINE_RECURSIVE_PROBABILITY,
 DEFPARAM (PARAM_EARLY_INLINER_MAX_ITERATIONS,
 	  "max-early-inliner-iterations",
 	  "The maximum number of nested indirect inlining performed by early inliner",
-	  10, 0, 0)
+	  1, 0, 0)
 
 /* Limit on probability of entry BB.  */
 DEFPARAM (PARAM_COMDAT_SHARING_PROBABILITY,
@@ -378,7 +376,7 @@ DEFPARAM(HOT_BB_FREQUENCY_FRACTION,
 DEFPARAM (PARAM_ALIGN_THRESHOLD,
 	  "align-threshold",
 	  "Select fraction of the maximal frequency of executions of basic block in function given basic block get alignment",
-	  100, 0, 0)
+	  100, 1, 0)
 
 DEFPARAM (PARAM_ALIGN_LOOP_ITERATIONS,
 	  "align-loop-iterations",
@@ -435,7 +433,7 @@ DEFPARAM(PARAM_MAX_CROSSJUMP_EDGES,
 DEFPARAM(PARAM_MIN_CROSSJUMP_INSNS,
      "min-crossjump-insns",
      "The minimum number of matching instructions to consider for crossjumping",
-     5, 0, 0)
+     5, 1, 0)
 
 /* The maximum number expansion factor when copying basic blocks.  */
 DEFPARAM(PARAM_MAX_GROW_COPY_BB_INSNS,
@@ -453,7 +451,7 @@ DEFPARAM(PARAM_MAX_GOTO_DUPLICATION_INSNS,
 DEFPARAM(PARAM_MAX_CSE_PATH_LENGTH,
 	 "max-cse-path-length",
 	 "The maximum length of path considered in cse",
-	 10, 0, 0)
+	 10, 1, 0)
 DEFPARAM(PARAM_MAX_CSE_INSNS,
 	 "max-cse-insns",
 	 "The maximum instructions CSE process before flushing",
@@ -869,6 +867,14 @@ DEFPARAM (PARAM_MAX_VARTRACK_EXPR_DEPTH,
 	  "Max. recursion depth for expanding var tracking expressions",
 	  12, 0, 0)
 
+/* Set maximum length of value location list for which var tracking
+   should add reverse operations.  */
+
+DEFPARAM (PARAM_MAX_VARTRACK_REVERSE_OP_SIZE,
+	  "max-vartrack-reverse-op-size",
+	  "Max. size of loc list for which reverse ops should be added",
+	  50, 0, 0)
+
 /* Set minimum insn uid for non-debug insns.  */
 
 DEFPARAM (PARAM_MIN_NONDEBUG_INSN_UID,
@@ -912,6 +918,12 @@ DEFPARAM (PARAM_IPA_CP_LOOP_HINT_BONUS,
 	  "Compile-time bonus IPA-CP assigns to candidates which make loop "
 	  "bounds or strides known.",
 	  64, 0, 0)
+
+DEFPARAM (PARAM_IPA_CP_ARRAY_INDEX_HINT_BONUS,
+	  "ipa-cp-array-index-hint-bonus",
+	  "Compile-time bonus IPA-CP assigns to candidates which make an array "
+	  "index known.",
+	  48, 0, 0)
 
 /* WHOPR partitioning configuration.  */
 

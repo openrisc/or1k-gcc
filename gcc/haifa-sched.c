@@ -1,7 +1,5 @@
 /* Instruction scheduling pass.
-   Copyright (C) 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@cygnus.com) Enhanced by,
    and currently maintained by, Jim Wilson (wilson@cygnus.com)
 
@@ -147,7 +145,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfgloop.h"
 #include "ira.h"
 #include "emit-rtl.h"  /* FIXME: Can go away once crtl is moved to rtl.h.  */
-#include "hashtab.h"
+#include "hash-table.h"
 #include "dumpfile.h"
 
 #ifdef INSN_SCHEDULING
@@ -583,22 +581,72 @@ struct delay_pair
   int stages;
 };
 
+/* Helpers for delay hashing.  */
+
+struct delay_i1_hasher : typed_noop_remove <delay_pair>
+{
+  typedef delay_pair value_type;
+  typedef void compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
+
+/* Returns a hash value for X, based on hashing just I1.  */
+
+inline hashval_t
+delay_i1_hasher::hash (const value_type *x)
+{
+  return htab_hash_pointer (x->i1);
+}
+
+/* Return true if I1 of pair X is the same as that of pair Y.  */
+
+inline bool
+delay_i1_hasher::equal (const value_type *x, const compare_type *y)
+{
+  return x->i1 == y;
+}
+
+struct delay_i2_hasher : typed_free_remove <delay_pair>
+{
+  typedef delay_pair value_type;
+  typedef void compare_type;
+  static inline hashval_t hash (const value_type *);
+  static inline bool equal (const value_type *, const compare_type *);
+};
+
+/* Returns a hash value for X, based on hashing just I2.  */
+
+inline hashval_t
+delay_i2_hasher::hash (const value_type *x)
+{
+  return htab_hash_pointer (x->i2);
+}
+
+/* Return true if I2 of pair X is the same as that of pair Y.  */
+
+inline bool
+delay_i2_hasher::equal (const value_type *x, const compare_type *y)
+{
+  return x->i2 == y;
+}
+
 /* Two hash tables to record delay_pairs, one indexed by I1 and the other
    indexed by I2.  */
-static htab_t delay_htab;
-static htab_t delay_htab_i2;
+static hash_table <delay_i1_hasher> delay_htab;
+static hash_table <delay_i2_hasher> delay_htab_i2;
 
 /* Called through htab_traverse.  Walk the hashtable using I2 as
    index, and delete all elements involving an UID higher than
    that pointed to by *DATA.  */
-static int
-htab_i2_traverse (void **slot, void *data)
+int
+haifa_htab_i2_traverse (delay_pair **slot, int *data)
 {
-  int maxuid = *(int *)data;
-  struct delay_pair *p = *(struct delay_pair **)slot;
+  int maxuid = *data;
+  struct delay_pair *p = *slot;
   if (INSN_UID (p->i2) >= maxuid || INSN_UID (p->i1) >= maxuid)
     {
-      htab_clear_slot (delay_htab_i2, slot);
+      delay_htab_i2.clear_slot (slot);
     }
   return 1;
 }
@@ -606,16 +654,15 @@ htab_i2_traverse (void **slot, void *data)
 /* Called through htab_traverse.  Walk the hashtable using I2 as
    index, and delete all elements involving an UID higher than
    that pointed to by *DATA.  */
-static int
-htab_i1_traverse (void **slot, void *data)
+int
+haifa_htab_i1_traverse (delay_pair **pslot, int *data)
 {
-  int maxuid = *(int *)data;
-  struct delay_pair **pslot = (struct delay_pair **)slot;
+  int maxuid = *data;
   struct delay_pair *p, *first, **pprev;
 
   if (INSN_UID ((*pslot)->i1) >= maxuid)
     {
-      htab_clear_slot (delay_htab, slot);
+      delay_htab.clear_slot (pslot);
       return 1;
     }
   pprev = &first;
@@ -629,7 +676,7 @@ htab_i1_traverse (void **slot, void *data)
     }
   *pprev = NULL;
   if (first == NULL)
-    htab_clear_slot (delay_htab, slot);
+    delay_htab.clear_slot (pslot);
   else
     *pslot = first;
   return 1;
@@ -640,38 +687,8 @@ htab_i1_traverse (void **slot, void *data)
 void
 discard_delay_pairs_above (int max_uid)
 {
-  htab_traverse (delay_htab, htab_i1_traverse, &max_uid);
-  htab_traverse (delay_htab_i2, htab_i2_traverse, &max_uid);
-}
-
-/* Returns a hash value for X (which really is a delay_pair), based on
-   hashing just I1.  */
-static hashval_t
-delay_hash_i1 (const void *x)
-{
-  return htab_hash_pointer (((const struct delay_pair *) x)->i1);
-}
-
-/* Returns a hash value for X (which really is a delay_pair), based on
-   hashing just I2.  */
-static hashval_t
-delay_hash_i2 (const void *x)
-{
-  return htab_hash_pointer (((const struct delay_pair *) x)->i2);
-}
-
-/* Return nonzero if I1 of pair X is the same as that of pair Y.  */
-static int
-delay_i1_eq (const void *x, const void *y)
-{
-  return ((const struct delay_pair *) x)->i1 == y;
-}
-
-/* Return nonzero if I2 of pair X is the same as that of pair Y.  */
-static int
-delay_i2_eq (const void *x, const void *y)
-{
-  return ((const struct delay_pair *) x)->i2 == y;
+  delay_htab.traverse <int *, haifa_htab_i1_traverse> (&max_uid);
+  delay_htab_i2.traverse <int *, haifa_htab_i2_traverse> (&max_uid);
 }
 
 /* This function can be called by a port just before it starts the final
@@ -701,19 +718,15 @@ record_delay_slot_pair (rtx i1, rtx i2, int cycles, int stages)
   p->cycles = cycles;
   p->stages = stages;
 
-  if (!delay_htab)
+  if (!delay_htab.is_created ())
     {
-      delay_htab = htab_create (10, delay_hash_i1, delay_i1_eq, NULL);
-      delay_htab_i2 = htab_create (10, delay_hash_i2, delay_i2_eq, free);
+      delay_htab.create (10);
+      delay_htab_i2.create (10);
     }
-  slot = ((struct delay_pair **)
-	  htab_find_slot_with_hash (delay_htab, i1, htab_hash_pointer (i1),
-				    INSERT));
+  slot = delay_htab.find_slot_with_hash (i1, htab_hash_pointer (i1), INSERT);
   p->next_same_i1 = *slot;
   *slot = p;
-  slot = ((struct delay_pair **)
-	  htab_find_slot_with_hash (delay_htab_i2, i2, htab_hash_pointer (i2),
-				    INSERT));
+  slot = delay_htab_i2.find_slot_with_hash (i2, htab_hash_pointer (i2), INSERT);
   *slot = p;
 }
 
@@ -724,12 +737,10 @@ real_insn_for_shadow (rtx insn)
 {
   struct delay_pair *pair;
 
-  if (delay_htab == NULL)
+  if (!delay_htab.is_created ())
     return NULL_RTX;
 
-  pair
-    = (struct delay_pair *)htab_find_with_hash (delay_htab_i2, insn,
-						htab_hash_pointer (insn));
+  pair = delay_htab_i2.find_with_hash (insn, htab_hash_pointer (insn));
   if (!pair || pair->stages > 0)
     return NULL_RTX;
   return pair->i1;
@@ -757,12 +768,10 @@ add_delay_dependencies (rtx insn)
   sd_iterator_def sd_it;
   dep_t dep;
 
-  if (!delay_htab)
+  if (!delay_htab.is_created ())
     return;
 
-  pair
-    = (struct delay_pair *)htab_find_with_hash (delay_htab_i2, insn,
-						htab_hash_pointer (insn));
+  pair = delay_htab_i2.find_with_hash (insn, htab_hash_pointer (insn));
   if (!pair)
     return;
   add_dependence (insn, pair->i1, REG_DEP_ANTI);
@@ -773,8 +782,7 @@ add_delay_dependencies (rtx insn)
     {
       rtx pro = DEP_PRO (dep);
       struct delay_pair *other_pair
-	= (struct delay_pair *)htab_find_with_hash (delay_htab_i2, pro,
-						    htab_hash_pointer (pro));
+	= delay_htab_i2.find_with_hash (pro, htab_hash_pointer (pro));
       if (!other_pair || other_pair->stages)
 	continue;
       if (pair_delay (other_pair) >= pair_delay (pair))
@@ -1397,12 +1405,11 @@ dep_cost_1 (dep_t link, dw_t dw)
   if (DEP_COST (link) != UNKNOWN_DEP_COST)
     return DEP_COST (link);
 
-  if (delay_htab)
+  if (delay_htab.is_created ())
     {
       struct delay_pair *delay_entry;
       delay_entry
-	= (struct delay_pair *)htab_find_with_hash (delay_htab_i2, used,
-						    htab_hash_pointer (used));
+	= delay_htab_i2.find_with_hash (used, htab_hash_pointer (used));
       if (delay_entry)
 	{
 	  if (delay_entry->i1 == insn)
@@ -2168,8 +2175,6 @@ model_recompute (rtx insn)
 
 	    if (sched_verbose >= 5)
 	      {
-		char buf[2048];
-
 		if (!print_p)
 		  {
 		    fprintf (sched_dump, MODEL_BAR);
@@ -2179,9 +2184,9 @@ model_recompute (rtx insn)
 		    print_p = true;
 		  }
 
-		print_pattern (buf, PATTERN (insn), 0);
 		fprintf (sched_dump, ";;\t\t| %3d %4d %-30s ",
-			 point, INSN_UID (insn), buf);
+			 point, INSN_UID (insn),
+			 str_pattern_slim (PATTERN (insn)));
 		for (pci = 0; pci < ira_pressure_classes_num; pci++)
 		  {
 		    cl = ira_pressure_classes[pci];
@@ -3343,18 +3348,16 @@ model_record_pressures (struct model_insn_info *insn)
   point = model_index (insn->insn);
   if (sched_verbose >= 2)
     {
-      char buf[2048];
-
       if (point == 0)
 	{
 	  fprintf (sched_dump, "\n;;\tModel schedule:\n;;\n");
 	  fprintf (sched_dump, ";;\t| idx insn | mpri hght dpth prio |\n");
 	}
-      print_pattern (buf, PATTERN (insn->insn), 0);
       fprintf (sched_dump, ";;\t| %3d %4d | %4d %4d %4d %4d | %-30s ",
 	       point, INSN_UID (insn->insn), insn->model_priority,
 	       insn->depth + insn->alap, insn->depth,
-	       INSN_PRIORITY (insn->insn), buf);
+	       INSN_PRIORITY (insn->insn),
+	       str_pattern_slim (PATTERN (insn->insn)));
     }
   calculate_reg_deaths (insn->insn, death);
   reg_pressure = INSN_REG_PRESSURE (insn->insn);
@@ -3715,12 +3718,9 @@ schedule_insn (rtx insn)
   if (sched_verbose >= 1)
     {
       struct reg_pressure_data *pressure_info;
-      char buf[2048];
-
-      print_insn (buf, insn, 0);
-      buf[40] = 0;
       fprintf (sched_dump, ";;\t%3i--> %s%-40s:",
-	       clock_var, (*current_sched_info->print_insn) (insn, 1), buf);
+	       clock_var, (*current_sched_info->print_insn) (insn, 1),
+	       str_pattern_slim (PATTERN (insn)));
 
       if (recog_memoized (insn) < 0)
 	fprintf (sched_dump, "nothing");
@@ -5735,12 +5735,12 @@ prune_ready_list (state_t temp_state, bool first_cycle_insn_p,
 	    {
 	      int delay_cost = 0;
 
-	      if (delay_htab)
+	      if (delay_htab.is_created ())
 		{
 		  struct delay_pair *delay_entry;
 		  delay_entry
-		    = (struct delay_pair *)htab_find_with_hash (delay_htab, insn,
-								htab_hash_pointer (insn));
+		    = delay_htab.find_with_hash (insn,
+						 htab_hash_pointer (insn));
 		  while (delay_entry && delay_cost == 0)
 		    {
 		      delay_cost = estimate_shadow_tick (delay_entry);
@@ -6198,14 +6198,13 @@ schedule_block (basic_block *target_bb, state_t init_state)
 	      goto restart_choose_ready;
 	    }
 
-	  if (delay_htab)
+	  if (delay_htab.is_created ())
 	    {
 	      /* If this insn is the first part of a delay-slot pair, record a
 		 backtrack point.  */
 	      struct delay_pair *delay_entry;
 	      delay_entry
-		= (struct delay_pair *)htab_find_with_hash (delay_htab, insn,
-							    htab_hash_pointer (insn));
+		= delay_htab.find_with_hash (insn, htab_hash_pointer (insn));
 	      if (delay_entry)
 		{
 		  save_backtrack_point (delay_entry, ls);
@@ -6770,10 +6769,10 @@ sched_finish (void)
 void
 free_delay_pairs (void)
 {
-  if (delay_htab)
+  if (delay_htab.is_created ())
     {
-      htab_empty (delay_htab);
-      htab_empty (delay_htab_i2);
+      delay_htab.empty ();
+      delay_htab_i2.empty ();
     }
 }
 
@@ -6817,6 +6816,9 @@ fix_inter_tick (rtx head, rtx tail)
 
 	      INSN_TICK (head) = tick;
 	    }
+
+	  if (DEBUG_INSN_P (head))
+	    continue;
 
 	  FOR_EACH_DEP (head, SD_LIST_RES_FORW, sd_it, dep)
 	    {
@@ -7433,20 +7435,19 @@ find_fallthru_edge_from (basic_block pred)
 static void
 sched_extend_bb (void)
 {
-  rtx insn;
-
   /* The following is done to keep current_sched_info->next_tail non null.  */
-  insn = BB_END (EXIT_BLOCK_PTR->prev_bb);
-  if (NEXT_INSN (insn) == 0
+  rtx end = BB_END (EXIT_BLOCK_PTR->prev_bb);
+  rtx insn = DEBUG_INSN_P (end) ? prev_nondebug_insn (end) : end;
+  if (NEXT_INSN (end) == 0
       || (!NOTE_P (insn)
 	  && !LABEL_P (insn)
 	  /* Don't emit a NOTE if it would end up before a BARRIER.  */
-	  && !BARRIER_P (NEXT_INSN (insn))))
+	  && !BARRIER_P (NEXT_INSN (end))))
     {
-      rtx note = emit_note_after (NOTE_INSN_DELETED, insn);
-      /* Make insn appear outside BB.  */
+      rtx note = emit_note_after (NOTE_INSN_DELETED, end);
+      /* Make note appear outside BB.  */
       set_block_for_insn (note, NULL);
-      BB_END (EXIT_BLOCK_PTR->prev_bb) = insn;
+      BB_END (EXIT_BLOCK_PTR->prev_bb) = end;
     }
 }
 
@@ -8204,7 +8205,7 @@ sched_remove_insn (rtx insn)
 
   change_queue_index (insn, QUEUE_NOWHERE);
   current_sched_info->add_remove_insn (insn, 1);
-  remove_insn (insn);
+  delete_insn (insn);
 }
 
 /* Clear priorities of all instructions, that are forward dependent on INSN.

@@ -1,6 +1,5 @@
 /* Map logical line numbers to (source file, line number) pairs.
-   Copyright (C) 2001, 2003, 2004, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -122,8 +121,10 @@ get_combined_adhoc_loc (struct line_maps *set,
 	{
 	  char *orig_data = (char *) set->location_adhoc_data_map.data;
 	  long long offset;
-	  line_map_realloc reallocator
-	      = set->reallocator ? set->reallocator : xrealloc;
+	  /* Cast away extern "C" from the type of xrealloc.  */
+	  line_map_realloc reallocator = (set->reallocator
+					  ? set->reallocator
+					  : (line_map_realloc) xrealloc);
 
 	  if (set->location_adhoc_data_map.allocated == 0)
 	    set->location_adhoc_data_map.allocated = 128;
@@ -217,8 +218,10 @@ new_linemap (struct line_maps *set,
       /* We ran out of allocated line maps. Let's allocate more.  */
       unsigned alloc_size;
 
-      line_map_realloc reallocator
-	= set->reallocator ? set->reallocator : xrealloc;
+      /* Cast away extern "C" from the type of xrealloc.  */
+      line_map_realloc reallocator = (set->reallocator
+				      ? set->reallocator
+				      : (line_map_realloc) xrealloc);
       line_map_round_alloc_size_func round_alloc_size =
 	set->round_alloc_size;
 
@@ -430,8 +433,10 @@ linemap_enter_macro (struct line_maps *set, struct cpp_hashnode *macro_node,
 {
   struct line_map *map;
   source_location start_location;
-  line_map_realloc reallocator
-    = set->reallocator ? set->reallocator : xrealloc;
+  /* Cast away extern "C" from the type of xrealloc.  */
+  line_map_realloc reallocator = (set->reallocator
+				  ? set->reallocator
+				  : (line_map_realloc) xrealloc);
 
   start_location = LINEMAPS_MACRO_LOWEST_LOCATION (set) - num_tokens;
 
