@@ -92,6 +92,7 @@ static struct
   int total_size;
   int vars_size;
   int args_size;
+  int pretend_size;
   int gpr_frame;
   int late_frame;
   HOST_WIDE_INT mask;
@@ -174,6 +175,7 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
 {
   HOST_WIDE_INT args_size;
   HOST_WIDE_INT vars_size;
+  HOST_WIDE_INT pretend_size;
   HOST_WIDE_INT stack_offset;
   HOST_WIDE_INT save_size;
   bool interrupt_p = false;
@@ -181,9 +183,12 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
 
   args_size = crtl->outgoing_args_size;
   vars_size = OR1K_ALIGN (size, 4);
+  /* pretend_size was set in or1k_setup_incoming_varargs */
+  pretend_size = crtl->args.pretend_args_size;
 
   frame_info.args_size = args_size;
   frame_info.vars_size = vars_size;
+  frame_info.pretend_size = pretend_size;
   frame_info.gpr_frame = interrupt_p ? or1k_redzone : 0;
 
   /* If the function has local variables, we're committed to
@@ -251,7 +256,7 @@ or1k_compute_frame_size (HOST_WIDE_INT size)
   save_size = (frame_info.gpr_size 
 	       + (frame_info.save_fp_p ? UNITS_PER_WORD : 0)
 	       + (frame_info.save_lr_p || flag_pic ? UNITS_PER_WORD : 0));
-  frame_info.total_size = save_size + vars_size + args_size;
+  frame_info.total_size = save_size + vars_size + args_size + pretend_size;
   gcc_assert (PROLOGUE_TMP != STATIC_CHAIN_REGNUM);
   if (frame_info.total_size > 32767 && interrupt_p)
     {
@@ -921,6 +926,12 @@ or1k_expand_prologue (void)
     /* No frame needed.  */
     return;
 
+  /* Reserve stack space before the std arguments for the varargs.
+     This space is filled in or1k_setup_incoming_varargs */
+  if (frame_info.pretend_size)
+    emit_frame_insn (gen_add2_insn (stack_pointer_rtx,
+				    GEN_INT (-frame_info.pretend_size)));
+
   gcc_assert (!frame_info.save_lr_p || !frame_info.save_fp_p
 	      || frame_info.lr_save_offset != frame_info.fp_save_offset);
 
@@ -1072,6 +1083,11 @@ or1k_expand_epilogue (void)
   if (frame_info.gpr_frame)
     emit_insn (gen_add2_insn (stack_pointer_rtx,
 			      GEN_INT (frame_info.gpr_frame)));
+
+  if (frame_info.pretend_size)
+    emit_frame_insn (gen_add2_insn (stack_pointer_rtx,
+				    GEN_INT (crtl->args.pretend_args_size)));
+
   emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, 9)));
 
 }	/* or1k_expand_epilogue () */
@@ -1569,26 +1585,39 @@ or1k_initial_elimination_offset(int from, int to)
    used by the caller for this argument; likewise FUNCTION_INCOMING_ARG, for
    the called function.
 
-   On the OR1K we never split argumetns between registers and memory.
-
-   JPB 30-Aug-10: Is this correct? Surely we should allow this. The ABI spec
-                  is incomplete on this point.
+   On the OR1K we split arguments between registers and memory.
 
    @param[in] cum    Position of argument under consideration.
    @param[in[ mode   Not sure what this relates to.
    @param[in] type   Type of the argument.
-   @param[in] named  Not sure what this relates to.
+   @param[in] named  stdarg or vararg
 
    @return  The number of bytes of the argument to go into registers          */
 /* -------------------------------------------------------------------------- */
 static int
-or1k_arg_partial_bytes (cumulative_args_t cum ATTRIBUTE_UNUSED,
-                        enum machine_mode  mode ATTRIBUTE_UNUSED,
-                        tree               type ATTRIBUTE_UNUSED,
+or1k_arg_partial_bytes (cumulative_args_t cum_t,
+                        enum machine_mode  mode,
+                        tree               type,
                         bool               named ATTRIBUTE_UNUSED)
 {
-  return 0;
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_t);
 
+  int words;
+  /* Determine the size of the argument in bytes */
+  unsigned int size =
+    (((mode == BLKmode && type)
+      ? (unsigned int) int_size_in_bytes (type)
+      : GET_MODE_SIZE (mode)) + UNITS_PER_WORD - 1)
+    / UNITS_PER_WORD;
+
+  if (*cum >= GP_ARG_NUM_REG)
+    words = 0;
+  else if (*cum + size > GP_ARG_NUM_REG)
+    words = (*cum + size) - GP_ARG_NUM_REG;
+  else
+    words = 0;
+
+  return words * UNITS_PER_WORD;
 }	/* or1k_arg_partial_bytes () */
 
 
@@ -2012,14 +2041,6 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 #undef TARGET_DWARF_CALLING_CONVENTION
 #define TARGET_DWARF_CALLING_CONVENTION  or1k_dwarf_calling_convention
 
-/* uClibc has some instances where (non-coforming to ISO C) a non-varargs
-   prototype is in scope when calling that function which is implemented
-   as varargs.  We want this to work at least where none of the anonymous
-   arguments are used.  I.e. we want the last named argument to be known
-   as named so it can be passed in a register, varars funtion or not.  */
-#undef TARGET_STRICT_ARGUMENT_NAMING
-#define TARGET_STRICT_ARGUMENT_NAMING hook_bool_CUMULATIVE_ARGS_true
-
 /* Is this suitable for an immediate operand.
 
    JPB 1-Sep-10: Is this correct. We can only do 16-bit immediates directly. */
@@ -2072,6 +2093,7 @@ or1k_function_arg (cumulative_args_t cum, enum machine_mode mode,
 }
 #undef TARGET_FUNCTION_ARG
 #define TARGET_FUNCTION_ARG or1k_function_arg
+
 /* Update the data in "cum" to advance over an argument of mode "mode" and
    data type "type".  ("type" is null for libcalls where that information may
    not be available.)  */
@@ -2084,9 +2106,42 @@ or1k_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
   *cum_pnt = OR1K_ROUND_ADVANCE_CUM (*cum_pnt, mode, type)
     + OR1K_ROUND_ADVANCE_ARG (mode, type);
 }
-
 #undef TARGET_FUNCTION_ARG_ADVANCE
 #define TARGET_FUNCTION_ARG_ADVANCE or1k_function_arg_advance
+
+/* Worker function for TARGET_SETUP_INCOMING_VARARGS.
+   This function pushes the required number of 
+   argument registers on the stack.  */
+static void
+or1k_setup_incoming_varargs (cumulative_args_t cum,
+			     enum machine_mode mode,
+			     tree type,
+			     int *pretend_sizep,
+			     int second_time)
+{
+  int i;
+
+  if (second_time)
+    return;
+
+  CUMULATIVE_ARGS *cum_pnt = get_cumulative_args (cum);
+
+  /*  Get the first variadic argument */
+  int next_arg = OR1K_ROUND_ADVANCE_CUM(*cum_pnt, mode, type) + OR1K_ROUND_ADVANCE_ARG (mode, type);
+  /*  Determine the number of arguments to push on the stack */
+  *pretend_sizep = (GP_ARG_NUM_REG - next_arg) * UNITS_PER_WORD;
+  
+  /* loop over all arguments and emit move instruction to push the arguments on the stack*/
+  for (i = next_arg; i < GP_ARG_NUM_REG; i++)
+    {
+      rtx reg = gen_rtx_REG (Pmode, i + GP_ARG_MIN_REG);
+      rtx slot = plus_constant (Pmode, arg_pointer_rtx, (i-next_arg) * UNITS_PER_WORD);
+      rtx mem = gen_rtx_MEM (Pmode, slot);
+      emit_move_insn (mem, reg);  
+    }
+}
+#undef TARGET_SETUP_INCOMING_VARARGS
+#define TARGET_SETUP_INCOMING_VARARGS or1k_setup_incoming_varargs
 
 #undef TARGET_PRINT_OPERAND_ADDRESS
 #define TARGET_PRINT_OPERAND_ADDRESS or1k_print_operand_address

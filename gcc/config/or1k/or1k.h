@@ -656,18 +656,13 @@ enum reg_class
    reference as the pointer to them is passed in a reg if one is available
    (and that is what we're given).
 
-   When passing arguments "named" is always 1.  When receiving arguments
-   "named" is 1 for each argument except the last in a stdarg/varargs
-   function.  In a stdarg function we want to treat the last named arg as
-   named.  In a varargs function we want to treat the last named arg (which is
-   `__builtin_va_alist') as unnamed.
+   Stdargs and varargs defined by the argument named are treated 
+   in the same way.
 
    This macro is only used in this file.  */
 #define OR1K_PASS_IN_REG_P(cum, mode, type, named)			\
-  ((named)                         					\
-   && ((OR1K_ROUND_ADVANCE_CUM ((cum), (mode), (type))			\
-	+ OR1K_ROUND_ADVANCE_ARG ((mode), (type))			\
-	<= GP_ARG_NUM_REG)))
+  ( (OR1K_ROUND_ADVANCE_CUM ((cum), (mode), (type)) 			\
+    < GP_ARG_NUM_REG))
 
 /* Output assembler code to FILE to increment profiler label # LABELNO
    for profiling a function entry. */
