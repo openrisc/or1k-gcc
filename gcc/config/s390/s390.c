@@ -9589,7 +9589,7 @@ s390_expand_tbegin (rtx dest, rtx tdb, rtx retry, bool clobber_fprs_p)
   rtx retry_reg = gen_reg_rtx (SImode);
   rtx retry_label = NULL_RTX;
   rtx jump;
-  rtx very_unlikely = GEN_INT (REG_BR_PROB_BASE / 100 - 1);
+  int very_unlikely = REG_BR_PROB_BASE / 100 - 1;
 
   if (retry != NULL_RTX)
     {
@@ -9612,7 +9612,7 @@ s390_expand_tbegin (rtx dest, rtx tdb, rtx retry, bool clobber_fprs_p)
 
   JUMP_LABEL (jump) = abort_label;
   LABEL_NUSES (abort_label) = 1;
-  add_reg_note (jump, REG_BR_PROB, very_unlikely);
+  add_int_reg_note (jump, REG_BR_PROB, very_unlikely);
 
   /* Initialize CC return value.  */
   emit_move_insn (dest, const0_rtx);
@@ -9632,7 +9632,7 @@ s390_expand_tbegin (rtx dest, rtx tdb, rtx retry, bool clobber_fprs_p)
 			       gen_rtx_REG (CCRAWmode, CC_REGNUM),
 			       gen_rtx_CONST_INT (VOIDmode, CC1 | CC3)));
       LABEL_NUSES (leave_label) = 2;
-      add_reg_note (jump, REG_BR_PROB, very_unlikely);
+      add_int_reg_note (jump, REG_BR_PROB, very_unlikely);
 
       /* CC2 - transient failure. Perform retry with ppa.  */
       emit_move_insn (count, retry);
@@ -9771,11 +9771,8 @@ s390_expand_builtin (tree exp, rtx target, rtx subtarget ATTRIBUTE_UNUSED,
   if (icode == 0)
     internal_error ("bad builtin fcode");
 
-  if (!TARGET_ZEC12)
-    error ("Transactional execution builtins require zEC12 or later\n");
-
-  if (!TARGET_HTM && TARGET_ZEC12)
-    error ("Transactional execution builtins not enabled (-mtx)\n");
+  if (!TARGET_HTM)
+    error ("Transactional execution builtins not enabled (-mhtm)\n");
 
   /* Set a flag in the machine specific cfun part in order to support
      saving/restoring of FPRs.  */
@@ -11256,7 +11253,7 @@ s390_sched_score (rtx insn)
 }
 
 /* This function is called via hook TARGET_SCHED_REORDER before
-   issueing one insn from list READY which contains *NREADYP entries.
+   issuing one insn from list READY which contains *NREADYP entries.
    For target z10 it reorders load instructions to avoid early load
    conflicts in the floating point pipeline  */
 static int

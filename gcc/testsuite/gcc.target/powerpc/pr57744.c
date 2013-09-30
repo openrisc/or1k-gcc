@@ -3,6 +3,8 @@
 /* { dg-require-effective-target powerpc_p8vector_ok } */
 /* { dg-options "-mcpu=power8 -O3" } */
 
+void abort (void);
+
 typedef unsigned U_16 __attribute__((mode(TI)));
 
 extern int libat_compare_exchange_16 (U_16 *, U_16 *, U_16, int, int)
@@ -31,7 +33,7 @@ volatile int do_test = 0;
 int main (void)
 {
   if (do_test && !libat_compare_exchange_16 (&a, &b, c, 0, 0))
-    aborrt ();
+    abort ();
 
   return 0;
 }

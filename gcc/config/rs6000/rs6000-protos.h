@@ -73,6 +73,9 @@ extern int mems_ok_for_quad_peep (rtx, rtx);
 extern bool gpr_or_gpr_p (rtx, rtx);
 extern bool direct_move_p (rtx, rtx);
 extern bool quad_load_store_p (rtx, rtx);
+extern bool fusion_gpr_load_p (rtx *, bool);
+extern void expand_fusion_gpr_load (rtx *);
+extern const char *emit_fusion_gpr_load (rtx *);
 extern enum reg_class (*rs6000_preferred_reload_class_ptr) (rtx,
 							    enum reg_class);
 extern enum reg_class (*rs6000_secondary_reload_class_ptr) (enum reg_class,
@@ -138,6 +141,7 @@ extern rtx rs6000_address_for_fpconvert (rtx);
 extern rtx rs6000_address_for_altivec (rtx);
 extern rtx rs6000_allocate_stack_temp (enum machine_mode, bool, bool);
 extern int rs6000_loop_align (rtx);
+extern void rs6000_split_logical (rtx [], enum rtx_code, bool, bool, bool, rtx);
 #endif /* RTX_CODE */
 
 #ifdef TREE_CODE

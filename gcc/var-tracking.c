@@ -104,7 +104,7 @@
 #include "regs.h"
 #include "expr.h"
 #include "tree-pass.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "cselib.h"
 #include "target.h"
 #include "params.h"
@@ -1045,9 +1045,10 @@ adjust_mems (rtx loc, const_rtx old_rtx, void *data)
     case PRE_INC:
     case PRE_DEC:
       addr = gen_rtx_PLUS (GET_MODE (loc), XEXP (loc, 0),
-			   GEN_INT (GET_CODE (loc) == PRE_INC
-				    ? GET_MODE_SIZE (amd->mem_mode)
-				    : -GET_MODE_SIZE (amd->mem_mode)));
+			   gen_int_mode (GET_CODE (loc) == PRE_INC
+					 ? GET_MODE_SIZE (amd->mem_mode)
+					 : -GET_MODE_SIZE (amd->mem_mode),
+					 GET_MODE (loc)));
     case POST_INC:
     case POST_DEC:
       if (addr == loc)
@@ -1055,10 +1056,11 @@ adjust_mems (rtx loc, const_rtx old_rtx, void *data)
       gcc_assert (amd->mem_mode != VOIDmode && amd->mem_mode != BLKmode);
       addr = simplify_replace_fn_rtx (addr, old_rtx, adjust_mems, data);
       tem = gen_rtx_PLUS (GET_MODE (loc), XEXP (loc, 0),
-			   GEN_INT ((GET_CODE (loc) == PRE_INC
-				     || GET_CODE (loc) == POST_INC)
-				    ? GET_MODE_SIZE (amd->mem_mode)
-				    : -GET_MODE_SIZE (amd->mem_mode)));
+			  gen_int_mode ((GET_CODE (loc) == PRE_INC
+					 || GET_CODE (loc) == POST_INC)
+					? GET_MODE_SIZE (amd->mem_mode)
+					: -GET_MODE_SIZE (amd->mem_mode),
+					GET_MODE (loc)));
       amd->side_effects = alloc_EXPR_LIST (0,
 					   gen_rtx_SET (VOIDmode,
 							XEXP (loc, 0),
@@ -2875,7 +2877,7 @@ variable_union (variable src, dataflow_set *set)
 	      /* The most common case, much simpler, no qsort is needed.  */
 	      location_chain dstnode = dst->var_part[j].loc_chain;
 	      dst->var_part[k].loc_chain = dstnode;
-	      VAR_PART_OFFSET (dst, k) = VAR_PART_OFFSET(dst, j);
+	      VAR_PART_OFFSET (dst, k) = VAR_PART_OFFSET (dst, j);
 	      node2 = dstnode;
 	      for (node = src->var_part[i].loc_chain; node; node = node->next)
 		if (!((REG_P (dstnode->loc)
@@ -5836,7 +5838,24 @@ add_stores (rtx loc, const_rtx expr, void *cuip)
 	    {
 	      rtx xexpr = gen_rtx_SET (VOIDmode, loc, src);
 	      if (same_variable_part_p (src, REG_EXPR (loc), REG_OFFSET (loc)))
-		mo.type = MO_COPY;
+		{
+		  /* If this is an instruction copying (part of) a parameter
+		     passed by invisible reference to its register location,
+		     pretend it's a SET so that the initial memory location
+		     is discarded, as the parameter register can be reused
+		     for other purposes and we do not track locations based
+		     on generic registers.  */
+		  if (MEM_P (src)
+		      && REG_EXPR (loc)
+		      && TREE_CODE (REG_EXPR (loc)) == PARM_DECL
+		      && DECL_MODE (REG_EXPR (loc)) != BLKmode
+		      && MEM_P (DECL_INCOMING_RTL (REG_EXPR (loc)))
+		      && XEXP (DECL_INCOMING_RTL (REG_EXPR (loc)), 0)
+			 != arg_pointer_rtx)
+		    mo.type = MO_SET;
+		  else
+		    mo.type = MO_COPY;
+		}
 	      else
 		mo.type = MO_SET;
 	      mo.u.loc = xexpr;
@@ -9086,7 +9105,7 @@ emit_notes_in_bb (basic_block bb, dataflow_set *set)
 	      else
 		var_mem_set (set, loc, VAR_INIT_STATUS_UNINITIALIZED, NULL);
 
-	      emit_notes_for_changes (insn, EMIT_NOTE_AFTER_INSN, set->vars);
+	      emit_notes_for_changes (insn, EMIT_NOTE_BEFORE_INSN, set->vars);
 	    }
 	    break;
 
@@ -9533,12 +9552,11 @@ vt_add_function_parameter (tree parm)
 
   if (!vt_get_decl_and_offset (incoming, &decl, &offset))
     {
-      if (REG_P (incoming) || MEM_P (incoming))
+      if (MEM_P (incoming))
 	{
 	  /* This means argument is passed by invisible reference.  */
 	  offset = 0;
 	  decl = parm;
-	  incoming = gen_rtx_MEM (GET_MODE (decl_rtl), incoming);
 	}
       else
 	{
@@ -10218,23 +10236,40 @@ gate_handle_var_tracking (void)
 
 
 
-struct rtl_opt_pass pass_variable_tracking =
+namespace {
+
+const pass_data pass_data_variable_tracking =
 {
- {
-  RTL_PASS,
-  "vartrack",                           /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_handle_var_tracking,             /* gate */
-  variable_tracking_main,               /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_VAR_TRACKING,                      /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  TODO_verify_rtl_sharing
-   | TODO_verify_flow                   /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "vartrack", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_VAR_TRACKING, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_verify_rtl_sharing | TODO_verify_flow ), /* todo_flags_finish */
 };
+
+class pass_variable_tracking : public rtl_opt_pass
+{
+public:
+  pass_variable_tracking (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_variable_tracking, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_handle_var_tracking (); }
+  unsigned int execute () { return variable_tracking_main (); }
+
+}; // class pass_variable_tracking
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_variable_tracking (gcc::context *ctxt)
+{
+  return new pass_variable_tracking (ctxt);
+}

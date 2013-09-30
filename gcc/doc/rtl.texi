@@ -1097,6 +1097,10 @@ this is the right mode to use for certain pointers.
 @item OImode
 ``Octa Integer'' (?) mode represents a thirty-two-byte integer.
 
+@findex XImode
+@item XImode
+``Hexadeca Integer'' (?) mode represents a sixty-four-byte integer.
+
 @findex QFmode
 @item QFmode
 ``Quarter-Floating'' mode represents a quarter-precision (single byte)
@@ -3086,7 +3090,7 @@ code output, can produce insns whose patterns consist of a @code{parallel}
 whose elements are the operands needed to output the resulting
 assembler code---often @code{reg}, @code{mem} or constant expressions.
 This would not be well-formed RTL at any other stage in compilation,
-but it is ok then because no further optimization remains to be done.
+but it is OK then because no further optimization remains to be done.
 However, the definition of the macro @code{NOTICE_UPDATE_CC}, if
 any, must deal with such insns if you define any peephole optimizations.
 
@@ -3728,8 +3732,8 @@ Def-use and use-def chains are now preferred.
 
 @findex REG_NOTES
 @item REG_NOTES (@var{i})
-A list (chain of @code{expr_list} and @code{insn_list} expressions)
-giving miscellaneous information about the insn.  It is often
+A list (chain of @code{expr_list}, @code{insn_list} and @code{int_list}
+expressions) giving miscellaneous information about the insn.  It is often
 information pertaining to the registers used in this insn.
 @end table
 
@@ -3748,10 +3752,10 @@ analysis pass adds a link to insns which store into registers values
 that are used for the first time in this insn.
 
 The @code{REG_NOTES} field of an insn is a chain similar to the
-@code{LOG_LINKS} field but it includes @code{expr_list} expressions in
-addition to @code{insn_list} expressions.  There are several kinds of
-register notes, which are distinguished by the machine mode, which in a
-register note is really understood as being an @code{enum reg_note}.
+@code{LOG_LINKS} field but it includes @code{expr_list} and @code{int_list}
+expressions in addition to @code{insn_list} expressions.  There are several
+kinds of register notes, which are distinguished by the machine mode, which
+in a register note is really understood as being an @code{enum reg_note}.
 The first operand @var{op} of the note is data whose meaning depends on
 the kind of note.
 
@@ -3952,16 +3956,16 @@ This indicates an anti dependence (a write after read dependence).
 @end table
 
 These notes describe information gathered from gcov profile data.  They
-are stored in the @code{REG_NOTES} field of an insn as an
-@code{expr_list}.
+are stored in the @code{REG_NOTES} field of an insn.
 
 @table @code
 @findex REG_BR_PROB
 @item REG_BR_PROB
 This is used to specify the ratio of branches to non-branches of a
-branch insn according to the profile data.  The value is stored as a
-value between 0 and REG_BR_PROB_BASE; larger values indicate a higher
-probability that the branch will be taken.
+branch insn according to the profile data.  The note is represented
+as an @code{int_list} expression whose integer value is between 0 and
+REG_BR_PROB_BASE.  Larger values indicate a higher probability that
+the branch will be taken.
 
 @findex REG_BR_PRED
 @item REG_BR_PRED

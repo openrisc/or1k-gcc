@@ -108,7 +108,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple.h"
 #include "cgraph.h"
 #include "ipa-prop.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "flags.h"
 #include "diagnostic.h"
@@ -734,7 +734,8 @@ initialize_node_lattices (struct cgraph_node *node)
     }
 
   for (ie = node->indirect_calls; ie; ie = ie->next_callee)
-    if (ie->indirect_info->polymorphic)
+    if (ie->indirect_info->polymorphic
+        && ie->indirect_info->param_index >= 0)
       {
 	gcc_checking_assert (ie->indirect_info->param_index >= 0);
 	ipa_get_parm_lattices (info,
@@ -744,17 +745,26 @@ initialize_node_lattices (struct cgraph_node *node)
 
 /* Return the result of a (possibly arithmetic) pass through jump function
    JFUNC on the constant value INPUT.  Return NULL_TREE if that cannot be
-   determined or itself is considered an interprocedural invariant.  */
+   determined or be considered an interprocedural invariant.  */
 
 static tree
 ipa_get_jf_pass_through_result (struct ipa_jump_func *jfunc, tree input)
 {
   tree restype, res;
 
+  if (TREE_CODE (input) == TREE_BINFO)
+    {
+      if (ipa_get_jf_pass_through_type_preserved (jfunc))
+	{
+	  gcc_checking_assert (ipa_get_jf_pass_through_operation (jfunc)
+			       == NOP_EXPR);
+	  return input;
+	}
+      return NULL_TREE;
+    }
+
   if (ipa_get_jf_pass_through_operation (jfunc) == NOP_EXPR)
     return input;
-  else if (TREE_CODE (input) == TREE_BINFO)
-    return NULL_TREE;
 
   gcc_checking_assert (is_gimple_ip_invariant (input));
   if (TREE_CODE_CLASS (ipa_get_jf_pass_through_operation (jfunc))
@@ -778,9 +788,13 @@ static tree
 ipa_get_jf_ancestor_result (struct ipa_jump_func *jfunc, tree input)
 {
   if (TREE_CODE (input) == TREE_BINFO)
-    return get_binfo_at_offset (input,
-				ipa_get_jf_ancestor_offset (jfunc),
-				ipa_get_jf_ancestor_type (jfunc));
+    {
+      if (!ipa_get_jf_ancestor_type_preserved (jfunc))
+	return NULL;
+      return get_binfo_at_offset (input,
+				  ipa_get_jf_ancestor_offset (jfunc),
+				  ipa_get_jf_ancestor_type (jfunc));
+    }
   else if (TREE_CODE (input) == ADDR_EXPR)
     {
       tree t = TREE_OPERAND (input, 0);
@@ -1012,26 +1026,16 @@ propagate_vals_accross_pass_through (struct cgraph_edge *cs,
   struct ipcp_value *src_val;
   bool ret = false;
 
-  if (ipa_get_jf_pass_through_operation (jfunc) == NOP_EXPR)
-    for (src_val = src_lat->values; src_val; src_val = src_val->next)
-      ret |= add_scalar_value_to_lattice (dest_lat, src_val->value, cs,
-					  src_val, src_idx);
   /* Do not create new values when propagating within an SCC because if there
      are arithmetic functions with circular dependencies, there is infinite
      number of them and we would just make lattices bottom.  */
-  else if (edge_within_scc (cs))
+  if ((ipa_get_jf_pass_through_operation (jfunc) != NOP_EXPR)
+      and edge_within_scc (cs))
     ret = set_lattice_contains_variable (dest_lat);
   else
     for (src_val = src_lat->values; src_val; src_val = src_val->next)
       {
-	tree cstval = src_val->value;
-
-	if (TREE_CODE (cstval) == TREE_BINFO)
-	  {
-	    ret |= set_lattice_contains_variable (dest_lat);
-	    continue;
-	  }
-	cstval = ipa_get_jf_pass_through_result (jfunc, cstval);
+	tree cstval = ipa_get_jf_pass_through_result (jfunc, src_val->value);
 
 	if (cstval)
 	  ret |= add_scalar_value_to_lattice (dest_lat, cstval, cs, src_val,
@@ -1480,6 +1484,7 @@ ipa_get_indirect_edge_target_1 (struct cgraph_edge *ie,
   HOST_WIDE_INT token, anc_offset;
   tree otr_type;
   tree t;
+  tree target;
 
   if (param_index == -1
       || known_vals.length () <= (unsigned int) param_index)
@@ -1541,13 +1546,14 @@ ipa_get_indirect_edge_target_1 (struct cgraph_edge *ie,
   if (TREE_CODE (t) != TREE_BINFO)
     {
       tree binfo;
-      binfo = gimple_extract_devirt_binfo_from_cst (t);
+      binfo = gimple_extract_devirt_binfo_from_cst
+		 (t, ie->indirect_info->otr_type);
       if (!binfo)
 	return NULL_TREE;
       binfo = get_binfo_at_offset (binfo, anc_offset, otr_type);
       if (!binfo)
 	return NULL_TREE;
-      return gimple_get_virt_method_for_binfo (token, binfo);
+      target = gimple_get_virt_method_for_binfo (token, binfo);
     }
   else
     {
@@ -1556,8 +1562,15 @@ ipa_get_indirect_edge_target_1 (struct cgraph_edge *ie,
       binfo = get_binfo_at_offset (t, anc_offset, otr_type);
       if (!binfo)
 	return NULL_TREE;
-      return gimple_get_virt_method_for_binfo (token, binfo);
+      target = gimple_get_virt_method_for_binfo (token, binfo);
     }
+#ifdef ENABLE_CHECKING
+  if (target)
+    gcc_assert (possible_polymorphic_call_target_p
+		 (ie, cgraph_get_node (target)));
+#endif
+
+  return target;
 }
 
 
@@ -1758,13 +1771,12 @@ gather_context_independent_values (struct ipa_node_params *info,
 	    }
 	  else if (removable_params_cost
 		   && !ipa_is_param_used (info, i))
-	    *removable_params_cost
-	      += estimate_move_cost (TREE_TYPE (ipa_get_param (info, i)));
+	    *removable_params_cost += ipa_get_param_move_cost (info, i);
 	}
       else if (removable_params_cost
 	       && !ipa_is_param_used (info, i))
 	*removable_params_cost
-	  += estimate_move_cost (TREE_TYPE (ipa_get_param (info, i)));
+	  += ipa_get_param_move_cost (info, i);
 
       if (known_aggs)
 	{
@@ -1933,8 +1945,8 @@ estimate_local_effects (struct cgraph_node *node)
 	    {
 	      fprintf (dump_file, " - estimates for value ");
 	      print_ipcp_constant_value (dump_file, val->value);
-	      fprintf (dump_file, " for parameter ");
-	      print_generic_expr (dump_file, ipa_get_param (info, i), 0);
+	      fprintf (dump_file, " for ");
+	      ipa_dump_param (dump_file, info, i);
 	      fprintf (dump_file, ": time_benefit: %i, size: %i\n",
 		       time_benefit, size);
 	    }
@@ -1990,8 +2002,8 @@ estimate_local_effects (struct cgraph_node *node)
 		{
 		  fprintf (dump_file, " - estimates for value ");
 		  print_ipcp_constant_value (dump_file, val->value);
-		  fprintf (dump_file, " for parameter ");
-		  print_generic_expr (dump_file, ipa_get_param (info, i), 0);
+		  fprintf (dump_file, " for ");
+	          ipa_dump_param (dump_file, info, i);
 		  fprintf (dump_file, "[%soffset: " HOST_WIDE_INT_PRINT_DEC
 				       "]: time_benefit: %i, size: %i\n",
 				       plats->aggs_by_ref ? "ref " : "",
@@ -2109,23 +2121,17 @@ propagate_constants_topo (struct topo_info *topo)
 
   for (i = topo->nnodes - 1; i >= 0; i--)
     {
+      unsigned j;
       struct cgraph_node *v, *node = topo->order[i];
-      struct ipa_dfs_info *node_dfs_info;
+      vec<cgraph_node_ptr> cycle_nodes = ipa_get_nodes_in_cycle (node);
 
-      if (!cgraph_function_with_gimple_body_p (node))
-	continue;
-
-      node_dfs_info = (struct ipa_dfs_info *) node->symbol.aux;
       /* First, iteratively propagate within the strongly connected component
 	 until all lattices stabilize.  */
-      v = node_dfs_info->next_cycle;
-      while (v)
-	{
+      FOR_EACH_VEC_ELT (cycle_nodes, j, v)
+	if (cgraph_function_with_gimple_body_p (v))
 	  push_node_to_stack (topo, v);
-	  v = ((struct ipa_dfs_info *) v->symbol.aux)->next_cycle;
-	}
 
-      v = node;
+      v = pop_node_from_stack (topo);
       while (v)
 	{
 	  struct cgraph_edge *cs;
@@ -2140,19 +2146,18 @@ propagate_constants_topo (struct topo_info *topo)
       /* Afterwards, propagate along edges leading out of the SCC, calculates
 	 the local effects of the discovered constants and all valid values to
 	 their topological sort.  */
-      v = node;
-      while (v)
-	{
-	  struct cgraph_edge *cs;
+      FOR_EACH_VEC_ELT (cycle_nodes, j, v)
+	if (cgraph_function_with_gimple_body_p (v))
+	  {
+	    struct cgraph_edge *cs;
 
-	  estimate_local_effects (v);
-	  add_all_node_vals_to_toposort (v);
-	  for (cs = v->callees; cs; cs = cs->next_callee)
-	    if (!edge_within_scc (cs))
-	      propagate_constants_accross_call (cs);
-
-	  v = ((struct ipa_dfs_info *) v->symbol.aux)->next_cycle;
-	}
+	    estimate_local_effects (v);
+	    add_all_node_vals_to_toposort (v);
+	    for (cs = v->callees; cs; cs = cs->next_callee)
+	      if (!edge_within_scc (cs))
+		propagate_constants_accross_call (cs);
+	  }
+      cycle_nodes.release ();
     }
 }
 
@@ -2279,14 +2284,15 @@ ipcp_discover_new_direct_edges (struct cgraph_node *node,
 					       aggvals);
       if (target)
 	{
+	  bool agg_contents = ie->indirect_info->agg_contents;
+	  bool polymorphic = ie->indirect_info->polymorphic;
+	  bool param_index = ie->indirect_info->param_index;
 	  struct cgraph_edge *cs = ipa_make_edge_direct_to_target (ie, target);
 	  found = true;
 
-	  if (cs && !ie->indirect_info->agg_contents
-	      && !ie->indirect_info->polymorphic)
+	  if (cs && !agg_contents && !polymorphic)
 	    {
 	      struct ipa_node_params *info = IPA_NODE_REF (node);
-	      int param_index = ie->indirect_info->param_index;
 	      int c = ipa_get_controlled_uses (info, param_index);
 	      if (c != IPA_UNDESCRIBED_USE)
 		{
@@ -2300,7 +2306,7 @@ ipcp_discover_new_direct_edges (struct cgraph_node *node,
 		  if (c == 0
 		      && (to_del = ipa_find_reference ((symtab_node) node,
 						       (symtab_node) cs->callee,
-						       NULL)))
+						       NULL, 0)))
 		    {
 		      if (dump_file && (dump_flags & TDF_DETAILS))
 			fprintf (dump_file, "       and even removing its "
@@ -2480,41 +2486,23 @@ gather_edges_for_value (struct ipcp_value *val, int caller_count)
    Return it or NULL if for some reason it cannot be created.  */
 
 static struct ipa_replace_map *
-get_replacement_map (tree value, tree parm)
+get_replacement_map (struct ipa_node_params *info, tree value, int parm_num)
 {
-  tree req_type = TREE_TYPE (parm);
   struct ipa_replace_map *replace_map;
 
-  if (!useless_type_conversion_p (req_type, TREE_TYPE (value)))
-    {
-      if (fold_convertible_p (req_type, value))
-	value = fold_build1 (NOP_EXPR, req_type, value);
-      else if (TYPE_SIZE (req_type) == TYPE_SIZE (TREE_TYPE (value)))
-	value = fold_build1 (VIEW_CONVERT_EXPR, req_type, value);
-      else
-	{
-	  if (dump_file)
-	    {
-	      fprintf (dump_file, "    const ");
-	      print_generic_expr (dump_file, value, 0);
-	      fprintf (dump_file, "  can't be converted to param ");
-	      print_generic_expr (dump_file, parm, 0);
-	      fprintf (dump_file, "\n");
-	    }
-	  return NULL;
-	}
-    }
 
   replace_map = ggc_alloc_ipa_replace_map ();
   if (dump_file)
     {
-      fprintf (dump_file, "    replacing param ");
-      print_generic_expr (dump_file, parm, 0);
+      fprintf (dump_file, "    replacing ");
+      ipa_dump_param (dump_file, info, parm_num);
+  
       fprintf (dump_file, " with const ");
       print_generic_expr (dump_file, value, 0);
       fprintf (dump_file, "\n");
     }
-  replace_map->old_tree = parm;
+  replace_map->old_tree = NULL;
+  replace_map->parm_num = parm_num;
   replace_map->new_tree = value;
   replace_map->replace_p = true;
   replace_map->ref_p = false;
@@ -2696,7 +2684,7 @@ create_specialized_node (struct cgraph_node *node,
 	{
 	  struct ipa_replace_map *replace_map;
 
-	  replace_map = get_replacement_map (t, ipa_get_param (info, i));
+	  replace_map = get_replacement_map (info, t, i);
 	  if (replace_map)
 	    vec_safe_push (replace_trees, replace_map);
 	}
@@ -2780,8 +2768,8 @@ find_more_scalar_values_for_callers_subset (struct cgraph_node *node,
 	    {
 	      fprintf (dump_file, "    adding an extra known scalar value ");
 	      print_ipcp_constant_value (dump_file, newval);
-	      fprintf (dump_file, " for parameter ");
-	      print_generic_expr (dump_file, ipa_get_param (info, i), 0);
+	      fprintf (dump_file, " for ");
+	      ipa_dump_param (dump_file, info, i);
 	      fprintf (dump_file, "\n");
 	    }
 
@@ -3035,7 +3023,7 @@ intersect_aggregates_with_edge (struct cgraph_edge *cs, int index,
     }
   else
     {
-      inter.release();
+      inter.release ();
       return vec<ipa_agg_jf_item_t>();
     }
   return inter;
@@ -3206,7 +3194,7 @@ cgraph_edge_brings_all_agg_vals_for_node (struct cgraph_edge *cs,
 	return false;
 
       values = intersect_aggregates_with_edge (cs, i, values);
-      if (!values.exists())
+      if (!values.exists ())
 	return false;
 
       for (struct ipa_agg_replacement_value *av = aggval; av; av = av->next)
@@ -3225,7 +3213,7 @@ cgraph_edge_brings_all_agg_vals_for_node (struct cgraph_edge *cs,
 		}
 	    if (!found)
 	      {
-		values.release();
+		values.release ();
 		return false;
 	      }
 	  }
@@ -3351,9 +3339,8 @@ decide_about_value (struct cgraph_node *node, int index, HOST_WIDE_INT offset,
     {
       fprintf (dump_file, " - considering value ");
       print_ipcp_constant_value (dump_file, val->value);
-      fprintf (dump_file, " for parameter ");
-      print_generic_expr (dump_file, ipa_get_param (IPA_NODE_REF (node),
-						    index), 0);
+      fprintf (dump_file, " for ");
+      ipa_dump_param (dump_file, IPA_NODE_REF (node), index);
       if (offset != -1)
 	fprintf (dump_file, ", offset: " HOST_WIDE_INT_PRINT_DEC, offset);
       fprintf (dump_file, " (caller_count: %i)\n", caller_count);
@@ -3672,32 +3659,51 @@ cgraph_gate_cp (void)
   return flag_ipa_cp && optimize;
 }
 
-struct ipa_opt_pass_d pass_ipa_cp =
+namespace {
+
+const pass_data pass_data_ipa_cp =
 {
- {
-  IPA_PASS,
-  "cp",				/* name */
-  OPTGROUP_NONE,                /* optinfo_flags */
-  cgraph_gate_cp,		/* gate */
-  ipcp_driver,			/* execute */
-  NULL,				/* sub */
-  NULL,				/* next */
-  0,				/* static_pass_number */
-  TV_IPA_CONSTANT_PROP,		/* tv_id */
-  0,				/* properties_required */
-  0,				/* properties_provided */
-  0,				/* properties_destroyed */
-  0,				/* todo_flags_start */
-  TODO_dump_symtab |
-  TODO_remove_functions         /* todo_flags_finish */
- },
- ipcp_generate_summary,			/* generate_summary */
- ipcp_write_summary,			/* write_summary */
- ipcp_read_summary,			/* read_summary */
- ipa_prop_write_all_agg_replacement,	/* write_optimization_summary */
- ipa_prop_read_all_agg_replacement,	/* read_optimization_summary */
- NULL,			 		/* stmt_fixup */
- 0,					/* TODOs */
- ipcp_transform_function,		/* function_transform */
- NULL,					/* variable_transform */
+  IPA_PASS, /* type */
+  "cp", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_IPA_CONSTANT_PROP, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_dump_symtab | TODO_remove_functions ), /* todo_flags_finish */
 };
+
+class pass_ipa_cp : public ipa_opt_pass_d
+{
+public:
+  pass_ipa_cp (gcc::context *ctxt)
+    : ipa_opt_pass_d (pass_data_ipa_cp, ctxt,
+		      ipcp_generate_summary, /* generate_summary */
+		      ipcp_write_summary, /* write_summary */
+		      ipcp_read_summary, /* read_summary */
+		      ipa_prop_write_all_agg_replacement, /*
+		      write_optimization_summary */
+		      ipa_prop_read_all_agg_replacement, /*
+		      read_optimization_summary */
+		      NULL, /* stmt_fixup */
+		      0, /* function_transform_todo_flags_start */
+		      ipcp_transform_function, /* function_transform */
+		      NULL) /* variable_transform */
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return cgraph_gate_cp (); }
+  unsigned int execute () { return ipcp_driver (); }
+
+}; // class pass_ipa_cp
+
+} // anon namespace
+
+ipa_opt_pass_d *
+make_pass_ipa_cp (gcc::context *ctxt)
+{
+  return new pass_ipa_cp (ctxt);
+}

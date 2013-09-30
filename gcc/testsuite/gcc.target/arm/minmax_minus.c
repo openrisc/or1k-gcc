@@ -1,4 +1,5 @@
 /* { dg-do compile } */
+/* { dg-require-effective-target arm_cond_exec } */
 /* { dg-options "-O2" } */
 
 #define MAX(a, b) (a > b ? a : b)
@@ -8,5 +9,4 @@ foo (int a, int b, int c)
   return c - MAX (a, b);
 }
 
-/* { dg-final { scan-assembler "rsbge" } } */
-/* { dg-final { scan-assembler "rsblt" } } */
+/* { dg-final { scan-assembler-not "mov" } } */

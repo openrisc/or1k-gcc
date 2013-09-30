@@ -188,11 +188,6 @@ cp_build_parm_decl (tree name, tree type)
   if (!processing_template_decl)
     DECL_ARG_TYPE (parm) = type_passed_as (type);
 
-  /* If the type is a pack expansion, then we have a function
-     parameter pack. */
-  if (type && TREE_CODE (type) == TYPE_PACK_EXPANSION)
-    FUNCTION_PARAMETER_PACK_P (parm) = 1;
-
   return parm;
 }
 
@@ -507,8 +502,9 @@ check_member_template (tree tmpl)
       || (TREE_CODE (decl) == TYPE_DECL
 	  && MAYBE_CLASS_TYPE_P (TREE_TYPE (decl))))
     {
-      /* The parser rejects template declarations in local classes.  */
-      gcc_assert (!current_function_decl);
+      /* The parser rejects template declarations in local classes
+	 (with the exception of generic lambdas).  */
+      gcc_assert (!current_function_decl || LAMBDA_FUNCTION_P (decl));
       /* The parser rejects any use of virtual in a function template.  */
       gcc_assert (!(TREE_CODE (decl) == FUNCTION_DECL
 		    && DECL_VIRTUAL_P (decl)));
@@ -3039,7 +3035,8 @@ generate_tls_wrapper (tree fn)
 }
 
 /* Start the process of running a particular set of global constructors
-   or destructors.  Subroutine of do_[cd]tors.  */
+   or destructors.  Subroutine of do_[cd]tors.  Also called from
+   vtv_start_verification_constructor_init_function.  */
 
 static tree
 start_objects (int method_type, int initp)
@@ -4353,7 +4350,24 @@ cp_write_global_declarations (void)
   timevar_stop (TV_PHASE_DEFERRED);
   timevar_start (TV_PHASE_OPT_GEN);
 
+  if (flag_vtable_verify)
+    {
+      vtv_recover_class_info ();
+      vtv_compute_class_hierarchy_transitive_closure ();
+      vtv_build_vtable_verify_fndecl ();
+    }
+
   finalize_compilation_unit ();
+
+  if (flag_vtable_verify)
+    {
+      /* Generate the special constructor initialization function that
+         calls __VLTRegisterPairs, and give it a very high
+         initialization priority.  This must be done after
+         finalize_compilation_unit so that we have accurate
+         information about which vtable will actually be emitted.  */
+      vtv_generate_init_routine ();
+    }
 
   timevar_stop (TV_PHASE_OPT_GEN);
   timevar_start (TV_PHASE_CHECK_DBGINFO);
@@ -4729,6 +4743,25 @@ bool
 mark_used (tree decl)
 {
   return mark_used (decl, tf_warning_or_error);
+}
+
+tree
+vtv_start_verification_constructor_init_function (void)
+{
+  return start_objects ('I', MAX_RESERVED_INIT_PRIORITY - 1);
+}
+
+tree
+vtv_finish_verification_constructor_init_function (tree function_body)
+{
+  tree fn;
+
+  finish_compound_stmt (function_body);
+  fn = finish_function (0);
+  DECL_STATIC_CONSTRUCTOR (fn) = 1;
+  decl_init_priority_insert (fn, MAX_RESERVED_INIT_PRIORITY - 1);
+
+  return fn;
 }
 
 #include "gt-cp-decl2.h"

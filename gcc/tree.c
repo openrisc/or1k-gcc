@@ -47,7 +47,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-inline.h"
 #include "tree-iterator.h"
 #include "basic-block.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "params.h"
 #include "pointer-set.h"
 #include "tree-pass.h"
@@ -236,6 +236,8 @@ unsigned const char omp_clause_num_ops[] =
   4, /* OMP_CLAUSE_REDUCTION  */
   1, /* OMP_CLAUSE_COPYIN  */
   1, /* OMP_CLAUSE_COPYPRIVATE  */
+  2, /* OMP_CLAUSE_LINEAR  */
+  1, /* OMP_CLAUSE_UNIFORM  */
   1, /* OMP_CLAUSE_IF  */
   1, /* OMP_CLAUSE_NUM_THREADS  */
   1, /* OMP_CLAUSE_SCHEDULE  */
@@ -245,7 +247,9 @@ unsigned const char omp_clause_num_ops[] =
   3, /* OMP_CLAUSE_COLLAPSE  */
   0, /* OMP_CLAUSE_UNTIED   */
   1, /* OMP_CLAUSE_FINAL  */
-  0  /* OMP_CLAUSE_MERGEABLE  */
+  0, /* OMP_CLAUSE_MERGEABLE  */
+  1, /* OMP_CLAUSE_SAFELEN  */
+  1, /* OMP_CLAUSE__SIMDUID_  */
 };
 
 const char * const omp_clause_code_name[] =
@@ -258,6 +262,8 @@ const char * const omp_clause_code_name[] =
   "reduction",
   "copyin",
   "copyprivate",
+  "linear",
+  "uniform",
   "if",
   "num_threads",
   "schedule",
@@ -267,7 +273,9 @@ const char * const omp_clause_code_name[] =
   "collapse",
   "untied",
   "final",
-  "mergeable"
+  "mergeable",
+  "safelen",
+  "_simduid_"
 };
 
 
@@ -999,7 +1007,7 @@ copy_node_stat (tree node MEM_STAT_DECL)
       TYPE_SYMTAB_ADDRESS (t) = 0;
 
       /* Do not copy the values cache.  */
-      if (TYPE_CACHED_VALUES_P(t))
+      if (TYPE_CACHED_VALUES_P (t))
 	{
 	  TYPE_CACHED_VALUES_P (t) = 0;
 	  TYPE_CACHED_VALUES (t) = NULL_TREE;
@@ -1104,7 +1112,7 @@ force_fit_type_double (tree type, double_int cst, int overflowable,
   bool sign_extended_type = !TYPE_UNSIGNED (type);
 
   /* If we need to set overflow flags, return a new unshared node.  */
-  if (overflowed || !double_int_fits_to_tree_p(type, cst))
+  if (overflowed || !double_int_fits_to_tree_p (type, cst))
     {
       if (overflowed
 	  || overflowable < 0
@@ -1718,7 +1726,7 @@ build_one_cst (tree type)
     case FIXED_POINT_TYPE:
       /* We can only generate 1 for accum types.  */
       gcc_assert (ALL_SCALAR_ACCUM_MODE_P (TYPE_MODE (type)));
-      return build_fixed (type, FCONST1(TYPE_MODE (type)));
+      return build_fixed (type, FCONST1 (TYPE_MODE (type)));
 
     case VECTOR_TYPE:
       {
@@ -2051,12 +2059,12 @@ integer_pow2p (const_tree expr)
   if (prec == HOST_BITS_PER_DOUBLE_INT)
     ;
   else if (prec > HOST_BITS_PER_WIDE_INT)
-    high &= ~((HOST_WIDE_INT) (-1) << (prec - HOST_BITS_PER_WIDE_INT));
+    high &= ~(HOST_WIDE_INT_M1U << (prec - HOST_BITS_PER_WIDE_INT));
   else
     {
       high = 0;
       if (prec < HOST_BITS_PER_WIDE_INT)
-	low &= ~((HOST_WIDE_INT) (-1) << prec);
+	low &= ~(HOST_WIDE_INT_M1U << prec);
     }
 
   if (high == 0 && low == 0)
@@ -2115,12 +2123,12 @@ tree_log2 (const_tree expr)
   if (prec == HOST_BITS_PER_DOUBLE_INT)
     ;
   else if (prec > HOST_BITS_PER_WIDE_INT)
-    high &= ~((HOST_WIDE_INT) (-1) << (prec - HOST_BITS_PER_WIDE_INT));
+    high &= ~(HOST_WIDE_INT_M1U << (prec - HOST_BITS_PER_WIDE_INT));
   else
     {
       high = 0;
       if (prec < HOST_BITS_PER_WIDE_INT)
-	low &= ~((HOST_WIDE_INT) (-1) << prec);
+	low &= ~(HOST_WIDE_INT_M1U << prec);
     }
 
   return (high != 0 ? HOST_BITS_PER_WIDE_INT + exact_log2 (high)
@@ -2152,12 +2160,12 @@ tree_floor_log2 (const_tree expr)
   if (prec == HOST_BITS_PER_DOUBLE_INT || prec == 0)
     ;
   else if (prec > HOST_BITS_PER_WIDE_INT)
-    high &= ~((HOST_WIDE_INT) (-1) << (prec - HOST_BITS_PER_WIDE_INT));
+    high &= ~(HOST_WIDE_INT_M1U << (prec - HOST_BITS_PER_WIDE_INT));
   else
     {
       high = 0;
       if (prec < HOST_BITS_PER_WIDE_INT)
-	low &= ~((HOST_WIDE_INT) (-1) << prec);
+	low &= ~(HOST_WIDE_INT_M1U << prec);
     }
 
   return (high != 0 ? HOST_BITS_PER_WIDE_INT + floor_log2 (high)
@@ -4110,8 +4118,8 @@ build2_stat (enum tree_code code, tree tt, tree arg0, tree arg1 MEM_STAT_DECL)
   read_only = 1;
   side_effects = TREE_SIDE_EFFECTS (t);
 
-  PROCESS_ARG(0);
-  PROCESS_ARG(1);
+  PROCESS_ARG (0);
+  PROCESS_ARG (1);
 
   TREE_READONLY (t) = read_only;
   TREE_CONSTANT (t) = constant;
@@ -4150,9 +4158,9 @@ build3_stat (enum tree_code code, tree tt, tree arg0, tree arg1,
   else
     side_effects = TREE_SIDE_EFFECTS (t);
 
-  PROCESS_ARG(0);
-  PROCESS_ARG(1);
-  PROCESS_ARG(2);
+  PROCESS_ARG (0);
+  PROCESS_ARG (1);
+  PROCESS_ARG (2);
 
   if (code == COND_EXPR)
     TREE_READONLY (t) = read_only;
@@ -4179,10 +4187,10 @@ build4_stat (enum tree_code code, tree tt, tree arg0, tree arg1,
 
   side_effects = TREE_SIDE_EFFECTS (t);
 
-  PROCESS_ARG(0);
-  PROCESS_ARG(1);
-  PROCESS_ARG(2);
-  PROCESS_ARG(3);
+  PROCESS_ARG (0);
+  PROCESS_ARG (1);
+  PROCESS_ARG (2);
+  PROCESS_ARG (3);
 
   TREE_SIDE_EFFECTS (t) = side_effects;
   TREE_THIS_VOLATILE (t)
@@ -4206,11 +4214,11 @@ build5_stat (enum tree_code code, tree tt, tree arg0, tree arg1,
 
   side_effects = TREE_SIDE_EFFECTS (t);
 
-  PROCESS_ARG(0);
-  PROCESS_ARG(1);
-  PROCESS_ARG(2);
-  PROCESS_ARG(3);
-  PROCESS_ARG(4);
+  PROCESS_ARG (0);
+  PROCESS_ARG (1);
+  PROCESS_ARG (2);
+  PROCESS_ARG (3);
+  PROCESS_ARG (4);
 
   TREE_SIDE_EFFECTS (t) = side_effects;
   TREE_THIS_VOLATILE (t)
@@ -4253,24 +4261,6 @@ mem_ref_offset (const_tree t)
 {
   tree toff = TREE_OPERAND (t, 1);
   return tree_to_double_int (toff).sext (TYPE_PRECISION (TREE_TYPE (toff)));
-}
-
-/* Return the pointer-type relevant for TBAA purposes from the
-   gimple memory reference tree T.  This is the type to be used for
-   the offset operand of MEM_REF or TARGET_MEM_REF replacements of T.  */
-
-tree
-reference_alias_ptr_type (const_tree t)
-{
-  const_tree base = t;
-  while (handled_component_p (base))
-    base = TREE_OPERAND (base, 0);
-  if (TREE_CODE (base) == MEM_REF)
-    return TREE_TYPE (TREE_OPERAND (base, 1));
-  else if (TREE_CODE (base) == TARGET_MEM_REF)
-    return TREE_TYPE (TMR_OFFSET (base)); 
-  else
-    return build_pointer_type (TYPE_MAIN_VARIANT (TREE_TYPE (base)));
 }
 
 /* Return an invariant ADDR_EXPR of type TYPE taking the address of BASE
@@ -4886,6 +4876,20 @@ free_lang_data_in_decl (tree decl)
 
  if (TREE_CODE (decl) == FUNCTION_DECL)
     {
+      struct cgraph_node *node;
+      if (!(node = cgraph_get_node (decl))
+	  || (!node->symbol.definition && !node->clones))
+	{
+	  if (node)
+	    cgraph_release_function_body (node);
+	  else
+	    {
+	      release_function_body (decl);
+	      DECL_ARGUMENTS (decl) = NULL;
+	      DECL_RESULT (decl) = NULL;
+	      DECL_INITIAL (decl) = error_mark_node;
+	    }
+	}
       if (gimple_has_body_p (decl))
 	{
 	  tree t;
@@ -5491,25 +5495,42 @@ free_lang_data (void)
 }
 
 
-struct simple_ipa_opt_pass pass_ipa_free_lang_data =
+namespace {
+
+const pass_data pass_data_ipa_free_lang_data =
 {
- {
-  SIMPLE_IPA_PASS,
-  "*free_lang_data",			/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  free_lang_data,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_IPA_FREE_LANG_DATA,		/* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0					/* todo_flags_finish */
- }
+  SIMPLE_IPA_PASS, /* type */
+  "*free_lang_data", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_IPA_FREE_LANG_DATA, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_ipa_free_lang_data : public simple_ipa_opt_pass
+{
+public:
+  pass_ipa_free_lang_data (gcc::context *ctxt)
+    : simple_ipa_opt_pass (pass_data_ipa_free_lang_data, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return free_lang_data (); }
+
+}; // class pass_ipa_free_lang_data
+
+} // anon namespace
+
+simple_ipa_opt_pass *
+make_pass_ipa_free_lang_data (gcc::context *ctxt)
+{
+  return new pass_ipa_free_lang_data (ctxt);
+}
 
 /* The backbone of is_attribute_p().  ATTR_LEN is the string length of
    ATTR_NAME.  Also used internally by remove_attribute().  */
@@ -6659,9 +6680,11 @@ attribute_list_contained (const_tree l1, const_tree l2)
       /* This CONST_CAST is okay because lookup_attribute does not
 	 modify its argument and the return value is assigned to a
 	 const_tree.  */
-      for (attr = lookup_ident_attribute (get_attribute_name (t2), CONST_CAST_TREE(l1));
+      for (attr = lookup_ident_attribute (get_attribute_name (t2),
+					  CONST_CAST_TREE (l1));
 	   attr != NULL_TREE && !attribute_value_equal (t2, attr);
-	   attr = lookup_ident_attribute (get_attribute_name (t2), TREE_CHAIN (attr)))
+	   attr = lookup_ident_attribute (get_attribute_name (t2),
+					  TREE_CHAIN (attr)))
 	;
 
       if (attr == NULL_TREE)
@@ -7259,21 +7282,6 @@ iterative_hash_expr (const_tree t, hashval_t val)
 	  }
 	return val;
       }
-    case MEM_REF:
-      {
-	/* The type of the second operand is relevant, except for
-	   its top-level qualifiers.  */
-	tree type = TYPE_MAIN_VARIANT (TREE_TYPE (TREE_OPERAND (t, 1)));
-
-	val = iterative_hash_object (TYPE_HASH (type), val);
-
-	/* We could use the standard hash computation from this point
-	   on.  */
-	val = iterative_hash_object (code, val);
-	val = iterative_hash_expr (TREE_OPERAND (t, 1), val);
-	val = iterative_hash_expr (TREE_OPERAND (t, 0), val);
-	return val;
-      }
     case FUNCTION_DECL:
       /* When referring to a built-in FUNCTION_DECL, use the __builtin__ form.
 	 Otherwise nodes that compare equal according to operand_equal_p might
@@ -7795,9 +7803,9 @@ strip_array_types (tree type)
    true) or would not differ from ARGTYPES.  */
 
 static tree
-maybe_canonicalize_argtypes(tree argtypes,
-			    bool *any_structural_p,
-			    bool *any_noncanonical_p)
+maybe_canonicalize_argtypes (tree argtypes,
+			     bool *any_structural_p,
+			     bool *any_noncanonical_p)
 {
   tree arg;
   bool any_noncanonical_argtypes_p = false;
@@ -9336,7 +9344,7 @@ tree_contains_struct_check_failed (const_tree node,
 {
   internal_error
     ("tree check: expected tree that contains %qs structure, have %qs in %s, at %s:%d",
-     TS_ENUM_NAME(en),
+     TS_ENUM_NAME (en),
      tree_code_name[TREE_CODE (node)], function, trim_filename (file), line);
 }
 
@@ -9638,6 +9646,8 @@ build_common_tree_nodes (bool signed_char, bool short_double)
     = build_pointer_type (build_type_variant (void_type_node, 1, 0));
   fileptr_type_node = ptr_type_node;
 
+  pointer_sized_int_node = build_nonstandard_integer_type (POINTER_SIZE, 1);
+
   float_type_node = make_node (REAL_TYPE);
   TYPE_PRECISION (float_type_node) = FLOAT_TYPE_SIZE;
   layout_type (float_type_node);
@@ -9755,7 +9765,10 @@ build_common_tree_nodes (bool signed_char, bool short_double)
   }
 }
 
-/* Modify DECL for given flags.  */
+/* Modify DECL for given flags.
+   TM_PURE attribute is set only on types, so the function will modify
+   DECL's type when ECF_TM_PURE is used.  */
+
 void
 set_call_expr_flags (tree decl, int flags)
 {
@@ -9779,8 +9792,7 @@ set_call_expr_flags (tree decl, int flags)
     DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("leaf"),
 					NULL, DECL_ATTRIBUTES (decl));
   if ((flags & ECF_TM_PURE) && flag_tm)
-    DECL_ATTRIBUTES (decl) = tree_cons (get_identifier ("transaction_pure"),
-					NULL, DECL_ATTRIBUTES (decl));
+    apply_tm_attr (decl, get_identifier ("transaction_pure"));
   /* Looping const or pure is implied by noreturn.
      There is currently no way to declare looping const or looping pure alone.  */
   gcc_assert (!(flags & ECF_LOOPING_CONST_OR_PURE)
@@ -10988,7 +11000,8 @@ walk_tree_1 (tree *tp, walk_tree_fn func, void *data,
 	unsigned HOST_WIDE_INT idx;
 	constructor_elt *ce;
 
-	for (idx = 0; vec_safe_iterate(CONSTRUCTOR_ELTS (*tp), idx, &ce); idx++)
+	for (idx = 0; vec_safe_iterate (CONSTRUCTOR_ELTS (*tp), idx, &ce);
+	     idx++)
 	  WALK_SUBTREE (ce->value);
       }
       break;
@@ -11033,6 +11046,9 @@ walk_tree_1 (tree *tp, walk_tree_fn func, void *data,
 	case OMP_CLAUSE_IF:
 	case OMP_CLAUSE_NUM_THREADS:
 	case OMP_CLAUSE_SCHEDULE:
+	case OMP_CLAUSE_UNIFORM:
+	case OMP_CLAUSE_SAFELEN:
+	case OMP_CLAUSE__SIMDUID_:
 	  WALK_SUBTREE (OMP_CLAUSE_OPERAND (*tp, 0));
 	  /* FALLTHRU */
 
@@ -11055,6 +11071,11 @@ walk_tree_1 (tree *tp, walk_tree_fn func, void *data,
 	      WALK_SUBTREE (OMP_CLAUSE_OPERAND (*tp, i));
 	    WALK_SUBTREE_TAIL (OMP_CLAUSE_CHAIN (*tp));
 	  }
+
+	case OMP_CLAUSE_LINEAR:
+	  WALK_SUBTREE (OMP_CLAUSE_DECL (*tp));
+	  WALK_SUBTREE (OMP_CLAUSE_OPERAND (*tp, 1));
+	  WALK_SUBTREE_TAIL (OMP_CLAUSE_CHAIN (*tp));
 
 	case OMP_CLAUSE_REDUCTION:
 	  {
@@ -11286,7 +11307,7 @@ stdarg_p (const_tree fntype)
   if (!fntype)
     return false;
 
-  FOREACH_FUNCTION_ARGS(fntype, t, args_iter)
+  FOREACH_FUNCTION_ARGS (fntype, t, args_iter)
     {
       n = t;
     }
@@ -11802,11 +11823,6 @@ types_same_for_odr (tree type1, tree type2)
   if (type1 == type2)
     return true;
 
-  /* If types are not structuraly same, do not bother to contnue.
-     Match in the remainder of code would mean ODR violation.  */
-  if (!types_compatible_p (type1, type2))
-    return false;
-
 #ifndef ENABLE_CHECKING
   if (!in_lto_p)
     return false;
@@ -11814,13 +11830,42 @@ types_same_for_odr (tree type1, tree type2)
 
   /* Check for anonymous namespaces. Those have !TREE_PUBLIC
      on the corresponding TYPE_STUB_DECL.  */
-  if (TYPE_STUB_DECL (type1) != TYPE_STUB_DECL (type2)
-      && (!TYPE_STUB_DECL (type1)
-	  || !TYPE_STUB_DECL (type2)
-	  || !TREE_PUBLIC (TYPE_STUB_DECL (type1))
-	  || !TREE_PUBLIC (TYPE_STUB_DECL (type2))))
+  if (type_in_anonymous_namespace_p (type1)
+      || type_in_anonymous_namespace_p (type2))
     return false;
+  /* When assembler name of virtual table is available, it is
+     easy to compare types for equivalence.  */
+  if (TYPE_BINFO (type1) && TYPE_BINFO (type2)
+      && BINFO_VTABLE (TYPE_BINFO (type1))
+      && BINFO_VTABLE (TYPE_BINFO (type2)))
+    {
+      tree v1 = BINFO_VTABLE (TYPE_BINFO (type1));
+      tree v2 = BINFO_VTABLE (TYPE_BINFO (type2));
 
+      if (TREE_CODE (v1) == POINTER_PLUS_EXPR)
+	{
+	  if (TREE_CODE (v2) != POINTER_PLUS_EXPR
+	      || !operand_equal_p (TREE_OPERAND (v1, 1),
+			     TREE_OPERAND (v2, 1), 0))
+	    return false;
+	  v1 = TREE_OPERAND (TREE_OPERAND (v1, 0), 0);
+	  v2 = TREE_OPERAND (TREE_OPERAND (v2, 0), 0);
+	}
+      v1 = DECL_ASSEMBLER_NAME (v1);
+      v2 = DECL_ASSEMBLER_NAME (v2);
+      return (v1 == v2);
+    }
+
+  /* FIXME: the code comparing type names consider all instantiations of the
+     same template to have same name.  This is because we have no access
+     to template parameters.  For types with no virtual method tables
+     we thus can return false positives.  At the moment we do not need
+     to compare types in other scenarios than devirtualization.  */
+
+  /* If types are not structuraly same, do not bother to contnue.
+     Match in the remainder of code would mean ODR violation.  */
+  if (!types_compatible_p (type1, type2))
+    return false;
   if (!TYPE_NAME (type1))
     return false;
   if (!decls_same_for_odr (TYPE_NAME (type1), TYPE_NAME (type2)))
@@ -11831,6 +11876,54 @@ types_same_for_odr (tree type1, tree type2)
   gcc_assert (in_lto_p);
     
   return true;
+}
+
+/* TARGET is a call target of GIMPLE call statement
+   (obtained by gimple_call_fn).  Return true if it is
+   OBJ_TYPE_REF representing an virtual call of C++ method.
+   (As opposed to OBJ_TYPE_REF representing objc calls
+   through a cast where middle-end devirtualization machinery
+   can't apply.) */
+
+bool
+virtual_method_call_p (tree target)
+{
+  if (TREE_CODE (target) != OBJ_TYPE_REF)
+    return false;
+  target = TREE_TYPE (target);
+  gcc_checking_assert (TREE_CODE (target) == POINTER_TYPE);
+  target = TREE_TYPE (target);
+  if (TREE_CODE (target) == FUNCTION_TYPE)
+    return false;
+  gcc_checking_assert (TREE_CODE (target) == METHOD_TYPE);
+  return true;
+}
+
+/* REF is OBJ_TYPE_REF, return the class the ref corresponds to.  */
+
+tree
+obj_type_ref_class (tree ref)
+{
+  gcc_checking_assert (TREE_CODE (ref) == OBJ_TYPE_REF);
+  ref = TREE_TYPE (ref);
+  gcc_checking_assert (TREE_CODE (ref) == POINTER_TYPE);
+  ref = TREE_TYPE (ref);
+  /* We look for type THIS points to.  ObjC also builds
+     OBJ_TYPE_REF with non-method calls, Their first parameter
+     ID however also corresponds to class type. */
+  gcc_checking_assert (TREE_CODE (ref) == METHOD_TYPE
+		       || TREE_CODE (ref) == FUNCTION_TYPE);
+  ref = TREE_VALUE (TYPE_ARG_TYPES (ref));
+  gcc_checking_assert (TREE_CODE (ref) == POINTER_TYPE);
+  return TREE_TYPE (ref);
+}
+
+/* Return true if T is in anonymous namespace.  */
+
+bool
+type_in_anonymous_namespace_p (tree t)
+{
+  return (TYPE_STUB_DECL (t) && !TREE_PUBLIC (TYPE_STUB_DECL (t)));
 }
 
 /* Try to find a base info of BINFO that would have its field decl at offset

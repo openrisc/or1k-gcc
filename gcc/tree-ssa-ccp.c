@@ -119,7 +119,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "basic-block.h"
 #include "function.h"
 #include "gimple-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "tree-ssa-propagate.h"
 #include "value-prof.h"
@@ -258,12 +258,7 @@ get_default_value (tree var)
 	  val.mask = double_int_minus_one;
 	}
     }
-  else if (is_gimple_assign (stmt)
-	   /* Value-returning GIMPLE_CALL statements assign to
-	      a variable, and are treated similarly to GIMPLE_ASSIGN.  */
-	   || (is_gimple_call (stmt)
-	       && gimple_call_lhs (stmt) != NULL_TREE)
-	   || gimple_code (stmt) == GIMPLE_PHI)
+  else if (is_gimple_assign (stmt))
     {
       tree cst;
       if (gimple_assign_single_p (stmt)
@@ -274,9 +269,19 @@ get_default_value (tree var)
 	  val.value = cst;
 	}
       else
-	/* Any other variable defined by an assignment or a PHI node
-	   is considered UNDEFINED.  */
-	val.lattice_val = UNDEFINED;
+	{
+	  /* Any other variable defined by an assignment is considered
+	     UNDEFINED.  */
+	  val.lattice_val = UNDEFINED;
+	}
+    }
+  else if ((is_gimple_call (stmt)
+	    && gimple_call_lhs (stmt) != NULL_TREE)
+	   || gimple_code (stmt) == GIMPLE_PHI)
+    {
+      /* A variable defined by a call or a PHI node is considered
+	 UNDEFINED.  */
+      val.lattice_val = UNDEFINED;
     }
   else
     {
@@ -625,6 +630,22 @@ likely_value (gimple stmt)
 
   if (has_constant_operand)
     all_undefined_operands = false;
+
+  if (has_undefined_operand
+      && code == GIMPLE_CALL
+      && gimple_call_internal_p (stmt))
+    switch (gimple_call_internal_fn (stmt))
+      {
+	/* These 3 builtins use the first argument just as a magic
+	   way how to find out a decl uid.  */
+      case IFN_GOMP_SIMD_LANE:
+      case IFN_GOMP_SIMD_VF:
+      case IFN_GOMP_SIMD_LAST_LANE:
+	has_undefined_operand = false;
+	break;
+      default:
+	break;
+      }
 
   /* If the operation combines operands like COMPLEX_EXPR make sure to
      not mark the result UNDEFINED if only one part of the result is
@@ -1707,6 +1728,9 @@ insert_clobber_before_stack_restore (tree saved_val, tree var,
 	insert_clobber_before_stack_restore (gimple_phi_result (stmt), var,
 					     visited);
       }
+    else if (gimple_assign_ssa_name_copy_p (stmt))
+      insert_clobber_before_stack_restore (gimple_assign_lhs (stmt), var,
+					   visited);
     else
       gcc_assert (is_gimple_debug (stmt));
 }
@@ -2121,27 +2145,45 @@ gate_ccp (void)
 }
 
 
-struct gimple_opt_pass pass_ccp =
+namespace {
+
+const pass_data pass_data_ccp =
 {
- {
-  GIMPLE_PASS,
-  "ccp",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_ccp,				/* gate */
-  do_ssa_ccp,				/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_CCP,				/* tv_id */
-  PROP_cfg | PROP_ssa,			/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_ssa
-  | TODO_update_address_taken
-  | TODO_verify_stmts			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "ccp", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_CCP, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_verify_ssa | TODO_update_address_taken
+    | TODO_verify_stmts ), /* todo_flags_finish */
 };
+
+class pass_ccp : public gimple_opt_pass
+{
+public:
+  pass_ccp (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_ccp, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_ccp (ctxt_); }
+  bool gate () { return gate_ccp (); }
+  unsigned int execute () { return do_ssa_ccp (); }
+
+}; // class pass_ccp
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_ccp (gcc::context *ctxt)
+{
+  return new pass_ccp (ctxt);
+}
 
 
 
@@ -2521,23 +2563,40 @@ execute_fold_all_builtins (void)
 }
 
 
-struct gimple_opt_pass pass_fold_builtins =
+namespace {
+
+const pass_data pass_data_fold_builtins =
 {
- {
-  GIMPLE_PASS,
-  "fab",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  execute_fold_all_builtins,		/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_NONE,				/* tv_id */
-  PROP_cfg | PROP_ssa,			/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_ssa
-    | TODO_update_ssa			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "fab", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_verify_ssa | TODO_update_ssa ), /* todo_flags_finish */
 };
+
+class pass_fold_builtins : public gimple_opt_pass
+{
+public:
+  pass_fold_builtins (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_fold_builtins, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_fold_builtins (ctxt_); }
+  unsigned int execute () { return execute_fold_all_builtins (); }
+
+}; // class pass_fold_builtins
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_fold_builtins (gcc::context *ctxt)
+{
+  return new pass_fold_builtins (ctxt);
+}

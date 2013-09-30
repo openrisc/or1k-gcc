@@ -99,8 +99,8 @@ static unsigned int iv_ref_table_size = 0;
 static struct rtx_iv ** iv_ref_table;
 
 /* Induction variable stored at the reference.  */
-#define DF_REF_IV(REF) iv_ref_table[DF_REF_ID(REF)]
-#define DF_REF_IV_SET(REF, IV) iv_ref_table[DF_REF_ID(REF)] = (IV)
+#define DF_REF_IV(REF) iv_ref_table[DF_REF_ID (REF)]
+#define DF_REF_IV_SET(REF, IV) iv_ref_table[DF_REF_ID (REF)] = (IV)
 
 /* The current loop.  */
 
@@ -212,7 +212,7 @@ lowpart_subreg (enum machine_mode outer_mode, rtx expr,
 static void
 check_iv_ref_table_size (void)
 {
-  if (iv_ref_table_size < DF_DEFS_TABLE_SIZE())
+  if (iv_ref_table_size < DF_DEFS_TABLE_SIZE ())
     {
       unsigned int new_size = DF_DEFS_TABLE_SIZE () + (DF_DEFS_TABLE_SIZE () / 4);
       iv_ref_table = XRESIZEVEC (struct rtx_iv *, iv_ref_table, new_size);
@@ -2672,11 +2672,11 @@ iv_number_of_iterations (struct loop *loop, rtx insn, rtx condition,
       bound = GEN_INT (((unsigned HOST_WIDEST_INT) 1 << (size - 1 ) << 1) - 1);
 
       tmp1 = lowpart_subreg (mode, iv1.base, comp_mode);
-      tmp = simplify_gen_binary (UMOD, mode, tmp1, GEN_INT (d));
+      tmp = simplify_gen_binary (UMOD, mode, tmp1, gen_int_mode (d, mode));
       assumption = simplify_gen_relational (NE, SImode, mode, tmp, const0_rtx);
       desc->infinite = alloc_EXPR_LIST (0, assumption, desc->infinite);
 
-      tmp = simplify_gen_binary (UDIV, mode, tmp1, GEN_INT (d));
+      tmp = simplify_gen_binary (UDIV, mode, tmp1, gen_int_mode (d, mode));
       inv = inverse (s, size);
       tmp = simplify_gen_binary (MULT, mode, tmp, gen_int_mode (inv, mode));
       desc->niter_expr = simplify_gen_binary (AND, mode, tmp, bound);

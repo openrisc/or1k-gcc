@@ -1,8 +1,90 @@
-2013-07-10  Jack Howarth  <howarth@bromo.med.uc.edu>
+2013-09-20  Alan Modra  <amodra@gmail.com>
 
-	PR target/57792
-	* configure.ac: Use --with-sysroot=\"`xcrun --show-sdk-path`\" on darwin13 and later.
+	* libtool.m4 (_LT_ENABLE_LOCK <ld -m flags>): Remove non-canonical
+	ppc host match.  Support little-endian powerpc linux hosts.
+
+2013-09-19  Dodji Seketeli  <dodji@redhat.com>
+
+	* MAINTAINERS (diagnostic messages): Add myself as diagnostics
+	maintainer.
+
+2013-09-12  DJ Delorie  <dj@redhat.com>
+
+	* MAINTAINERS: Add Nick Clifton and DJ Delorie as msp430
+        maintainers.
+
+2013-09-03  Richard Biener  <rguenther@suse.de>
+
+	* configure.ac: Also allow ISL 0.12.
 	* configure: Regenerated.
+
+2013-08-30  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-08-27  David Malcolm  <dmalcolm@redhat.com>
+
+	* MAINTAINERS (gdbhooks.py): Add myself as maintainer.
+
+2013-08-26  Caroline Tice  <cmtice@google.com>
+
+	* MAINTAINERS:  Correct earliers update:  Move myself from libvtv
+	"Various Reviewers" to libvtv "Various Maintainers".
+
+2013-08-20  Steven Bosscher  <steven@gcc.gnu.org>
+
+	* MAINTAINERS: Add myself as RTL optimizers reviewer.
+
+2013-08-19  Benjamin De Kosnik  <bkoz@gnu.org>
+
+	* MAINTAINERS: Update name, email.
+
+2013-08-13  Adam Butcher  <adam@jessamine.co.uk>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-08-12  Caroline Tice  <cmtice@google.com>
+
+	* MAINTAINERS: Add myself as libvtv maintainer. Correct my email
+	address in the Write After Approval section.
+
+2013-08-09  Carlos O'Donell  <carlos@redhat.com>
+
+	* MAINTAINERS (Write After Approval): Update email.
+
+2013-08-08  Benjamin Kosnik  <bkoz@redhat.com>
+
+	* configure.ac: Adjust to check VTV_SUPPORTED.
+	* configure: Regenerated.
+
+2013-08-02  Caroline Tice  <cmtice@google.com>
+
+	* configure.ac: Add target-libvtv to target_libraries; disable libvtv
+	on non-linux systems; add target-libvtv to noconfigdirs; add
+	libsupc++/.libs to C++ library search paths.
+	* configure: Regenerated.
+	* Makefile.def: Add libvtv to target_modules; make libvtv depend on
+	libstdc++ and libgcc.
+	* Makefile.in: Regenerated.
+
+2013-07-19  Yvan Roux  <yvan.roux@linaro.org>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-07-19  Chung-Ju Wu  <jasonwucj@gmail.com>
+	    Shiva Chen  <shiva0217@gmail.com>
+
+	* MAINTAINERS (nds32 port): Add Chung-Ju Wu and Shiva Chen as
+	nds32 port maintainers.
+
+2013-07-17  Tim Shen  <timshen91@gmail.com>
+
+	* MAINTAINERS (Write After Approval): Add myself.
+
+2013-07-16  Jan-Benedict Glaw  <jbglaw@lug-owl.de>
+
+	* configure.ac: Sync from binutils.
+	* configure: Regenerate.
 
 2013-06-14  Vidya Praveen  <vidyapraveen@arm.com>
 

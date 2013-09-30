@@ -4544,7 +4544,9 @@ aapcs_vfp_allocate (CUMULATIVE_ARGS *pcum, enum machine_mode mode,
     if (((pcum->aapcs_vfp_regs_free >> regno) & mask) == mask)
       {
 	pcum->aapcs_vfp_reg_alloc = mask << regno;
-	if (mode == BLKmode || (mode == TImode && !TARGET_NEON))
+	if (mode == BLKmode
+	    || (mode == TImode && ! TARGET_NEON)
+	    || ! arm_hard_regno_mode_ok (FIRST_VFP_REGNUM + regno, mode))
 	  {
 	    int i;
 	    int rcount = pcum->aapcs_vfp_rcount;
@@ -7925,6 +7927,15 @@ thumb1_size_rtx_costs (rtx x, enum rtx_code code, enum rtx_code outer)
 
     case PLUS:
     case MINUS:
+      /* Thumb-1 needs two instructions to fulfill shiftadd/shiftsub0/shiftsub1
+	 defined by RTL expansion, especially for the expansion of
+	 multiplication.  */
+      if ((GET_CODE (XEXP (x, 0)) == MULT
+	   && power_of_two_operand (XEXP (XEXP (x,0),1), SImode))
+	  || (GET_CODE (XEXP (x, 1)) == MULT
+	      && power_of_two_operand (XEXP (XEXP (x, 1), 1), SImode)))
+	return COSTS_N_INSNS (2);
+      /* On purpose fall through for normal RTX.  */
     case COMPARE:
     case NEG:
     case NOT:
@@ -8653,7 +8664,18 @@ xscale_sched_adjust_cost (rtx insn, rtx link, rtx dep, int * cost)
 	 instruction we depend on is another ALU instruction, then we may
 	 have to account for an additional stall.  */
       if (shift_opnum != 0
-	  && (attr_type == TYPE_ALU_SHIFT || attr_type == TYPE_ALU_SHIFT_REG))
+	  && (attr_type == TYPE_ALU_SHIFT_IMM
+	      || attr_type == TYPE_ALUS_SHIFT_IMM
+	      || attr_type == TYPE_LOGIC_SHIFT_IMM
+	      || attr_type == TYPE_LOGICS_SHIFT_IMM
+	      || attr_type == TYPE_ALU_SHIFT_REG
+	      || attr_type == TYPE_ALUS_SHIFT_REG
+	      || attr_type == TYPE_LOGIC_SHIFT_REG
+	      || attr_type == TYPE_LOGICS_SHIFT_REG
+	      || attr_type == TYPE_MOV_SHIFT
+	      || attr_type == TYPE_MVN_SHIFT
+	      || attr_type == TYPE_MOV_SHIFT_REG
+	      || attr_type == TYPE_MVN_SHIFT_REG))
 	{
 	  rtx shifted_operand;
 	  int opno;
@@ -8934,12 +8956,20 @@ cortexa7_older_only (rtx insn)
   if (recog_memoized (insn) < 0)
     return false;
 
-  if (get_attr_insn (insn) == INSN_MOV)
-    return false;
-
   switch (get_attr_type (insn))
     {
     case TYPE_ALU_REG:
+    case TYPE_ALUS_REG:
+    case TYPE_LOGIC_REG:
+    case TYPE_LOGICS_REG:
+    case TYPE_ADC_REG:
+    case TYPE_ADCS_REG:
+    case TYPE_ADR:
+    case TYPE_BFM:
+    case TYPE_REV:
+    case TYPE_MVN_REG:
+    case TYPE_SHIFT_IMM:
+    case TYPE_SHIFT_REG:
     case TYPE_LOAD_BYTE:
     case TYPE_LOAD1:
     case TYPE_STORE1:
@@ -8947,7 +8977,7 @@ cortexa7_older_only (rtx insn)
     case TYPE_FADDS:
     case TYPE_FFARITHD:
     case TYPE_FADDD:
-    case TYPE_FCPYS:
+    case TYPE_FMOV:
     case TYPE_F_CVT:
     case TYPE_FCMPS:
     case TYPE_FCMPD:
@@ -8959,7 +8989,8 @@ cortexa7_older_only (rtx insn)
     case TYPE_FMACD:
     case TYPE_FDIVS:
     case TYPE_FDIVD:
-    case TYPE_F_2_R:
+    case TYPE_F_MRC:
+    case TYPE_F_MRRC:
     case TYPE_F_FLAG:
     case TYPE_F_LOADS:
     case TYPE_F_STORES:
@@ -8980,13 +9011,18 @@ cortexa7_younger (FILE *file, int verbose, rtx insn)
       return false;
     }
 
-  if (get_attr_insn (insn) == INSN_MOV)
-    return true;
-
   switch (get_attr_type (insn))
     {
-    case TYPE_SIMPLE_ALU_IMM:
-    case TYPE_SIMPLE_ALU_SHIFT:
+    case TYPE_ALU_IMM:
+    case TYPE_ALUS_IMM:
+    case TYPE_LOGIC_IMM:
+    case TYPE_LOGICS_IMM:
+    case TYPE_EXTEND:
+    case TYPE_MVN_IMM:
+    case TYPE_MOV_IMM:
+    case TYPE_MOV_REG:
+    case TYPE_MOV_SHIFT:
+    case TYPE_MOV_SHIFT_REG:
     case TYPE_BRANCH:
     case TYPE_CALL:
       return true;
@@ -12018,8 +12054,16 @@ gen_movmem_ldrd_strd (rtx *operands)
       dst = adjust_address (dst, HImode, 0);
       src = adjust_address (src, HImode, 0);
       reg0 = gen_reg_rtx (SImode);
-      emit_insn (gen_unaligned_loadhiu (reg0, src));
-      emit_insn (gen_unaligned_storehi (dst, gen_lowpart (HImode, reg0)));
+      if (src_aligned)
+        emit_insn (gen_zero_extendhisi2 (reg0, src));
+      else
+        emit_insn (gen_unaligned_loadhiu (reg0, src));
+
+      if (dst_aligned)
+        emit_insn (gen_movhi (dst, gen_lowpart(HImode, reg0)));
+      else
+        emit_insn (gen_unaligned_storehi (dst, gen_lowpart (HImode, reg0)));
+
       src = next_consecutive_mem (src);
       dst = next_consecutive_mem (dst);
       if (len == 2)
@@ -14221,9 +14265,10 @@ thumb1_reorg (void)
 
   FOR_EACH_BB (bb)
     {
-      rtx set, dest, src;
-      rtx pat, op0;
+      rtx dest, src;
+      rtx pat, op0, set = NULL;
       rtx prev, insn = BB_END (bb);
+      bool insn_clobbered = false;
 
       while (insn != BB_HEAD (bb) && DEBUG_INSN_P (insn))
 	insn = PREV_INSN (insn);
@@ -14232,13 +14277,29 @@ thumb1_reorg (void)
       if (INSN_CODE (insn) != CODE_FOR_cbranchsi4_insn)
 	continue;
 
-      /* Find the first non-note insn before INSN in basic block BB.  */
-      gcc_assert (insn != BB_HEAD (bb));
-      prev = PREV_INSN (insn);
-      while (prev != BB_HEAD (bb) && (NOTE_P (prev) || DEBUG_INSN_P (prev)))
-	prev = PREV_INSN (prev);
+      /* Get the register with which we are comparing.  */
+      pat = PATTERN (insn);
+      op0 = XEXP (XEXP (SET_SRC (pat), 0), 0);
 
-      set = single_set (prev);
+      /* Find the first flag setting insn before INSN in basic block BB.  */
+      gcc_assert (insn != BB_HEAD (bb));
+      for (prev = PREV_INSN (insn);
+	   (!insn_clobbered
+	    && prev != BB_HEAD (bb)
+	    && (NOTE_P (prev)
+		|| DEBUG_INSN_P (prev)
+		|| ((set = single_set (prev)) != NULL
+		    && get_attr_conds (prev) == CONDS_NOCOND)));
+	   prev = PREV_INSN (prev))
+	{
+	  if (reg_set_p (op0, prev))
+	    insn_clobbered = true;
+	}
+
+      /* Skip if op0 is clobbered by insn other than prev. */
+      if (insn_clobbered)
+	continue;
+
       if (!set)
 	continue;
 
@@ -14248,12 +14309,9 @@ thumb1_reorg (void)
 	  || !low_register_operand (src, SImode))
 	continue;
 
-      pat = PATTERN (insn);
-      op0 = XEXP (XEXP (SET_SRC (pat), 0), 0);
       /* Rewrite move into subtract of 0 if its operand is compared with ZERO
-	 in INSN. Don't need to check dest since cprop_hardreg pass propagates
-	 src into INSN.  */
-      if (REGNO (op0) == REGNO (src))
+	 in INSN.  Both src and dest of the move insn are checked.  */
+      if (REGNO (op0) == REGNO (src) || REGNO (op0) == REGNO (dest))
 	{
 	  dest = copy_rtx (dest);
 	  src = copy_rtx (src);
@@ -14336,6 +14394,16 @@ thumb2_reorg (void)
 				   && IN_RANGE (INTVAL (op1), -7, 7))
 			    action = CONV;
 			}
+		      /* ADCS <Rd>, <Rn>  */
+		      else if (GET_CODE (XEXP (src, 0)) == PLUS
+			      && rtx_equal_p (XEXP (XEXP (src, 0), 0), dst)
+			      && low_register_operand (XEXP (XEXP (src, 0), 1),
+						       SImode)
+			      && COMPARISON_P (op1)
+			      && cc_register (XEXP (op1, 0), VOIDmode)
+			      && maybe_get_arm_condition_code (op1) == ARM_CS
+			      && XEXP (op1, 1) == const0_rtx)
+		        action = CONV;
 		      break;
 
 		    case MINUS:
@@ -16777,123 +16845,165 @@ arm_output_function_epilogue (FILE *file ATTRIBUTE_UNUSED,
     }
 }
 
-/* Generate and emit a pattern that will be recognized as STRD pattern.  If even
-   number of registers are being pushed, multiple STRD patterns are created for
-   all register pairs.  If odd number of registers are pushed, emit a
-   combination of STRDs and STR for the prologue saves.  */
+/* Generate and emit a sequence of insns equivalent to PUSH, but using
+   STR and STRD.  If an even number of registers are being pushed, one
+   or more STRD patterns are created for each register pair.  If an
+   odd number of registers are pushed, emit an initial STR followed by
+   as many STRD instructions as are needed.  This works best when the
+   stack is initially 64-bit aligned (the normal case), since it
+   ensures that each STRD is also 64-bit aligned.  */
 static void
 thumb2_emit_strd_push (unsigned long saved_regs_mask)
 {
   int num_regs = 0;
-  int i, j;
+  int i;
+  int regno;
   rtx par = NULL_RTX;
-  rtx insn = NULL_RTX;
   rtx dwarf = NULL_RTX;
-  rtx tmp, reg, tmp1;
+  rtx tmp;
+  bool first = true;
 
-  for (i = 0; i <= LAST_ARM_REGNUM; i++)
-    if (saved_regs_mask & (1 << i))
-      num_regs++;
+  num_regs = bit_count (saved_regs_mask);
 
-  gcc_assert (num_regs && num_regs <= 16);
-
-  /* Pre-decrement the stack pointer, based on there being num_regs 4-byte
-     registers to push.  */
-  tmp = gen_rtx_SET (VOIDmode,
-                     stack_pointer_rtx,
-                     plus_constant (Pmode, stack_pointer_rtx, -4 * num_regs));
-  RTX_FRAME_RELATED_P (tmp) = 1;
-  insn = emit_insn (tmp);
-
-  /* Create sequence for DWARF info.  */
-  dwarf = gen_rtx_SEQUENCE (VOIDmode, rtvec_alloc (num_regs + 1));
-
-  /* RTLs cannot be shared, hence create new copy for dwarf.  */
-  tmp1 = gen_rtx_SET (VOIDmode,
-                     stack_pointer_rtx,
-                     plus_constant (Pmode, stack_pointer_rtx, -4 * num_regs));
-  RTX_FRAME_RELATED_P (tmp1) = 1;
-  XVECEXP (dwarf, 0, 0) = tmp1;
-
+  /* Must be at least one register to save, and can't save SP or PC.  */
+  gcc_assert (num_regs > 0 && num_regs <= 14);
   gcc_assert (!(saved_regs_mask & (1 << SP_REGNUM)));
   gcc_assert (!(saved_regs_mask & (1 << PC_REGNUM)));
 
-  /* Var j iterates over all the registers to gather all the registers in
-     saved_regs_mask.  Var i gives index of register R_j in stack frame.
-     A PARALLEL RTX of register-pair is created here, so that pattern for
-     STRD can be matched.  If num_regs is odd, 1st register will be pushed
-     using STR and remaining registers will be pushed with STRD in pairs.
-     If num_regs is even, all registers are pushed with STRD in pairs.
-     Hence, skip first element for odd num_regs.  */
-  for (i = num_regs - 1, j = LAST_ARM_REGNUM; i >= (num_regs % 2); j--)
-    if (saved_regs_mask & (1 << j))
-      {
-        /* Create RTX for store.  New RTX is created for dwarf as
-           they are not sharable.  */
-        reg = gen_rtx_REG (SImode, j);
-        tmp = gen_rtx_SET (SImode,
-                           gen_frame_mem
-                           (SImode,
-                            plus_constant (Pmode, stack_pointer_rtx, 4 * i)),
-                           reg);
+  /* Create sequence for DWARF info.  All the frame-related data for
+     debugging is held in this wrapper.  */
+  dwarf = gen_rtx_SEQUENCE (VOIDmode, rtvec_alloc (num_regs + 1));
 
-        tmp1 = gen_rtx_SET (SImode,
-                           gen_frame_mem
-                           (SImode,
-                            plus_constant (Pmode, stack_pointer_rtx, 4 * i)),
-                           reg);
-        RTX_FRAME_RELATED_P (tmp) = 1;
-        RTX_FRAME_RELATED_P (tmp1) = 1;
+  /* Describe the stack adjustment.  */
+  tmp = gen_rtx_SET (VOIDmode,
+		      stack_pointer_rtx,
+		      plus_constant (Pmode, stack_pointer_rtx, -4 * num_regs));
+  RTX_FRAME_RELATED_P (tmp) = 1;
+  XVECEXP (dwarf, 0, 0) = tmp;
 
-        if (((i - (num_regs % 2)) % 2) == 1)
-          /* When (i - (num_regs % 2)) is odd, the RTX to be emitted is yet to
-             be created.  Hence create it first.  The STRD pattern we are
-             generating is :
-             [ (SET (MEM (PLUS (SP) (NUM))) (reg_t1))
-               (SET (MEM (PLUS (SP) (NUM + 4))) (reg_t2)) ]
-             where the target registers need not be consecutive.  */
-          par = gen_rtx_PARALLEL (VOIDmode, rtvec_alloc (2));
+  /* Find the first register.  */
+  for (regno = 0; (saved_regs_mask & (1 << regno)) == 0; regno++)
+    ;
 
-        /* Register R_j is added in PARALLEL RTX.  If (i - (num_regs % 2)) is
-           even, the reg_j is added as 0th element and if it is odd, reg_i is
-           added as 1st element of STRD pattern shown above.  */
-        XVECEXP (par, 0, ((i - (num_regs % 2)) % 2)) = tmp;
-        XVECEXP (dwarf, 0, (i + 1)) = tmp1;
+  i = 0;
 
-        if (((i - (num_regs % 2)) % 2) == 0)
-          /* When (i - (num_regs % 2)) is even, RTXs for both the registers
-             to be loaded are generated in above given STRD pattern, and the
-             pattern can be emitted now.  */
-          emit_insn (par);
-
-        i--;
-      }
-
-  if ((num_regs % 2) == 1)
+  /* If there's an odd number of registers to push.  Start off by
+     pushing a single register.  This ensures that subsequent strd
+     operations are dword aligned (assuming that SP was originally
+     64-bit aligned).  */
+  if ((num_regs & 1) != 0)
     {
-      /* If odd number of registers are pushed, generate STR pattern to store
-         lone register.  */
-      for (; (saved_regs_mask & (1 << j)) == 0; j--);
+      rtx reg, mem, insn;
 
-      tmp1 = gen_frame_mem (SImode, plus_constant (Pmode,
-                                                   stack_pointer_rtx, 4 * i));
-      reg = gen_rtx_REG (SImode, j);
-      tmp = gen_rtx_SET (SImode, tmp1, reg);
+      reg = gen_rtx_REG (SImode, regno);
+      if (num_regs == 1)
+	mem = gen_frame_mem (Pmode, gen_rtx_PRE_DEC (Pmode,
+						     stack_pointer_rtx));
+      else
+	mem = gen_frame_mem (Pmode,
+			     gen_rtx_PRE_MODIFY
+			     (Pmode, stack_pointer_rtx,
+			      plus_constant (Pmode, stack_pointer_rtx,
+					     -4 * num_regs)));
+
+      tmp = gen_rtx_SET (VOIDmode, mem, reg);
       RTX_FRAME_RELATED_P (tmp) = 1;
-
-      emit_insn (tmp);
-
-      tmp1 = gen_rtx_SET (SImode,
-                         gen_frame_mem
-                         (SImode,
-                          plus_constant (Pmode, stack_pointer_rtx, 4 * i)),
-                          reg);
-      RTX_FRAME_RELATED_P (tmp1) = 1;
-      XVECEXP (dwarf, 0, (i + 1)) = tmp1;
+      insn = emit_insn (tmp);
+      RTX_FRAME_RELATED_P (insn) = 1;
+      add_reg_note (insn, REG_FRAME_RELATED_EXPR, dwarf);
+      tmp = gen_rtx_SET (VOIDmode, gen_frame_mem (Pmode, stack_pointer_rtx),
+			 reg);
+      RTX_FRAME_RELATED_P (tmp) = 1;
+      i++;
+      regno++;
+      XVECEXP (dwarf, 0, i) = tmp;
+      first = false;
     }
 
-  add_reg_note (insn, REG_FRAME_RELATED_EXPR, dwarf);
-  RTX_FRAME_RELATED_P (insn) = 1;
+  while (i < num_regs)
+    if (saved_regs_mask & (1 << regno))
+      {
+	rtx reg1, reg2, mem1, mem2;
+	rtx tmp0, tmp1, tmp2;
+	int regno2;
+
+	/* Find the register to pair with this one.  */
+	for (regno2 = regno + 1; (saved_regs_mask & (1 << regno2)) == 0;
+	     regno2++)
+	  ;
+
+	reg1 = gen_rtx_REG (SImode, regno);
+	reg2 = gen_rtx_REG (SImode, regno2);
+
+	if (first)
+	  {
+	    rtx insn;
+
+	    first = false;
+	    mem1 = gen_frame_mem (Pmode, plus_constant (Pmode,
+							stack_pointer_rtx,
+							-4 * num_regs));
+	    mem2 = gen_frame_mem (Pmode, plus_constant (Pmode,
+							stack_pointer_rtx,
+							-4 * (num_regs - 1)));
+	    tmp0 = gen_rtx_SET (VOIDmode, stack_pointer_rtx,
+				plus_constant (Pmode, stack_pointer_rtx,
+					       -4 * (num_regs)));
+	    tmp1 = gen_rtx_SET (VOIDmode, mem1, reg1);
+	    tmp2 = gen_rtx_SET (VOIDmode, mem2, reg2);
+	    RTX_FRAME_RELATED_P (tmp0) = 1;
+	    RTX_FRAME_RELATED_P (tmp1) = 1;
+	    RTX_FRAME_RELATED_P (tmp2) = 1;
+	    par = gen_rtx_PARALLEL (VOIDmode, rtvec_alloc (3));
+	    XVECEXP (par, 0, 0) = tmp0;
+	    XVECEXP (par, 0, 1) = tmp1;
+	    XVECEXP (par, 0, 2) = tmp2;
+	    insn = emit_insn (par);
+	    RTX_FRAME_RELATED_P (insn) = 1;
+	    add_reg_note (insn, REG_FRAME_RELATED_EXPR, dwarf);
+	  }
+	else
+	  {
+	    mem1 = gen_frame_mem (Pmode, plus_constant (Pmode,
+							stack_pointer_rtx,
+							4 * i));
+	    mem2 = gen_frame_mem (Pmode, plus_constant (Pmode,
+							stack_pointer_rtx,
+							4 * (i + 1)));
+	    tmp1 = gen_rtx_SET (VOIDmode, mem1, reg1);
+	    tmp2 = gen_rtx_SET (VOIDmode, mem2, reg2);
+	    RTX_FRAME_RELATED_P (tmp1) = 1;
+	    RTX_FRAME_RELATED_P (tmp2) = 1;
+	    par = gen_rtx_PARALLEL (VOIDmode, rtvec_alloc (2));
+	    XVECEXP (par, 0, 0) = tmp1;
+	    XVECEXP (par, 0, 1) = tmp2;
+	    emit_insn (par);
+	  }
+
+	/* Create unwind information.  This is an approximation.  */
+	tmp1 = gen_rtx_SET (VOIDmode,
+			    gen_frame_mem (Pmode,
+					   plus_constant (Pmode,
+							  stack_pointer_rtx,
+							  4 * i)),
+			    reg1);
+	tmp2 = gen_rtx_SET (VOIDmode,
+			    gen_frame_mem (Pmode,
+					   plus_constant (Pmode,
+							  stack_pointer_rtx,
+							  4 * (i + 1))),
+			    reg2);
+
+	RTX_FRAME_RELATED_P (tmp1) = 1;
+	RTX_FRAME_RELATED_P (tmp2) = 1;
+	XVECEXP (dwarf, 0, i + 1) = tmp1;
+	XVECEXP (dwarf, 0, i + 2) = tmp2;
+	i += 2;
+	regno = regno2 + 1;
+      }
+    else
+      regno++;
+
   return;
 }
 
@@ -17859,7 +17969,8 @@ arm_get_frame_offsets (void)
           if (! any_sibcall_could_use_r3 ()
 	      && arm_size_return_regs () <= 12
 	      && (offsets->saved_regs_mask & (1 << 3)) == 0
-              && (TARGET_THUMB2 || !current_tune->prefer_ldrd_strd))
+              && (TARGET_THUMB2
+		  || !(TARGET_LDRD && current_tune->prefer_ldrd_strd)))
 	    {
 	      reg = 3;
 	    }
@@ -18284,7 +18395,8 @@ arm_expand_prologue (void)
 	    }
 	}
 
-      if (current_tune->prefer_ldrd_strd
+      if (TARGET_LDRD
+	  && current_tune->prefer_ldrd_strd
           && !optimize_function_for_size_p (cfun))
         {
           if (TARGET_THUMB2)
@@ -24352,7 +24464,7 @@ arm_expand_epilogue (bool really_return)
   func_type = arm_current_func_type ();
 
   /* Naked functions don't have epilogue.  Hence, generate return pattern, and
-     let output_return_instruction take care of instruction emition if any.  */
+     let output_return_instruction take care of instruction emission if any.  */
   if (IS_NAKED (func_type)
       || (IS_VOLATILE (func_type) && TARGET_ABORT_NORETURN))
     {
@@ -24553,7 +24665,8 @@ arm_expand_epilogue (bool really_return)
         }
       else
         {
-          if (current_tune->prefer_ldrd_strd
+          if (TARGET_LDRD
+	      && current_tune->prefer_ldrd_strd
               && !optimize_function_for_size_p (cfun))
             {
               if (TARGET_THUMB2)
@@ -25370,163 +25483,6 @@ arm_setup_incoming_varargs (cumulative_args_t pcum_v,
     *pretend_size = (NUM_ARG_REGS - nregs) * UNITS_PER_WORD;
 }
 
-/* Return nonzero if the CONSUMER instruction (a store) does not need
-   PRODUCER's value to calculate the address.  */
-
-int
-arm_no_early_store_addr_dep (rtx producer, rtx consumer)
-{
-  rtx value = PATTERN (producer);
-  rtx addr = PATTERN (consumer);
-
-  if (GET_CODE (value) == COND_EXEC)
-    value = COND_EXEC_CODE (value);
-  if (GET_CODE (value) == PARALLEL)
-    value = XVECEXP (value, 0, 0);
-  value = XEXP (value, 0);
-  if (GET_CODE (addr) == COND_EXEC)
-    addr = COND_EXEC_CODE (addr);
-  if (GET_CODE (addr) == PARALLEL)
-    addr = XVECEXP (addr, 0, 0);
-  addr = XEXP (addr, 0);
-
-  return !reg_overlap_mentioned_p (value, addr);
-}
-
-/* Return nonzero if the CONSUMER instruction (a store) does need
-   PRODUCER's value to calculate the address.  */
-
-int
-arm_early_store_addr_dep (rtx producer, rtx consumer)
-{
-  return !arm_no_early_store_addr_dep (producer, consumer);
-}
-
-/* Return nonzero if the CONSUMER instruction (a load) does need
-   PRODUCER's value to calculate the address.  */
-
-int
-arm_early_load_addr_dep (rtx producer, rtx consumer)
-{
-  rtx value = PATTERN (producer);
-  rtx addr = PATTERN (consumer);
-
-  if (GET_CODE (value) == COND_EXEC)
-    value = COND_EXEC_CODE (value);
-  if (GET_CODE (value) == PARALLEL)
-    value = XVECEXP (value, 0, 0);
-  value = XEXP (value, 0);
-  if (GET_CODE (addr) == COND_EXEC)
-    addr = COND_EXEC_CODE (addr);
-  if (GET_CODE (addr) == PARALLEL)
-    {
-      if (GET_CODE (XVECEXP (addr, 0, 0)) == RETURN)
-        addr = XVECEXP (addr, 0, 1);
-      else
-        addr = XVECEXP (addr, 0, 0);
-    }
-  addr = XEXP (addr, 1);
-
-  return reg_overlap_mentioned_p (value, addr);
-}
-
-/* Return nonzero if the CONSUMER instruction (an ALU op) does not
-   have an early register shift value or amount dependency on the
-   result of PRODUCER.  */
-
-int
-arm_no_early_alu_shift_dep (rtx producer, rtx consumer)
-{
-  rtx value = PATTERN (producer);
-  rtx op = PATTERN (consumer);
-  rtx early_op;
-
-  if (GET_CODE (value) == COND_EXEC)
-    value = COND_EXEC_CODE (value);
-  if (GET_CODE (value) == PARALLEL)
-    value = XVECEXP (value, 0, 0);
-  value = XEXP (value, 0);
-  if (GET_CODE (op) == COND_EXEC)
-    op = COND_EXEC_CODE (op);
-  if (GET_CODE (op) == PARALLEL)
-    op = XVECEXP (op, 0, 0);
-  op = XEXP (op, 1);
-
-  early_op = XEXP (op, 0);
-  /* This is either an actual independent shift, or a shift applied to
-     the first operand of another operation.  We want the whole shift
-     operation.  */
-  if (REG_P (early_op))
-    early_op = op;
-
-  return !reg_overlap_mentioned_p (value, early_op);
-}
-
-/* Return nonzero if the CONSUMER instruction (an ALU op) does not
-   have an early register shift value dependency on the result of
-   PRODUCER.  */
-
-int
-arm_no_early_alu_shift_value_dep (rtx producer, rtx consumer)
-{
-  rtx value = PATTERN (producer);
-  rtx op = PATTERN (consumer);
-  rtx early_op;
-
-  if (GET_CODE (value) == COND_EXEC)
-    value = COND_EXEC_CODE (value);
-  if (GET_CODE (value) == PARALLEL)
-    value = XVECEXP (value, 0, 0);
-  value = XEXP (value, 0);
-  if (GET_CODE (op) == COND_EXEC)
-    op = COND_EXEC_CODE (op);
-  if (GET_CODE (op) == PARALLEL)
-    op = XVECEXP (op, 0, 0);
-  op = XEXP (op, 1);
-
-  early_op = XEXP (op, 0);
-
-  /* This is either an actual independent shift, or a shift applied to
-     the first operand of another operation.  We want the value being
-     shifted, in either case.  */
-  if (!REG_P (early_op))
-    early_op = XEXP (early_op, 0);
-
-  return !reg_overlap_mentioned_p (value, early_op);
-}
-
-/* Return nonzero if the CONSUMER (a mul or mac op) does not
-   have an early register mult dependency on the result of
-   PRODUCER.  */
-
-int
-arm_no_early_mul_dep (rtx producer, rtx consumer)
-{
-  rtx value = PATTERN (producer);
-  rtx op = PATTERN (consumer);
-
-  if (GET_CODE (value) == COND_EXEC)
-    value = COND_EXEC_CODE (value);
-  if (GET_CODE (value) == PARALLEL)
-    value = XVECEXP (value, 0, 0);
-  value = XEXP (value, 0);
-  if (GET_CODE (op) == COND_EXEC)
-    op = COND_EXEC_CODE (op);
-  if (GET_CODE (op) == PARALLEL)
-    op = XVECEXP (op, 0, 0);
-  op = XEXP (op, 1);
-
-  if (GET_CODE (op) == PLUS || GET_CODE (op) == MINUS)
-    {
-      if (GET_CODE (XEXP (op, 0)) == MULT)
-	return !reg_overlap_mentioned_p (value, XEXP (op, 0));
-      else
-	return !reg_overlap_mentioned_p (value, XEXP (op, 1));
-    }
-
-  return 0;
-}
-
 /* We can't rely on the caller doing the proper promotion when
    using APCS or ATPCS.  */
 
@@ -25574,95 +25530,6 @@ static tree
 arm_cxx_guard_type (void)
 {
   return TARGET_AAPCS_BASED ? integer_type_node : long_long_integer_type_node;
-}
-
-/* Return non-zero iff the consumer (a multiply-accumulate or a
-   multiple-subtract instruction) has an accumulator dependency on the
-   result of the producer and no other dependency on that result.  It
-   does not check if the producer is multiply-accumulate instruction.  */
-int
-arm_mac_accumulator_is_result (rtx producer, rtx consumer)
-{
-  rtx result;
-  rtx op0, op1, acc;
-
-  producer = PATTERN (producer);
-  consumer = PATTERN (consumer);
-
-  if (GET_CODE (producer) == COND_EXEC)
-    producer = COND_EXEC_CODE (producer);
-  if (GET_CODE (consumer) == COND_EXEC)
-    consumer = COND_EXEC_CODE (consumer);
-
-  if (GET_CODE (producer) != SET)
-    return 0;
-
-  result = XEXP (producer, 0);
-
-  if (GET_CODE (consumer) != SET)
-    return 0;
-
-  /* Check that the consumer is of the form
-     (set (...) (plus (mult ...) (...)))
-     or
-     (set (...) (minus (...) (mult ...))).  */
-  if (GET_CODE (XEXP (consumer, 1)) == PLUS)
-    {
-      if (GET_CODE (XEXP (XEXP (consumer, 1), 0)) != MULT)
-        return 0;
-
-      op0 = XEXP (XEXP (XEXP (consumer, 1), 0), 0);
-      op1 = XEXP (XEXP (XEXP (consumer, 1), 0), 1);
-      acc = XEXP (XEXP (consumer, 1), 1);
-    }
-  else if (GET_CODE (XEXP (consumer, 1)) == MINUS)
-    {
-      if (GET_CODE (XEXP (XEXP (consumer, 1), 1)) != MULT)
-        return 0;
-
-      op0 = XEXP (XEXP (XEXP (consumer, 1), 1), 0);
-      op1 = XEXP (XEXP (XEXP (consumer, 1), 1), 1);
-      acc = XEXP (XEXP (consumer, 1), 0);
-    }
-  else
-    return 0;
-
-  return (reg_overlap_mentioned_p (result, acc)
-          && !reg_overlap_mentioned_p (result, op0)
-          && !reg_overlap_mentioned_p (result, op1));
-}
-
-/* Return non-zero if the consumer (a multiply-accumulate instruction)
-   has an accumulator dependency on the result of the producer (a
-   multiplication instruction) and no other dependency on that result.  */
-int
-arm_mac_accumulator_is_mul_result (rtx producer, rtx consumer)
-{
-  rtx mul = PATTERN (producer);
-  rtx mac = PATTERN (consumer);
-  rtx mul_result;
-  rtx mac_op0, mac_op1, mac_acc;
-
-  if (GET_CODE (mul) == COND_EXEC)
-    mul = COND_EXEC_CODE (mul);
-  if (GET_CODE (mac) == COND_EXEC)
-    mac = COND_EXEC_CODE (mac);
-
-  /* Check that mul is of the form (set (...) (mult ...))
-     and mla is of the form (set (...) (plus (mult ...) (...))).  */
-  if ((GET_CODE (mul) != SET || GET_CODE (XEXP (mul, 1)) != MULT)
-      || (GET_CODE (mac) != SET || GET_CODE (XEXP (mac, 1)) != PLUS
-          || GET_CODE (XEXP (XEXP (mac, 1), 0)) != MULT))
-    return 0;
-
-  mul_result = XEXP (mul, 0);
-  mac_op0 = XEXP (XEXP (XEXP (mac, 1), 0), 0);
-  mac_op1 = XEXP (XEXP (XEXP (mac, 1), 0), 1);
-  mac_acc = XEXP (XEXP (mac, 1), 1);
-
-  return (reg_overlap_mentioned_p (mul_result, mac_acc)
-          && !reg_overlap_mentioned_p (mul_result, mac_op0)
-          && !reg_overlap_mentioned_p (mul_result, mac_op1));
 }
 
 
@@ -26236,13 +26103,14 @@ arm_unwind_emit (FILE * asm_out_file, rtx insn)
 
   for (note = REG_NOTES (insn); note ; note = XEXP (note, 1))
     {
-      pat = XEXP (note, 0);
       switch (REG_NOTE_KIND (note))
 	{
 	case REG_FRAME_RELATED_EXPR:
+	  pat = XEXP (note, 0);
 	  goto found;
 
 	case REG_CFA_REGISTER:
+	  pat = XEXP (note, 0);
 	  if (pat == NULL)
 	    {
 	      pat = PATTERN (insn);
@@ -27161,10 +27029,10 @@ arm_emit_store_exclusive (enum machine_mode mode, rtx bval, rtx rval,
 static void
 emit_unlikely_jump (rtx insn)
 {
-  rtx very_unlikely = GEN_INT (REG_BR_PROB_BASE / 100 - 1);
+  int very_unlikely = REG_BR_PROB_BASE / 100 - 1;
 
   insn = emit_jump_insn (insn);
-  add_reg_note (insn, REG_BR_PROB, very_unlikely);
+  add_int_reg_note (insn, REG_BR_PROB, very_unlikely);
 }
 
 /* Expand a compare and swap pattern.  */

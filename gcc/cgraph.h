@@ -59,7 +59,7 @@ struct GTY(()) symtab_node_base
   /* True when alias is a weakref.  */
   unsigned weakref : 1;
   /* C++ frontend produce same body aliases and extra name aliases for
-     virutal functions and vtables that are obviously equivalent.
+     virtual functions and vtables that are obviously equivalent.
      Those aliases are bit special, especially because C++ frontend
      visibility code is so ugly it can not get them right at first time
      and their visibility needs to be copied from their "masters" at
@@ -300,10 +300,12 @@ struct GTY(()) cgraph_node {
   int count_materialization_scale;
   /* Unique id of the node.  */
   int uid;
+  /* ID assigned by the profiling.  */
+  unsigned int profile_id;
 
   /* Set when decl is an abstract function pointed to by the
      ABSTRACT_DECL_ORIGIN of a reachable function.  */
-  unsigned abstract_and_needed : 1;
+  unsigned used_as_abstract_origin : 1;
   /* Set once the function is lowered (i.e. its CFG is built).  */
   unsigned lowered : 1;
   /* Set once the function has been instantiated and its callee
@@ -433,6 +435,10 @@ struct GTY(()) cgraph_indirect_call_info
   int param_index;
   /* ECF flags determined from the caller.  */
   int ecf_flags;
+  /* Profile_id of common target obtrained from profile.  */
+  int common_target_id;
+  /* Probability that call will land in function with COMMON_TARGET_ID.  */
+  int common_target_probability;
 
   /* Set when the call is a virtual call with the parameter being the
      associated object pointer rather than a simple direct call.  */
@@ -483,6 +489,24 @@ struct GTY((chain_next ("%h.next_caller"), chain_prev ("%h.prev_caller"))) cgrap
   unsigned int call_stmt_cannot_inline_p : 1;
   /* Can this call throw externally?  */
   unsigned int can_throw_external : 1;
+  /* Edges with SPECULATIVE flag represents indirect calls that was
+     speculatively turned into direct (i.e. by profile feedback).
+     The final code sequence will have form:
+
+     if (call_target == expected_fn)
+       expected_fn ();
+     else
+       call_target ();
+
+     Every speculative call is represented by three components attached
+     to a same call statement:
+     1) a direct call (to expected_fn)
+     2) an indirect call (to call_target)
+     3) a IPA_REF_ADDR refrence to expected_fn.
+
+     Optimizers may later redirect direct call to clone, so 1) and 3)
+     do not need to necesarily agree with destination.  */
+  unsigned int speculative : 1;
 };
 
 #define CGRAPH_FREQ_BASE 1000
@@ -597,6 +621,13 @@ symtab_node symtab_alias_ultimate_target (symtab_node,
 					  enum availability *avail = NULL);
 bool symtab_resolve_alias (symtab_node node, symtab_node target);
 void fixup_same_cpp_alias_visibility (symtab_node node, symtab_node target);
+bool symtab_for_node_and_aliases (symtab_node,
+				  bool (*) (symtab_node, void *),
+				  void *,
+				  bool);
+symtab_node symtab_nonoverwritable_alias (symtab_node);
+enum availability symtab_node_availability (symtab_node);
+bool symtab_semantically_equivalent_p (symtab_node, symtab_node);
 
 /* In cgraph.c  */
 void dump_cgraph (FILE *);
@@ -606,6 +637,7 @@ void debug_cgraph_node (struct cgraph_node *);
 void cgraph_remove_edge (struct cgraph_edge *);
 void cgraph_remove_node (struct cgraph_node *);
 void cgraph_release_function_body (struct cgraph_node *);
+void release_function_body (tree);
 void cgraph_node_remove_callees (struct cgraph_node *node);
 struct cgraph_edge *cgraph_create_edge (struct cgraph_node *,
 					struct cgraph_node *,
@@ -622,7 +654,7 @@ struct cgraph_node * cgraph_add_thunk (struct cgraph_node *, tree, tree, bool, H
 				       HOST_WIDE_INT, tree, tree);
 struct cgraph_node *cgraph_node_for_asm (tree);
 struct cgraph_edge *cgraph_edge (struct cgraph_node *, gimple);
-void cgraph_set_call_stmt (struct cgraph_edge *, gimple);
+void cgraph_set_call_stmt (struct cgraph_edge *, gimple, bool update_speculative = true);
 void cgraph_update_edges_for_call_stmt (gimple, tree, gimple);
 struct cgraph_local_info *cgraph_local_info (tree);
 struct cgraph_global_info *cgraph_global_info (tree);
@@ -634,7 +666,7 @@ void cgraph_call_edge_duplication_hooks (struct cgraph_edge *,
 				         struct cgraph_edge *);
 
 void cgraph_redirect_edge_callee (struct cgraph_edge *, struct cgraph_node *);
-void cgraph_make_edge_direct (struct cgraph_edge *, struct cgraph_node *);
+struct cgraph_edge *cgraph_make_edge_direct (struct cgraph_edge *, struct cgraph_node *);
 bool cgraph_only_called_directly_p (struct cgraph_node *);
 
 bool cgraph_function_possibly_inlined_p (tree);
@@ -669,12 +701,14 @@ void cgraph_mark_address_taken_node (struct cgraph_node *);
 
 typedef void (*cgraph_edge_hook)(struct cgraph_edge *, void *);
 typedef void (*cgraph_node_hook)(struct cgraph_node *, void *);
+typedef void (*varpool_node_hook)(struct varpool_node *, void *);
 typedef void (*cgraph_2edge_hook)(struct cgraph_edge *, struct cgraph_edge *,
 				  void *);
 typedef void (*cgraph_2node_hook)(struct cgraph_node *, struct cgraph_node *,
 				  void *);
 struct cgraph_edge_hook_list;
 struct cgraph_node_hook_list;
+struct varpool_node_hook_list;
 struct cgraph_2edge_hook_list;
 struct cgraph_2node_hook_list;
 struct cgraph_edge_hook_list *cgraph_add_edge_removal_hook (cgraph_edge_hook, void *);
@@ -682,18 +716,32 @@ void cgraph_remove_edge_removal_hook (struct cgraph_edge_hook_list *);
 struct cgraph_node_hook_list *cgraph_add_node_removal_hook (cgraph_node_hook,
 							    void *);
 void cgraph_remove_node_removal_hook (struct cgraph_node_hook_list *);
+struct varpool_node_hook_list *varpool_add_node_removal_hook (varpool_node_hook,
+							      void *);
+void varpool_remove_node_removal_hook (struct varpool_node_hook_list *);
 struct cgraph_node_hook_list *cgraph_add_function_insertion_hook (cgraph_node_hook,
 							          void *);
 void cgraph_remove_function_insertion_hook (struct cgraph_node_hook_list *);
+struct varpool_node_hook_list *varpool_add_variable_insertion_hook (varpool_node_hook,
+							            void *);
+void varpool_remove_variable_insertion_hook (struct varpool_node_hook_list *);
 void cgraph_call_function_insertion_hooks (struct cgraph_node *node);
 struct cgraph_2edge_hook_list *cgraph_add_edge_duplication_hook (cgraph_2edge_hook, void *);
 void cgraph_remove_edge_duplication_hook (struct cgraph_2edge_hook_list *);
 struct cgraph_2node_hook_list *cgraph_add_node_duplication_hook (cgraph_2node_hook, void *);
 void cgraph_remove_node_duplication_hook (struct cgraph_2node_hook_list *);
 gimple cgraph_redirect_edge_call_stmt_to_callee (struct cgraph_edge *);
-bool cgraph_propagate_frequency (struct cgraph_node *node);
 struct cgraph_node * cgraph_function_node (struct cgraph_node *,
 					   enum availability *avail = NULL);
+bool cgraph_get_body (struct cgraph_node *node);
+struct cgraph_edge *
+cgraph_turn_edge_to_speculative (struct cgraph_edge *,
+				 struct cgraph_node *,
+				 gcov_type, int);
+void cgraph_speculative_call_info (struct cgraph_edge *,
+				   struct cgraph_edge *&,
+				   struct cgraph_edge *&,
+				   struct ipa_ref *&);
 
 /* In cgraphunit.c  */
 struct asm_node *add_asm_node (tree);
@@ -709,6 +757,7 @@ void fixup_same_cpp_alias_visibility (symtab_node, symtab_node target, tree);
     IN_SSA is true if the gimple is in SSA.  */
 basic_block init_lowered_empty_function (tree, bool);
 void cgraph_reset_node (struct cgraph_node *);
+bool expand_thunk (struct cgraph_node *, bool);
 
 /* In cgraphclones.c  */
 
@@ -726,7 +775,8 @@ struct cgraph_node * cgraph_create_virtual_clone (struct cgraph_node *old_node,
 						  const char *clone_name);
 struct cgraph_node *cgraph_find_replacement_node (struct cgraph_node *);
 bool cgraph_remove_node_and_inline_clones (struct cgraph_node *, struct cgraph_node *);
-void cgraph_set_call_stmt_including_clones (struct cgraph_node *, gimple, gimple);
+void cgraph_set_call_stmt_including_clones (struct cgraph_node *, gimple, gimple,
+					    bool update_speculative = true);
 void cgraph_create_edge_including_clones (struct cgraph_node *,
 					  struct cgraph_node *,
 					  gimple, gimple, gcov_type, int,
@@ -741,6 +791,7 @@ struct cgraph_node *cgraph_function_versioning (struct cgraph_node *,
 						basic_block, const char *);
 void tree_function_versioning (tree, tree, vec<ipa_replace_map_p, va_gc> *,
 			       bool, bitmap, bool, bitmap, basic_block);
+struct cgraph_edge *cgraph_resolve_speculation (struct cgraph_edge *, tree);
 
 /* In cgraphbuild.c  */
 unsigned int rebuild_cgraph_edges (void);
@@ -850,21 +901,21 @@ cgraph_node_asm_name (struct cgraph_node *node)
 
 /* Return asm name of varpool node.  */
 static inline const char *
-varpool_node_asm_name(struct varpool_node *node)
+varpool_node_asm_name (struct varpool_node *node)
 {
   return symtab_node_asm_name ((symtab_node)node);
 }
 
 /* Return name of cgraph node.  */
 static inline const char *
-cgraph_node_name(struct cgraph_node *node)
+cgraph_node_name (struct cgraph_node *node)
 {
   return symtab_node_name ((symtab_node)node);
 }
 
 /* Return name of varpool node.  */
 static inline const char *
-varpool_node_name(struct varpool_node *node)
+varpool_node_name (struct varpool_node *node)
 {
   return symtab_node_name ((symtab_node)node);
 }
@@ -1347,13 +1398,25 @@ symtab_real_symbol_p (symtab_node node)
 {
   struct cgraph_node *cnode;
 
+  if (DECL_ABSTRACT (node->symbol.decl))
+    return false;
   if (!is_a <cgraph_node> (node))
     return true;
   cnode = cgraph (node);
   if (cnode->global.inlined_to)
     return false;
-  if (cnode->abstract_and_needed)
-    return false;
   return true;
+}
+
+/* Return true if NODE can be discarded by linker from the binary.  */
+
+static inline bool
+symtab_can_be_discarded (symtab_node node)
+{
+  return (DECL_EXTERNAL (node->symbol.decl)
+	  || (DECL_ONE_ONLY (node->symbol.decl)
+	      && node->symbol.resolution != LDPR_PREVAILING_DEF
+	      && node->symbol.resolution != LDPR_PREVAILING_DEF_IRONLY
+	      && node->symbol.resolution != LDPR_PREVAILING_DEF_IRONLY_EXP));
 }
 #endif  /* GCC_CGRAPH_H  */

@@ -652,7 +652,7 @@ copy_src_to_dest (rtx insn, rtx src, rtx dest)
       for (link = REG_NOTES (insn); link != NULL_RTX; link = next)
 	{
 	  next = XEXP (link, 1);
-	  if (XEXP (link, 0) == src)
+	  if (GET_CODE (link) == EXPR_LIST && XEXP (link, 0) == src)
 	    {
 	      *p_move_notes = link;
 	      p_move_notes = &XEXP (link, 1);
@@ -786,7 +786,8 @@ fixup_match_2 (rtx insn, rtx dst, rtx src, rtx offset)
 	{
 	  HOST_WIDE_INT newconst
 	    = INTVAL (offset) - INTVAL (XEXP (SET_SRC (pset), 1));
-	  rtx add = gen_add3_insn (dst, dst, GEN_INT (newconst));
+	  rtx add = gen_add3_insn (dst, dst,
+				   gen_int_mode (newconst, GET_MODE (dst)));
 
 	  if (add && validate_change (insn, &PATTERN (insn), add, 0))
 	    {
@@ -1361,22 +1362,40 @@ gate_handle_regmove (void)
 }
 
 
-struct rtl_opt_pass pass_regmove =
+namespace {
+
+const pass_data pass_data_regmove =
 {
- {
-  RTL_PASS,
-  "regmove",                            /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_handle_regmove,                  /* gate */
-  regmove_optimize,			/* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_REGMOVE,                           /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  TODO_df_finish | TODO_verify_rtl_sharing /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "regmove", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_REGMOVE, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_df_finish | TODO_verify_rtl_sharing ), /* todo_flags_finish */
 };
+
+class pass_regmove : public rtl_opt_pass
+{
+public:
+  pass_regmove (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_regmove, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_handle_regmove (); }
+  unsigned int execute () { return regmove_optimize (); }
+
+}; // class pass_regmove
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_regmove (gcc::context *ctxt)
+{
+  return new pass_regmove (ctxt);
+}

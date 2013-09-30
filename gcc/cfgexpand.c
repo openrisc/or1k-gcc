@@ -28,7 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "function.h"
 #include "expr.h"
 #include "langhooks.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "except.h"
 #include "flags.h"
@@ -40,7 +40,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-inline.h"
 #include "value-prof.h"
 #include "target.h"
-#include "ssaexpand.h"
+#include "tree-outof-ssa.h"
 #include "bitmap.h"
 #include "sbitmap.h"
 #include "cfgloop.h"
@@ -569,7 +569,7 @@ add_partitioned_vars_to_ptset (struct pt_solution *pt,
       || pt->vars == NULL
       /* The pointed-to vars bitmap is shared, it is enough to
 	 visit it once.  */
-      || pointer_set_insert(visited, pt->vars))
+      || pointer_set_insert (visited, pt->vars))
     return;
 
   bitmap_clear (temp);
@@ -764,7 +764,7 @@ partition_stack_vars (void)
 	     sizes, as the shorter vars wouldn't be adequately protected.
 	     Don't do that for "large" (unsupported) alignment objects,
 	     those aren't protected anyway.  */
-	  if (flag_asan && isize != jsize
+	  if ((flag_sanitize & SANITIZE_ADDRESS) && isize != jsize
 	      && ialign * BITS_PER_UNIT <= MAX_SUPPORTED_STACK_ALIGNMENT)
 	    break;
 
@@ -940,7 +940,7 @@ expand_stack_vars (bool (*pred) (size_t), struct stack_vars_data *data)
       alignb = stack_vars[i].alignb;
       if (alignb * BITS_PER_UNIT <= MAX_SUPPORTED_STACK_ALIGNMENT)
 	{
-	  if (flag_asan && pred)
+	  if ((flag_sanitize & SANITIZE_ADDRESS) && pred)
 	    {
 	      HOST_WIDE_INT prev_offset = frame_offset;
 	      tree repr_decl = NULL_TREE;
@@ -1110,7 +1110,7 @@ defer_stack_allocation (tree var, bool toplevel)
   /* If stack protection is enabled, *all* stack variables must be deferred,
      so that we can re-order the strings to the top of the frame.
      Similarly for Address Sanitizer.  */
-  if (flag_stack_protect || flag_asan)
+  if (flag_stack_protect || (flag_sanitize & SANITIZE_ADDRESS))
     return true;
 
   /* We handle "large" alignment via dynamic allocation.  We want to handle
@@ -1184,7 +1184,7 @@ expand_one_var (tree var, bool toplevel, bool really_expand)
     {
       /* stack_alignment_estimated shouldn't change after stack
          realign decision made */
-      gcc_assert(!crtl->stack_realign_processed);
+      gcc_assert (!crtl->stack_realign_processed);
       crtl->stack_alignment_estimated = align;
     }
 
@@ -1723,7 +1723,7 @@ expand_used_vars (void)
 
     case SPCT_FLAG_DEFAULT:
       if (cfun->calls_alloca || has_protected_decls)
-	create_stack_guard();
+	create_stack_guard ();
       break;
 
     default:
@@ -1753,7 +1753,7 @@ expand_used_vars (void)
 	    expand_stack_vars (stack_protect_decl_phase_2, &data);
 	}
 
-      if (flag_asan)
+      if (flag_sanitize & SANITIZE_ADDRESS)
 	/* Phase 3, any partitions that need asan protection
 	   in addition to phase 1 and 2.  */
 	expand_stack_vars (asan_decl_phase_3, &data);
@@ -1770,7 +1770,7 @@ expand_used_vars (void)
 	  var_end_seq
 	    = asan_emit_stack_protection (virtual_stack_vars_rtx,
 					  data.asan_vec.address (),
-					  data.asan_decl_vec. address(),
+					  data.asan_decl_vec. address (),
 					  data.asan_vec.length ());
 	}
 
@@ -3154,7 +3154,12 @@ expand_debug_expr (tree exp)
 	  && GET_MODE (op0) != VOIDmode && GET_MODE (op1) != VOIDmode
 	  && GET_MODE (op0) != GET_MODE (op1))
 	{
-	  if (GET_MODE_BITSIZE (GET_MODE (op0)) < GET_MODE_BITSIZE (GET_MODE (op1)))
+	  if (GET_MODE_BITSIZE (GET_MODE (op0)) < GET_MODE_BITSIZE (GET_MODE (op1))
+	      /* If OP0 is a partial mode, then we must truncate, even if it has
+		 the same bitsize as OP1 as GCC's representation of partial modes
+		 is opaque.  */
+	      || (GET_MODE_CLASS (GET_MODE (op0)) == MODE_PARTIAL_INT
+		  && GET_MODE_BITSIZE (GET_MODE (op0)) == GET_MODE_BITSIZE (GET_MODE (op1))))
 	    op1 = simplify_gen_unary (TRUNCATE, GET_MODE (op0), op1,
 				      GET_MODE (op1));
 	  else
@@ -4906,25 +4911,42 @@ gimple_expand_cfg (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_expand =
+namespace {
+
+const pass_data pass_data_expand =
 {
- {
-  RTL_PASS,
-  "expand",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  gimple_expand_cfg,			/* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_EXPAND,				/* tv_id */
-  PROP_ssa | PROP_gimple_leh | PROP_cfg
+  RTL_PASS, /* type */
+  "expand", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_EXPAND, /* tv_id */
+  ( PROP_ssa | PROP_gimple_leh | PROP_cfg
     | PROP_gimple_lcx
-    | PROP_gimple_lvec,			/* properties_required */
-  PROP_rtl,                             /* properties_provided */
-  PROP_ssa | PROP_trees,		/* properties_destroyed */
-  TODO_verify_ssa | TODO_verify_flow
-    | TODO_verify_stmts,		/* todo_flags_start */
-  0					/* todo_flags_finish */
- }
+    | PROP_gimple_lvec ), /* properties_required */
+  PROP_rtl, /* properties_provided */
+  ( PROP_ssa | PROP_trees ), /* properties_destroyed */
+  ( TODO_verify_ssa | TODO_verify_flow
+    | TODO_verify_stmts ), /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_expand : public rtl_opt_pass
+{
+public:
+  pass_expand (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_expand, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return gimple_expand_cfg (); }
+
+}; // class pass_expand
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_expand (gcc::context *ctxt)
+{
+  return new pass_expand (ctxt);
+}

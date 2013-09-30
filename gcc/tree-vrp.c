@@ -26,7 +26,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "flags.h"
 #include "tree.h"
 #include "basic-block.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "tree-dump.h"
 #include "gimple-pretty-print.h"
@@ -36,14 +36,12 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-scalar-evolution.h"
 #include "tree-ssa-propagate.h"
 #include "tree-chrec.h"
+#include "tree-ssa-threadupdate.h"
 #include "gimple-fold.h"
 #include "expr.h"
 #include "optabs.h"
 
 
-/* Type of value ranges.  See value_range_d for a description of these
-   types.  */
-enum value_range_type { VR_UNDEFINED, VR_RANGE, VR_ANTI_RANGE, VR_VARYING };
 
 /* Range of values that can be associated with an SSA_NAME after VRP
    has executed.  */
@@ -5410,10 +5408,14 @@ register_edge_assert_for_1 (tree op, enum tree_code code,
 	       && gimple_assign_rhs_code (op_def) == BIT_IOR_EXPR))
     {
       /* Recurse on each operand.  */
-      retval |= register_edge_assert_for_1 (gimple_assign_rhs1 (op_def),
-					    code, e, bsi);
-      retval |= register_edge_assert_for_1 (gimple_assign_rhs2 (op_def),
-					    code, e, bsi);
+      tree op0 = gimple_assign_rhs1 (op_def);
+      tree op1 = gimple_assign_rhs2 (op_def);
+      if (TREE_CODE (op0) == SSA_NAME
+	  && has_single_use (op0))
+	retval |= register_edge_assert_for_1 (op0, code, e, bsi);
+      if (TREE_CODE (op1) == SSA_NAME
+	  && has_single_use (op1))
+	retval |= register_edge_assert_for_1 (op1, code, e, bsi);
     }
   else if (gimple_assign_rhs_code (op_def) == BIT_NOT_EXPR
 	   && TYPE_PRECISION (TREE_TYPE (gimple_assign_lhs (op_def))) == 1)
@@ -5852,7 +5854,7 @@ find_assert_locations_1 (basic_block bb, sbitmap live)
     }
 
   /* Traverse all PHI nodes in BB, updating live.  */
-  for (si = gsi_start_phis (bb); !gsi_end_p(si); gsi_next (&si))
+  for (si = gsi_start_phis (bb); !gsi_end_p (si); gsi_next (&si))
     {
       use_operand_p arg_p;
       ssa_op_iter i;
@@ -9273,15 +9275,27 @@ static vec<tree> equiv_stack;
 static tree
 simplify_stmt_for_jump_threading (gimple stmt, gimple within_stmt)
 {
-  /* We only use VRP information to simplify conditionals.  This is
-     overly conservative, but it's unclear if doing more would be
-     worth the compile time cost.  */
-  if (gimple_code (stmt) != GIMPLE_COND)
-    return NULL;
+  if (gimple_code (stmt) == GIMPLE_COND)
+    return vrp_evaluate_conditional (gimple_cond_code (stmt),
+				     gimple_cond_lhs (stmt),
+				     gimple_cond_rhs (stmt), within_stmt);
 
-  return vrp_evaluate_conditional (gimple_cond_code (stmt),
-				   gimple_cond_lhs (stmt),
-				   gimple_cond_rhs (stmt), within_stmt);
+  if (gimple_code (stmt) == GIMPLE_ASSIGN)
+    {
+      value_range_t new_vr = VR_INITIALIZER;
+      tree lhs = gimple_assign_lhs (stmt);
+
+      if (TREE_CODE (lhs) == SSA_NAME
+	  && (INTEGRAL_TYPE_P (TREE_TYPE (lhs))
+	      || POINTER_TYPE_P (TREE_TYPE (lhs))))
+	{
+	  extract_range_from_assignment (&new_vr, stmt);
+	  if (range_int_cst_singleton_p (&new_vr))
+	    return new_vr.min;
+	}
+    }
+
+  return NULL_TREE;
 }
 
 /* Blocks which have more than one predecessor and more than
@@ -9436,6 +9450,51 @@ vrp_finalize (void)
      the datastructures built by VRP.  */
   identify_jump_threads ();
 
+  /* Set value range to non pointer SSA_NAMEs.  */
+  for (i  = 0; i < num_vr_values; i++)
+    if (vr_value[i])
+      {
+	tree name = ssa_name (i);
+
+      if (!name
+	  || POINTER_TYPE_P (TREE_TYPE (name))
+	  || (vr_value[i]->type == VR_VARYING)
+	  || (vr_value[i]->type == VR_UNDEFINED))
+	continue;
+
+	if ((TREE_CODE (vr_value[i]->min) == INTEGER_CST)
+	    && (TREE_CODE (vr_value[i]->max) == INTEGER_CST))
+	  {
+	    if (vr_value[i]->type == VR_RANGE)
+	      set_range_info (name,
+			      tree_to_double_int (vr_value[i]->min),
+			      tree_to_double_int (vr_value[i]->max));
+	    else if (vr_value[i]->type == VR_ANTI_RANGE)
+	      {
+		/* VR_ANTI_RANGE ~[min, max] is encoded compactly as
+		   [max + 1, min - 1] without additional attributes.
+		   When min value > max value, we know that it is
+		   VR_ANTI_RANGE; it is VR_RANGE otherwise.  */
+
+		/* ~[0,0] anti-range is represented as
+		   range.  */
+		if (TYPE_UNSIGNED (TREE_TYPE (name))
+		    && integer_zerop (vr_value[i]->min)
+		    && integer_zerop (vr_value[i]->max))
+		  set_range_info (name,
+				  double_int_one,
+				  double_int::max_value
+				  (TYPE_PRECISION (TREE_TYPE (name)), true));
+		else
+		  set_range_info (name,
+				  tree_to_double_int (vr_value[i]->max)
+				  + double_int_one,
+				  tree_to_double_int (vr_value[i]->min)
+				  - double_int_one);
+	      }
+	  }
+      }
+
   /* Free allocated memory.  */
   for (i = 0; i < num_vr_values; i++)
     if (vr_value[i])
@@ -9584,25 +9643,43 @@ gate_vrp (void)
   return flag_tree_vrp != 0;
 }
 
-struct gimple_opt_pass pass_vrp =
+namespace {
+
+const pass_data pass_data_vrp =
 {
- {
-  GIMPLE_PASS,
-  "vrp",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_vrp,				/* gate */
-  execute_vrp,				/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_VRP,				/* tv_id */
-  PROP_ssa,				/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_cleanup_cfg
-    | TODO_update_ssa
+  GIMPLE_PASS, /* type */
+  "vrp", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_VRP, /* tv_id */
+  PROP_ssa, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_cleanup_cfg | TODO_update_ssa
     | TODO_verify_ssa
-    | TODO_verify_flow			/* todo_flags_finish */
- }
+    | TODO_verify_flow ), /* todo_flags_finish */
 };
+
+class pass_vrp : public gimple_opt_pass
+{
+public:
+  pass_vrp (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_vrp, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_vrp (ctxt_); }
+  bool gate () { return gate_vrp (); }
+  unsigned int execute () { return execute_vrp (); }
+
+}; // class pass_vrp
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_vrp (gcc::context *ctxt)
+{
+  return new pass_vrp (ctxt);
+}

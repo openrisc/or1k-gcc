@@ -85,30 +85,34 @@
 ;; (source read in E2 and destination available at the end of that cycle).
 (define_insn_reservation "cortex_a8_alu" 2
   (and (eq_attr "tune" "cortexa8")
-       (ior (and (and (eq_attr "type" "alu_reg,simple_alu_imm")
-		      (eq_attr "neon_type" "none"))
-		 (not (eq_attr "insn" "mov,mvn")))
-            (eq_attr "insn" "clz")))
+       (eq_attr "type" "alu_imm,alus_imm,logic_imm,logics_imm,\
+                        alu_reg,alus_reg,logic_reg,logics_reg,\
+                        adc_imm,adcs_imm,adc_reg,adcs_reg,\
+                        adr,bfm,clz,rbit,rev,\
+                        shift_imm,shift_reg,\
+                        multiple,no_insn"))
   "cortex_a8_default")
 
 (define_insn_reservation "cortex_a8_alu_shift" 2
   (and (eq_attr "tune" "cortexa8")
-       (and (eq_attr "type" "simple_alu_shift,alu_shift")
-            (not (eq_attr "insn" "mov,mvn"))))
+       (eq_attr "type" "alu_shift_imm,alus_shift_imm,\
+                        logic_shift_imm,logics_shift_imm,\
+                        extend"))
   "cortex_a8_default")
 
 (define_insn_reservation "cortex_a8_alu_shift_reg" 2
   (and (eq_attr "tune" "cortexa8")
-       (and (eq_attr "type" "alu_shift_reg")
-            (not (eq_attr "insn" "mov,mvn"))))
+       (eq_attr "type" "alu_shift_reg,alus_shift_reg,\
+                        logic_shift_reg,logics_shift_reg"))
   "cortex_a8_default")
 
 ;; Move instructions.
 
 (define_insn_reservation "cortex_a8_mov" 1
   (and (eq_attr "tune" "cortexa8")
-       (and (eq_attr "type" "alu_reg,simple_alu_imm,simple_alu_shift,alu_shift,alu_shift_reg")
-            (eq_attr "insn" "mov,mvn")))
+       (eq_attr "type" "mov_imm,mov_reg,mov_shift,mov_shift_reg,\
+                        mvn_imm,mvn_reg,mvn_shift,mvn_shift_reg,\
+                        mrs"))
   "cortex_a8_default")
 
 ;; Exceptions to the default latencies for data processing instructions.

@@ -54,7 +54,7 @@ EXPORTED_CONST size_t gimple_ops_offset_[] = {
 };
 #undef DEFGSSTRUCT
 
-#define DEFGSSTRUCT(SYM, STRUCT, HAS_TREE_OP) sizeof(struct STRUCT),
+#define DEFGSSTRUCT(SYM, STRUCT, HAS_TREE_OP) sizeof (struct STRUCT),
 static const size_t gsstruct_code_size[] = {
 #include "gsstruct.def"
 };
@@ -902,19 +902,21 @@ gimple_build_omp_critical (gimple_seq body, tree name)
 /* Build a GIMPLE_OMP_FOR statement.
 
    BODY is sequence of statements inside the for loop.
+   KIND is the `for' variant.
    CLAUSES, are any of the OMP loop construct's clauses: private, firstprivate,
    lastprivate, reductions, ordered, schedule, and nowait.
    COLLAPSE is the collapse count.
    PRE_BODY is the sequence of statements that are loop invariant.  */
 
 gimple
-gimple_build_omp_for (gimple_seq body, tree clauses, size_t collapse,
+gimple_build_omp_for (gimple_seq body, int kind, tree clauses, size_t collapse,
 		      gimple_seq pre_body)
 {
   gimple p = gimple_alloc (GIMPLE_OMP_FOR, 0);
   if (body)
     gimple_omp_set_body (p, body);
   gimple_omp_for_set_clauses (p, clauses);
+  gimple_omp_for_set_kind (p, kind);
   p->gimple_omp_for.collapse = collapse;
   p->gimple_omp_for.iter
       = ggc_alloc_cleared_vec_gimple_omp_for_iter (collapse);
@@ -2151,42 +2153,9 @@ gimple_set_lhs (gimple stmt, tree lhs)
   else if (code == GIMPLE_CALL)
     gimple_call_set_lhs (stmt, lhs);
   else
-    gcc_unreachable();
+    gcc_unreachable ();
 }
 
-/* Replace the LHS of STMT, an assignment, either a GIMPLE_ASSIGN or a
-   GIMPLE_CALL, with NLHS, in preparation for modifying the RHS to an
-   expression with a different value.
-
-   This will update any annotations (say debug bind stmts) referring
-   to the original LHS, so that they use the RHS instead.  This is
-   done even if NLHS and LHS are the same, for it is understood that
-   the RHS will be modified afterwards, and NLHS will not be assigned
-   an equivalent value.
-
-   Adjusting any non-annotation uses of the LHS, if needed, is a
-   responsibility of the caller.
-
-   The effect of this call should be pretty much the same as that of
-   inserting a copy of STMT before STMT, and then removing the
-   original stmt, at which time gsi_remove() would have update
-   annotations, but using this function saves all the inserting,
-   copying and removing.  */
-
-void
-gimple_replace_lhs (gimple stmt, tree nlhs)
-{
-  if (MAY_HAVE_DEBUG_STMTS)
-    {
-      tree lhs = gimple_get_lhs (stmt);
-
-      gcc_assert (SSA_NAME_DEF_STMT (lhs) == stmt);
-
-      insert_debug_temp_for_var_def (NULL, lhs);
-    }
-
-  gimple_set_lhs (stmt, nlhs);
-}
 
 /* Return a deep copy of statement STMT.  All the operands from STMT
    are reallocated and copied using unshare_expr.  The DEF, USE, VDEF
@@ -3737,96 +3706,6 @@ gimple_get_alias_set (tree t)
 }
 
 
-/* Data structure used to count the number of dereferences to PTR
-   inside an expression.  */
-struct count_ptr_d
-{
-  tree ptr;
-  unsigned num_stores;
-  unsigned num_loads;
-};
-
-/* Helper for count_uses_and_derefs.  Called by walk_tree to look for
-   (ALIGN/MISALIGNED_)INDIRECT_REF nodes for the pointer passed in DATA.  */
-
-static tree
-count_ptr_derefs (tree *tp, int *walk_subtrees, void *data)
-{
-  struct walk_stmt_info *wi_p = (struct walk_stmt_info *) data;
-  struct count_ptr_d *count_p = (struct count_ptr_d *) wi_p->info;
-
-  /* Do not walk inside ADDR_EXPR nodes.  In the expression &ptr->fld,
-     pointer 'ptr' is *not* dereferenced, it is simply used to compute
-     the address of 'fld' as 'ptr + offsetof(fld)'.  */
-  if (TREE_CODE (*tp) == ADDR_EXPR)
-    {
-      *walk_subtrees = 0;
-      return NULL_TREE;
-    }
-
-  if (TREE_CODE (*tp) == MEM_REF && TREE_OPERAND (*tp, 0) == count_p->ptr)
-    {
-      if (wi_p->is_lhs)
-	count_p->num_stores++;
-      else
-	count_p->num_loads++;
-    }
-
-  return NULL_TREE;
-}
-
-/* Count the number of direct and indirect uses for pointer PTR in
-   statement STMT.  The number of direct uses is stored in
-   *NUM_USES_P.  Indirect references are counted separately depending
-   on whether they are store or load operations.  The counts are
-   stored in *NUM_STORES_P and *NUM_LOADS_P.  */
-
-void
-count_uses_and_derefs (tree ptr, gimple stmt, unsigned *num_uses_p,
-		       unsigned *num_loads_p, unsigned *num_stores_p)
-{
-  ssa_op_iter i;
-  tree use;
-
-  *num_uses_p = 0;
-  *num_loads_p = 0;
-  *num_stores_p = 0;
-
-  /* Find out the total number of uses of PTR in STMT.  */
-  FOR_EACH_SSA_TREE_OPERAND (use, stmt, i, SSA_OP_USE)
-    if (use == ptr)
-      (*num_uses_p)++;
-
-  /* Now count the number of indirect references to PTR.  This is
-     truly awful, but we don't have much choice.  There are no parent
-     pointers inside INDIRECT_REFs, so an expression like
-     '*x_1 = foo (x_1, *x_1)' needs to be traversed piece by piece to
-     find all the indirect and direct uses of x_1 inside.  The only
-     shortcut we can take is the fact that GIMPLE only allows
-     INDIRECT_REFs inside the expressions below.  */
-  if (is_gimple_assign (stmt)
-      || gimple_code (stmt) == GIMPLE_RETURN
-      || gimple_code (stmt) == GIMPLE_ASM
-      || is_gimple_call (stmt))
-    {
-      struct walk_stmt_info wi;
-      struct count_ptr_d count;
-
-      count.ptr = ptr;
-      count.num_stores = 0;
-      count.num_loads = 0;
-
-      memset (&wi, 0, sizeof (wi));
-      wi.info = &count;
-      walk_gimple_op (stmt, count_ptr_derefs, &wi);
-
-      *num_stores_p = count.num_stores;
-      *num_loads_p = count.num_loads;
-    }
-
-  gcc_assert (*num_uses_p >= *num_loads_p + *num_stores_p);
-}
-
 /* From a tree operand OP return the base of a load or store operation
    or NULL_TREE if OP is not a load or a store.  */
 
@@ -4049,6 +3928,13 @@ walk_stmt_load_store_addr_ops (gimple stmt, void *data,
 	    ret |= visit_addr (stmt, TREE_OPERAND (op, 0), data);
 	}
     }
+  else if (visit_addr
+	   && gimple_code (stmt) == GIMPLE_GOTO)
+    {
+      tree op = gimple_goto_dest (stmt);
+      if (TREE_CODE (op) == ADDR_EXPR)
+	ret |= visit_addr (stmt, TREE_OPERAND (op, 0), data);
+    }
 
   return ret;
 }
@@ -4216,103 +4102,259 @@ gimple_asm_clobbers_memory_p (const_gimple stmt)
 }
 
 
-/* Create and return an unnamed temporary.  MODE indicates whether
-   this should be an SSA or NORMAL temporary.  TYPE is the type to use
-   for the new temporary.  */
+/* Return true if the conversion from INNER_TYPE to OUTER_TYPE is a
+   useless type conversion, otherwise return false.
 
-tree
-create_gimple_tmp (tree type, enum ssa_mode mode)
+   This function implicitly defines the middle-end type system.  With
+   the notion of 'a < b' meaning that useless_type_conversion_p (a, b)
+   holds and 'a > b' meaning that useless_type_conversion_p (b, a) holds,
+   the following invariants shall be fulfilled:
+
+     1) useless_type_conversion_p is transitive.
+	If a < b and b < c then a < c.
+
+     2) useless_type_conversion_p is not symmetric.
+	From a < b does not follow a > b.
+
+     3) Types define the available set of operations applicable to values.
+	A type conversion is useless if the operations for the target type
+	is a subset of the operations for the source type.  For example
+	casts to void* are useless, casts from void* are not (void* can't
+	be dereferenced or offsetted, but copied, hence its set of operations
+	is a strict subset of that of all other data pointer types).  Casts
+	to const T* are useless (can't be written to), casts from const T*
+	to T* are not.  */
+
+bool
+useless_type_conversion_p (tree outer_type, tree inner_type)
 {
-  return (mode == M_SSA)
-         ? make_ssa_name (type, NULL)
-         : create_tmp_var (type, NULL);
+  /* Do the following before stripping toplevel qualifiers.  */
+  if (POINTER_TYPE_P (inner_type)
+      && POINTER_TYPE_P (outer_type))
+    {
+      /* Do not lose casts between pointers to different address spaces.  */
+      if (TYPE_ADDR_SPACE (TREE_TYPE (outer_type))
+	  != TYPE_ADDR_SPACE (TREE_TYPE (inner_type)))
+	return false;
+    }
+
+  /* From now on qualifiers on value types do not matter.  */
+  inner_type = TYPE_MAIN_VARIANT (inner_type);
+  outer_type = TYPE_MAIN_VARIANT (outer_type);
+
+  if (inner_type == outer_type)
+    return true;
+
+  /* If we know the canonical types, compare them.  */
+  if (TYPE_CANONICAL (inner_type)
+      && TYPE_CANONICAL (inner_type) == TYPE_CANONICAL (outer_type))
+    return true;
+
+  /* Changes in machine mode are never useless conversions unless we
+     deal with aggregate types in which case we defer to later checks.  */
+  if (TYPE_MODE (inner_type) != TYPE_MODE (outer_type)
+      && !AGGREGATE_TYPE_P (inner_type))
+    return false;
+
+  /* If both the inner and outer types are integral types, then the
+     conversion is not necessary if they have the same mode and
+     signedness and precision, and both or neither are boolean.  */
+  if (INTEGRAL_TYPE_P (inner_type)
+      && INTEGRAL_TYPE_P (outer_type))
+    {
+      /* Preserve changes in signedness or precision.  */
+      if (TYPE_UNSIGNED (inner_type) != TYPE_UNSIGNED (outer_type)
+	  || TYPE_PRECISION (inner_type) != TYPE_PRECISION (outer_type))
+	return false;
+
+      /* Preserve conversions to/from BOOLEAN_TYPE if types are not
+	 of precision one.  */
+      if (((TREE_CODE (inner_type) == BOOLEAN_TYPE)
+	   != (TREE_CODE (outer_type) == BOOLEAN_TYPE))
+	  && TYPE_PRECISION (outer_type) != 1)
+	return false;
+
+      /* We don't need to preserve changes in the types minimum or
+	 maximum value in general as these do not generate code
+	 unless the types precisions are different.  */
+      return true;
+    }
+
+  /* Scalar floating point types with the same mode are compatible.  */
+  else if (SCALAR_FLOAT_TYPE_P (inner_type)
+	   && SCALAR_FLOAT_TYPE_P (outer_type))
+    return true;
+
+  /* Fixed point types with the same mode are compatible.  */
+  else if (FIXED_POINT_TYPE_P (inner_type)
+	   && FIXED_POINT_TYPE_P (outer_type))
+    return true;
+
+  /* We need to take special care recursing to pointed-to types.  */
+  else if (POINTER_TYPE_P (inner_type)
+	   && POINTER_TYPE_P (outer_type))
+    {
+      /* Do not lose casts to function pointer types.  */
+      if ((TREE_CODE (TREE_TYPE (outer_type)) == FUNCTION_TYPE
+	   || TREE_CODE (TREE_TYPE (outer_type)) == METHOD_TYPE)
+	  && !(TREE_CODE (TREE_TYPE (inner_type)) == FUNCTION_TYPE
+	       || TREE_CODE (TREE_TYPE (inner_type)) == METHOD_TYPE))
+	return false;
+
+      /* We do not care for const qualification of the pointed-to types
+	 as const qualification has no semantic value to the middle-end.  */
+
+      /* Otherwise pointers/references are equivalent.  */
+      return true;
+    }
+
+  /* Recurse for complex types.  */
+  else if (TREE_CODE (inner_type) == COMPLEX_TYPE
+	   && TREE_CODE (outer_type) == COMPLEX_TYPE)
+    return useless_type_conversion_p (TREE_TYPE (outer_type),
+				      TREE_TYPE (inner_type));
+
+  /* Recurse for vector types with the same number of subparts.  */
+  else if (TREE_CODE (inner_type) == VECTOR_TYPE
+	   && TREE_CODE (outer_type) == VECTOR_TYPE
+	   && TYPE_PRECISION (inner_type) == TYPE_PRECISION (outer_type))
+    return useless_type_conversion_p (TREE_TYPE (outer_type),
+				      TREE_TYPE (inner_type));
+
+  else if (TREE_CODE (inner_type) == ARRAY_TYPE
+	   && TREE_CODE (outer_type) == ARRAY_TYPE)
+    {
+      /* Preserve string attributes.  */
+      if (TYPE_STRING_FLAG (inner_type) != TYPE_STRING_FLAG (outer_type))
+	return false;
+
+      /* Conversions from array types with unknown extent to
+	 array types with known extent are not useless.  */
+      if (!TYPE_DOMAIN (inner_type)
+	  && TYPE_DOMAIN (outer_type))
+	return false;
+
+      /* Nor are conversions from array types with non-constant size to
+         array types with constant size or to different size.  */
+      if (TYPE_SIZE (outer_type)
+	  && TREE_CODE (TYPE_SIZE (outer_type)) == INTEGER_CST
+	  && (!TYPE_SIZE (inner_type)
+	      || TREE_CODE (TYPE_SIZE (inner_type)) != INTEGER_CST
+	      || !tree_int_cst_equal (TYPE_SIZE (outer_type),
+				      TYPE_SIZE (inner_type))))
+	return false;
+
+      /* Check conversions between arrays with partially known extents.
+	 If the array min/max values are constant they have to match.
+	 Otherwise allow conversions to unknown and variable extents.
+	 In particular this declares conversions that may change the
+	 mode to BLKmode as useless.  */
+      if (TYPE_DOMAIN (inner_type)
+	  && TYPE_DOMAIN (outer_type)
+	  && TYPE_DOMAIN (inner_type) != TYPE_DOMAIN (outer_type))
+	{
+	  tree inner_min = TYPE_MIN_VALUE (TYPE_DOMAIN (inner_type));
+	  tree outer_min = TYPE_MIN_VALUE (TYPE_DOMAIN (outer_type));
+	  tree inner_max = TYPE_MAX_VALUE (TYPE_DOMAIN (inner_type));
+	  tree outer_max = TYPE_MAX_VALUE (TYPE_DOMAIN (outer_type));
+
+	  /* After gimplification a variable min/max value carries no
+	     additional information compared to a NULL value.  All that
+	     matters has been lowered to be part of the IL.  */
+	  if (inner_min && TREE_CODE (inner_min) != INTEGER_CST)
+	    inner_min = NULL_TREE;
+	  if (outer_min && TREE_CODE (outer_min) != INTEGER_CST)
+	    outer_min = NULL_TREE;
+	  if (inner_max && TREE_CODE (inner_max) != INTEGER_CST)
+	    inner_max = NULL_TREE;
+	  if (outer_max && TREE_CODE (outer_max) != INTEGER_CST)
+	    outer_max = NULL_TREE;
+
+	  /* Conversions NULL / variable <- cst are useless, but not
+	     the other way around.  */
+	  if (outer_min
+	      && (!inner_min
+		  || !tree_int_cst_equal (inner_min, outer_min)))
+	    return false;
+	  if (outer_max
+	      && (!inner_max
+		  || !tree_int_cst_equal (inner_max, outer_max)))
+	    return false;
+	}
+
+      /* Recurse on the element check.  */
+      return useless_type_conversion_p (TREE_TYPE (outer_type),
+					TREE_TYPE (inner_type));
+    }
+
+  else if ((TREE_CODE (inner_type) == FUNCTION_TYPE
+	    || TREE_CODE (inner_type) == METHOD_TYPE)
+	   && TREE_CODE (inner_type) == TREE_CODE (outer_type))
+    {
+      tree outer_parm, inner_parm;
+
+      /* If the return types are not compatible bail out.  */
+      if (!useless_type_conversion_p (TREE_TYPE (outer_type),
+				      TREE_TYPE (inner_type)))
+	return false;
+
+      /* Method types should belong to a compatible base class.  */
+      if (TREE_CODE (inner_type) == METHOD_TYPE
+	  && !useless_type_conversion_p (TYPE_METHOD_BASETYPE (outer_type),
+					 TYPE_METHOD_BASETYPE (inner_type)))
+	return false;
+
+      /* A conversion to an unprototyped argument list is ok.  */
+      if (!prototype_p (outer_type))
+	return true;
+
+      /* If the unqualified argument types are compatible the conversion
+	 is useless.  */
+      if (TYPE_ARG_TYPES (outer_type) == TYPE_ARG_TYPES (inner_type))
+	return true;
+
+      for (outer_parm = TYPE_ARG_TYPES (outer_type),
+	   inner_parm = TYPE_ARG_TYPES (inner_type);
+	   outer_parm && inner_parm;
+	   outer_parm = TREE_CHAIN (outer_parm),
+	   inner_parm = TREE_CHAIN (inner_parm))
+	if (!useless_type_conversion_p
+	       (TYPE_MAIN_VARIANT (TREE_VALUE (outer_parm)),
+		TYPE_MAIN_VARIANT (TREE_VALUE (inner_parm))))
+	  return false;
+
+      /* If there is a mismatch in the number of arguments the functions
+	 are not compatible.  */
+      if (outer_parm || inner_parm)
+	return false;
+
+      /* Defer to the target if necessary.  */
+      if (TYPE_ATTRIBUTES (inner_type) || TYPE_ATTRIBUTES (outer_type))
+	return comp_type_attributes (outer_type, inner_type) != 0;
+
+      return true;
+    }
+
+  /* For aggregates we rely on TYPE_CANONICAL exclusively and require
+     explicit conversions for types involving to be structurally
+     compared types.  */
+  else if (AGGREGATE_TYPE_P (inner_type)
+	   && TREE_CODE (inner_type) == TREE_CODE (outer_type))
+    return false;
+
+  return false;
 }
 
+/* Return true if a conversion from either type of TYPE1 and TYPE2
+   to the other is not required.  Otherwise return false.  */
 
-/* Return the expression type to use based on the CODE and type of
-   the given operand OP.  If the expression CODE is a comparison,
-   the returned type is boolean_type_node.  Otherwise, it returns
-   the type of OP.  */
-
-static tree
-get_expr_type (enum tree_code code, tree op)
+bool
+types_compatible_p (tree type1, tree type2)
 {
-  return (TREE_CODE_CLASS (code) == tcc_comparison)
-	 ? boolean_type_node
-	 : TREE_TYPE (op);
+  return (type1 == type2
+	  || (useless_type_conversion_p (type1, type2)
+	      && useless_type_conversion_p (type2, type1)));
 }
 
-
-/* Build a new gimple assignment.  The LHS of the assignment is a new
-   temporary whose type matches the given expression.  MODE indicates
-   whether the LHS should be an SSA or a normal temporary.  CODE is
-   the expression code for the RHS.  OP1 is the first operand and VAL
-   is an integer value to be used as the second operand.  */
-
-gimple
-build_assign (enum tree_code code, tree op1, int val, enum ssa_mode mode)
-{
-  tree op2 = build_int_cst (TREE_TYPE (op1), val);
-  tree lhs = create_gimple_tmp (get_expr_type (code, op1), mode);
-  return gimple_build_assign_with_ops (code, lhs, op1, op2);
-}
-
-gimple
-build_assign (enum tree_code code, gimple g, int val, enum ssa_mode mode)
-{
-  return build_assign (code, gimple_assign_lhs (g), val, mode);
-}
-
-
-/* Build and return a new GIMPLE assignment.  The new assignment will
-   have the opcode CODE and operands OP1 and OP2.  The type of the
-   expression on the RHS is inferred to be the type of OP1.
-
-   The LHS of the statement will be an SSA name or a GIMPLE temporary
-   in normal form depending on the type of builder invoking this
-   function.  */
-
-gimple
-build_assign (enum tree_code code, tree op1, tree op2, enum ssa_mode mode)
-{
-  tree lhs = create_gimple_tmp (get_expr_type (code, op1), mode);
-  return gimple_build_assign_with_ops (code, lhs, op1, op2);
-}
-
-gimple
-build_assign (enum tree_code code, gimple op1, tree op2, enum ssa_mode mode)
-{
-  return build_assign (code, gimple_assign_lhs (op1), op2, mode);
-}
-
-gimple
-build_assign (enum tree_code code, tree op1, gimple op2, enum ssa_mode mode)
-{
-  return build_assign (code, op1, gimple_assign_lhs (op2), mode);
-}
-
-gimple
-build_assign (enum tree_code code, gimple op1, gimple op2, enum ssa_mode mode)
-{
-  return build_assign (code, gimple_assign_lhs (op1), gimple_assign_lhs (op2),
-                       mode);
-}
-
-
-/* Create and return a type cast assignment. This creates a NOP_EXPR
-   that converts OP to TO_TYPE.  */
-
-gimple
-build_type_cast (tree to_type, tree op, enum ssa_mode mode)
-{
-  tree lhs = create_gimple_tmp (to_type, mode);
-  return gimple_build_assign_with_ops (NOP_EXPR, lhs, op, NULL_TREE);
-}
-
-gimple
-build_type_cast (tree to_type, gimple op, enum ssa_mode mode)
-{
-  return build_type_cast (to_type, gimple_assign_lhs (op), mode);
-}
 
 #include "gt-gimple.h"

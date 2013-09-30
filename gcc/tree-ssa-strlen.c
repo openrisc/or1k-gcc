@@ -22,7 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "system.h"
 #include "coretypes.h"
 #include "hash-table.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "domwalk.h"
 #include "alloc-pool.h"
@@ -1926,12 +1926,20 @@ do_invalidate (basic_block dombb, gimple phi, bitmap visited, int *count)
     }
 }
 
+class strlen_dom_walker : public dom_walker
+{
+public:
+  strlen_dom_walker (cdi_direction direction) : dom_walker (direction) {}
+
+  virtual void before_dom_children (basic_block);
+  virtual void after_dom_children (basic_block);
+};
+
 /* Callback for walk_dominator_tree.  Attempt to optimize various
    string ops by remembering string lenths pointed by pointer SSA_NAMEs.  */
 
-static void
-strlen_enter_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
-		    basic_block bb)
+void
+strlen_dom_walker::before_dom_children (basic_block bb)
 {
   gimple_stmt_iterator gsi;
   basic_block dombb = get_immediate_dominator (CDI_DOMINATORS, bb);
@@ -1952,6 +1960,28 @@ strlen_enter_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
 		  int count_vdef = 100;
 		  do_invalidate (dombb, phi, visited, &count_vdef);
 		  BITMAP_FREE (visited);
+		  if (count_vdef == 0)
+		    {
+		      /* If there were too many vdefs in between immediate
+			 dominator and current bb, invalidate everything.
+			 If stridx_to_strinfo has been unshared, we need
+			 to free it, otherwise just set it to NULL.  */
+		      if (!strinfo_shared ())
+			{
+			  unsigned int i;
+			  strinfo si;
+
+			  for (i = 1;
+			       vec_safe_iterate (stridx_to_strinfo, i, &si);
+			       ++i)
+			    {
+			      free_strinfo (si);
+			      (*stridx_to_strinfo)[i] = NULL;
+			    }
+			}
+		      else
+			stridx_to_strinfo = NULL;
+		    }
 		  break;
 		}
 	    }
@@ -1992,9 +2022,8 @@ strlen_enter_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
 /* Callback for walk_dominator_tree.  Free strinfo vector if it is
    owned by the current bb, clear bb->aux.  */
 
-static void
-strlen_leave_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
-		    basic_block bb)
+void
+strlen_dom_walker::after_dom_children (basic_block bb)
 {
   if (bb->aux)
     {
@@ -2018,8 +2047,6 @@ strlen_leave_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
 static unsigned int
 tree_ssa_strlen (void)
 {
-  struct dom_walk_data walk_data;
-
   ssa_ver_to_stridx.safe_grow_cleared (num_ssa_names);
   max_stridx = 1;
   strinfo_pool = create_alloc_pool ("strinfo_struct pool",
@@ -2029,21 +2056,7 @@ tree_ssa_strlen (void)
 
   /* String length optimization is implemented as a walk of the dominator
      tree and a forward walk of statements within each block.  */
-  walk_data.dom_direction = CDI_DOMINATORS;
-  walk_data.initialize_block_local_data = NULL;
-  walk_data.before_dom_children = strlen_enter_block;
-  walk_data.after_dom_children = strlen_leave_block;
-  walk_data.block_local_data_size = 0;
-  walk_data.global_data = NULL;
-
-  /* Initialize the dominator walker.  */
-  init_walk_dominator_tree (&walk_data);
-
-  /* Recursively walk the dominator tree.  */
-  walk_dominator_tree (&walk_data, ENTRY_BLOCK_PTR);
-
-  /* Finalize the dominator walker.  */
-  fini_walk_dominator_tree (&walk_data);
+  strlen_dom_walker (CDI_DOMINATORS).walk (cfun->cfg->x_entry_block_ptr);
 
   ssa_ver_to_stridx.release ();
   free_alloc_pool (strinfo_pool);
@@ -2065,22 +2078,40 @@ gate_strlen (void)
   return flag_optimize_strlen != 0;
 }
 
-struct gimple_opt_pass pass_strlen =
+namespace {
+
+const pass_data pass_data_strlen =
 {
- {
-  GIMPLE_PASS,
-  "strlen",			/* name */
-  OPTGROUP_NONE,                /* optinfo_flags */
-  gate_strlen,			/* gate */
-  tree_ssa_strlen,		/* execute */
-  NULL,				/* sub */
-  NULL,				/* next */
-  0,				/* static_pass_number */
-  TV_TREE_STRLEN,		/* tv_id */
-  PROP_cfg | PROP_ssa,		/* properties_required */
-  0,				/* properties_provided */
-  0,				/* properties_destroyed */
-  0,				/* todo_flags_start */
-  TODO_verify_ssa		/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "strlen", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_STRLEN, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_ssa, /* todo_flags_finish */
 };
+
+class pass_strlen : public gimple_opt_pass
+{
+public:
+  pass_strlen (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_strlen, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_strlen (); }
+  unsigned int execute () { return tree_ssa_strlen (); }
+
+}; // class pass_strlen
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_strlen (gcc::context *ctxt)
+{
+  return new pass_strlen (ctxt);
+}

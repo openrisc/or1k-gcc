@@ -28,7 +28,7 @@
 #include "flags.h"
 #include "basic-block.h"
 #include "tree.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-inline.h"
 #include "diagnostic-core.h"
 #include "gimple.h"
@@ -482,7 +482,7 @@ struct constraint_expr
 };
 
 /* Use 0x8000... as special unknown offset.  */
-#define UNKNOWN_OFFSET ((HOST_WIDE_INT)-1 << (HOST_BITS_PER_WIDE_INT-1))
+#define UNKNOWN_OFFSET HOST_WIDE_INT_MIN
 
 typedef struct constraint_expr ce_s;
 static void get_constraint_for_1 (tree, vec<ce_s> *, bool, bool);
@@ -1747,7 +1747,7 @@ do_complex_constraint (constraint_graph_t graph, constraint_t c, bitmap delta)
     {
       if (c->rhs.type == ADDRESSOF)
 	{
-	  gcc_unreachable();
+	  gcc_unreachable ();
 	}
       else
 	{
@@ -2096,7 +2096,7 @@ label_visit (constraint_graph_t graph, struct scc_info *si, unsigned int n)
 		}
 	    }
 	  else
-	    bitmap_ior_into(graph->points_to[n], graph->points_to[w]);
+	    bitmap_ior_into (graph->points_to[n], graph->points_to[w]);
 	}
     }
 
@@ -4301,8 +4301,8 @@ find_func_aliases_for_builtin_call (gimple t)
 	    rhsc.safe_push (nul);
 	    get_constraint_for (gimple_call_lhs (t), &lhsc);
 	    process_all_all_constraints (lhsc, rhsc);
-	    lhsc.release();
-	    rhsc.release();
+	    lhsc.release ();
+	    rhsc.release ();
 	  }
 	return true;
       /* Trampolines are special - they set up passing the static
@@ -4457,7 +4457,7 @@ find_func_aliases_for_builtin_call (gimple t)
 	}
       /* printf-style functions may have hooks to set pointers to
 	 point to somewhere into the generated string.  Leave them
-	 for a later excercise...  */
+	 for a later exercise...  */
       default:
 	/* Fallthru to general call handling.  */;
       }
@@ -5015,7 +5015,7 @@ find_func_clobbers (gimple origt)
 	    return;
 	  /* printf-style functions may have hooks to set pointers to
 	     point to somewhere into the generated string.  Leave them
-	     for a later excercise...  */
+	     for a later exercise...  */
 	  default:
 	    /* Fallthru to general call handling.  */;
 	  }
@@ -6960,48 +6960,82 @@ gate_tree_pta (void)
 /* A dummy pass to cause points-to information to be computed via
    TODO_rebuild_alias.  */
 
-struct gimple_opt_pass pass_build_alias =
+namespace {
+
+const pass_data pass_data_build_alias =
 {
- {
-  GIMPLE_PASS,
-  "alias",		    /* name */
-  OPTGROUP_NONE,            /* optinfo_flags */
-  gate_tree_pta,	    /* gate */
-  NULL,                     /* execute */
-  NULL,                     /* sub */
-  NULL,                     /* next */
-  0,                        /* static_pass_number */
-  TV_NONE,                  /* tv_id */
-  PROP_cfg | PROP_ssa,      /* properties_required */
-  0,			    /* properties_provided */
-  0,                        /* properties_destroyed */
-  0,                        /* todo_flags_start */
-  TODO_rebuild_alias        /* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "alias", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  false, /* has_execute */
+  TV_NONE, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_rebuild_alias, /* todo_flags_finish */
 };
+
+class pass_build_alias : public gimple_opt_pass
+{
+public:
+  pass_build_alias (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_build_alias, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_tree_pta (); }
+
+}; // class pass_build_alias
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_build_alias (gcc::context *ctxt)
+{
+  return new pass_build_alias (ctxt);
+}
 
 /* A dummy pass to cause points-to information to be computed via
    TODO_rebuild_alias.  */
 
-struct gimple_opt_pass pass_build_ealias =
+namespace {
+
+const pass_data pass_data_build_ealias =
 {
- {
-  GIMPLE_PASS,
-  "ealias",		    /* name */
-  OPTGROUP_NONE,            /* optinfo_flags */
-  gate_tree_pta,	    /* gate */
-  NULL,                     /* execute */
-  NULL,                     /* sub */
-  NULL,                     /* next */
-  0,                        /* static_pass_number */
-  TV_NONE,                  /* tv_id */
-  PROP_cfg | PROP_ssa,      /* properties_required */
-  0,			    /* properties_provided */
-  0,                        /* properties_destroyed */
-  0,                        /* todo_flags_start */
-  TODO_rebuild_alias        /* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "ealias", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  false, /* has_execute */
+  TV_NONE, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_rebuild_alias, /* todo_flags_finish */
 };
+
+class pass_build_ealias : public gimple_opt_pass
+{
+public:
+  pass_build_ealias (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_build_ealias, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_tree_pta (); }
+
+}; // class pass_build_ealias
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_build_ealias (gcc::context *ctxt)
+{
+  return new pass_build_ealias (ctxt);
+}
 
 
 /* Return true if we should execute IPA PTA.  */
@@ -7054,8 +7088,9 @@ ipa_pta_execute (void)
       /* Nodes without a body are not interesting.  Especially do not
          visit clones at this point for now - we get duplicate decls
 	 there for inline clones at least.  */
-      if (!cgraph_function_with_gimple_body_p (node))
+      if (!cgraph_function_with_gimple_body_p (node) || node->clone_of)
 	continue;
+      cgraph_get_body (node);
 
       gcc_assert (!node->clone_of);
 
@@ -7088,7 +7123,7 @@ ipa_pta_execute (void)
       basic_block bb;
 
       /* Nodes without a body are not interesting.  */
-      if (!cgraph_function_with_gimple_body_p (node))
+      if (!cgraph_function_with_gimple_body_p (node) || node->clone_of)
 	continue;
 
       if (dump_file)
@@ -7197,7 +7232,7 @@ ipa_pta_execute (void)
       struct cgraph_edge *e;
 
       /* Nodes without a body are not interesting.  */
-      if (!cgraph_function_with_gimple_body_p (node))
+      if (!cgraph_function_with_gimple_body_p (node) || node->clone_of)
 	continue;
 
       fn = DECL_STRUCT_FUNCTION (node->symbol.decl);
@@ -7359,22 +7394,40 @@ ipa_pta_execute (void)
   return 0;
 }
 
-struct simple_ipa_opt_pass pass_ipa_pta =
+namespace {
+
+const pass_data pass_data_ipa_pta =
 {
- {
-  SIMPLE_IPA_PASS,
-  "pta",		                /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_ipa_pta,			/* gate */
-  ipa_pta_execute,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_IPA_PTA,		        /* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_update_ssa                       /* todo_flags_finish */
- }
+  SIMPLE_IPA_PASS, /* type */
+  "pta", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_IPA_PTA, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_update_ssa, /* todo_flags_finish */
 };
+
+class pass_ipa_pta : public simple_ipa_opt_pass
+{
+public:
+  pass_ipa_pta (gcc::context *ctxt)
+    : simple_ipa_opt_pass (pass_data_ipa_pta, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_ipa_pta (); }
+  unsigned int execute () { return ipa_pta_execute (); }
+
+}; // class pass_ipa_pta
+
+} // anon namespace
+
+simple_ipa_opt_pass *
+make_pass_ipa_pta (gcc::context *ctxt)
+{
+  return new pass_ipa_pta (ctxt);
+}

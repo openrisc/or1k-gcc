@@ -330,12 +330,10 @@ create_pre_exit (int n_entities, int *entity_map, const int *num_modes)
 			break;
 		      }
 		    if (!targetm.calls.function_value_regno_p (copy_start))
-		      {
-			last_insn = return_copy;
-			continue;
-		      }
-		    copy_num
-		      = hard_regno_nregs[copy_start][GET_MODE (copy_reg)];
+		      copy_num = 0;
+		    else
+		      copy_num
+			= hard_regno_nregs[copy_start][GET_MODE (copy_reg)];
 
 		    /* If the return register is not likely spilled, - as is
 		       the case for floating point on SH4 - then it might
@@ -371,6 +369,11 @@ create_pre_exit (int n_entities, int *entity_map, const int *num_modes)
 			    && OBJECT_P (SET_SRC (return_copy_pat)))
 			  forced_late_switch = 1;
 			break;
+		      }
+		    if (copy_num == 0)
+		      {
+			last_insn = return_copy;
+			continue;
 		      }
 
 		    if (copy_start >= ret_start
@@ -417,7 +420,7 @@ create_pre_exit (int n_entities, int *entity_map, const int *num_modes)
 			|| (GET_MODE_CLASS (GET_MODE (ret_reg)) != MODE_INT
 			    && nregs != 1));
 
-	    if (INSN_P (last_insn))
+	    if (!NOTE_INSN_BASIC_BLOCK_P (last_insn))
 	      {
 		before_return_copy
 		  = emit_note_before (NOTE_INSN_DELETED, last_insn);
@@ -425,9 +428,8 @@ create_pre_exit (int n_entities, int *entity_map, const int *num_modes)
 		   require a different mode than MODE_EXIT, so if we might
 		   have such instructions, keep them in a separate block
 		   from pre_exit.  */
-		if (last_insn != BB_HEAD (src_bb))
-		  src_bb = split_block (src_bb,
-					PREV_INSN (before_return_copy))->dest;
+		src_bb = split_block (src_bb,
+				      PREV_INSN (before_return_copy))->dest;
 	      }
 	    else
 	      before_return_copy = last_insn;
@@ -782,23 +784,43 @@ rest_of_handle_mode_switching (void)
 }
 
 
-struct rtl_opt_pass pass_mode_switching =
+namespace {
+
+const pass_data pass_data_mode_switching =
 {
- {
-  RTL_PASS,
-  "mode_sw",                            /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_mode_switching,                  /* gate */
-  rest_of_handle_mode_switching,        /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_MODE_SWITCH,                       /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  TODO_df_finish | TODO_verify_rtl_sharing |
-  0                                     /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "mode_sw", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_MODE_SWITCH, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_df_finish | TODO_verify_rtl_sharing | 0 ), /* todo_flags_finish */
 };
+
+class pass_mode_switching : public rtl_opt_pass
+{
+public:
+  pass_mode_switching (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_mode_switching, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  /* The epiphany backend creates a second instance of this pass, so we need
+     a clone method.  */
+  opt_pass * clone () { return new pass_mode_switching (ctxt_); }
+  bool gate () { return gate_mode_switching (); }
+  unsigned int execute () { return rest_of_handle_mode_switching (); }
+
+}; // class pass_mode_switching
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_mode_switching (gcc::context *ctxt)
+{
+  return new pass_mode_switching (ctxt);
+}

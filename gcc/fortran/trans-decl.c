@@ -975,7 +975,10 @@ gfc_build_dummy_array_decl (gfc_symbol * sym, tree dummy)
 			&& as->lower[n]
 			&& as->upper[n]->expr_type == EXPR_CONSTANT
 			&& as->lower[n]->expr_type == EXPR_CONSTANT))
-		    packed = PACKED_PARTIAL;
+		    {
+		      packed = PACKED_PARTIAL;
+		      break;
+		    }
 		}
 	    }
 	  else
@@ -1488,14 +1491,14 @@ gfc_get_symbol_decl (gfc_symbol * sym)
 	 SAVE is specified otherwise they need to be reinitialized
 	 every time the procedure is entered. The TREE_STATIC is
 	 in this case due to -fmax-stack-var-size=.  */
+
       DECL_INITIAL (decl) = gfc_conv_initializer (sym->value, &sym->ts,
-						  TREE_TYPE (decl),
-						  sym->attr.dimension
-						  || (sym->attr.codimension
-						      && sym->attr.allocatable),
-						  sym->attr.pointer
-						  || sym->attr.allocatable,
-						  sym->attr.proc_pointer);
+				    TREE_TYPE (decl), sym->attr.dimension
+				    || (sym->attr.codimension
+					&& sym->attr.allocatable),
+				    sym->attr.pointer || sym->attr.allocatable
+				    || sym->ts.type == BT_CLASS,
+				    sym->attr.proc_pointer);
     }
 
   if (!TREE_STATIC (decl)
@@ -2157,7 +2160,7 @@ create_function_arglist (gfc_symbol * sym)
 	    }
 	}
       /* For noncharacter scalar intrinsic types, VALUE passes the value,
-	 hence, the optional status cannot be transfered via a NULL pointer.
+	 hence, the optional status cannot be transferred via a NULL pointer.
 	 Thus, we will use a hidden argument in that case.  */
       else if (f->sym->attr.optional && f->sym->attr.value
 	       && !f->sym->attr.dimension && f->sym->ts.type != BT_CLASS
@@ -4742,7 +4745,8 @@ generate_local_decl (gfc_symbol * sym)
 		gfc_warning ("Dummy argument '%s' at %L was declared "
 			     "INTENT(OUT) but was not set",  sym->name,
 			     &sym->declared_at);
-	      else if (!gfc_has_default_initializer (sym->ts.u.derived))
+	      else if (!gfc_has_default_initializer (sym->ts.u.derived)
+		       && !sym->ts.u.derived->attr.zero_comp)
 		gfc_warning ("Derived-type dummy argument '%s' at %L was "
 			     "declared INTENT(OUT) but was not set and "
 			     "does not have a default initializer",
@@ -5640,14 +5644,16 @@ gfc_generate_function_code (gfc_namespace * ns)
     }
   current_function_decl = old_context;
 
-  if (decl_function_context (fndecl) && gfc_option.coarray != GFC_FCOARRAY_LIB
-      && has_coarray_vars)
-    /* Register this function with cgraph just far enough to get it
-       added to our parent's nested function list.
-       If there are static coarrays in this function, the nested _caf_init
-       function has already called cgraph_create_node, which also created
-       the cgraph node for this function.  */
-    (void) cgraph_create_node (fndecl);
+  if (decl_function_context (fndecl))
+    {
+      /* Register this function with cgraph just far enough to get it
+	 added to our parent's nested function list.
+	 If there are static coarrays in this function, the nested _caf_init
+	 function has already called cgraph_create_node, which also created
+	 the cgraph node for this function.  */
+      if (!has_coarray_vars || gfc_option.coarray != GFC_FCOARRAY_LIB)
+	(void) cgraph_create_node (fndecl);
+    }
   else
     cgraph_finalize_function (fndecl, true);
 

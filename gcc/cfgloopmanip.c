@@ -24,7 +24,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "rtl.h"
 #include "basic-block.h"
 #include "cfgloop.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "dumpfile.h"
 
 static void copy_loops_to (struct loop **, int,
@@ -223,15 +223,22 @@ fix_bb_placements (basic_block from,
 	  if (!fix_loop_placement (from->loop_father, irred_invalidated))
 	    continue;
 	  target_loop = loop_outer (from->loop_father);
+	  if (loop_closed_ssa_invalidated)
+	    {
+	      basic_block *bbs = get_loop_body (from->loop_father);
+	      for (unsigned i = 0; i < from->loop_father->num_nodes; ++i)
+		bitmap_set_bit (loop_closed_ssa_invalidated, bbs[i]->index);
+	      free (bbs);
+	    }
 	}
       else
 	{
 	  /* Ordinary basic block.  */
 	  if (!fix_bb_placement (from))
 	    continue;
+	  target_loop = from->loop_father;
 	  if (loop_closed_ssa_invalidated)
 	    bitmap_set_bit (loop_closed_ssa_invalidated, from->index);
-	  target_loop = from->loop_father;
 	}
 
       FOR_EACH_EDGE (e, ei, from->succs)
@@ -343,7 +350,11 @@ remove_path (edge e)
     FOR_EACH_EDGE (ae, ei, e->src->succs)
       if (ae != e && ae->dest != EXIT_BLOCK_PTR && !bitmap_bit_p (seen, ae->dest->index)
 	  && ae->flags & EDGE_IRREDUCIBLE_LOOP)
-	irred_invalidated = true;
+	{
+	  irred_invalidated = true;
+	  break;
+	}
+
   for (i = 0; i < nrem; i++)
     {
       bb = rem_bbs[i];
@@ -939,7 +950,7 @@ unloop (struct loop *loop, bool *irred_invalidated,
 	remove_bb_from_loops (body[i]);
 	add_bb_to_loop (body[i], loop_outer (loop));
       }
-  free(body);
+  free (body);
 
   while (loop->inner)
     {

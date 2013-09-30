@@ -225,7 +225,7 @@ report_unroll_peel (struct loop *loop, location_t locus)
       && !loop->lpt_decision.times)
     {
       dump_printf_loc (report_flags, locus,
-                       "Turned loop into non-loop; it never loops.\n");
+                       "loop turned into non-loop; it never loops.\n");
       return;
     }
 
@@ -236,13 +236,16 @@ report_unroll_peel (struct loop *loop, location_t locus)
   else if (loop->header->count)
     niters = expected_loop_iterations (loop);
 
-  dump_printf_loc (report_flags, locus,
-                   "%s loop %d times",
-                   (loop->lpt_decision.decision == LPT_PEEL_COMPLETELY
-                    ?  "Completely unroll"
-                    : (loop->lpt_decision.decision == LPT_PEEL_SIMPLE
-                       ? "Peel" : "Unroll")),
-                   loop->lpt_decision.times);
+  if (loop->lpt_decision.decision == LPT_PEEL_COMPLETELY)
+    dump_printf_loc (report_flags, locus,
+                     "loop with %d iterations completely unrolled",
+		     loop->lpt_decision.times + 1);
+  else
+    dump_printf_loc (report_flags, locus,
+                     "loop %s %d times",
+                     (loop->lpt_decision.decision == LPT_PEEL_SIMPLE
+                       ? "peeled" : "unrolled"),
+                     loop->lpt_decision.times);
   if (profile_info)
     dump_printf (report_flags,
                  " (header execution count %d",
@@ -1163,8 +1166,7 @@ unroll_loop_runtime_iterations (struct loop *loop)
      the number of unrollings is a power of two, and thus this is correct
      even if there is overflow in the computation.  */
   niter = expand_simple_binop (desc->mode, AND,
-			       niter,
-			       GEN_INT (max_unroll),
+			       niter, gen_int_mode (max_unroll, desc->mode),
 			       NULL_RTX, 0, OPTAB_LIB_WIDEN);
 
   init_code = get_insns ();
@@ -1307,7 +1309,7 @@ unroll_loop_runtime_iterations (struct loop *loop)
   gcc_assert (!desc->const_iter);
   desc->niter_expr =
     simplify_gen_binary (UDIV, desc->mode, old_niter,
-			 GEN_INT (max_unroll + 1));
+			 gen_int_mode (max_unroll + 1, desc->mode));
   loop->nb_iterations_upper_bound
     = loop->nb_iterations_upper_bound.udiv (double_int::from_uhwi (max_unroll
 								   + 1),
@@ -1632,7 +1634,7 @@ unroll_loop_stupid (struct loop *loop)
 	 for a loop to be really simple.  We could update the counts, but the
 	 problem is that we are unable to decide which exit will be taken
 	 (not really true in case the number of iterations is constant,
-	 but noone will do anything with this information, so we do not
+	 but no one will do anything with this information, so we do not
 	 worry about it).  */
       desc->simple_p = false;
     }

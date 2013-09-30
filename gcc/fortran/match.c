@@ -556,8 +556,8 @@ gfc_match_name (char *buffer)
 
   if (c == '$' && !gfc_option.flag_dollar_ok)
     {
-      gfc_error ("Invalid character '$' at %C. Use -fdollar-ok to allow it "
-		 "as an extension");
+      gfc_fatal_error ("Invalid character '$' at %L. Use -fdollar-ok to allow "
+		       "it as an extension", &old_loc);
       return MATCH_ERROR;
     }
 
@@ -1608,13 +1608,12 @@ got_match:
      is in new_st.  Rearrange things so that the IF statement appears
      in new_st.  */
 
-  p = gfc_get_code ();
-  p->next = gfc_get_code ();
+  p = gfc_get_code (EXEC_IF);
+  p->next = XCNEW (gfc_code);
   *p->next = new_st;
   p->next->loc = gfc_current_locus;
 
   p->expr1 = expr;
-  p->op = EXEC_IF;
 
   gfc_clear_new_st ();
 
@@ -2224,7 +2223,7 @@ match_simple_forall (void)
 	goto syntax;
     }
 
-  c = gfc_get_code ();
+  c = XCNEW (gfc_code);
   *c = new_st;
   c->loc = gfc_current_locus;
 
@@ -2235,9 +2234,7 @@ match_simple_forall (void)
   new_st.op = EXEC_FORALL;
   new_st.expr1 = mask;
   new_st.ext.forall_iterator = head;
-  new_st.block = gfc_get_code ();
-
-  new_st.block->op = EXEC_FORALL;
+  new_st.block = gfc_get_code (EXEC_FORALL);
   new_st.block->next = c;
 
   return MATCH_YES;
@@ -2302,7 +2299,7 @@ gfc_match_forall (gfc_statement *st)
 	goto syntax;
     }
 
-  c = gfc_get_code ();
+  c = XCNEW (gfc_code);
   *c = new_st;
   c->loc = gfc_current_locus;
 
@@ -2310,8 +2307,7 @@ gfc_match_forall (gfc_statement *st)
   new_st.op = EXEC_FORALL;
   new_st.expr1 = mask;
   new_st.ext.forall_iterator = head;
-  new_st.block = gfc_get_code ();
-  new_st.block->op = EXEC_FORALL;
+  new_st.block = gfc_get_code (EXEC_FORALL);
   new_st.block->next = c;
 
   *st = ST_FORALL;
@@ -3283,15 +3279,14 @@ gfc_match_goto (void)
 	    goto cleanup;
 
 	  if (head == NULL)
-	    head = tail = gfc_get_code ();
+	    head = tail = gfc_get_code (EXEC_GOTO);
 	  else
 	    {
-	      tail->block = gfc_get_code ();
+	      tail->block = gfc_get_code (EXEC_GOTO);
 	      tail = tail->block;
 	    }
 
 	  tail->label1 = label;
-	  tail->op = EXEC_GOTO;
 	}
       while (gfc_match_char (',') == MATCH_YES);
 
@@ -3328,10 +3323,10 @@ gfc_match_goto (void)
 	goto cleanup;
 
       if (head == NULL)
-	head = tail = gfc_get_code ();
+	head = tail = gfc_get_code (EXEC_SELECT);
       else
 	{
-	  tail->block = gfc_get_code ();
+	  tail->block = gfc_get_code (EXEC_SELECT);
 	  tail = tail->block;
 	}
 
@@ -3339,11 +3334,9 @@ gfc_match_goto (void)
       cp->low = cp->high = gfc_get_int_expr (gfc_default_integer_kind,
 					     NULL, i++);
 
-      tail->op = EXEC_SELECT;
       tail->ext.block.case_list = cp;
 
-      tail->next = gfc_get_code ();
-      tail->next->op = EXEC_GOTO;
+      tail->next = gfc_get_code (EXEC_GOTO);
       tail->next->label1 = label;
     }
   while (gfc_match_char (',') == MATCH_YES);
@@ -3800,14 +3793,16 @@ gfc_match_nullify (void)
 
       /* Chain to list.  */
       if (tail == NULL)
-	tail = &new_st;
+	{
+	  tail = &new_st;
+	  tail->op = EXEC_POINTER_ASSIGN;
+	}
       else
 	{
-	  tail->next = gfc_get_code ();
+	  tail->next = gfc_get_code (EXEC_POINTER_ASSIGN);
 	  tail = tail->next;
 	}
 
-      tail->op = EXEC_POINTER_ASSIGN;
       tail->expr1 = p;
       tail->expr2 = e;
 
@@ -4188,7 +4183,10 @@ gfc_match_call (void)
   i = 0;
   for (a = arglist; a; a = a->next)
     if (a->expr == NULL)
-      i = 1;
+      {
+	i = 1;
+	break;
+      }
 
   if (i)
     {
@@ -4196,8 +4194,7 @@ gfc_match_call (void)
       gfc_symbol *select_sym;
       char name[GFC_MAX_SYMBOL_LEN + 1];
 
-      new_st.next = c = gfc_get_code ();
-      c->op = EXEC_SELECT;
+      new_st.next = c = gfc_get_code (EXEC_SELECT);
       sprintf (name, "_result_%s", sym->name);
       gfc_get_ha_sym_tree (name, &select_st);   /* Can't fail.  */
 
@@ -4222,17 +4219,15 @@ gfc_match_call (void)
 
 	  i++;
 
-	  c->block = gfc_get_code ();
+	  c->block = gfc_get_code (EXEC_SELECT);
 	  c = c->block;
-	  c->op = EXEC_SELECT;
 
 	  new_case = gfc_get_case ();
 	  new_case->high = gfc_get_int_expr (gfc_default_integer_kind, NULL, i);
 	  new_case->low = new_case->high;
 	  c->ext.block.case_list = new_case;
 
-	  c->next = gfc_get_code ();
-	  c->next->op = EXEC_GOTO;
+	  c->next = gfc_get_code (EXEC_GOTO);
 	  c->next->label1 = a->label;
 	}
     }
@@ -4520,10 +4515,6 @@ syntax:
   gfc_syntax_error (ST_COMMON);
 
 cleanup:
-  if (old_blank_common)
-    old_blank_common->common_next = NULL;
-  else
-    gfc_current_ns->blank_common.head = NULL;
   gfc_free_array_spec (as);
   return MATCH_ERROR;
 }
@@ -5102,7 +5093,6 @@ copy_ts_from_selector_to_associate (gfc_expr *associate, gfc_expr *selector)
 {
   gfc_ref *ref;
   gfc_symbol *assoc_sym;
-  int i;
 
   assoc_sym = associate->symtree->n.sym;
 
@@ -5113,9 +5103,8 @@ copy_ts_from_selector_to_associate (gfc_expr *associate, gfc_expr *selector)
   while (ref && ref->next)
     ref = ref->next;
 
-  if (selector->ts.type == BT_CLASS
-	&& CLASS_DATA (selector)->as
-	&& ref && ref->type == REF_ARRAY)
+  if (selector->ts.type == BT_CLASS && CLASS_DATA (selector)->as
+      && ref && ref->type == REF_ARRAY)
     {
       /* Ensure that the array reference type is set.  We cannot use
 	 gfc_resolve_expr at this point, so the usable parts of
@@ -5123,7 +5112,7 @@ copy_ts_from_selector_to_associate (gfc_expr *associate, gfc_expr *selector)
       if (ref->u.ar.type == AR_UNKNOWN)
 	{
 	  ref->u.ar.type = AR_ELEMENT;
-	  for (i = 0; i < ref->u.ar.dimen + ref->u.ar.codimen; i++)
+	  for (int i = 0; i < ref->u.ar.dimen + ref->u.ar.codimen; i++)
 	    if (ref->u.ar.dimen_type[i] == DIMEN_RANGE
 		|| ref->u.ar.dimen_type[i] == DIMEN_VECTOR
 		|| (ref->u.ar.dimen_type[i] == DIMEN_UNKNOWN
@@ -5142,37 +5131,19 @@ copy_ts_from_selector_to_associate (gfc_expr *associate, gfc_expr *selector)
 	selector->rank = 0;
     }
 
-  if (selector->ts.type != BT_CLASS)
+  if (selector->rank)
     {
-      /* The correct class container has to be available.  */
-      if (selector->rank)
-	{
-	  assoc_sym->attr.dimension = 1;
-	  assoc_sym->as = gfc_get_array_spec ();
-	  assoc_sym->as->rank = selector->rank;
-	  assoc_sym->as->type = AS_DEFERRED;
-	}
-      else
-	assoc_sym->as = NULL;
-
-      assoc_sym->ts.type = BT_CLASS;
-      assoc_sym->ts.u.derived = selector->ts.u.derived;
-      assoc_sym->attr.pointer = 1;
-      gfc_build_class_symbol (&assoc_sym->ts, &assoc_sym->attr,
-			      &assoc_sym->as, false);
+      assoc_sym->attr.dimension = 1;
+      assoc_sym->as = gfc_get_array_spec ();
+      assoc_sym->as->rank = selector->rank;
+      assoc_sym->as->type = AS_DEFERRED;
     }
   else
+    assoc_sym->as = NULL;
+
+  if (selector->ts.type == BT_CLASS)
     {
       /* The correct class container has to be available.  */
-      if (selector->rank)
-	{
-	  assoc_sym->attr.dimension = 1;
-	  assoc_sym->as = gfc_get_array_spec ();
-	  assoc_sym->as->rank = selector->rank;
-	  assoc_sym->as->type = AS_DEFERRED;
-	}
-      else
-	assoc_sym->as = NULL;
       assoc_sym->ts.type = BT_CLASS;
       assoc_sym->ts.u.derived = CLASS_DATA (selector)->ts.u.derived;
       assoc_sym->attr.pointer = 1;
@@ -5640,12 +5611,10 @@ match_simple_where (void)
   if (gfc_match_eos () != MATCH_YES)
     goto syntax;
 
-  c = gfc_get_code ();
-
-  c->op = EXEC_WHERE;
+  c = gfc_get_code (EXEC_WHERE);
   c->expr1 = expr;
-  c->next = gfc_get_code ();
 
+  c->next = XCNEW (gfc_code);
   *c->next = new_st;
   gfc_clear_new_st ();
 
@@ -5700,12 +5669,10 @@ gfc_match_where (gfc_statement *st)
 
   /* We've got a simple WHERE statement.  */
   *st = ST_WHERE;
-  c = gfc_get_code ();
-
-  c->op = EXEC_WHERE;
+  c = gfc_get_code (EXEC_WHERE);
   c->expr1 = expr;
-  c->next = gfc_get_code ();
 
+  c->next = XCNEW (gfc_code);
   *c->next = new_st;
   gfc_clear_new_st ();
 

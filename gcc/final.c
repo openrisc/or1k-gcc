@@ -70,7 +70,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "debug.h"
 #include "expr.h"
 #include "tree-pass.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "cgraph.h"
 #include "coverage.h"
 #include "df.h"
@@ -704,7 +704,7 @@ compute_alignments (void)
   freq_threshold = freq_max / PARAM_VALUE (PARAM_ALIGN_THRESHOLD);
 
   if (dump_file)
-    fprintf(dump_file, "freq_max: %i\n",freq_max);
+    fprintf (dump_file, "freq_max: %i\n",freq_max);
   FOR_EACH_BB (bb)
     {
       rtx label = BB_HEAD (bb);
@@ -716,9 +716,10 @@ compute_alignments (void)
 	  || optimize_bb_for_size_p (bb))
 	{
 	  if (dump_file)
-	    fprintf(dump_file, "BB %4i freq %4i loop %2i loop_depth %2i skipped.\n",
-		    bb->index, bb->frequency, bb->loop_father->num,
-		    bb_loop_depth (bb));
+	    fprintf (dump_file,
+		     "BB %4i freq %4i loop %2i loop_depth %2i skipped.\n",
+		     bb->index, bb->frequency, bb->loop_father->num,
+		     bb_loop_depth (bb));
 	  continue;
 	}
       max_log = LABEL_ALIGN (label);
@@ -733,10 +734,11 @@ compute_alignments (void)
 	}
       if (dump_file)
 	{
-	  fprintf(dump_file, "BB %4i freq %4i loop %2i loop_depth %2i fall %4i branch %4i",
-		  bb->index, bb->frequency, bb->loop_father->num,
-		  bb_loop_depth (bb),
-		  fallthru_frequency, branch_frequency);
+	  fprintf (dump_file, "BB %4i freq %4i loop %2i loop_depth"
+		   " %2i fall %4i branch %4i",
+		   bb->index, bb->frequency, bb->loop_father->num,
+		   bb_loop_depth (bb),
+		   fallthru_frequency, branch_frequency);
 	  if (!bb->loop_father->inner && bb->loop_father->num)
 	    fprintf (dump_file, " inner_loop");
 	  if (bb->loop_father->header == bb)
@@ -762,7 +764,7 @@ compute_alignments (void)
 	{
 	  log = JUMP_ALIGN (label);
 	  if (dump_file)
-	    fprintf(dump_file, "  jump alignment added.\n");
+	    fprintf (dump_file, "  jump alignment added.\n");
 	  if (max_log < log)
 	    {
 	      max_log = log;
@@ -779,7 +781,7 @@ compute_alignments (void)
 	{
 	  log = LOOP_ALIGN (label);
 	  if (dump_file)
-	    fprintf(dump_file, "  internal loop alignment added.\n");
+	    fprintf (dump_file, "  internal loop alignment added.\n");
 	  if (max_log < log)
 	    {
 	      max_log = log;
@@ -795,25 +797,89 @@ compute_alignments (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_compute_alignments =
+/* Grow the LABEL_ALIGN array after new labels are created.  */
+
+static void 
+grow_label_align (void)
 {
- {
-  RTL_PASS,
-  "alignments",                         /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  compute_alignments,                   /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_NONE,                              /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  TODO_verify_rtl_sharing               /* todo_flags_finish */
- }
+  int old = max_labelno;
+  int n_labels;
+  int n_old_labels;
+
+  max_labelno = max_label_num ();
+
+  n_labels = max_labelno - min_labelno + 1;
+  n_old_labels = old - min_labelno + 1;
+
+  label_align = XRESIZEVEC (struct label_alignment, label_align, n_labels);
+
+  /* Range of labels grows monotonically in the function.  Failing here
+     means that the initialization of array got lost.  */
+  gcc_assert (n_old_labels <= n_labels);
+
+  memset (label_align + n_old_labels, 0,
+          (n_labels - n_old_labels) * sizeof (struct label_alignment));
+}
+
+/* Update the already computed alignment information.  LABEL_PAIRS is a vector
+   made up of pairs of labels for which the alignment information of the first
+   element will be copied from that of the second element.  */
+
+void
+update_alignments (vec<rtx> &label_pairs)
+{
+  unsigned int i = 0;
+  rtx iter, label;
+
+  if (max_labelno != max_label_num ())
+    grow_label_align ();
+
+  FOR_EACH_VEC_ELT (label_pairs, i, iter)
+    if (i & 1)
+      {
+	LABEL_TO_ALIGNMENT (label) = LABEL_TO_ALIGNMENT (iter);
+	LABEL_TO_MAX_SKIP (label) = LABEL_TO_MAX_SKIP (iter);
+      }
+    else
+      label = iter;
+}
+
+namespace {
+
+const pass_data pass_data_compute_alignments =
+{
+  RTL_PASS, /* type */
+  "alignments", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_rtl_sharing, /* todo_flags_finish */
 };
+
+class pass_compute_alignments : public rtl_opt_pass
+{
+public:
+  pass_compute_alignments (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_compute_alignments, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return compute_alignments (); }
+
+}; // class pass_compute_alignments
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_compute_alignments (gcc::context *ctxt)
+{
+  return new pass_compute_alignments (ctxt);
+}
 
 
 /* Make a pass over all insns and compute their actual lengths by shortening
@@ -852,25 +918,7 @@ shorten_branches (rtx first)
   uid_shuid = XNEWVEC (int, max_uid);
 
   if (max_labelno != max_label_num ())
-    {
-      int old = max_labelno;
-      int n_labels;
-      int n_old_labels;
-
-      max_labelno = max_label_num ();
-
-      n_labels = max_labelno - min_labelno + 1;
-      n_old_labels = old - min_labelno + 1;
-
-      label_align = XRESIZEVEC (struct label_alignment, label_align, n_labels);
-
-      /* Range of labels grows monotonically in the function.  Failing here
-         means that the initialization of array got lost.  */
-      gcc_assert (n_old_labels <= n_labels);
-
-      memset (label_align + n_old_labels, 0,
-	      (n_labels - n_old_labels) * sizeof (struct label_alignment));
-    }
+    grow_label_align ();
 
   /* Initialize label_align and set up uid_shuid to be strictly
      monotonically rising with insn order.  */
@@ -1077,7 +1125,7 @@ shorten_branches (rtx first)
       INSN_ADDRESSES (uid) = insn_current_address + insn_lengths[uid];
 
       if (NOTE_P (insn) || BARRIER_P (insn)
-	  || LABEL_P (insn) || DEBUG_INSN_P(insn))
+	  || LABEL_P (insn) || DEBUG_INSN_P (insn))
 	continue;
       if (INSN_DELETED_P (insn))
 	continue;
@@ -1604,11 +1652,25 @@ reemit_insn_block_notes (void)
   rtx insn, note;
 
   insn = get_insns ();
-  if (!active_insn_p (insn))
-    insn = next_active_insn (insn);
-  for (; insn; insn = next_active_insn (insn))
+  for (; insn; insn = NEXT_INSN (insn))
     {
       tree this_block;
+
+      /* Prevent lexical blocks from straddling section boundaries.  */
+      if (NOTE_P (insn) && NOTE_KIND (insn) == NOTE_INSN_SWITCH_TEXT_SECTIONS)
+        {
+          for (tree s = cur_block; s != DECL_INITIAL (cfun->decl);
+               s = BLOCK_SUPERCONTEXT (s))
+            {
+              rtx note = emit_note_before (NOTE_INSN_BLOCK_END, insn);
+              NOTE_BLOCK (note) = s;
+              note = emit_note_after (NOTE_INSN_BLOCK_BEG, insn);
+              NOTE_BLOCK (note) = s;
+            }
+        }
+
+      if (!active_insn_p (insn))
+        continue;
 
       /* Avoid putting scope notes between jump table and its label.  */
       if (JUMP_TABLE_DATA_P (insn))
@@ -4409,25 +4471,42 @@ rest_of_handle_final (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_final =
+namespace {
+
+const pass_data pass_data_final =
 {
- {
-  RTL_PASS,
-  "final",                              /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  rest_of_handle_final,                 /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_FINAL,                             /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  0                                     /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "final", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_FINAL, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_final : public rtl_opt_pass
+{
+public:
+  pass_final (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_final, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return rest_of_handle_final (); }
+
+}; // class pass_final
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_final (gcc::context *ctxt)
+{
+  return new pass_final (ctxt);
+}
 
 
 static unsigned int
@@ -4438,25 +4517,42 @@ rest_of_handle_shorten_branches (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_shorten_branches =
+namespace {
+
+const pass_data pass_data_shorten_branches =
 {
- {
-  RTL_PASS,
-  "shorten",                            /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  rest_of_handle_shorten_branches,      /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_SHORTEN_BRANCH,                    /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  0                                     /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "shorten", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_SHORTEN_BRANCH, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_shorten_branches : public rtl_opt_pass
+{
+public:
+  pass_shorten_branches (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_shorten_branches, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return rest_of_handle_shorten_branches (); }
+
+}; // class pass_shorten_branches
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_shorten_branches (gcc::context *ctxt)
+{
+  return new pass_shorten_branches (ctxt);
+}
 
 
 static unsigned int
@@ -4585,22 +4681,39 @@ rest_of_clean_state (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_clean_state =
+namespace {
+
+const pass_data pass_data_clean_state =
 {
- {
-  RTL_PASS,
-  "*clean_state",                       /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  rest_of_clean_state,                  /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_FINAL,                             /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  PROP_rtl,                             /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  0                                     /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "*clean_state", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_FINAL, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  PROP_rtl, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_clean_state : public rtl_opt_pass
+{
+public:
+  pass_clean_state (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_clean_state, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return rest_of_clean_state (); }
+
+}; // class pass_clean_state
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_clean_state (gcc::context *ctxt)
+{
+  return new pass_clean_state (ctxt);
+}

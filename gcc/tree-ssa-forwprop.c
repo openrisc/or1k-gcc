@@ -25,7 +25,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm_p.h"
 #include "basic-block.h"
 #include "gimple-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "langhooks.h"
 #include "flags.h"
@@ -786,9 +786,10 @@ forward_propagate_addr_expr_1 (tree name, tree def_rhs,
 
   /* Now strip away any outer COMPONENT_REF/ARRAY_REF nodes from the LHS.
      ADDR_EXPR will not appear on the LHS.  */
-  lhs = gimple_assign_lhs (use_stmt);
-  while (handled_component_p (lhs))
-    lhs = TREE_OPERAND (lhs, 0);
+  tree *lhsp = gimple_assign_lhs_ptr (use_stmt);
+  while (handled_component_p (*lhsp))
+    lhsp = &TREE_OPERAND (*lhsp, 0);
+  lhs = *lhsp;
 
   /* Now see if the LHS node is a MEM_REF using NAME.  If so,
      propagate the ADDR_EXPR into the use of NAME and fold the result.  */
@@ -822,11 +823,13 @@ forward_propagate_addr_expr_1 (tree name, tree def_rhs,
       /* If the LHS is a plain dereference and the value type is the same as
          that of the pointed-to type of the address we can put the
 	 dereferenced address on the LHS preserving the original alias-type.  */
-      else if (gimple_assign_lhs (use_stmt) == lhs
-	       && integer_zerop (TREE_OPERAND (lhs, 1))
-	       && useless_type_conversion_p
-	            (TREE_TYPE (TREE_OPERAND (def_rhs, 0)),
-		     TREE_TYPE (gimple_assign_rhs1 (use_stmt)))
+      else if (integer_zerop (TREE_OPERAND (lhs, 1))
+	       && ((gimple_assign_lhs (use_stmt) == lhs
+		    && useless_type_conversion_p
+		         (TREE_TYPE (TREE_OPERAND (def_rhs, 0)),
+		          TREE_TYPE (gimple_assign_rhs1 (use_stmt))))
+		   || types_compatible_p (TREE_TYPE (lhs),
+					  TREE_TYPE (TREE_OPERAND (def_rhs, 0))))
 	       /* Don't forward anything into clobber stmts if it would result
 		  in the lhs no longer being a MEM_REF.  */
 	       && (!gimple_clobber_p (use_stmt)
@@ -854,7 +857,7 @@ forward_propagate_addr_expr_1 (tree name, tree def_rhs,
 	  TREE_SIDE_EFFECTS (*def_rhs_basep) = TREE_SIDE_EFFECTS (lhs);
 	  TREE_THIS_NOTRAP (*def_rhs_basep) = TREE_THIS_NOTRAP (lhs);
 	  new_lhs = unshare_expr (TREE_OPERAND (def_rhs, 0));
-	  gimple_assign_set_lhs (use_stmt, new_lhs);
+	  *lhsp = new_lhs;
 	  TREE_THIS_VOLATILE (new_lhs) = TREE_THIS_VOLATILE (lhs);
 	  TREE_SIDE_EFFECTS (new_lhs) = TREE_SIDE_EFFECTS (lhs);
 	  *def_rhs_basep = saved;
@@ -873,11 +876,12 @@ forward_propagate_addr_expr_1 (tree name, tree def_rhs,
 
   /* Strip away any outer COMPONENT_REF, ARRAY_REF or ADDR_EXPR
      nodes from the RHS.  */
-  rhs = gimple_assign_rhs1 (use_stmt);
-  if (TREE_CODE (rhs) == ADDR_EXPR)
-    rhs = TREE_OPERAND (rhs, 0);
-  while (handled_component_p (rhs))
-    rhs = TREE_OPERAND (rhs, 0);
+  tree *rhsp = gimple_assign_rhs1_ptr (use_stmt);
+  if (TREE_CODE (*rhsp) == ADDR_EXPR)
+    rhsp = &TREE_OPERAND (*rhsp, 0);
+  while (handled_component_p (*rhsp))
+    rhsp = &TREE_OPERAND (*rhsp, 0);
+  rhs = *rhsp;
 
   /* Now see if the RHS node is a MEM_REF using NAME.  If so,
      propagate the ADDR_EXPR into the use of NAME and fold the result.  */
@@ -909,11 +913,13 @@ forward_propagate_addr_expr_1 (tree name, tree def_rhs,
       /* If the RHS is a plain dereference and the value type is the same as
          that of the pointed-to type of the address we can put the
 	 dereferenced address on the RHS preserving the original alias-type.  */
-      else if (gimple_assign_rhs1 (use_stmt) == rhs
-	       && integer_zerop (TREE_OPERAND (rhs, 1))
-	       && useless_type_conversion_p
-		    (TREE_TYPE (gimple_assign_lhs (use_stmt)),
-		     TREE_TYPE (TREE_OPERAND (def_rhs, 0))))
+      else if (integer_zerop (TREE_OPERAND (rhs, 1))
+	       && ((gimple_assign_rhs1 (use_stmt) == rhs
+		    && useless_type_conversion_p
+		         (TREE_TYPE (gimple_assign_lhs (use_stmt)),
+		          TREE_TYPE (TREE_OPERAND (def_rhs, 0))))
+		   || types_compatible_p (TREE_TYPE (rhs),
+					  TREE_TYPE (TREE_OPERAND (def_rhs, 0)))))
 	{
 	  tree *def_rhs_basep = &TREE_OPERAND (def_rhs, 0);
 	  tree new_offset, new_base, saved, new_rhs;
@@ -937,7 +943,7 @@ forward_propagate_addr_expr_1 (tree name, tree def_rhs,
 	  TREE_SIDE_EFFECTS (*def_rhs_basep) = TREE_SIDE_EFFECTS (rhs);
 	  TREE_THIS_NOTRAP (*def_rhs_basep) = TREE_THIS_NOTRAP (rhs);
 	  new_rhs = unshare_expr (TREE_OPERAND (def_rhs, 0));
-	  gimple_assign_set_rhs1 (use_stmt, new_rhs);
+	  *rhsp = new_rhs;
 	  TREE_THIS_VOLATILE (new_rhs) = TREE_THIS_VOLATILE (rhs);
 	  TREE_SIDE_EFFECTS (new_rhs) = TREE_SIDE_EFFECTS (rhs);
 	  *def_rhs_basep = saved;
@@ -995,7 +1001,6 @@ forward_propagate_addr_expr_1 (tree name, tree def_rhs,
 static bool
 forward_propagate_addr_expr (tree name, tree rhs)
 {
-  int stmt_loop_depth = bb_loop_depth (gimple_bb (SSA_NAME_DEF_STMT (name)));
   imm_use_iterator iter;
   gimple use_stmt;
   bool all = true;
@@ -1008,37 +1013,24 @@ forward_propagate_addr_expr (tree name, tree rhs)
 
       /* If the use is not in a simple assignment statement, then
 	 there is nothing we can do.  */
-      if (gimple_code (use_stmt) != GIMPLE_ASSIGN)
+      if (!is_gimple_assign (use_stmt))
 	{
 	  if (!is_gimple_debug (use_stmt))
 	    all = false;
 	  continue;
 	}
 
-      /* If the use is in a deeper loop nest, then we do not want
-	 to propagate non-invariant ADDR_EXPRs into the loop as that
-	 is likely adding expression evaluations into the loop.  */
-      if (bb_loop_depth (gimple_bb (use_stmt)) > stmt_loop_depth
-	  && !is_gimple_min_invariant (rhs))
+      gimple_stmt_iterator gsi = gsi_for_stmt (use_stmt);
+      result = forward_propagate_addr_expr_1 (name, rhs, &gsi,
+					      single_use_p);
+      /* If the use has moved to a different statement adjust
+	 the update machinery for the old statement too.  */
+      if (use_stmt != gsi_stmt (gsi))
 	{
-	  all = false;
-	  continue;
+	  update_stmt (use_stmt);
+	  use_stmt = gsi_stmt (gsi);
 	}
-
-      {
-	gimple_stmt_iterator gsi = gsi_for_stmt (use_stmt);
-	result = forward_propagate_addr_expr_1 (name, rhs, &gsi,
-						single_use_p);
-	/* If the use has moved to a different statement adjust
-	   the update machinery for the old statement too.  */
-	if (use_stmt != gsi_stmt (gsi))
-	  {
-	    update_stmt (use_stmt);
-	    use_stmt = gsi_stmt (gsi);
-	  }
-
-	update_stmt (use_stmt);
-      }
+      update_stmt (use_stmt);
       all &= result;
 
       /* Remove intermediate now unused copy and conversion chains.  */
@@ -3185,9 +3177,9 @@ simplify_permutation (gimple_stmt_iterator *gsi)
 	    return 0;
 	  arg1 = arg0;
 	}
-      opt = fold_ternary (VEC_PERM_EXPR, TREE_TYPE(op0), arg0, arg1, op2);
+      opt = fold_ternary (VEC_PERM_EXPR, TREE_TYPE (op0), arg0, arg1, op2);
       if (!opt
-	  || (TREE_CODE (opt) != CONSTRUCTOR && TREE_CODE(opt) != VECTOR_CST))
+	  || (TREE_CODE (opt) != CONSTRUCTOR && TREE_CODE (opt) != VECTOR_CST))
 	return 0;
       gimple_assign_set_rhs_from_tree (gsi, opt);
       update_stmt (gsi_stmt (*gsi));
@@ -3548,23 +3540,41 @@ gate_forwprop (void)
   return flag_tree_forwprop;
 }
 
-struct gimple_opt_pass pass_forwprop =
+namespace {
+
+const pass_data pass_data_forwprop =
 {
- {
-  GIMPLE_PASS,
-  "forwprop",			/* name */
-  OPTGROUP_NONE,                /* optinfo_flags */
-  gate_forwprop,		/* gate */
-  ssa_forward_propagate_and_combine,	/* execute */
-  NULL,				/* sub */
-  NULL,				/* next */
-  0,				/* static_pass_number */
-  TV_TREE_FORWPROP,		/* tv_id */
-  PROP_cfg | PROP_ssa,		/* properties_required */
-  0,				/* properties_provided */
-  0,				/* properties_destroyed */
-  0,				/* todo_flags_start */
-  TODO_update_ssa
-  | TODO_verify_ssa		/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "forwprop", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_FORWPROP, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_update_ssa | TODO_verify_ssa ), /* todo_flags_finish */
 };
+
+class pass_forwprop : public gimple_opt_pass
+{
+public:
+  pass_forwprop (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_forwprop, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_forwprop (ctxt_); }
+  bool gate () { return gate_forwprop (); }
+  unsigned int execute () { return ssa_forward_propagate_and_combine (); }
+
+}; // class pass_forwprop
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_forwprop (gcc::context *ctxt)
+{
+  return new pass_forwprop (ctxt);
+}

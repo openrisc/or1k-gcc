@@ -26,7 +26,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm_p.h"
 #include "basic-block.h"
 #include "gimple-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "domwalk.h"
 #include "flags.h"
@@ -68,7 +68,6 @@ static bitmap need_eh_cleanup;
 
 static bool gate_dse (void);
 static unsigned int tree_ssa_dse (void);
-static void dse_enter_block (struct dom_walk_data *, basic_block);
 
 
 /* A helper of dse_optimize_stmt.
@@ -292,9 +291,16 @@ dse_optimize_stmt (gimple_stmt_iterator *gsi)
     }
 }
 
-static void
-dse_enter_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
-		 basic_block bb)
+class dse_dom_walker : public dom_walker
+{
+public:
+  dse_dom_walker (cdi_direction direction) : dom_walker (direction) {}
+
+  virtual void before_dom_children (basic_block);
+};
+
+void
+dse_dom_walker::before_dom_children (basic_block bb)
 {
   gimple_stmt_iterator gsi;
 
@@ -313,8 +319,6 @@ dse_enter_block (struct dom_walk_data *walk_data ATTRIBUTE_UNUSED,
 static unsigned int
 tree_ssa_dse (void)
 {
-  struct dom_walk_data walk_data;
-
   need_eh_cleanup = BITMAP_ALLOC (NULL);
 
   renumber_gimple_stmt_uids ();
@@ -328,22 +332,7 @@ tree_ssa_dse (void)
 
   /* Dead store elimination is fundamentally a walk of the post-dominator
      tree and a backwards walk of statements within each block.  */
-  walk_data.dom_direction = CDI_POST_DOMINATORS;
-  walk_data.initialize_block_local_data = NULL;
-  walk_data.before_dom_children = dse_enter_block;
-  walk_data.after_dom_children = NULL;
-
-  walk_data.block_local_data_size = 0;
-  walk_data.global_data = NULL;
-
-  /* Initialize the dominator walker.  */
-  init_walk_dominator_tree (&walk_data);
-
-  /* Recursively walk the dominator tree.  */
-  walk_dominator_tree (&walk_data, EXIT_BLOCK_PTR);
-
-  /* Finalize the dominator walker.  */
-  fini_walk_dominator_tree (&walk_data);
+  dse_dom_walker (CDI_POST_DOMINATORS).walk (cfun->cfg->x_exit_block_ptr);
 
   /* Removal of stores may make some EH edges dead.  Purge such edges from
      the CFG as needed.  */
@@ -366,22 +355,41 @@ gate_dse (void)
   return flag_tree_dse != 0;
 }
 
-struct gimple_opt_pass pass_dse =
+namespace {
+
+const pass_data pass_data_dse =
 {
- {
-  GIMPLE_PASS,
-  "dse",			/* name */
-  OPTGROUP_NONE,                /* optinfo_flags */
-  gate_dse,			/* gate */
-  tree_ssa_dse,			/* execute */
-  NULL,				/* sub */
-  NULL,				/* next */
-  0,				/* static_pass_number */
-  TV_TREE_DSE,			/* tv_id */
-  PROP_cfg | PROP_ssa,		/* properties_required */
-  0,				/* properties_provided */
-  0,				/* properties_destroyed */
-  0,				/* todo_flags_start */
-  TODO_verify_ssa		/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "dse", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_DSE, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_ssa, /* todo_flags_finish */
 };
+
+class pass_dse : public gimple_opt_pass
+{
+public:
+  pass_dse (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_dse, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_dse (ctxt_); }
+  bool gate () { return gate_dse (); }
+  unsigned int execute () { return tree_ssa_dse (); }
+
+}; // class pass_dse
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_dse (gcc::context *ctxt)
+{
+  return new pass_dse (ctxt);
+}

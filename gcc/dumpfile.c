@@ -52,6 +52,8 @@ static struct dump_file_info dump_files[TDI_end] =
   {NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, 0, 0},
   {".cgraph", "ipa-cgraph", NULL, NULL, NULL, NULL, NULL, TDF_IPA,
    0, 0, 0, 0, 0},
+  {".type-inheritance", "ipa-type-inheritance", NULL, NULL, NULL, NULL, NULL, TDF_IPA,
+   0, 0, 0, 0, 0},
   {".tu", "translation-unit", NULL, NULL, NULL, NULL, NULL, TDF_TREE,
    0, 0, 0, 0, 1},
   {".class", "class-hierarchy", NULL, NULL, NULL, NULL, NULL, TDF_TREE,
@@ -238,10 +240,10 @@ dump_open_alternate_stream (struct dump_file_info *dfi)
   if (dfi->alt_stream)
     return dfi->alt_stream;
 
-  stream = strcmp("stderr", dfi->alt_filename) == 0
+  stream = strcmp ("stderr", dfi->alt_filename) == 0
     ? stderr
-    : strcmp("stdout", dfi->alt_filename) == 0
-    ?  stdout
+    : strcmp ("stdout", dfi->alt_filename) == 0
+    ? stdout
     : fopen (dfi->alt_filename, dfi->alt_state < 0 ? "w" : "a");
 
   if (!stream)
@@ -257,16 +259,16 @@ dump_open_alternate_stream (struct dump_file_info *dfi)
 void
 dump_loc (int dump_kind, FILE *dfile, source_location loc)
 {
-  /* Currently vectorization passes print location information.  */
   if (dump_kind)
     {
       if (LOCATION_LOCUS (loc) > BUILTINS_LOCATION)
-        fprintf (dfile, "\n%s:%d: note: ", LOCATION_FILE (loc),
-                 LOCATION_LINE (loc));
+        fprintf (dfile, "%s:%d:%d: note: ", LOCATION_FILE (loc),
+                 LOCATION_LINE (loc), LOCATION_COLUMN (loc));
       else if (current_function_decl)
-        fprintf (dfile, "\n%s:%d: note: ",
+        fprintf (dfile, "%s:%d:%d: note: ",
                  DECL_SOURCE_FILE (current_function_decl),
-                 DECL_SOURCE_LINE (current_function_decl));
+                 DECL_SOURCE_LINE (current_function_decl),
+                 DECL_SOURCE_COLUMN (current_function_decl));
     }
 }
 
@@ -402,10 +404,10 @@ dump_start (int phase, int *flag_ptr)
   name = get_dump_file_name (phase);
   if (name)
     {
-      stream = strcmp("stderr", name) == 0
+      stream = strcmp ("stderr", name) == 0
           ? stderr
-          : strcmp("stdout", name) == 0
-          ?  stdout
+          : strcmp ("stdout", name) == 0
+          ? stdout
           : fopen (name, dfi->pstate < 0 ? "w" : "a");
       if (!stream)
         error ("could not open dump file %qs: %m", name);
@@ -448,11 +450,13 @@ dump_finish (int phase)
   if (phase < 0)
     return;
   dfi = get_dump_file_info (phase);
-  if (dfi->pstream)
+  if (dfi->pstream && (!dfi->pfilename
+                       || (strcmp ("stderr", dfi->pfilename) != 0
+                           && strcmp ("stdout", dfi->pfilename) != 0)))
     fclose (dfi->pstream);
 
-  if (dfi->alt_stream && strcmp("stderr", dfi->alt_filename) != 0
-      && strcmp("stdout", dfi->alt_filename) != 0)
+  if (dfi->alt_stream && strcmp ("stderr", dfi->alt_filename) != 0
+      && strcmp ("stdout", dfi->alt_filename) != 0)
     fclose (dfi->alt_stream);
 
   dfi->alt_stream = NULL;
@@ -484,10 +488,10 @@ dump_begin (int phase, int *flag_ptr)
     return NULL;
   dfi = get_dump_file_info (phase);
 
-  stream = strcmp("stderr", name) == 0
+  stream = strcmp ("stderr", name) == 0
     ? stderr
-    : strcmp("stdout", name) == 0
-    ?  stdout
+    : strcmp ("stdout", name) == 0
+    ? stdout
     : fopen (name, dfi->pstate < 0 ? "w" : "a");
 
   if (!stream)

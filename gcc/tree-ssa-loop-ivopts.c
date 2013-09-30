@@ -69,7 +69,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm_p.h"
 #include "basic-block.h"
 #include "gimple-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "cfgloop.h"
 #include "tree-pass.h"
 #include "ggc.h"
@@ -3920,7 +3920,7 @@ get_loop_invariant_expr_id (struct ivopts_data *data, tree ubase,
 
   if (ratio == 1)
     {
-      if(operand_equal_p (ubase, cbase, 0))
+      if (operand_equal_p (ubase, cbase, 0))
         return -1;
 
       if (TREE_CODE (ubase) == ADDR_EXPR
@@ -4876,22 +4876,36 @@ set_autoinc_for_original_candidates (struct ivopts_data *data)
   for (i = 0; i < n_iv_cands (data); i++)
     {
       struct iv_cand *cand = iv_cand (data, i);
-      struct iv_use *closest = NULL;
+      struct iv_use *closest_before = NULL;
+      struct iv_use *closest_after = NULL;
       if (cand->pos != IP_ORIGINAL)
 	continue;
+
       for (j = 0; j < n_iv_uses (data); j++)
 	{
 	  struct iv_use *use = iv_use (data, j);
 	  unsigned uid = gimple_uid (use->stmt);
-	  if (gimple_bb (use->stmt) != gimple_bb (cand->incremented_at)
-	      || uid > gimple_uid (cand->incremented_at))
+
+	  if (gimple_bb (use->stmt) != gimple_bb (cand->incremented_at))
 	    continue;
-	  if (closest == NULL || uid > gimple_uid (closest->stmt))
-	    closest = use;
+
+	  if (uid < gimple_uid (cand->incremented_at)
+	      && (closest_before == NULL
+		  || uid > gimple_uid (closest_before->stmt)))
+	    closest_before = use;
+
+	  if (uid > gimple_uid (cand->incremented_at)
+	      && (closest_after == NULL
+		  || uid < gimple_uid (closest_after->stmt)))
+	    closest_after = use;
 	}
-      if (closest == NULL || !autoinc_possible_for_pair (data, closest, cand))
-	continue;
-      cand->ainc_use = closest;
+
+      if (closest_before != NULL
+	  && autoinc_possible_for_pair (data, closest_before, cand))
+	cand->ainc_use = closest_before;
+      else if (closest_after != NULL
+	       && autoinc_possible_for_pair (data, closest_after, cand))
+	cand->ainc_use = closest_after;
     }
 }
 

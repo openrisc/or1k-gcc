@@ -27,7 +27,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "function.h"
 #include "except.h"
 #include "pointer-set.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-inline.h"
 #include "tree-pass.h"
 #include "langhooks.h"
@@ -1737,7 +1737,7 @@ lower_try_finally (struct leh_state *state, gimple tp)
 	{
 	  gimple_seq new_eh_seq = eh_seq;
 	  eh_seq = old_eh_seq;
-	  gimple_seq_add_seq(&eh_seq, new_eh_seq);
+	  gimple_seq_add_seq (&eh_seq, new_eh_seq);
 	}
     }
 
@@ -2157,25 +2157,42 @@ lower_eh_constructs (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_lower_eh =
+namespace {
+
+const pass_data pass_data_lower_eh =
 {
- {
-  GIMPLE_PASS,
-  "eh",					/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  lower_eh_constructs,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_EH,				/* tv_id */
-  PROP_gimple_lcf,			/* properties_required */
-  PROP_gimple_leh,			/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0             			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "eh", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_EH, /* tv_id */
+  PROP_gimple_lcf, /* properties_required */
+  PROP_gimple_leh, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_lower_eh : public gimple_opt_pass
+{
+public:
+  pass_lower_eh (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_lower_eh, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return lower_eh_constructs (); }
+
+}; // class pass_lower_eh
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_lower_eh (gcc::context *ctxt)
+{
+  return new pass_lower_eh (ctxt);
+}
 
 /* Create the multiple edges from an EH_DISPATCH statement to all of
    the possible handlers for its EH region.  Return true if there's
@@ -3017,25 +3034,43 @@ gate_refactor_eh (void)
   return flag_exceptions != 0;
 }
 
-struct gimple_opt_pass pass_refactor_eh =
+namespace {
+
+const pass_data pass_data_refactor_eh =
 {
- {
-  GIMPLE_PASS,
-  "ehopt",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_refactor_eh,			/* gate */
-  refactor_eh,				/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_EH,				/* tv_id */
-  PROP_gimple_lcf,			/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0             			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "ehopt", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_EH, /* tv_id */
+  PROP_gimple_lcf, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_refactor_eh : public gimple_opt_pass
+{
+public:
+  pass_refactor_eh (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_refactor_eh, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_refactor_eh (); }
+  unsigned int execute () { return refactor_eh (); }
+
+}; // class pass_refactor_eh
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_refactor_eh (gcc::context *ctxt)
+{
+  return new pass_refactor_eh (ctxt);
+}
 
 /* At the end of gimple optimization, we can lower RESX.  */
 
@@ -3226,25 +3261,43 @@ gate_lower_resx (void)
   return flag_exceptions != 0;
 }
 
-struct gimple_opt_pass pass_lower_resx =
+namespace {
+
+const pass_data pass_data_lower_resx =
 {
- {
-  GIMPLE_PASS,
-  "resx",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_lower_resx,			/* gate */
-  execute_lower_resx,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_EH,				/* tv_id */
-  PROP_gimple_lcf,			/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_flow	                /* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "resx", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_EH, /* tv_id */
+  PROP_gimple_lcf, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_flow, /* todo_flags_finish */
 };
+
+class pass_lower_resx : public gimple_opt_pass
+{
+public:
+  pass_lower_resx (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_lower_resx, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_lower_resx (); }
+  unsigned int execute () { return execute_lower_resx (); }
+
+}; // class pass_lower_resx
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_lower_resx (gcc::context *ctxt)
+{
+  return new pass_lower_resx (ctxt);
+}
 
 /* Try to optimize var = {v} {CLOBBER} stmts followed just by
    external throw.  */
@@ -3619,25 +3672,43 @@ gate_lower_eh_dispatch (void)
   return cfun->eh->region_tree != NULL;
 }
 
-struct gimple_opt_pass pass_lower_eh_dispatch =
+namespace {
+
+const pass_data pass_data_lower_eh_dispatch =
 {
- {
-  GIMPLE_PASS,
-  "ehdisp",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_lower_eh_dispatch,		/* gate */
-  execute_lower_eh_dispatch,		/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_EH,				/* tv_id */
-  PROP_gimple_lcf,			/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_flow	                /* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "ehdisp", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_EH, /* tv_id */
+  PROP_gimple_lcf, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_flow, /* todo_flags_finish */
 };
+
+class pass_lower_eh_dispatch : public gimple_opt_pass
+{
+public:
+  pass_lower_eh_dispatch (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_lower_eh_dispatch, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_lower_eh_dispatch (); }
+  unsigned int execute () { return execute_lower_eh_dispatch (); }
+
+}; // class pass_lower_eh_dispatch
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_lower_eh_dispatch (gcc::context *ctxt)
+{
+  return new pass_lower_eh_dispatch (ctxt);
+}
 
 /* Walk statements, see what regions and, optionally, landing pads
    are really referenced.
@@ -4383,7 +4454,7 @@ cleanup_all_empty_eh (void)
     2) MUST_NOT_THROW regions that became dead because of 1) are optimized out
     3) Info about regions that are containing instructions, and regions
        reachable via local EH edges is collected
-    4) Eh tree is pruned for regions no longer neccesary.
+    4) Eh tree is pruned for regions no longer necessary.
 
    TODO: Push MUST_NOT_THROW regions to the root of the EH tree.
 	 Unify those that have the same failure decl and locus.
@@ -4445,24 +4516,44 @@ gate_cleanup_eh (void)
   return cfun->eh != NULL && cfun->eh->region_tree != NULL;
 }
 
-struct gimple_opt_pass pass_cleanup_eh = {
-  {
-   GIMPLE_PASS,
-   "ehcleanup",			/* name */
-   OPTGROUP_NONE,               /* optinfo_flags */
-   gate_cleanup_eh,		/* gate */
-   execute_cleanup_eh,		/* execute */
-   NULL,			/* sub */
-   NULL,			/* next */
-   0,				/* static_pass_number */
-   TV_TREE_EH,			/* tv_id */
-   PROP_gimple_lcf,		/* properties_required */
-   0,				/* properties_provided */
-   0,				/* properties_destroyed */
-   0,				/* todo_flags_start */
-   TODO_verify_ssa    		/* todo_flags_finish */
-   }
+namespace {
+
+const pass_data pass_data_cleanup_eh =
+{
+  GIMPLE_PASS, /* type */
+  "ehcleanup", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_EH, /* tv_id */
+  PROP_gimple_lcf, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_ssa, /* todo_flags_finish */
 };
+
+class pass_cleanup_eh : public gimple_opt_pass
+{
+public:
+  pass_cleanup_eh (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_cleanup_eh, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_cleanup_eh (ctxt_); }
+  bool gate () { return gate_cleanup_eh (); }
+  unsigned int execute () { return execute_cleanup_eh (); }
+
+}; // class pass_cleanup_eh
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_cleanup_eh (gcc::context *ctxt)
+{
+  return new pass_cleanup_eh (ctxt);
+}
 
 /* Verify that BB containing STMT as the last statement, has precisely the
    edge that make_eh_edges would create.  */

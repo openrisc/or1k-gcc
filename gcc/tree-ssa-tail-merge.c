@@ -194,7 +194,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "basic-block.h"
 #include "flags.h"
 #include "function.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "bitmap.h"
 #include "tree-ssa-alias.h"
 #include "params.h"
@@ -1615,7 +1615,7 @@ tail_merge_optimize (unsigned int todo)
       || max_iterations == 0
       /* We try to be conservative with respect to loop structure, since:
 	 - the cases where tail-merging could both affect loop structure and be
-	   benificial are rare,
+	   beneficial are rare,
 	 - it prevents us from having to fixup the loops using
 	   loops_state_set (LOOPS_NEED_FIXUP), and
 	 - keeping loop structure may allow us to simplify the pass.

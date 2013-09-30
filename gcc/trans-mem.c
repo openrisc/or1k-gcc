@@ -23,7 +23,7 @@
 #include "hash-table.h"
 #include "tree.h"
 #include "gimple.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "tree-inline.h"
 #include "diagnostic-core.h"
@@ -801,25 +801,43 @@ diagnose_tm_blocks (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_diagnose_tm_blocks =
+namespace {
+
+const pass_data pass_data_diagnose_tm_blocks =
 {
-  {
-    GIMPLE_PASS,
-    "*diagnose_tm_blocks",		/* name */
-    OPTGROUP_NONE,                      /* optinfo_flags */
-    gate_tm,				/* gate */
-    diagnose_tm_blocks,			/* execute */
-    NULL,				/* sub */
-    NULL,				/* next */
-    0,					/* static_pass_number */
-    TV_TRANS_MEM,			/* tv_id */
-    PROP_gimple_any,			/* properties_required */
-    0,					/* properties_provided */
-    0,					/* properties_destroyed */
-    0,					/* todo_flags_start */
-    0,					/* todo_flags_finish */
-  }
+  GIMPLE_PASS, /* type */
+  "*diagnose_tm_blocks", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TRANS_MEM, /* tv_id */
+  PROP_gimple_any, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_diagnose_tm_blocks : public gimple_opt_pass
+{
+public:
+  pass_diagnose_tm_blocks (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_diagnose_tm_blocks, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_tm (); }
+  unsigned int execute () { return diagnose_tm_blocks (); }
+
+}; // class pass_diagnose_tm_blocks
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_diagnose_tm_blocks (gcc::context *ctxt)
+{
+  return new pass_diagnose_tm_blocks (ctxt);
+}
 
 /* Instead of instrumenting thread private memory, we save the
    addresses in a log which we later use to save/restore the addresses
@@ -1613,7 +1631,7 @@ lower_transaction (gimple_stmt_iterator *gsi, struct walk_stmt_info *wi)
   /* If the transaction calls abort or if this is an outer transaction,
      add an "over" label afterwards.  */
   if ((this_state & (GTMA_HAVE_ABORT))
-      || (gimple_transaction_subcode(stmt) & GTMA_IS_OUTER))
+      || (gimple_transaction_subcode (stmt) & GTMA_IS_OUTER))
     {
       tree label = create_artificial_label (UNKNOWN_LOCATION);
       gimple_transaction_set_label (stmt, label);
@@ -1706,25 +1724,43 @@ execute_lower_tm (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_lower_tm =
+namespace {
+
+const pass_data pass_data_lower_tm =
 {
- {
-  GIMPLE_PASS,
-  "tmlower",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_tm,				/* gate */
-  execute_lower_tm,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TRANS_MEM,				/* tv_id */
-  PROP_gimple_lcf,			/* properties_required */
-  0,			                /* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0,             		        /* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "tmlower", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TRANS_MEM, /* tv_id */
+  PROP_gimple_lcf, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_lower_tm : public gimple_opt_pass
+{
+public:
+  pass_lower_tm (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_lower_tm, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_tm (); }
+  unsigned int execute () { return execute_lower_tm (); }
+
+}; // class pass_lower_tm
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_lower_tm (gcc::context *ctxt)
+{
+  return new pass_lower_tm (ctxt);
+}
 
 /* Collect region information for each transaction.  */
 
@@ -1968,25 +2004,42 @@ gate_tm_init (void)
   return true;
 }
 
-struct gimple_opt_pass pass_tm_init =
+namespace {
+
+const pass_data pass_data_tm_init =
 {
- {
-  GIMPLE_PASS,
-  "*tminit",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_tm_init,				/* gate */
-  NULL,					/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TRANS_MEM,				/* tv_id */
-  PROP_ssa | PROP_cfg,			/* properties_required */
-  0,			                /* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0,					/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "*tminit", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  false, /* has_execute */
+  TV_TRANS_MEM, /* tv_id */
+  ( PROP_ssa | PROP_cfg ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_tm_init : public gimple_opt_pass
+{
+public:
+  pass_tm_init (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_tm_init, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_tm_init (); }
+
+}; // class pass_tm_init
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_tm_init (gcc::context *ctxt)
+{
+  return new pass_tm_init (ctxt);
+}
 
 /* Add FLAGS to the GIMPLE_TRANSACTION subcode for the transaction region
    represented by STATE.  */
@@ -2700,8 +2753,8 @@ expand_transaction (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
       ei->probability = PROB_ALWAYS;
       et->probability = PROB_LIKELY;
       ef->probability = PROB_UNLIKELY;
-      et->count = apply_probability(test_bb->count, et->probability);
-      ef->count = apply_probability(test_bb->count, ef->probability);
+      et->count = apply_probability (test_bb->count, et->probability);
+      ef->count = apply_probability (test_bb->count, ef->probability);
 
       code_bb->count = et->count;
       code_bb->frequency = EDGE_FREQUENCY (et);
@@ -2740,14 +2793,14 @@ expand_transaction (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
       fallthru_edge->flags = EDGE_FALSE_VALUE;
       fallthru_edge->probability = PROB_VERY_LIKELY;
       fallthru_edge->count
-	= apply_probability(test_bb->count, fallthru_edge->probability);
+	= apply_probability (test_bb->count, fallthru_edge->probability);
 
       // Abort/over edge.
       redirect_edge_pred (abort_edge, test_bb);
       abort_edge->flags = EDGE_TRUE_VALUE;
       abort_edge->probability = PROB_VERY_UNLIKELY;
       abort_edge->count
-	= apply_probability(test_bb->count, abort_edge->probability);
+	= apply_probability (test_bb->count, abort_edge->probability);
 
       transaction_bb = test_bb;
     }
@@ -2789,13 +2842,13 @@ expand_transaction (struct tm_region *region, void *data ATTRIBUTE_UNUSED)
       inst_edge->flags = EDGE_FALSE_VALUE;
       inst_edge->probability = REG_BR_PROB_BASE / 2;
       inst_edge->count
-	= apply_probability(test_bb->count, inst_edge->probability);
+	= apply_probability (test_bb->count, inst_edge->probability);
 
       redirect_edge_pred (uninst_edge, test_bb);
       uninst_edge->flags = EDGE_TRUE_VALUE;
       uninst_edge->probability = REG_BR_PROB_BASE / 2;
       uninst_edge->count
-	= apply_probability(test_bb->count, uninst_edge->probability);
+	= apply_probability (test_bb->count, uninst_edge->probability);
     }
 
   // If we have no previous special cases, and we have PHIs at the beginning
@@ -2927,26 +2980,42 @@ execute_tm_mark (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_tm_mark =
+namespace {
+
+const pass_data pass_data_tm_mark =
 {
- {
-  GIMPLE_PASS,
-  "tmmark",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  execute_tm_mark,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TRANS_MEM,				/* tv_id */
-  PROP_ssa | PROP_cfg,			/* properties_required */
-  0,			                /* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_update_ssa
-  | TODO_verify_ssa, 			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "tmmark", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_TRANS_MEM, /* tv_id */
+  ( PROP_ssa | PROP_cfg ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_update_ssa | TODO_verify_ssa ), /* todo_flags_finish */
 };
+
+class pass_tm_mark : public gimple_opt_pass
+{
+public:
+  pass_tm_mark (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_tm_mark, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return execute_tm_mark (); }
+
+}; // class pass_tm_mark
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_tm_mark (gcc::context *ctxt)
+{
+  return new pass_tm_mark (ctxt);
+}
 
 
 /* Create an abnormal edge from STMT at iter, splitting the block
@@ -3094,26 +3163,42 @@ execute_tm_edges (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_tm_edges =
+namespace {
+
+const pass_data pass_data_tm_edges =
 {
- {
-  GIMPLE_PASS,
-  "tmedge",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  execute_tm_edges,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TRANS_MEM,				/* tv_id */
-  PROP_ssa | PROP_cfg,			/* properties_required */
-  0,			                /* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_update_ssa
-  | TODO_verify_ssa,			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "tmedge", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_TRANS_MEM, /* tv_id */
+  ( PROP_ssa | PROP_cfg ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_update_ssa | TODO_verify_ssa ), /* todo_flags_finish */
 };
+
+class pass_tm_edges : public gimple_opt_pass
+{
+public:
+  pass_tm_edges (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_tm_edges, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return execute_tm_edges (); }
+
+}; // class pass_tm_edges
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_tm_edges (gcc::context *ctxt)
+{
+  return new pass_tm_edges (ctxt);
+}
 
 /* Helper function for expand_regions.  Expand REGION and recurse to
    the inner region.  Call CALLBACK on each region.  CALLBACK returns
@@ -3818,25 +3903,43 @@ gate_tm_memopt (void)
   return flag_tm && optimize > 0;
 }
 
-struct gimple_opt_pass pass_tm_memopt =
+namespace {
+
+const pass_data pass_data_tm_memopt =
 {
- {
-  GIMPLE_PASS,
-  "tmmemopt",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_tm_memopt,			/* gate */
-  execute_tm_memopt,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TRANS_MEM,				/* tv_id */
-  PROP_ssa | PROP_cfg,			/* properties_required */
-  0,			                /* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0,            			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "tmmemopt", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TRANS_MEM, /* tv_id */
+  ( PROP_ssa | PROP_cfg ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_tm_memopt : public gimple_opt_pass
+{
+public:
+  pass_tm_memopt (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_tm_memopt, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_tm_memopt (); }
+  unsigned int execute () { return execute_tm_memopt (); }
+
+}; // class pass_tm_memopt
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_tm_memopt (gcc::context *ctxt)
+{
+  return new pass_tm_memopt (ctxt);
+}
 
 
 /* Interprocedual analysis for the creation of transactional clones.
@@ -4184,7 +4287,7 @@ ipa_tm_scan_irr_block (basic_block bb)
 		if (find_tm_replacement_function (fn))
 		  break;
 
-		node = cgraph_get_node(fn);
+		node = cgraph_get_node (fn);
 		d = get_cg_data (&node, true);
 
 		/* Return true if irrevocable, but above all, believe
@@ -4774,6 +4877,7 @@ ipa_tm_create_version (struct cgraph_node *old_node)
     DECL_COMDAT_GROUP (new_decl) = tm_mangle (DECL_COMDAT_GROUP (old_decl));
 
   new_node = cgraph_copy_node_for_versioning (old_node, new_decl, vNULL, NULL);
+  new_node->local.local = false;
   new_node->symbol.externally_visible = old_node->symbol.externally_visible;
   new_node->lowered = true;
   new_node->tm_clone = 1;
@@ -4887,7 +4991,7 @@ ipa_tm_insert_gettmclone_call (struct cgraph_node *node,
 
   cgraph_create_edge (node, cgraph_get_create_node (gettm_fn), g, 0,
 		      compute_call_stmt_bb_frequency (node->symbol.decl,
-						      gimple_bb(g)));
+						      gimple_bb (g)));
 
   /* Cast return value from tm_gettmclone* into appropriate function
      pointer.  */
@@ -5168,9 +5272,9 @@ ipa_tm_transform_clone (struct cgraph_node *node)
 static unsigned int
 ipa_tm_execute (void)
 {
-  cgraph_node_queue tm_callees = cgraph_node_queue();
+  cgraph_node_queue tm_callees = cgraph_node_queue ();
   /* List of functions that will go irrevocable.  */
-  cgraph_node_queue irr_worklist = cgraph_node_queue();
+  cgraph_node_queue irr_worklist = cgraph_node_queue ();
 
   struct cgraph_node *node;
   struct tm_ipa_cg_data *d;
@@ -5434,24 +5538,42 @@ ipa_tm_execute (void)
   return 0;
 }
 
-struct simple_ipa_opt_pass pass_ipa_tm =
+namespace {
+
+const pass_data pass_data_ipa_tm =
 {
- {
-  SIMPLE_IPA_PASS,
-  "tmipa",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_tm,				/* gate */
-  ipa_tm_execute,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TRANS_MEM,				/* tv_id */
-  PROP_ssa | PROP_cfg,			/* properties_required */
-  0,			                /* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0,					/* todo_flags_finish */
- },
+  SIMPLE_IPA_PASS, /* type */
+  "tmipa", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TRANS_MEM, /* tv_id */
+  ( PROP_ssa | PROP_cfg ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_ipa_tm : public simple_ipa_opt_pass
+{
+public:
+  pass_ipa_tm (gcc::context *ctxt)
+    : simple_ipa_opt_pass (pass_data_ipa_tm, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_tm (); }
+  unsigned int execute () { return ipa_tm_execute (); }
+
+}; // class pass_ipa_tm
+
+} // anon namespace
+
+simple_ipa_opt_pass *
+make_pass_ipa_tm (gcc::context *ctxt)
+{
+  return new pass_ipa_tm (ctxt);
+}
 
 #include "gt-trans-mem.h"

@@ -34,15 +34,6 @@ along with GCC; see the file COPYING3.  If not see
 
 typedef gimple gimple_seq_node;
 
-/* Types of supported temporaries.  GIMPLE temporaries may be symbols
-   in normal form (i.e., regular decls) or SSA names.  This enum is
-   used by create_gimple_tmp to tell it what kind of temporary the
-   caller wants.  */
-enum ssa_mode {
-    M_SSA = 0,
-    M_NORMAL
-};
-
 /* For each block, the PHI nodes that need to be rewritten are stored into
    these vectors.  */
 typedef vec<gimple> gimple_vec;
@@ -110,6 +101,9 @@ enum gf_mask {
     GF_CALL_ALLOCA_FOR_VAR	= 1 << 5,
     GF_CALL_INTERNAL		= 1 << 6,
     GF_OMP_PARALLEL_COMBINED	= 1 << 0,
+    GF_OMP_FOR_KIND_MASK	= 3 << 0,
+    GF_OMP_FOR_KIND_FOR		= 0 << 0,
+    GF_OMP_FOR_KIND_SIMD	= 1 << 0,
 
     /* True on an GIMPLE_OMP_RETURN statement if the return does not require
        a thread synchronization via some sort of barrier.  The exact barrier
@@ -727,19 +721,6 @@ union GTY ((desc ("gimple_statement_structure (&%h)"),
   struct gimple_statement_transaction GTY((tag ("GSS_TRANSACTION"))) gimple_transaction;
 };
 
-/* In gimple.c.  */
-
-/* Helper functions to build GIMPLE statements.  */
-tree create_gimple_tmp (tree, enum ssa_mode = M_SSA);
-gimple build_assign (enum tree_code, tree, int, enum ssa_mode = M_SSA);
-gimple build_assign (enum tree_code, gimple, int, enum ssa_mode = M_SSA);
-gimple build_assign (enum tree_code, tree, tree, enum ssa_mode = M_SSA);
-gimple build_assign (enum tree_code, gimple, tree, enum ssa_mode = M_SSA);
-gimple build_assign (enum tree_code, tree, gimple, enum ssa_mode = M_SSA);
-gimple build_assign (enum tree_code, gimple, gimple, enum ssa_mode = M_SSA);
-gimple build_type_cast (tree, tree, enum ssa_mode = M_SSA);
-gimple build_type_cast (tree, gimple, enum ssa_mode = M_SSA);
-
 /* Offset in bytes to the location of the operand vector.
    Zero if there is no operand vector for this tuple structure.  */
 extern size_t const gimple_ops_offset_[];
@@ -799,7 +780,7 @@ gimple gimple_build_switch_nlabels (unsigned, tree, tree);
 gimple gimple_build_switch (tree, tree, vec<tree> );
 gimple gimple_build_omp_parallel (gimple_seq, tree, tree, tree);
 gimple gimple_build_omp_task (gimple_seq, tree, tree, tree, tree, tree, tree);
-gimple gimple_build_omp_for (gimple_seq, tree, size_t, gimple_seq);
+gimple gimple_build_omp_for (gimple_seq, int, tree, size_t, gimple_seq);
 gimple gimple_build_omp_critical (gimple_seq, tree);
 gimple gimple_build_omp_section (gimple_seq);
 gimple gimple_build_omp_continue (tree, tree);
@@ -854,7 +835,7 @@ unsigned get_gimple_rhs_num_ops (enum tree_code);
 gimple gimple_alloc_stat (enum gimple_code, unsigned MEM_STAT_DECL);
 const char *gimple_decl_printable_name (tree, int);
 tree gimple_get_virt_method_for_binfo (HOST_WIDE_INT, tree);
-tree gimple_extract_devirt_binfo_from_cst (tree);
+tree gimple_extract_devirt_binfo_from_cst (tree, tree);
 
 /* Returns true iff T is a scalar register variable.  */
 extern bool is_gimple_reg (tree);
@@ -906,8 +887,6 @@ extern void free_gimple_type_tables (void);
 extern tree gimple_unsigned_type (tree);
 extern tree gimple_signed_type (tree);
 extern alias_set_type gimple_get_alias_set (tree);
-extern void count_uses_and_derefs (tree, gimple, unsigned *, unsigned *,
-				   unsigned *);
 extern bool walk_stmt_load_store_addr_ops (gimple, void *,
 					   bool (*)(gimple, tree, void *),
 					   bool (*)(gimple, tree, void *),
@@ -919,6 +898,8 @@ extern bool gimple_ior_addresses_taken (bitmap, gimple);
 extern bool gimple_call_builtin_p (gimple, enum built_in_class);
 extern bool gimple_call_builtin_p (gimple, enum built_in_function);
 extern bool gimple_asm_clobbers_memory_p (const_gimple);
+extern bool useless_type_conversion_p (tree, tree);
+extern bool types_compatible_p (tree, tree);
 
 /* In gimplify.c  */
 extern tree create_tmp_var_raw (tree, const char *);
@@ -1094,12 +1075,6 @@ extern tree gimple_assign_rhs_to_tree (gimple);
 
 /* In builtins.c  */
 extern bool validate_gimple_arglist (const_gimple, ...);
-
-/* In tree-ssa.c  */
-extern bool tree_ssa_useless_type_conversion (tree);
-extern tree tree_ssa_strip_useless_type_conversions (tree);
-extern bool useless_type_conversion_p (tree, tree);
-extern bool types_compatible_p (tree, tree);
 
 /* In tree-ssa-coalesce.c */
 extern bool gimple_can_coalesce_p (tree, tree);
@@ -3948,6 +3923,27 @@ gimple_omp_critical_set_name (gimple gs, tree name)
 }
 
 
+/* Return the kind of OMP for statemement.  */
+
+static inline int
+gimple_omp_for_kind (const_gimple g)
+{
+  GIMPLE_CHECK (g, GIMPLE_OMP_FOR);
+  return (gimple_omp_subcode (g) & GF_OMP_FOR_KIND_MASK);
+}
+
+
+/* Set the OMP for kind.  */
+
+static inline void
+gimple_omp_for_set_kind (gimple g, int kind)
+{
+  GIMPLE_CHECK (g, GIMPLE_OMP_FOR);
+  g->gsbase.subcode = (g->gsbase.subcode & ~GF_OMP_FOR_KIND_MASK)
+		      | (kind & GF_OMP_FOR_KIND_MASK);
+}
+
+
 /* Return the clauses associated with OMP_FOR GS.  */
 
 static inline tree
@@ -5041,7 +5037,7 @@ gsi_start_1 (gimple_seq *seq)
   return i;
 }
 
-#define gsi_start(x) gsi_start_1(&(x))
+#define gsi_start(x) gsi_start_1 (&(x))
 
 static inline gimple_stmt_iterator
 gsi_none (void)
@@ -5084,7 +5080,7 @@ gsi_last_1 (gimple_seq *seq)
   return i;
 }
 
-#define gsi_last(x) gsi_last_1(&(x))
+#define gsi_last(x) gsi_last_1 (&(x))
 
 /* Return a new iterator pointing to the last statement in basic block BB.  */
 

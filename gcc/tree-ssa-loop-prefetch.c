@@ -25,7 +25,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm_p.h"
 #include "basic-block.h"
 #include "tree-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "cfgloop.h"
 #include "tree-pass.h"
 #include "insn-config.h"
@@ -555,7 +555,7 @@ gather_memory_references_ref (struct loop *loop, struct mem_ref_group **refs,
               fprintf (dump_file, "Memory expression %p\n",(void *) ref ); 
               print_generic_expr (dump_file, ref, TDF_TREE); 
               fprintf (dump_file,":");
-              dump_mem_details( dump_file, base, step, delta, write_p);              
+              dump_mem_details (dump_file, base, step, delta, write_p);
               fprintf (dump_file, 
                        "Ignoring %p, non-constant step prefetching is "
                        "limited to inner most loops \n", 
@@ -572,7 +572,7 @@ gather_memory_references_ref (struct loop *loop, struct mem_ref_group **refs,
                 fprintf (dump_file, "Memory expression %p\n",(void *) ref );
                 print_generic_expr (dump_file, ref, TDF_TREE);
                 fprintf (dump_file,":");
-                dump_mem_details(dump_file, base, step, delta, write_p);
+                dump_mem_details (dump_file, base, step, delta, write_p);
                 fprintf (dump_file, 
                          "Not prefetching, ignoring %p due to "
                          "loop variant step\n",

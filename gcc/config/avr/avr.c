@@ -3079,14 +3079,10 @@ avr_out_xload (rtx insn ATTRIBUTE_UNUSED, rtx *op, int *plen)
   xop[2] = lpm_addr_reg_rtx;
   xop[3] = AVR_HAVE_LPMX ? op[0] : lpm_reg_rtx;
 
-  if (plen)
-    *plen = 0;
+  avr_asm_len (AVR_HAVE_LPMX ? "lpm %3,%a2" : "lpm", xop, plen, -1);
 
   avr_asm_len ("sbrc %1,7" CR_TAB
-               "ld %3,%a2" CR_TAB
-               "sbrs %1,7", xop, plen, 3);
-
-  avr_asm_len (AVR_HAVE_LPMX ? "lpm %3,%a2" : "lpm", xop, plen, 1);
+               "ld %3,%a2", xop, plen, 2);
 
   if (REGNO (xop[0]) != REGNO (xop[3]))
     avr_asm_len ("mov %0,%3", xop, plen, 1);
@@ -6232,11 +6228,14 @@ lshrsi3_out (rtx insn, rtx operands[], int *len)
    the subtrahend in the original insn, provided it is a compile time constant.
    In all other cases, SIGN is 0.
 
-   Return "".  */
+   If OUT_LABEL is true, print the final 0: label which is needed for
+   saturated addition / subtraction.  The only case where OUT_LABEL = false
+   is useful is for saturated addition / subtraction performed during
+   fixed-point rounding, cf. `avr_out_round'.  */
 
 static void
 avr_out_plus_1 (rtx *xop, int *plen, enum rtx_code code, int *pcc,
-                enum rtx_code code_sat = UNKNOWN, int sign = 0)
+                enum rtx_code code_sat, int sign, bool out_label)
 {
   /* MODE of the operation.  */
   enum machine_mode mode = GET_MODE (xop[0]);
@@ -6675,7 +6674,8 @@ avr_out_plus_1 (rtx *xop, int *plen, enum rtx_code code, int *pcc,
                      "mov %r0+5,%0", xop, plen, 4);
     }
 
-  avr_asm_len ("0:", op, plen, 0);
+  if (out_label)
+    avr_asm_len ("0:", op, plen, 0);
 }
 
 
@@ -6713,8 +6713,8 @@ avr_out_plus_symbol (rtx *xop, enum rtx_code code, int *plen, int *pcc)
 
 /* Prepare operands of addition/subtraction to be used with avr_out_plus_1.
 
-   INSN is a single_set insn with a binary operation as SET_SRC that is
-   one of:  PLUS, SS_PLUS, US_PLUS, MINUS, SS_MINUS, US_MINUS.
+   INSN is a single_set insn or an insn pattern with a binary operation as
+   SET_SRC that is one of: PLUS, SS_PLUS, US_PLUS, MINUS, SS_MINUS, US_MINUS.
 
    XOP are the operands of INSN.  In the case of 64-bit operations with
    constant XOP[] has just one element:  The summand/subtrahend in XOP[0].
@@ -6729,19 +6729,22 @@ avr_out_plus_symbol (rtx *xop, enum rtx_code code, int *plen, int *pcc)
 
    PLEN and PCC default to NULL.
 
+   OUT_LABEL defaults to TRUE.  For a description, see AVR_OUT_PLUS_1.
+
    Return ""  */
 
 const char*
-avr_out_plus (rtx insn, rtx *xop, int *plen, int *pcc)
+avr_out_plus (rtx insn, rtx *xop, int *plen, int *pcc, bool out_label)
 {
   int cc_plus, cc_minus, cc_dummy;
   int len_plus, len_minus;
   rtx op[4];
-  rtx xdest = SET_DEST (single_set (insn));
+  rtx xpattern = INSN_P (insn) ? single_set (insn) : insn;
+  rtx xdest = SET_DEST (xpattern);
   enum machine_mode mode = GET_MODE (xdest);
   enum machine_mode imode = int_mode_for_mode (mode);
   int n_bytes = GET_MODE_SIZE (mode);
-  enum rtx_code code_sat = GET_CODE (SET_SRC (single_set (insn)));
+  enum rtx_code code_sat = GET_CODE (SET_SRC (xpattern));
   enum rtx_code code
     = (PLUS == code_sat || SS_PLUS == code_sat || US_PLUS == code_sat
        ? PLUS : MINUS);
@@ -6756,7 +6759,7 @@ avr_out_plus (rtx insn, rtx *xop, int *plen, int *pcc)
 
   if (n_bytes <= 4 && REG_P (xop[2]))
     {
-      avr_out_plus_1 (xop, plen, code, pcc, code_sat);
+      avr_out_plus_1 (xop, plen, code, pcc, code_sat, 0, out_label);
       return "";
     }
 
@@ -6783,7 +6786,8 @@ avr_out_plus (rtx insn, rtx *xop, int *plen, int *pcc)
   /* Saturations and 64-bit operations don't have a clobber operand.
      For the other cases, the caller will provide a proper XOP[3].  */
 
-  op[3] = PARALLEL == GET_CODE (PATTERN (insn)) ? xop[3] : NULL_RTX;
+  xpattern = INSN_P (insn) ? PATTERN (insn) : insn;
+  op[3] = PARALLEL == GET_CODE (xpattern) ? xop[3] : NULL_RTX;
 
   /* Saturation will need the sign of the original operand.  */
 
@@ -6798,8 +6802,8 @@ avr_out_plus (rtx insn, rtx *xop, int *plen, int *pcc)
 
   /* Work out the shortest sequence.  */
 
-  avr_out_plus_1 (op, &len_minus, MINUS, &cc_plus, code_sat, sign);
-  avr_out_plus_1 (op, &len_plus, PLUS, &cc_minus, code_sat, sign);
+  avr_out_plus_1 (op, &len_minus, MINUS, &cc_plus, code_sat, sign, out_label);
+  avr_out_plus_1 (op, &len_plus, PLUS, &cc_minus, code_sat, sign, out_label);
 
   if (plen)
     {
@@ -6807,9 +6811,9 @@ avr_out_plus (rtx insn, rtx *xop, int *plen, int *pcc)
       *pcc  = (len_minus <= len_plus) ? cc_minus : cc_plus;
     }
   else if (len_minus <= len_plus)
-    avr_out_plus_1 (op, NULL, MINUS, pcc, code_sat, sign);
+    avr_out_plus_1 (op, NULL, MINUS, pcc, code_sat, sign, out_label);
   else
-    avr_out_plus_1 (op, NULL, PLUS, pcc, code_sat, sign);
+    avr_out_plus_1 (op, NULL, PLUS, pcc, code_sat, sign, out_label);
 
   return "";
 }
@@ -6823,13 +6827,15 @@ avr_out_plus (rtx insn, rtx *xop, int *plen, int *pcc)
    and return "".  If PLEN == NULL, print assembler instructions to perform the
    operation; otherwise, set *PLEN to the length of the instruction sequence
    (in words) printed with PLEN == NULL.  XOP[3] is either an 8-bit clobber
-   register or SCRATCH if no clobber register is needed for the operation.  */
+   register or SCRATCH if no clobber register is needed for the operation.
+   INSN is an INSN_P or a pattern of an insn.  */
 
 const char*
 avr_out_bitop (rtx insn, rtx *xop, int *plen)
 {
   /* CODE and MODE of the operation.  */
-  enum rtx_code code = GET_CODE (SET_SRC (single_set (insn)));
+  rtx xpattern = INSN_P (insn) ? single_set (insn) : insn;
+  enum rtx_code code = GET_CODE (SET_SRC (xpattern));
   enum machine_mode mode = GET_MODE (xop[0]);
 
   /* Number of bytes to operate on.  */
@@ -7024,7 +7030,9 @@ avr_out_fract (rtx insn, rtx operands[], bool intsigned, int *plen)
   RTX_CODE shift = UNKNOWN;
   bool sign_in_carry = false;
   bool msb_in_carry = false;
+  bool lsb_in_tmp_reg = false;
   bool lsb_in_carry = false;
+  bool frac_rounded = false;
   const char *code_ashift = "lsl %0";
 
 
@@ -7032,6 +7040,7 @@ avr_out_fract (rtx insn, rtx operands[], bool intsigned, int *plen)
   /* Shorthand used below.  */                                          \
   ((sign_bytes                                                          \
     && IN_RANGE (RR, dest.regno_msb - sign_bytes + 1, dest.regno_msb))  \
+   || (offset && IN_RANGE (RR, dest.regno, dest.regno_msb))		\
    || (reg_unused_after (insn, all_regs_rtx[RR])                        \
        && !IN_RANGE (RR, dest.regno, dest.regno_msb)))
 
@@ -7106,13 +7115,119 @@ avr_out_fract (rtx insn, rtx operands[], bool intsigned, int *plen)
   else
     gcc_unreachable();
 
+  /* If we need to round the fraction part, we might need to save/round it
+     before clobbering any of it in Step 1.  Also, we might to want to do
+     the rounding now to make use of LD_REGS.  */
+  if (SCALAR_INT_MODE_P (GET_MODE (xop[0]))
+      && SCALAR_ACCUM_MODE_P (GET_MODE (xop[1]))
+      && !TARGET_FRACT_CONV_TRUNC)
+    {
+      bool overlap
+	= (src.regno <=
+	   (offset ? dest.regno_msb - sign_bytes : dest.regno + zero_bytes - 1)
+	   && dest.regno - offset -1 >= dest.regno);
+      unsigned s0 = dest.regno - offset -1;
+      bool use_src = true;
+      unsigned sn;
+      unsigned copied_msb = src.regno_msb;
+      bool have_carry = false;
+
+      if (src.ibyte > dest.ibyte)
+	copied_msb -= src.ibyte - dest.ibyte;
+
+      for (sn = s0; sn <= copied_msb; sn++)
+	if (!IN_RANGE (sn, dest.regno, dest.regno_msb)
+	    && !reg_unused_after (insn, all_regs_rtx[sn]))
+	  use_src = false;
+      if (use_src && TEST_HARD_REG_BIT (reg_class_contents[LD_REGS], s0))
+	{
+	  avr_asm_len ("tst %0" CR_TAB "brpl 0f",
+		       &all_regs_rtx[src.regno_msb], plen, 2);
+	  sn = src.regno;
+	  if (sn < s0)
+	    {
+	      if (TEST_HARD_REG_BIT (reg_class_contents[LD_REGS], sn))
+		avr_asm_len ("cpi %0,1", &all_regs_rtx[sn], plen, 1);
+	      else
+		avr_asm_len ("sec" CR_TAB "cpc %0,__zero_reg__",
+			     &all_regs_rtx[sn], plen, 2);
+	      have_carry = true;
+	    }
+	  while (++sn < s0)
+	    avr_asm_len ("cpc %0,__zero_reg__", &all_regs_rtx[sn], plen, 1);
+	  avr_asm_len (have_carry ? "sbci %0,128" : "subi %0,129",
+		       &all_regs_rtx[s0], plen, 1);
+	  for (sn = src.regno + src.fbyte; sn <= copied_msb; sn++)
+	    avr_asm_len ("sbci %0,255", &all_regs_rtx[sn], plen, 1);
+	  avr_asm_len ("\n0:", NULL, plen, 0);
+	  frac_rounded = true;
+	}
+      else if (use_src && overlap)
+	{
+	  avr_asm_len ("clr __tmp_reg__" CR_TAB
+		       "sbrc %1,0" CR_TAB "dec __tmp_reg__", xop, plen, 1);
+	  sn = src.regno;
+	  if (sn < s0)
+	    {
+	      avr_asm_len ("add %0,__tmp_reg__", &all_regs_rtx[sn], plen, 1);
+	      have_carry = true;
+	    }
+	  while (++sn < s0)
+	    avr_asm_len ("adc %0,__tmp_reg__", &all_regs_rtx[sn], plen, 1);
+	  if (have_carry)
+	    avr_asm_len ("clt" CR_TAB "bld __tmp_reg__,7" CR_TAB
+			 "adc %0,__tmp_reg__",
+			 &all_regs_rtx[s0], plen, 1);
+	  else
+	    avr_asm_len ("lsr __tmp_reg" CR_TAB "add %0,__tmp_reg__",
+			 &all_regs_rtx[s0], plen, 2);
+	  for (sn = src.regno + src.fbyte; sn <= copied_msb; sn++)
+	    avr_asm_len ("adc %0,__zero_reg__", &all_regs_rtx[sn], plen, 1);
+	  frac_rounded = true;
+	}
+      else if (overlap)
+	{
+	  bool use_src
+	    = (TEST_HARD_REG_BIT (reg_class_contents[LD_REGS], s0)
+	       && (IN_RANGE (s0, dest.regno, dest.regno_msb)
+		   || reg_unused_after (insn, all_regs_rtx[s0])));
+	  xop[2] = all_regs_rtx[s0];
+	  unsigned sn = src.regno;
+	  if (!use_src || sn == s0)
+	    avr_asm_len ("mov __tmp_reg__,%2", xop, plen, 1);
+	  /* We need to consider to-be-discarded bits
+	     if the value is negative.  */
+	  if (sn < s0)
+	    {
+	      avr_asm_len ("tst %0" CR_TAB "brpl 0f",
+			   &all_regs_rtx[src.regno_msb], plen, 2);
+	      /* Test to-be-discarded bytes for any nozero bits.
+		 ??? Could use OR or SBIW to test two registers at once.  */
+	      if (sn < s0)
+		avr_asm_len ("cp %0,__zero_reg__", &all_regs_rtx[sn], plen, 1);
+	      while (++sn < s0)
+		avr_asm_len ("cpc %0,__zero_reg__", &all_regs_rtx[sn], plen, 1);
+	      /* Set bit 0 in __tmp_reg__ if any of the lower bits was set.  */
+	      if (use_src)
+		avr_asm_len ("breq 0f" CR_TAB
+			     "ori %2,1" "\n0:\t" "mov __tmp_reg__,%2",
+			     xop, plen, 3);
+	      else
+		avr_asm_len ("breq 0f" CR_TAB
+			     "set" CR_TAB "bld __tmp_reg__,0\n0:",
+			     xop, plen, 3);
+	    }
+	  lsb_in_tmp_reg = true;
+	}
+    }
+
   /* Step 1:  Clear bytes at the low end and copy payload bits from source
      ======   to destination.  */
 
   int step = offset < 0 ? 1 : -1;
   unsigned d0 = offset < 0 ? dest.regno : dest.regno_msb;
 
-  // We leared at least that number of registers.
+  // We cleared at least that number of registers.
   int clr_n = 0;
 
   for (; d0 >= dest.regno && d0 <= dest.regno_msb; d0 += step)
@@ -7202,6 +7317,7 @@ avr_out_fract (rtx insn, rtx operands[], bool intsigned, int *plen)
           unsigned src_lsb = dest.regno - offset -1;
 
           if (shift == ASHIFT && src.fbyte > dest.fbyte && !lsb_in_carry
+	      && !lsb_in_tmp_reg
               && (d0 == src_lsb || d0 + stepw == src_lsb))
             {
               /* We are going to override the new LSB; store it into carry.  */
@@ -7223,7 +7339,91 @@ avr_out_fract (rtx insn, rtx operands[], bool intsigned, int *plen)
     {
       unsigned s0 = dest.regno - offset -1;
 
-      if (MAY_CLOBBER (s0))
+      /* n1169 4.1.4 says:
+	 "Conversions from a fixed-point to an integer type round toward zero."
+	 Hence, converting a fract type to integer only gives a non-zero result
+	 for -1.  */
+      if (SCALAR_INT_MODE_P (GET_MODE (xop[0]))
+	  && SCALAR_FRACT_MODE_P (GET_MODE (xop[1]))
+	  && !TARGET_FRACT_CONV_TRUNC)
+	{
+	  gcc_assert (s0 == src.regno_msb);
+	  /* Check if the input is -1.  We do that by checking if negating
+	     the input causes an integer overflow.  */
+	  unsigned sn = src.regno;
+	  avr_asm_len ("cp __zero_reg__,%0", &all_regs_rtx[sn++], plen, 1);
+	  while (sn <= s0)
+	    avr_asm_len ("cpc __zero_reg__,%0", &all_regs_rtx[sn++], plen, 1);
+
+	  /* Overflow goes with set carry.  Clear carry otherwise.  */
+	  avr_asm_len ("brvs 0f" CR_TAB "clc\n0:", NULL, plen, 2);
+	}
+      /* Likewise, when converting from accumulator types to integer, we
+	 need to round up negative values.  */
+      else if (SCALAR_INT_MODE_P (GET_MODE (xop[0]))
+	       && SCALAR_ACCUM_MODE_P (GET_MODE (xop[1]))
+	       && !TARGET_FRACT_CONV_TRUNC
+	       && !frac_rounded)
+	{
+	  bool have_carry = false;
+
+	  xop[2] = all_regs_rtx[s0];
+	  if (!lsb_in_tmp_reg && !MAY_CLOBBER (s0))
+	    avr_asm_len ("mov __tmp_reg__,%2", xop, plen, 1);
+	  avr_asm_len ("tst %0" CR_TAB "brpl 0f",
+		       &all_regs_rtx[src.regno_msb], plen, 2);
+	  if (!lsb_in_tmp_reg)
+	    {
+	      unsigned sn = src.regno;
+	      if (sn < s0)
+		{
+		  avr_asm_len ("cp __zero_reg__,%0", &all_regs_rtx[sn],
+			       plen, 1);
+		  have_carry = true;
+		}
+	      while (++sn < s0)
+		avr_asm_len ("cpc __zero_reg__,%0", &all_regs_rtx[sn], plen, 1);
+	      lsb_in_tmp_reg = !MAY_CLOBBER (s0);
+	    }
+	  /* Add in C and the rounding value 127.  */
+	  /* If the destination msb is a sign byte, and in LD_REGS,
+	     grab it as a temporary.  */
+	  if (sign_bytes
+	      && TEST_HARD_REG_BIT (reg_class_contents[LD_REGS],
+				    dest.regno_msb))
+	    {
+	      xop[3] = all_regs_rtx[dest.regno_msb];
+	      avr_asm_len ("ldi %3,127", xop, plen, 1);
+	      avr_asm_len ((have_carry && lsb_in_tmp_reg ? "adc __tmp_reg__,%3"
+			   : have_carry ? "adc %2,%3"
+			   : lsb_in_tmp_reg ? "add __tmp_reg__,%3"
+			   : "add %2,%3"),
+			   xop, plen, 1);
+	    }
+	  else
+	    {
+	      /* Fall back to use __zero_reg__ as a temporary.  */
+	      avr_asm_len ("dec __zero_reg__", NULL, plen, 1);
+	      if (have_carry)
+		avr_asm_len ("clt" CR_TAB "bld __zero_reg__,7", NULL, plen, 2);
+	      else
+		avr_asm_len ("lsr __zero_reg__", NULL, plen, 1);
+	      avr_asm_len ((have_carry && lsb_in_tmp_reg
+			   ? "adc __tmp_reg__,__zero_reg__"
+			   : have_carry ? "adc %2,__zero_reg__"
+			   : lsb_in_tmp_reg ? "add __tmp_reg__,__zero_reg__"
+			   : "add %2,__zero_reg__"),
+			   xop, plen, 1);
+	      avr_asm_len ("eor __zero_reg__,__zero_reg__", NULL, plen, 1);
+	    }
+	  for (d0 = dest.regno + zero_bytes;
+	       d0 <= dest.regno_msb - sign_bytes; d0++)
+	    avr_asm_len ("adc %0,__zero_reg__", &all_regs_rtx[d0], plen, 1);
+	  avr_asm_len (lsb_in_tmp_reg
+		       ? "\n0:\t" "lsl __tmp_reg__" : "\n0:\t" "lsl %2",
+		       xop, plen, 1);
+	}
+      else if (MAY_CLOBBER (s0))
         avr_asm_len ("lsl %0", &all_regs_rtx[s0], plen, 1);
       else
         avr_asm_len ("mov __tmp_reg__,%0" CR_TAB
@@ -7327,6 +7527,67 @@ avr_out_fract (rtx insn, rtx operands[], bool intsigned, int *plen)
     }
 
 #undef MAY_CLOBBER
+
+  return "";
+}
+
+
+/* Output fixed-point rounding.  XOP[0] = XOP[1] is the operand to round.
+   XOP[2] is the rounding point, a CONST_INT.  The function prints the
+   instruction sequence if PLEN = NULL and computes the length in words
+   of the sequence if PLEN != NULL.  Most of this function deals with
+   preparing operands for calls to `avr_out_plus' and `avr_out_bitop'.  */
+
+const char*
+avr_out_round (rtx insn ATTRIBUTE_UNUSED, rtx *xop, int *plen)
+{
+  enum machine_mode mode = GET_MODE (xop[0]);
+  enum machine_mode imode = int_mode_for_mode (mode);
+  // The smallest fractional bit not cleared by the rounding is 2^(-RP).
+  int fbit = (int) GET_MODE_FBIT (mode);
+  double_int i_add = double_int_zero.set_bit (fbit-1 - INTVAL (xop[2]));
+  // Lengths of PLUS and AND parts.
+  int len_add = 0, *plen_add = plen ? &len_add : NULL;
+  int len_and = 0, *plen_and = plen ? &len_and : NULL;
+
+  // Add-Saturate  1/2 * 2^(-RP).  Don't print the label "0:" when printing
+  // the saturated addition so that we can emit the "rjmp 1f" before the
+  // "0:" below.
+
+  rtx xadd = const_fixed_from_double_int (i_add, mode);
+  rtx xpattern, xsrc, op[4];
+
+  xsrc = SIGNED_FIXED_POINT_MODE_P (mode)
+    ? gen_rtx_SS_PLUS (mode, xop[1], xadd)
+    : gen_rtx_US_PLUS (mode, xop[1], xadd);
+  xpattern = gen_rtx_SET (VOIDmode, xop[0], xsrc);
+
+  op[0] = xop[0];
+  op[1] = xop[1];
+  op[2] = xadd;
+  avr_out_plus (xpattern, op, plen_add, NULL, false /* Don't print "0:" */);
+
+  avr_asm_len ("rjmp 1f" CR_TAB
+               "0:", NULL, plen_add, 1);
+
+  // Keep  all bits from RP and higher:   ... 2^(-RP)
+  // Clear all bits from RP+1 and lower:              2^(-RP-1) ...
+  // Rounding point                           ^^^^^^^
+  // Added above                                      ^^^^^^^^^
+  rtx xreg = simplify_gen_subreg (imode, xop[0], mode, 0);
+  rtx xmask = immed_double_int_const (-i_add - i_add, imode);
+
+  xpattern = gen_rtx_SET (VOIDmode, xreg, gen_rtx_AND (imode, xreg, xmask));
+
+  op[0] = xreg;
+  op[1] = xreg;
+  op[2] = xmask;
+  op[3] = gen_rtx_SCRATCH (QImode);
+  avr_out_bitop (xpattern, op, plen_and);
+  avr_asm_len ("1:", NULL, plen, 0);
+
+  if (plen)
+    *plen = len_add + len_and;
 
   return "";
 }
@@ -7470,7 +7731,7 @@ avr_rotate_bytes (rtx operands[])
 		gcc_assert (move[blocked].links != -1);
 		/* Replace src of  blocking move with scratch reg.  */
 		move[move[blocked].links].src = scratch;
-		/* Make dependent on scratch move occuring.  */
+		/* Make dependent on scratch move occurring.  */
 		move[blocked].links = size;
 		size=size+1;
 	      }
@@ -7540,6 +7801,7 @@ avr_adjust_insn_length (rtx insn, int len)
 
     case ADJUST_LEN_SFRACT: avr_out_fract (insn, op, true, &len); break;
     case ADJUST_LEN_UFRACT: avr_out_fract (insn, op, false, &len); break;
+    case ADJUST_LEN_ROUND: avr_out_round (insn, op, &len); break;
 
     case ADJUST_LEN_TSTHI: avr_out_tsthi (insn, op, &len); break;
     case ADJUST_LEN_TSTPSI: avr_out_tstpsi (insn, op, &len); break;

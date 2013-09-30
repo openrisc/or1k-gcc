@@ -226,6 +226,12 @@ proc check_weak_available { } {
         return 1
     }
 
+    # All AIX targets should support it
+
+    if { [istarget *-*-aix*] } {
+        return 1
+    }
+
     # All solaris2 targets should support it
 
     if { [istarget *-*-solaris2*] } {
@@ -430,9 +436,10 @@ proc check_effective_target_trampolines { } {
       return 0
     }
     if { [istarget avr-*-*]
+	 || [istarget msp430-*-*]
 	 || [istarget hppa2.0w-hp-hpux11.23]
-	|| [istarget hppa64-hp-hpux11.23] } {
-	return 0;   
+	 || [istarget hppa64-hp-hpux11.23] } {
+	return 0;
     }
     return 1
 }
@@ -530,6 +537,7 @@ proc check_profiling_available { test_what } {
 	     || [istarget mmix-*-*]
 	     || [istarget mn10300-*-elf*]
 	     || [istarget moxie-*-elf*]
+	     || [istarget msp430-*-*]
 	     || [istarget or1k-*-elf*]
 	     || [istarget picochip-*-*]
 	     || [istarget powerpc-*-eabi*]
@@ -648,6 +656,11 @@ proc check_effective_target_tls_emulated {} {
 # Return 1 if TLS executables can run correctly, 0 otherwise.
 
 proc check_effective_target_tls_runtime {} {
+    # MSP430 runtime does not have TLS support, but just
+    # running the test below is insufficient to show this.
+    if { [istarget msp430-*-*] } {
+	return 0
+    }
     return [check_runtime tls_runtime {
 	__thread int thr = 0;
 	int main (void) { return thr; }
@@ -1132,6 +1145,24 @@ proc check_effective_target_static_libgfortran { } {
 	print *, 'test'
 	end
     } "-static"]
+}
+
+# Return 1 if cilk-plus is supported by the target, 0 otherwise.
+ 
+proc check_effective_target_cilkplus { } {
+    # Skip cilk-plus tests on int16 and size16 targets for now.
+    # The cilk-plus tests are not generic enough to cover these
+    # cases and would throw hundreds of FAILs.
+    if { [check_effective_target_int16]
+	 || ![check_effective_target_size32plus] } {
+	return 0;
+    }
+
+    # Skip AVR, its RAM is too small and too many tests would fail.
+    if { [istarget avr-*-*] } {
+	return 0;
+    }
+    return 1
 }
 
 proc check_linker_plugin_available { } {
@@ -1707,6 +1738,15 @@ proc check_effective_target_x32 { } {
     }]
 }
 
+# Return 1 if we're generating 32-bit integers using default
+# options, 0 otherwise.
+
+proc check_effective_target_int32 { } {
+    return [check_no_compiler_messages int32 object {
+	int dummy[sizeof (int) == 4 ? 1 : -1];
+    }]
+}
+
 # Return 1 if we're generating 32-bit or larger integers using default
 # options, 0 otherwise.
 
@@ -2191,7 +2231,7 @@ proc check_effective_target_arm_v8_vfp_ok {} {
 # options.
 
 proc check_effective_target_arm_hard_vfp_ok { } {
-    if { [check_effective_target_arm32] 
+    if { [check_effective_target_arm32]
 	 && ! [check-flags [list "" { *-*-* } { "-mfloat-abi=*" } { "-mfloat-abi=hard" }]] } {
 	return [check_no_compiler_messages arm_hard_vfp_ok executable {
 	    int main() { return 0;}
@@ -2555,6 +2595,17 @@ proc check_effective_target_arm_thumb1 { } {
 proc check_effective_target_arm_thumb2 { } {
     return [check_no_compiler_messages arm_thumb2 assembly {
 	#if !defined(__thumb2__)
+	#error FOO
+	#endif
+	int i;
+    } ""]
+}
+
+# Return 1 if this is an ARM target where conditional execution is available.
+
+proc check_effective_target_arm_cond_exec { } {
+    return [check_no_compiler_messages arm_cond_exec assembly {
+	#if defined(__arm__) && defined(__thumb__) && !defined(__thumb2__)
 	#error FOO
 	#endif
 	int i;
@@ -4618,6 +4669,17 @@ proc check_missing_uclibc_feature {feature} {
 proc check_effective_target_newlib {} {
     return [check_no_compiler_messages newlib object {
 	#include <newlib.h>
+    }]
+}
+
+# Return true if this is NOT a Bionic target.
+
+proc check_effective_target_non_bionic {} {
+    return [check_no_compiler_messages non_bionic object {
+	#include <ctype.h>
+	#if defined (__BIONIC__)
+	#error FOO
+	#endif
     }]
 }
 

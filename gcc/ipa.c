@@ -30,14 +30,10 @@ along with GCC; see the file COPYING3.  If not see
 #include "target.h"
 #include "tree-iterator.h"
 #include "ipa-utils.h"
-#include "pointer-set.h"
 #include "ipa-inline.h"
-#include "hash-table.h"
 #include "tree-inline.h"
 #include "profile.h"
 #include "params.h"
-#include "lto-streamer.h"
-#include "data-streamer.h"
 
 /* Return true when NODE can not be local. Worker for cgraph_local_node_p.  */
 
@@ -138,7 +134,7 @@ process_references (struct ipa_ref_list *list,
     {
       symtab_node node = ref->referred;
 
-      if (node->symbol.definition
+      if (node->symbol.definition && !node->symbol.in_other_partition
 	  && ((!DECL_EXTERNAL (node->symbol.decl) || node->symbol.alias)
 	      || (before_inlining_p
 		  /* We use variable constructors during late complation for
@@ -153,6 +149,84 @@ process_references (struct ipa_ref_list *list,
     }
 }
 
+/* EDGE is an polymorphic call.  If BEFORE_INLINING_P is set, mark
+   all its potential targets as reachable to permit later inlining if
+   devirtualization happens.  After inlining still keep their declarations
+   around, so we can devirtualize to a direct call.
+
+   Also try to make trivial devirutalization when no or only one target is
+   possible.  */
+
+static void
+walk_polymorphic_call_targets (pointer_set_t *reachable_call_targets,
+			       struct cgraph_edge *edge,
+			       symtab_node *first,
+			       pointer_set_t *reachable, bool before_inlining_p)
+{
+  unsigned int i;
+  void *cache_token;
+  bool final;
+  vec <cgraph_node *>targets
+    = possible_polymorphic_call_targets
+	(edge, &final, &cache_token);
+
+  if (!pointer_set_insert (reachable_call_targets,
+			   cache_token))
+    {
+      for (i = 0; i < targets.length (); i++)
+	{
+	  struct cgraph_node *n = targets[i];
+
+	  /* Do not bother to mark virtual methods in anonymous namespace;
+	     either we will find use of virtual table defining it, or it is
+	     unused.  */
+	  if (TREE_CODE (TREE_TYPE (n->symbol.decl)) == METHOD_TYPE
+	      && type_in_anonymous_namespace_p
+		    (method_class_type (TREE_TYPE (n->symbol.decl))))
+	    continue;
+
+	  /* Prior inlining, keep alive bodies of possible targets for
+	     devirtualization.  */
+	   if (n->symbol.definition
+	       && before_inlining_p)
+	     pointer_set_insert (reachable, n);
+
+	  /* Even after inlining we want to keep the possible targets in the
+	     boundary, so late passes can still produce direct call even if
+	     the chance for inlining is lost.  */
+	  enqueue_node ((symtab_node) n, first, reachable);
+	}
+    }
+
+  /* Very trivial devirtualization; when the type is
+     final or anonymous (so we know all its derivation)
+     and there is only one possible virtual call target,
+     make the edge direct.  */
+  if (final)
+    {
+      if (targets.length () <= 1)
+	{
+	  cgraph_node *target, *node = edge->caller;
+	  if (targets.length () == 1)
+	    target = targets[0];
+	  else
+	    target = cgraph_get_create_node
+		       (builtin_decl_implicit (BUILT_IN_UNREACHABLE));
+
+	  if (dump_file)
+	    fprintf (dump_file,
+		     "Devirtualizing call in %s/%i to %s/%i\n",
+		     cgraph_node_name (edge->caller),
+		     edge->caller->symbol.order,
+		     cgraph_node_name (target), target->symbol.order);
+	  edge = cgraph_make_edge_direct (edge, target);
+	  if (!inline_summary_vec && edge->call_stmt)
+	    cgraph_redirect_edge_call_stmt_to_callee (edge);
+	  else
+	    inline_update_overall_summary (node);
+	}
+    }
+}
 
 /* Perform reachability analysis and reclaim all unreachable nodes.
 
@@ -218,10 +292,14 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
   bool changed = false;
   struct pointer_set_t *reachable = pointer_set_create ();
   struct pointer_set_t *body_needed_for_clonning = pointer_set_create ();
+  struct pointer_set_t *reachable_call_targets = pointer_set_create ();
 
+  timevar_push (TV_IPA_UNREACHABLE);
 #ifdef ENABLE_CHECKING
   verify_symtab ();
 #endif
+  if (optimize && flag_devirtualize)
+    build_type_inheritance_graph ();
   if (file)
     fprintf (file, "\nReclaiming functions:");
 #ifdef ENABLE_CHECKING
@@ -234,23 +312,26 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
      This is mostly when they can be referenced externally.  Inline clones
      are special since their declarations are shared with master clone and thus
      cgraph_can_remove_if_no_direct_calls_and_refs_p should not be called on them.  */
-  FOR_EACH_DEFINED_FUNCTION (node)
-    if (!node->global.inlined_to
-	&& (!cgraph_can_remove_if_no_direct_calls_and_refs_p (node)
-	    /* Keep around virtual functions for possible devirtualization.  */
-	    || (before_inlining_p
-		&& DECL_VIRTUAL_P (node->symbol.decl))))
-      {
-        gcc_assert (!node->global.inlined_to);
-	pointer_set_insert (reachable, node);
-	enqueue_node ((symtab_node)node, &first, reachable);
-      }
-    else
-      gcc_assert (!node->symbol.aux);
+  FOR_EACH_FUNCTION (node)
+    {
+      node->used_as_abstract_origin = false;
+      if (node->symbol.definition
+	  && !node->global.inlined_to
+	  && !node->symbol.in_other_partition
+	  && !cgraph_can_remove_if_no_direct_calls_and_refs_p (node))
+	{
+	  gcc_assert (!node->global.inlined_to);
+	  pointer_set_insert (reachable, node);
+	  enqueue_node ((symtab_node)node, &first, reachable);
+	}
+      else
+	gcc_assert (!node->symbol.aux);
+     }
 
   /* Mark variables that are obviously needed.  */
   FOR_EACH_DEFINED_VARIABLE (vnode)
-    if (!varpool_can_remove_if_no_refs (vnode))
+    if (!varpool_can_remove_if_no_refs (vnode)
+	&& !vnode->symbol.in_other_partition)
       {
 	pointer_set_insert (reachable, vnode);
 	enqueue_node ((symtab_node)vnode, &first, reachable);
@@ -270,6 +351,13 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
 	node->symbol.aux = (void *)2;
       else
 	{
+	  if (DECL_ABSTRACT_ORIGIN (node->symbol.decl))
+	    {
+	      struct cgraph_node *origin_node
+	      = cgraph_get_create_real_symbol_node (DECL_ABSTRACT_ORIGIN (node->symbol.decl));
+	      origin_node->used_as_abstract_origin = true;
+	      enqueue_node ((symtab_node) origin_node, &first, reachable);
+	    }
 	  /* If any symbol in a comdat group is reachable, force
 	     all other in the same comdat group to be also reachable.  */
 	  if (node->symbol.same_comdat_group)
@@ -293,9 +381,23 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
 	  if (!in_boundary_p)
 	    {
 	      struct cgraph_edge *e;
+	      /* Keep alive possible targets for devirtualization.  */
+	      if (optimize && flag_devirtualize)
+		{
+		  struct cgraph_edge *next;
+		  for (e = cnode->indirect_calls; e; e = next)
+		    {
+		      next = e->next_callee;
+		      if (e->indirect_info->polymorphic)
+			walk_polymorphic_call_targets (reachable_call_targets,
+						       e, &first, reachable,
+						       before_inlining_p);
+		    }
+		}
 	      for (e = cnode->callees; e; e = e->next_callee)
 		{
 		  if (e->callee->symbol.definition
+		      && !e->callee->symbol.in_other_partition
 		      && (!e->inline_failed
 			  || !DECL_EXTERNAL (e->callee->symbol.decl)
 			  || e->callee->symbol.alias
@@ -306,22 +408,20 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
 
 	      /* When inline clone exists, mark body to be preserved so when removing
 		 offline copy of the function we don't kill it.  */
-	      if (!cnode->symbol.alias && cnode->global.inlined_to)
+	      if (cnode->global.inlined_to)
 	        pointer_set_insert (body_needed_for_clonning, cnode->symbol.decl);
-	    }
 
-	  /* For non-inline clones, force their origins to the boundary and ensure
-	     that body is not removed.  */
-	  while (cnode->clone_of
-	         && !gimple_has_body_p (cnode->symbol.decl))
-	    {
-	      bool noninline = cnode->clone_of->symbol.decl != cnode->symbol.decl;
-	      cnode = cnode->clone_of;
-	      if (noninline)
-	      	{
-	          pointer_set_insert (body_needed_for_clonning, cnode->symbol.decl);
-		  enqueue_node ((symtab_node)cnode, &first, reachable);
-		  break;
+	      /* For non-inline clones, force their origins to the boundary and ensure
+		 that body is not removed.  */
+	      while (cnode->clone_of)
+		{
+		  bool noninline = cnode->clone_of->symbol.decl != cnode->symbol.decl;
+		  cnode = cnode->clone_of;
+		  if (noninline)
+		    {
+		      pointer_set_insert (body_needed_for_clonning, cnode->symbol.decl);
+		      enqueue_node ((symtab_node)cnode, &first, reachable);
+		    }
 		}
 	    }
 	}
@@ -358,14 +458,27 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
         {
 	  if (!pointer_set_contains (body_needed_for_clonning, node->symbol.decl))
 	    cgraph_release_function_body (node);
+	  else if (!node->clone_of)
+	    gcc_assert (in_lto_p || DECL_RESULT (node->symbol.decl));
 	  if (node->symbol.definition)
 	    {
 	      if (file)
 		fprintf (file, " %s", cgraph_node_name (node));
-	      cgraph_reset_node (node);
+	      node->symbol.analyzed = false;
+	      node->symbol.definition = false;
+	      node->symbol.cpp_implicit_alias = false;
+	      node->symbol.alias = false;
+	      node->symbol.weakref = false;
+	      if (!node->symbol.in_other_partition)
+		node->local.local = false;
+	      cgraph_node_remove_callees (node);
+	      ipa_remove_all_references (&node->symbol.ref_list);
 	      changed = true;
 	    }
 	}
+      else
+	gcc_assert (node->clone_of || !cgraph_function_with_gimple_body_p (node)
+		    || in_lto_p || DECL_RESULT (node->symbol.decl));
     }
 
   /* Inline clones might be kept around so their materializing allows further
@@ -426,6 +539,7 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
 
   pointer_set_destroy (reachable);
   pointer_set_destroy (body_needed_for_clonning);
+  pointer_set_destroy (reachable_call_targets);
 
   /* Now update address_taken flags and try to promote functions to be local.  */
   if (file)
@@ -458,8 +572,9 @@ symtab_remove_unreachable_nodes (bool before_inlining_p, FILE *file)
   /* If we removed something, perhaps profile could be improved.  */
   if (changed && optimize && inline_edge_summary_vec.exists ())
     FOR_EACH_DEFINED_FUNCTION (node)
-      cgraph_propagate_frequency (node);
+      ipa_propagate_frequency (node);
 
+  timevar_pop (TV_IPA_UNREACHABLE);
   return changed;
 }
 
@@ -548,9 +663,13 @@ static bool
 comdat_can_be_unshared_p_1 (symtab_node node)
 {
   /* When address is taken, we don't know if equality comparison won't
-     break eventaully. Exception are virutal functions and vtables, where
-     this is not possible by language standard.  */
+     break eventually. Exception are virutal functions, C++
+     constructors/destructors and vtables, where this is not possible by
+     language standard.  */
   if (!DECL_VIRTUAL_P (node->symbol.decl)
+      && (TREE_CODE (node->symbol.decl) != FUNCTION_DECL
+	  || (!DECL_CXX_CONSTRUCTOR_P (node->symbol.decl)
+	      && !DECL_CXX_DESTRUCTOR_P (node->symbol.decl)))
       && address_taken_from_non_vtable_p (node))
     return false;
 
@@ -734,6 +853,17 @@ varpool_externally_visible_p (struct varpool_node *vnode)
   return false;
 }
 
+/* Return true if reference to NODE can be replaced by a local alias.
+   Local aliases save dynamic linking overhead and enable more optimizations.
+ */
+
+bool
+can_replace_by_local_alias (symtab_node node)
+{
+  return (symtab_node_availability (node) > AVAIL_OVERWRITABLE
+	  && !symtab_can_be_discarded (node));
+}
+
 /* Mark visibility of all functions.
 
    A local function is one whose calls can occur only in the current
@@ -752,7 +882,7 @@ function_and_variable_visibility (bool whole_program)
   struct varpool_node *vnode;
 
   /* All aliases should be procssed at this point.  */
-  gcc_checking_assert (!alias_pairs || !alias_pairs->length());
+  gcc_checking_assert (!alias_pairs || !alias_pairs->length ());
 
   FOR_EACH_FUNCTION (node)
     {
@@ -855,7 +985,36 @@ function_and_variable_visibility (bool whole_program)
 	}
     }
   FOR_EACH_DEFINED_FUNCTION (node)
-    node->local.local = cgraph_local_node_p (node);
+    {
+      node->local.local |= cgraph_local_node_p (node);
+
+      /* If we know that function can not be overwritten by a different semantics
+	 and moreover its section can not be discarded, replace all direct calls
+	 by calls to an nonoverwritable alias.  This make dynamic linking
+	 cheaper and enable more optimization.
+
+	 TODO: We can also update virtual tables.  */
+      if (node->callers && can_replace_by_local_alias ((symtab_node)node))
+	{
+	  struct cgraph_node *alias = cgraph (symtab_nonoverwritable_alias ((symtab_node) node));
+
+	  if (alias && alias != node)
+	    {
+	      while (node->callers)
+		{
+		  struct cgraph_edge *e = node->callers;
+
+		  cgraph_redirect_edge_callee (e, alias);
+		  if (gimple_has_body_p (e->caller->symbol.decl))
+		    {
+		      push_cfun (DECL_STRUCT_FUNCTION (e->caller->symbol.decl));
+		      cgraph_redirect_edge_call_stmt_to_callee (e);
+		      pop_cfun ();
+		    }
+		}
+	    }
+	}
+    }
   FOR_EACH_VARIABLE (vnode)
     {
       /* weak flag makes no sense on local variables.  */
@@ -902,10 +1061,10 @@ function_and_variable_visibility (bool whole_program)
 	  && !vnode->symbol.weakref)
 	{
 	  gcc_assert (in_lto_p || whole_program || !TREE_PUBLIC (vnode->symbol.decl));
-	  symtab_make_decl_local (vnode->symbol.decl);
 	  vnode->symbol.unique_name = ((vnode->symbol.resolution == LDPR_PREVAILING_DEF_IRONLY
 				       || vnode->symbol.resolution == LDPR_PREVAILING_DEF_IRONLY_EXP)
 				       && TREE_PUBLIC (vnode->symbol.decl));
+	  symtab_make_decl_local (vnode->symbol.decl);
 	  if (vnode->symbol.same_comdat_group)
 	    symtab_dissolve_same_comdat_group_list ((symtab_node) vnode);
 	  vnode->symbol.resolution = LDPR_PREVAILING_DEF_IRONLY;
@@ -943,25 +1102,45 @@ local_function_and_variable_visibility (void)
   return function_and_variable_visibility (flag_whole_program && !flag_lto);
 }
 
-struct simple_ipa_opt_pass pass_ipa_function_and_variable_visibility =
+namespace {
+
+const pass_data pass_data_ipa_function_and_variable_visibility =
 {
- {
-  SIMPLE_IPA_PASS,
-  "visibility",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  local_function_and_variable_visibility,/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_CGRAPHOPT,				/* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_remove_functions | TODO_dump_symtab /* todo_flags_finish */
- }
+  SIMPLE_IPA_PASS, /* type */
+  "visibility", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_CGRAPHOPT, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_remove_functions | TODO_dump_symtab ), /* todo_flags_finish */
 };
+
+class pass_ipa_function_and_variable_visibility : public simple_ipa_opt_pass
+{
+public:
+  pass_ipa_function_and_variable_visibility (gcc::context *ctxt)
+    : simple_ipa_opt_pass (pass_data_ipa_function_and_variable_visibility,
+			   ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () {
+    return local_function_and_variable_visibility ();
+  }
+
+}; // class pass_ipa_function_and_variable_visibility
+
+} // anon namespace
+
+simple_ipa_opt_pass *
+make_pass_ipa_function_and_variable_visibility (gcc::context *ctxt)
+{
+  return new pass_ipa_function_and_variable_visibility (ctxt);
+}
 
 /* Free inline summary.  */
 
@@ -972,25 +1151,42 @@ free_inline_summary (void)
   return 0;
 }
 
-struct simple_ipa_opt_pass pass_ipa_free_inline_summary =
+namespace {
+
+const pass_data pass_data_ipa_free_inline_summary =
 {
- {
-  SIMPLE_IPA_PASS,
-  "*free_inline_summary",		/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  free_inline_summary,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_IPA_FREE_INLINE_SUMMARY,		/* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0					/* todo_flags_finish */
- }
+  SIMPLE_IPA_PASS, /* type */
+  "*free_inline_summary", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_IPA_FREE_INLINE_SUMMARY, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_ipa_free_inline_summary : public simple_ipa_opt_pass
+{
+public:
+  pass_ipa_free_inline_summary (gcc::context *ctxt)
+    : simple_ipa_opt_pass (pass_data_ipa_free_inline_summary, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return free_inline_summary (); }
+
+}; // class pass_ipa_free_inline_summary
+
+} // anon namespace
+
+simple_ipa_opt_pass *
+make_pass_ipa_free_inline_summary (gcc::context *ctxt)
+{
+  return new pass_ipa_free_inline_summary (ctxt);
+}
 
 /* Do not re-run on ltrans stage.  */
 
@@ -1011,381 +1207,56 @@ whole_program_function_and_variable_visibility (void)
   return 0;
 }
 
-struct ipa_opt_pass_d pass_ipa_whole_program_visibility =
+namespace {
+
+const pass_data pass_data_ipa_whole_program_visibility =
 {
- {
-  IPA_PASS,
-  "whole-program",			/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_whole_program_function_and_variable_visibility,/* gate */
-  whole_program_function_and_variable_visibility,/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_CGRAPHOPT,				/* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_remove_functions | TODO_dump_symtab /* todo_flags_finish */
- },
- NULL,					/* generate_summary */
- NULL,					/* write_summary */
- NULL,					/* read_summary */
- NULL,					/* write_optimization_summary */
- NULL,					/* read_optimization_summary */
- NULL,					/* stmt_fixup */
- 0,					/* TODOs */
- NULL,					/* function_transform */
- NULL,					/* variable_transform */
+  IPA_PASS, /* type */
+  "whole-program", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_CGRAPHOPT, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_remove_functions | TODO_dump_symtab ), /* todo_flags_finish */
 };
 
-/* Entry in the histogram.  */
-
-struct histogram_entry
+class pass_ipa_whole_program_visibility : public ipa_opt_pass_d
 {
-  gcov_type count;
-  int time;
-  int size;
-};
+public:
+  pass_ipa_whole_program_visibility (gcc::context *ctxt)
+    : ipa_opt_pass_d (pass_data_ipa_whole_program_visibility, ctxt,
+		      NULL, /* generate_summary */
+		      NULL, /* write_summary */
+		      NULL, /* read_summary */
+		      NULL, /* write_optimization_summary */
+		      NULL, /* read_optimization_summary */
+		      NULL, /* stmt_fixup */
+		      0, /* function_transform_todo_flags_start */
+		      NULL, /* function_transform */
+		      NULL) /* variable_transform */
+  {}
 
-/* Histogram of profile values.
-   The histogram is represented as an ordered vector of entries allocated via
-   histogram_pool. During construction a separate hashtable is kept to lookup
-   duplicate entries.  */
+  /* opt_pass methods: */
+  bool gate () {
+    return gate_whole_program_function_and_variable_visibility ();
+  }
+  unsigned int execute () {
+    return whole_program_function_and_variable_visibility ();
+  }
 
-vec<histogram_entry *> histogram;
-static alloc_pool histogram_pool;
+}; // class pass_ipa_whole_program_visibility
 
-/* Hashtable support for storing SSA names hashed by their SSA_NAME_VAR.  */
+} // anon namespace
 
-struct histogram_hash : typed_noop_remove <histogram_entry>
+ipa_opt_pass_d *
+make_pass_ipa_whole_program_visibility (gcc::context *ctxt)
 {
-  typedef histogram_entry value_type;
-  typedef histogram_entry compare_type;
-  static inline hashval_t hash (const value_type *);
-  static inline int equal (const value_type *, const compare_type *);
-};
-
-inline hashval_t
-histogram_hash::hash (const histogram_entry *val)
-{
-  return val->count;
+  return new pass_ipa_whole_program_visibility (ctxt);
 }
-
-inline int
-histogram_hash::equal (const histogram_entry *val, const histogram_entry *val2)
-{
-  return val->count == val2->count;
-}
-
-/* Account TIME and SIZE executed COUNT times into HISTOGRAM.
-   HASHTABLE is the on-side hash kept to avoid duplicates.  */
-
-static void
-account_time_size (hash_table <histogram_hash> hashtable,
-		   vec<histogram_entry *> &histogram,
-		   gcov_type count, int time, int size)
-{
-  histogram_entry key = {count, 0, 0};
-  histogram_entry **val = hashtable.find_slot (&key, INSERT);
-
-  if (!*val)
-    {
-      *val = (histogram_entry *) pool_alloc (histogram_pool);
-      **val = key;
-      histogram.safe_push (*val);
-    }
-  (*val)->time += time;
-  (*val)->size += size;
-}
-
-int
-cmp_counts (const void *v1, const void *v2)
-{
-  const histogram_entry *h1 = *(const histogram_entry * const *)v1;
-  const histogram_entry *h2 = *(const histogram_entry * const *)v2;
-  if (h1->count < h2->count)
-    return 1;
-  if (h1->count > h2->count)
-    return -1;
-  return 0;
-}
-
-/* Dump HISTOGRAM to FILE.  */
-
-static void
-dump_histogram (FILE *file, vec<histogram_entry *> histogram)
-{
-  unsigned int i;
-  gcov_type overall_time = 0, cumulated_time = 0, cumulated_size = 0, overall_size = 0;
-  
-  fprintf (dump_file, "Histogram:\n");
-  for (i = 0; i < histogram.length (); i++)
-    {
-      overall_time += histogram[i]->count * histogram[i]->time;
-      overall_size += histogram[i]->size;
-    }
-  if (!overall_time)
-    overall_time = 1;
-  if (!overall_size)
-    overall_size = 1;
-  for (i = 0; i < histogram.length (); i++)
-    {
-      cumulated_time += histogram[i]->count * histogram[i]->time;
-      cumulated_size += histogram[i]->size;
-      fprintf (file, "  "HOST_WIDEST_INT_PRINT_DEC": time:%i (%2.2f) size:%i (%2.2f)\n",
-	       (HOST_WIDEST_INT) histogram[i]->count,
-	       histogram[i]->time,
-	       cumulated_time * 100.0 / overall_time,
-	       histogram[i]->size,
-	       cumulated_size * 100.0 / overall_size);
-   }
-}
-
-/* Collect histogram from CFG profiles.  */
-
-static void
-ipa_profile_generate_summary (void)
-{
-  struct cgraph_node *node;
-  gimple_stmt_iterator gsi;
-  hash_table <histogram_hash> hashtable;
-  basic_block bb;
-
-  hashtable.create (10);
-  histogram_pool = create_alloc_pool ("IPA histogram", sizeof (struct histogram_entry),
-				      10);
-  
-  FOR_EACH_FUNCTION_WITH_GIMPLE_BODY (node)
-    FOR_EACH_BB_FN (bb, DECL_STRUCT_FUNCTION (node->symbol.decl))
-      {
-	int time = 0;
-	int size = 0;
-        for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
-	  {
-	    time += estimate_num_insns (gsi_stmt (gsi), &eni_time_weights);
-	    size += estimate_num_insns (gsi_stmt (gsi), &eni_size_weights);
-	  }
-	account_time_size (hashtable, histogram, bb->count, time, size);
-      }
-  hashtable.dispose ();
-  histogram.qsort (cmp_counts);
-}
-
-/* Serialize the ipa info for lto.  */
-
-static void
-ipa_profile_write_summary (void)
-{
-  struct lto_simple_output_block *ob
-    = lto_create_simple_output_block (LTO_section_ipa_profile);
-  unsigned int i;
-
-  streamer_write_uhwi_stream (ob->main_stream, histogram.length());
-  for (i = 0; i < histogram.length (); i++)
-    {
-      streamer_write_gcov_count_stream (ob->main_stream, histogram[i]->count);
-      streamer_write_uhwi_stream (ob->main_stream, histogram[i]->time);
-      streamer_write_uhwi_stream (ob->main_stream, histogram[i]->size);
-    }
-  lto_destroy_simple_output_block (ob);
-}
-
-/* Deserialize the ipa info for lto.  */
-
-static void
-ipa_profile_read_summary (void)
-{
-  struct lto_file_decl_data ** file_data_vec
-    = lto_get_file_decl_data ();
-  struct lto_file_decl_data * file_data;
-  hash_table <histogram_hash> hashtable;
-  int j = 0;
-
-  hashtable.create (10);
-  histogram_pool = create_alloc_pool ("IPA histogram", sizeof (struct histogram_entry),
-				      10);
-
-  while ((file_data = file_data_vec[j++]))
-    {
-      const char *data;
-      size_t len;
-      struct lto_input_block *ib
-	= lto_create_simple_input_block (file_data,
-					 LTO_section_ipa_profile,
-					 &data, &len);
-      if (ib)
-	{
-          unsigned int num = streamer_read_uhwi (ib);
-	  unsigned int n;
-	  for (n = 0; n < num; n++)
-	    {
-	      gcov_type count = streamer_read_gcov_count (ib);
-	      int time = streamer_read_uhwi (ib);
-	      int size = streamer_read_uhwi (ib);
-	      account_time_size (hashtable, histogram,
-				 count, time, size);
-	    }
-	  lto_destroy_simple_input_block (file_data,
-					  LTO_section_ipa_profile,
-					  ib, data, len);
-	}
-    }
-  hashtable.dispose ();
-  histogram.qsort (cmp_counts);
-}
-
-/* Simple ipa profile pass propagating frequencies across the callgraph.  */
-
-static unsigned int
-ipa_profile (void)
-{
-  struct cgraph_node **order = XCNEWVEC (struct cgraph_node *, cgraph_n_nodes);
-  struct cgraph_edge *e;
-  int order_pos;
-  bool something_changed = false;
-  int i;
-  gcov_type overall_time = 0, cutoff = 0, cumulated = 0, overall_size = 0;
-
-  if (dump_file)
-    dump_histogram (dump_file, histogram);
-  for (i = 0; i < (int)histogram.length (); i++)
-    {
-      overall_time += histogram[i]->count * histogram[i]->time;
-      overall_size += histogram[i]->size;
-    }
-  if (overall_time)
-    {
-      gcov_type threshold;
-
-      gcc_assert (overall_size);
-      if (dump_file)
-	{
-	  gcov_type min, cumulated_time = 0, cumulated_size = 0;
-
-	  fprintf (dump_file, "Overall time: "HOST_WIDEST_INT_PRINT_DEC"\n", 
-		   (HOST_WIDEST_INT)overall_time);
-	  min = get_hot_bb_threshold ();
-          for (i = 0; i < (int)histogram.length () && histogram[i]->count >= min;
-	       i++)
-	    {
-	      cumulated_time += histogram[i]->count * histogram[i]->time;
-	      cumulated_size += histogram[i]->size;
-	    }
-	  fprintf (dump_file, "GCOV min count: "HOST_WIDEST_INT_PRINT_DEC
-		   " Time:%3.2f%% Size:%3.2f%%\n", 
-		   (HOST_WIDEST_INT)min,
-		   cumulated_time * 100.0 / overall_time,
-		   cumulated_size * 100.0 / overall_size);
-	}
-      cutoff = (overall_time * PARAM_VALUE (HOT_BB_COUNT_WS_PERMILLE) + 500) / 1000;
-      threshold = 0;
-      for (i = 0; cumulated < cutoff; i++)
-	{
-	  cumulated += histogram[i]->count * histogram[i]->time;
-          threshold = histogram[i]->count;
-	}
-      if (!threshold)
-	threshold = 1;
-      if (dump_file)
-	{
-	  gcov_type cumulated_time = 0, cumulated_size = 0;
-
-          for (i = 0;
-	       i < (int)histogram.length () && histogram[i]->count >= threshold;
-	       i++)
-	    {
-	      cumulated_time += histogram[i]->count * histogram[i]->time;
-	      cumulated_size += histogram[i]->size;
-	    }
-	  fprintf (dump_file, "Determined min count: "HOST_WIDEST_INT_PRINT_DEC
-		   " Time:%3.2f%% Size:%3.2f%%\n", 
-		   (HOST_WIDEST_INT)threshold,
-		   cumulated_time * 100.0 / overall_time,
-		   cumulated_size * 100.0 / overall_size);
-	}
-      if (threshold > get_hot_bb_threshold ()
-	  || in_lto_p)
-	{
-	  if (dump_file)
-	    fprintf (dump_file, "Threshold updated.\n");
-          set_hot_bb_threshold (threshold);
-	}
-    }
-  histogram.release();
-  free_alloc_pool (histogram_pool);
-
-  order_pos = ipa_reverse_postorder (order);
-  for (i = order_pos - 1; i >= 0; i--)
-    {
-      if (order[i]->local.local && cgraph_propagate_frequency (order[i]))
-	{
-	  for (e = order[i]->callees; e; e = e->next_callee)
-	    if (e->callee->local.local && !e->callee->symbol.aux)
-	      {
-	        something_changed = true;
-	        e->callee->symbol.aux = (void *)1;
-	      }
-	}
-      order[i]->symbol.aux = NULL;
-    }
-
-  while (something_changed)
-    {
-      something_changed = false;
-      for (i = order_pos - 1; i >= 0; i--)
-	{
-	  if (order[i]->symbol.aux && cgraph_propagate_frequency (order[i]))
-	    {
-	      for (e = order[i]->callees; e; e = e->next_callee)
-		if (e->callee->local.local && !e->callee->symbol.aux)
-		  {
-		    something_changed = true;
-		    e->callee->symbol.aux = (void *)1;
-		  }
-	    }
-	  order[i]->symbol.aux = NULL;
-	}
-    }
-  free (order);
-  return 0;
-}
-
-static bool
-gate_ipa_profile (void)
-{
-  return flag_ipa_profile;
-}
-
-struct ipa_opt_pass_d pass_ipa_profile =
-{
- {
-  IPA_PASS,
-  "profile_estimate",			/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_ipa_profile,			/* gate */
-  ipa_profile,			        /* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_IPA_PROFILE,		        /* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0                                     /* todo_flags_finish */
- },
- ipa_profile_generate_summary,	        /* generate_summary */
- ipa_profile_write_summary,		/* write_summary */
- ipa_profile_read_summary,		/* read_summary */
- NULL,					/* write_optimization_summary */
- NULL,					/* read_optimization_summary */
- NULL,					/* stmt_fixup */
- 0,					/* TODOs */
- NULL,			                /* function_transform */
- NULL					/* variable_transform */
-};
 
 /* Generate and emit a static constructor or destructor.  WHICH must
    be one of 'I' (for a constructor) or 'D' (for a destructor).  BODY
@@ -1669,31 +1540,49 @@ gate_ipa_cdtor_merge (void)
   return !targetm.have_ctors_dtors || (optimize && in_lto_p);
 }
 
-struct ipa_opt_pass_d pass_ipa_cdtor_merge =
+namespace {
+
+const pass_data pass_data_ipa_cdtor_merge =
 {
- {
-  IPA_PASS,
-  "cdtor",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_ipa_cdtor_merge,			/* gate */
-  ipa_cdtor_merge,		        /* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_CGRAPHOPT,			        /* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0                                     /* todo_flags_finish */
- },
- NULL,				        /* generate_summary */
- NULL,					/* write_summary */
- NULL,					/* read_summary */
- NULL,					/* write_optimization_summary */
- NULL,					/* read_optimization_summary */
- NULL,					/* stmt_fixup */
- 0,					/* TODOs */
- NULL,			                /* function_transform */
- NULL					/* variable_transform */
+  IPA_PASS, /* type */
+  "cdtor", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_CGRAPHOPT, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_ipa_cdtor_merge : public ipa_opt_pass_d
+{
+public:
+  pass_ipa_cdtor_merge (gcc::context *ctxt)
+    : ipa_opt_pass_d (pass_data_ipa_cdtor_merge, ctxt,
+		      NULL, /* generate_summary */
+		      NULL, /* write_summary */
+		      NULL, /* read_summary */
+		      NULL, /* write_optimization_summary */
+		      NULL, /* read_optimization_summary */
+		      NULL, /* stmt_fixup */
+		      0, /* function_transform_todo_flags_start */
+		      NULL, /* function_transform */
+		      NULL) /* variable_transform */
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_ipa_cdtor_merge (); }
+  unsigned int execute () { return ipa_cdtor_merge (); }
+
+}; // class pass_ipa_cdtor_merge
+
+} // anon namespace
+
+ipa_opt_pass_d *
+make_pass_ipa_cdtor_merge (gcc::context *ctxt)
+{
+  return new pass_ipa_cdtor_merge (ctxt);
+}

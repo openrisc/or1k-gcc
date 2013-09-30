@@ -139,25 +139,42 @@ cleanup_barriers (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_cleanup_barriers =
+namespace {
+
+const pass_data pass_data_cleanup_barriers =
 {
- {
-  RTL_PASS,
-  "barriers",                           /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  cleanup_barriers,                     /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_NONE,                              /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  0                                     /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "barriers", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_cleanup_barriers : public rtl_opt_pass
+{
+public:
+  pass_cleanup_barriers (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_cleanup_barriers, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return cleanup_barriers (); }
+
+}; // class pass_cleanup_barriers
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_cleanup_barriers (gcc::context *ctxt)
+{
+  return new pass_cleanup_barriers (ctxt);
+}
 
 
 /* Initialize LABEL_NUSES and JUMP_LABEL fields, add REG_LABEL_TARGET
@@ -384,9 +401,9 @@ reversed_comparison_code_parts (enum rtx_code code, const_rtx arg0,
       /* These CONST_CAST's are okay because prev_nonnote_insn just
 	 returns its argument and we assign it to a const_rtx
 	 variable.  */
-      for (prev = prev_nonnote_insn (CONST_CAST_RTX(insn));
+      for (prev = prev_nonnote_insn (CONST_CAST_RTX (insn));
 	   prev != 0 && !LABEL_P (prev);
-	   prev = prev_nonnote_insn (CONST_CAST_RTX(prev)))
+	   prev = prev_nonnote_insn (CONST_CAST_RTX (prev)))
 	{
 	  const_rtx set = set_of (arg0, prev);
 	  if (set && GET_CODE (set) == SET

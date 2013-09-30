@@ -28,7 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "basic-block.h"
 #include "gimple.h"
 #include "function.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "tree-iterator.h"
 #include "langhooks.h"
@@ -713,7 +713,7 @@ tsan_pass (void)
 static bool
 tsan_gate (void)
 {
-  return flag_tsan != 0;
+  return (flag_sanitize & SANITIZE_THREAD) != 0;
 }
 
 /* Inserts __tsan_init () into the list of CTORs.  */
@@ -733,48 +733,85 @@ tsan_finish_file (void)
 
 /* The pass descriptor.  */
 
-struct gimple_opt_pass pass_tsan =
+namespace {
+
+const pass_data pass_data_tsan =
 {
- {
-  GIMPLE_PASS,
-  "tsan",				/* name  */
-  OPTGROUP_NONE,			/* optinfo_flags */
-  tsan_gate,				/* gate  */
-  tsan_pass,				/* execute  */
-  NULL,					/* sub  */
-  NULL,					/* next  */
-  0,					/* static_pass_number  */
-  TV_NONE,				/* tv_id  */
-  PROP_ssa | PROP_cfg,			/* properties_required  */
-  0,					/* properties_provided  */
-  0,					/* properties_destroyed  */
-  0,					/* todo_flags_start  */
-  TODO_verify_all | TODO_update_ssa	/* todo_flags_finish  */
- }
+  GIMPLE_PASS, /* type */
+  "tsan", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  ( PROP_ssa | PROP_cfg ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_verify_all | TODO_update_ssa ), /* todo_flags_finish */
 };
+
+class pass_tsan : public gimple_opt_pass
+{
+public:
+  pass_tsan (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_tsan, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_tsan (ctxt_); }
+  bool gate () { return tsan_gate (); }
+  unsigned int execute () { return tsan_pass (); }
+
+}; // class pass_tsan
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_tsan (gcc::context *ctxt)
+{
+  return new pass_tsan (ctxt);
+}
 
 static bool
 tsan_gate_O0 (void)
 {
-  return flag_tsan != 0 && !optimize;
+  return (flag_sanitize & SANITIZE_THREAD) != 0 && !optimize;
 }
 
-struct gimple_opt_pass pass_tsan_O0 =
+namespace {
+
+const pass_data pass_data_tsan_O0 =
 {
- {
-  GIMPLE_PASS,
-  "tsan0",				/* name  */
-  OPTGROUP_NONE,			/* optinfo_flags */
-  tsan_gate_O0,				/* gate  */
-  tsan_pass,				/* execute  */
-  NULL,					/* sub  */
-  NULL,					/* next  */
-  0,					/* static_pass_number  */
-  TV_NONE,				/* tv_id  */
-  PROP_ssa | PROP_cfg,			/* properties_required  */
-  0,					/* properties_provided  */
-  0,					/* properties_destroyed  */
-  0,					/* todo_flags_start  */
-  TODO_verify_all | TODO_update_ssa	/* todo_flags_finish  */
- }
+  GIMPLE_PASS, /* type */
+  "tsan0", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  ( PROP_ssa | PROP_cfg ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_verify_all | TODO_update_ssa ), /* todo_flags_finish */
 };
+
+class pass_tsan_O0 : public gimple_opt_pass
+{
+public:
+  pass_tsan_O0 (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_tsan_O0, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return tsan_gate_O0 (); }
+  unsigned int execute () { return tsan_pass (); }
+
+}; // class pass_tsan_O0
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_tsan_O0 (gcc::context *ctxt)
+{
+  return new pass_tsan_O0 (ctxt);
+}

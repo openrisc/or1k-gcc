@@ -401,8 +401,8 @@ optab_for_tree_code (enum tree_code code, const_tree type,
     case FLOOR_DIV_EXPR:
     case ROUND_DIV_EXPR:
     case EXACT_DIV_EXPR:
-      if (TYPE_SATURATING(type))
-	return TYPE_UNSIGNED(type) ? usdiv_optab : ssdiv_optab;
+      if (TYPE_SATURATING (type))
+	return TYPE_UNSIGNED (type) ? usdiv_optab : ssdiv_optab;
       return TYPE_UNSIGNED (type) ? udiv_optab : sdiv_optab;
 
     case LSHIFT_EXPR:
@@ -413,8 +413,8 @@ optab_for_tree_code (enum tree_code code, const_tree type,
 
 	  gcc_assert (subtype == optab_scalar);
 	}
-      if (TYPE_SATURATING(type))
-	return TYPE_UNSIGNED(type) ? usashl_optab : ssashl_optab;
+      if (TYPE_SATURATING (type))
+	return TYPE_UNSIGNED (type) ? usashl_optab : ssashl_optab;
       return ashl_optab;
 
     case RSHIFT_EXPR:
@@ -556,23 +556,23 @@ optab_for_tree_code (enum tree_code code, const_tree type,
     {
     case POINTER_PLUS_EXPR:
     case PLUS_EXPR:
-      if (TYPE_SATURATING(type))
-	return TYPE_UNSIGNED(type) ? usadd_optab : ssadd_optab;
+      if (TYPE_SATURATING (type))
+	return TYPE_UNSIGNED (type) ? usadd_optab : ssadd_optab;
       return trapv ? addv_optab : add_optab;
 
     case MINUS_EXPR:
-      if (TYPE_SATURATING(type))
-	return TYPE_UNSIGNED(type) ? ussub_optab : sssub_optab;
+      if (TYPE_SATURATING (type))
+	return TYPE_UNSIGNED (type) ? ussub_optab : sssub_optab;
       return trapv ? subv_optab : sub_optab;
 
     case MULT_EXPR:
-      if (TYPE_SATURATING(type))
-	return TYPE_UNSIGNED(type) ? usmul_optab : ssmul_optab;
+      if (TYPE_SATURATING (type))
+	return TYPE_UNSIGNED (type) ? usmul_optab : ssmul_optab;
       return trapv ? smulv_optab : smul_optab;
 
     case NEGATE_EXPR:
-      if (TYPE_SATURATING(type))
-	return TYPE_UNSIGNED(type) ? usneg_optab : ssneg_optab;
+      if (TYPE_SATURATING (type))
+	return TYPE_UNSIGNED (type) ? usneg_optab : ssneg_optab;
       return trapv ? negv_optab : neg_optab;
 
     case ABS_EXPR:
@@ -1563,7 +1563,7 @@ expand_binop (enum machine_mode mode, optab binoptab, rtx op0, rtx op1,
         newop1 = negate_rtx (GET_MODE (op1), op1);
       else
         newop1 = expand_binop (GET_MODE (op1), sub_optab,
-			       GEN_INT (bits), op1,
+			       gen_int_mode (bits, GET_MODE (op1)), op1,
 			       NULL_RTX, unsignedp, OPTAB_DIRECT);
 
       temp = expand_binop_directly (mode, otheroptab, op0, newop1,
@@ -2539,10 +2539,12 @@ widen_leading (enum machine_mode mode, rtx op0, rtx target, optab unoptab)
 	      temp = expand_unop (wider_mode, unoptab, xop0, NULL_RTX,
 				  unoptab != clrsb_optab);
 	      if (temp != 0)
-		temp = expand_binop (wider_mode, sub_optab, temp,
-				     GEN_INT (GET_MODE_PRECISION (wider_mode)
-					      - GET_MODE_PRECISION (mode)),
-				     target, true, OPTAB_DIRECT);
+		temp = expand_binop
+		  (wider_mode, sub_optab, temp,
+		   gen_int_mode (GET_MODE_PRECISION (wider_mode)
+				 - GET_MODE_PRECISION (mode),
+				 wider_mode),
+		   target, true, OPTAB_DIRECT);
 	      if (temp == 0)
 		delete_insns_since (last);
 
@@ -2601,7 +2603,7 @@ expand_doubleword_clz (enum machine_mode mode, rtx op0, rtx target)
   if (!temp)
     goto fail;
   temp = expand_binop (word_mode, add_optab, temp,
-		       GEN_INT (GET_MODE_BITSIZE (word_mode)),
+		       gen_int_mode (GET_MODE_BITSIZE (word_mode), word_mode),
 		       result, true, OPTAB_DIRECT);
   if (!temp)
     goto fail;
@@ -2757,7 +2759,8 @@ expand_ctz (enum machine_mode mode, rtx op0, rtx target)
   if (temp)
     temp = expand_unop_direct (mode, clz_optab, temp, NULL_RTX, true);
   if (temp)
-    temp = expand_binop (mode, sub_optab, GEN_INT (GET_MODE_PRECISION (mode) - 1),
+    temp = expand_binop (mode, sub_optab,
+			 gen_int_mode (GET_MODE_PRECISION (mode) - 1, mode),
 			 temp, target,
 			 true, OPTAB_DIRECT);
   if (temp == 0)
@@ -2838,7 +2841,7 @@ expand_ffs (enum machine_mode mode, rtx op0, rtx target)
 
   /* temp now has a value in the range -1..bitsize-1.  ffs is supposed
      to produce a value in the range 0..bitsize.  */
-  temp = expand_binop (mode, add_optab, temp, GEN_INT (1),
+  temp = expand_binop (mode, add_optab, temp, gen_int_mode (1, mode),
 		       target, false, OPTAB_DIRECT);
   if (!temp)
     goto fail;
@@ -3308,10 +3311,12 @@ expand_unop (enum machine_mode mode, optab unoptab, rtx op0, rtx target,
 		 result.  Similarly for clrsb.  */
 	      if ((unoptab == clz_optab || unoptab == clrsb_optab)
 		  && temp != 0)
-		temp = expand_binop (wider_mode, sub_optab, temp,
-				     GEN_INT (GET_MODE_PRECISION (wider_mode)
-					      - GET_MODE_PRECISION (mode)),
-				     target, true, OPTAB_DIRECT);
+		temp = expand_binop
+		  (wider_mode, sub_optab, temp,
+		   gen_int_mode (GET_MODE_PRECISION (wider_mode)
+				 - GET_MODE_PRECISION (mode),
+				 wider_mode),
+		   target, true, OPTAB_DIRECT);
 
 	      /* Likewise for bswap.  */
 	      if (unoptab == bswap_optab && temp != 0)
@@ -4283,7 +4288,7 @@ emit_cmp_and_jump_insn_1 (rtx test, enum machine_mode mode, rtx label, int prob)
       && JUMP_P (insn)
       && any_condjump_p (insn)
       && !find_reg_note (insn, REG_BR_PROB, 0))
-    add_reg_note (insn, REG_BR_PROB, GEN_INT (prob));
+    add_int_reg_note (insn, REG_BR_PROB, prob);
 }
 
 /* Generate code to compare X with Y so that the condition codes are
@@ -5709,7 +5714,7 @@ gen_interclass_conv_libfunc (convert_optab tab,
   fname = GET_MODE_NAME (fmode);
   tname = GET_MODE_NAME (tmode);
 
-  if (DECIMAL_FLOAT_MODE_P(fmode) || DECIMAL_FLOAT_MODE_P(tmode))
+  if (DECIMAL_FLOAT_MODE_P (fmode) || DECIMAL_FLOAT_MODE_P (tmode))
     {
       libfunc_name = dec_name;
       suffix = dec_suffix;
@@ -5842,7 +5847,7 @@ gen_intraclass_conv_libfunc (convert_optab tab, const char *opname,
   fname = GET_MODE_NAME (fmode);
   tname = GET_MODE_NAME (tmode);
 
-  if (DECIMAL_FLOAT_MODE_P(fmode) || DECIMAL_FLOAT_MODE_P(tmode))
+  if (DECIMAL_FLOAT_MODE_P (fmode) || DECIMAL_FLOAT_MODE_P (tmode))
     {
       libfunc_name = dec_name;
       suffix = dec_suffix;
@@ -7580,7 +7585,7 @@ expand_atomic_store (rtx mem, rtx val, enum memmodel model, bool use_release)
   /* If the size of the object is greater than word size on this target,
      a default store will not be atomic, Try a mem_exchange and throw away
      the result.  If that doesn't work, don't do anything.  */
-  if (GET_MODE_PRECISION(mode) > BITS_PER_WORD)
+  if (GET_MODE_PRECISION (mode) > BITS_PER_WORD)
     {
       rtx target = maybe_emit_atomic_exchange (NULL_RTX, mem, val, model);
       if (!target)

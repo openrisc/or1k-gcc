@@ -641,8 +641,6 @@ finish_expr_stmt (tree expr)
       r = add_stmt (expr);
     }
 
-  finish_stmt ();
-
   return r;
 }
 
@@ -707,7 +705,6 @@ finish_if_stmt (tree if_stmt)
   tree scope = IF_SCOPE (if_stmt);
   IF_SCOPE (if_stmt) = NULL;
   add_stmt (do_poplevel (scope));
-  finish_stmt ();
 }
 
 /* Begin a while-statement.  Returns a newly created WHILE_STMT if
@@ -740,7 +737,6 @@ void
 finish_while_stmt (tree while_stmt)
 {
   WHILE_BODY (while_stmt) = do_poplevel (WHILE_BODY (while_stmt));
-  finish_stmt ();
 }
 
 /* Begin a do-statement.  Returns a newly created DO_STMT if
@@ -778,7 +774,6 @@ finish_do_stmt (tree cond, tree do_stmt)
 {
   cond = maybe_convert_cond (cond);
   DO_COND (do_stmt) = cond;
-  finish_stmt ();
 }
 
 /* Finish a return-statement.  The EXPRESSION returned, if any, is as
@@ -815,7 +810,6 @@ finish_return_stmt (tree expr)
   TREE_NO_WARNING (r) |= no_warning;
   r = maybe_cleanup_point_expr_void (r);
   r = add_stmt (r);
-  finish_stmt ();
 
   return r;
 }
@@ -941,8 +935,6 @@ finish_for_stmt (tree for_stmt)
       *scope_ptr = NULL;
       add_stmt (do_poplevel (scope));
     }
-
-  finish_stmt ();
 }
 
 /* Begin a range-for-statement.  Returns a new RANGE_FOR_STMT.
@@ -1076,7 +1068,6 @@ finish_switch_stmt (tree switch_stmt)
   SWITCH_STMT_BODY (switch_stmt) =
     pop_stmt_list (SWITCH_STMT_BODY (switch_stmt));
   pop_switch ();
-  finish_stmt ();
 
   scope = SWITCH_STMT_SCOPE (switch_stmt);
   SWITCH_STMT_SCOPE (switch_stmt) = NULL;
@@ -1298,7 +1289,6 @@ finish_compound_stmt (tree stmt)
 
   /* ??? See c_end_compound_stmt wrt statement expressions.  */
   add_stmt (stmt);
-  finish_stmt ();
 }
 
 /* Finish an asm-statement, whose components are a STRING, some
@@ -1614,6 +1604,9 @@ finish_non_static_data_member (tree decl, tree object, tree qualifying_scope)
 
       if (TREE_CODE (type) == REFERENCE_TYPE)
 	/* Quals on the object don't matter.  */;
+      else if (PACK_EXPANSION_P (type))
+	/* Don't bother trying to represent this.  */
+	type = NULL_TREE;
       else
 	{
 	  /* Set the cv qualifiers.  */
@@ -2371,7 +2364,8 @@ finish_this_expr (void)
    was of the form `OBJECT.SCOPE::~DESTRUCTOR'.  */
 
 tree
-finish_pseudo_destructor_expr (tree object, tree scope, tree destructor)
+finish_pseudo_destructor_expr (tree object, tree scope, tree destructor,
+			       location_t loc)
 {
   if (object == error_mark_node || destructor == error_mark_node)
     return error_mark_node;
@@ -2382,15 +2376,16 @@ finish_pseudo_destructor_expr (tree object, tree scope, tree destructor)
     {
       if (scope == error_mark_node)
 	{
-	  error ("invalid qualifying scope in pseudo-destructor name");
+	  error_at (loc, "invalid qualifying scope in pseudo-destructor name");
 	  return error_mark_node;
 	}
       if (is_auto (destructor))
 	destructor = TREE_TYPE (object);
       if (scope && TYPE_P (scope) && !check_dtor_name (scope, destructor))
 	{
-	  error ("qualified type %qT does not match destructor name ~%qT",
-		 scope, destructor);
+	  error_at (loc,
+		    "qualified type %qT does not match destructor name ~%qT",
+		    scope, destructor);
 	  return error_mark_node;
 	}
 
@@ -2411,12 +2406,13 @@ finish_pseudo_destructor_expr (tree object, tree scope, tree destructor)
       if (!same_type_ignoring_top_level_qualifiers_p (TREE_TYPE (object),
 						      destructor))
 	{
-	  error ("%qE is not of type %qT", object, destructor);
+	  error_at (loc, "%qE is not of type %qT", object, destructor);
 	  return error_mark_node;
 	}
     }
 
-  return build3 (PSEUDO_DTOR_EXPR, void_type_node, object, scope, destructor);
+  return build3_loc (loc, PSEUDO_DTOR_EXPR, void_type_node, object,
+		     scope, destructor);
 }
 
 /* Finish an expression of the form CODE EXPR.  */
@@ -3141,7 +3137,7 @@ finish_id_expression (tree id_expression,
 	      error (VAR_P (decl)
 		     ? G_("use of local variable with automatic storage from containing function")
 		     : G_("use of parameter from containing function"));
-	      error ("  %q+#D declared here", decl);
+	      inform (input_location, "%q+#D declared here", decl);
 	      return error_mark_node;
 	    }
 	}
@@ -3467,8 +3463,10 @@ finish_id_expression (tree id_expression,
 	}
     }
 
-  if (TREE_DEPRECATED (decl))
-    warn_deprecated_use (decl, NULL_TREE);
+  /* Handle references (c++/56130).  */
+  tree t = REFERENCE_REF_P (decl) ? TREE_OPERAND (decl, 0) : decl;
+  if (TREE_DEPRECATED (t))
+    warn_deprecated_use (t, NULL_TREE);
 
   return decl;
 }
@@ -3701,7 +3699,7 @@ finish_offsetof (tree expr)
       || TREE_CODE (TREE_TYPE (expr)) == METHOD_TYPE
       || TREE_TYPE (expr) == unknown_type_node)
     {
-      if (TREE_CODE (expr) == INDIRECT_REF)
+      if (INDIRECT_REF_P (expr))
 	error ("second operand of %<offsetof%> is neither a single "
 	       "identifier nor a sequence of member accesses and "
 	       "array references");
@@ -5201,14 +5199,15 @@ finish_transaction_stmt (tree stmt, tree compound_stmt, int flags, tree noex)
     {
       tree body = build_must_not_throw_expr (TRANSACTION_EXPR_BODY (stmt),
 					     noex);
-      SET_EXPR_LOCATION (body, EXPR_LOCATION (TRANSACTION_EXPR_BODY (stmt)));
+      /* This may not be true when the STATEMENT_LIST is empty.  */
+      if (EXPR_P (body))
+        SET_EXPR_LOCATION (body, EXPR_LOCATION (TRANSACTION_EXPR_BODY (stmt)));
       TREE_SIDE_EFFECTS (body) = 1;
       TRANSACTION_EXPR_BODY (stmt) = body;
     }
 
   if (compound_stmt)
     finish_compound_stmt (compound_stmt);
-  finish_stmt ();
 }
 
 /* Build a __transaction_atomic or __transaction_relaxed expression.  If
@@ -6016,7 +6015,7 @@ build_data_member_initialization (tree t, vec<constructor_elt, va_gc> **vec)
       || TREE_CODE (t) == MODIFY_EXPR)
     {
       member = TREE_OPERAND (t, 0);
-      init = unshare_expr (TREE_OPERAND (t, 1));
+      init = break_out_target_exprs (TREE_OPERAND (t, 1));
     }
   else if (TREE_CODE (t) == CALL_EXPR)
     {
@@ -6024,7 +6023,7 @@ build_data_member_initialization (tree t, vec<constructor_elt, va_gc> **vec)
       /* We don't use build_cplus_new here because it complains about
 	 abstract bases.  Leaving the call unwrapped means that it has the
 	 wrong type, but cxx_eval_constant_expression doesn't care.  */
-      init = unshare_expr (t);
+      init = break_out_target_exprs (t);
     }
   else if (TREE_CODE (t) == DECL_EXPR)
     /* Declaring a temporary, don't add it to the CONSTRUCTOR.  */
@@ -6261,7 +6260,7 @@ constexpr_fn_retval (tree body)
       }
 
     case RETURN_EXPR:
-      return unshare_expr (TREE_OPERAND (body, 0));
+      return break_out_target_exprs (TREE_OPERAND (body, 0));
 
     case DECL_EXPR:
       if (TREE_CODE (DECL_EXPR_DECL (body)) == USING_DECL)
@@ -6478,7 +6477,7 @@ typedef struct GTY(()) constexpr_call {
   constexpr_fundef *fundef;
   /* Parameter bindings environment.  A TREE_LIST where each TREE_PURPOSE
      is a parameter _DECL and the TREE_VALUE is the value of the parameter.
-     Note: This arrangement is made to accomodate the use of
+     Note: This arrangement is made to accommodate the use of
      iterative_hash_template_arg (see pt.c).  If you change this
      representation, also change the hash calculation in
      cxx_eval_call_expression.  */
@@ -6684,7 +6683,7 @@ cxx_bind_parameters_in_call (const constexpr_call *old_call, tree t,
       tree x, arg;
       tree type = parms ? TREE_TYPE (parms) : void_type_node;
       /* For member function, the first argument is a pointer to the implied
-         object.  And for an object contruction, don't bind `this' before
+         object.  And for an object construction, don't bind `this' before
          it is fully constructed.  */
       if (i == 0 && DECL_CONSTRUCTOR_P (fun))
         goto next;
@@ -8385,7 +8384,7 @@ check_automatic_or_tls (tree ref)
    C++0x [expr.const] used to say
 
    6 An expression is a potential constant expression if it is
-     a constant expression where all occurences of function
+     a constant expression where all occurrences of function
      parameters are replaced by arbitrary constant expressions
      of the appropriate type.
 

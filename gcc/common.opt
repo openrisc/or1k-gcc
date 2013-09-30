@@ -207,6 +207,10 @@ unsigned int help_columns
 Variable
 bool flag_opts_finished
 
+; What the sanitizer should instrument
+Variable
+unsigned int flag_sanitize
+
 ###
 Driver
 
@@ -850,13 +854,9 @@ fargument-noalias-anything
 Common Ignore
 Does nothing. Preserved for backward compatibility.
 
-fsanitize=address
-Common Report Var(flag_asan)
-Enable AddressSanitizer, a memory error detector
-
-fsanitize=thread
-Common Report Var(flag_tsan)
-Enable ThreadSanitizer, a data race detector
+fsanitize=
+Common Driver Report Joined
+Select what to sanitize
 
 fasynchronous-unwind-tables
 Common Report Var(flag_asynchronous_unwind_tables) Optimization
@@ -1002,6 +1002,10 @@ Delete dead instructions that may throw exceptions
 fdelete-null-pointer-checks
 Common Report Var(flag_delete_null_pointer_checks) Init(1) Optimization
 Delete useless null pointer checks
+
+fdevirtualize-speculatively
+Common Report Var(flag_devirtualize_speculatively) Optimization
+Perform speculative devirtualization
 
 fdevirtualize
 Common Report Var(flag_devirtualize) Optimization
@@ -1366,7 +1370,7 @@ Common RejectNegative Joined
 
 fipa-cp
 Common Report Var(flag_ipa_cp) Optimization
-Perform Interprocedural constant propagation
+Perform interprocedural constant propagation
 
 fipa-cp-clone
 Common Report Var(flag_ipa_cp_clone) Optimization
@@ -2260,23 +2264,47 @@ Perform variable tracking and also tag variables that are uninitialized
 
 ftree-vectorize
 Common Report Var(flag_tree_vectorize) Optimization
-Enable loop vectorization on trees
+Enable vectorization on trees
 
 ftree-vectorizer-verbose=
 Common RejectNegative Joined UInteger Var(common_deferred_options) Defer
 -ftree-vectorizer-verbose=<number>	This switch is deprecated. Use -fopt-info instead.
 
+ftree-loop-vectorize
+Common Report Var(flag_tree_loop_vectorize) Optimization
+Enable loop vectorization on trees
+
 ftree-slp-vectorize
-Common Report Var(flag_tree_slp_vectorize) Init(2) Optimization
+Common Report Var(flag_tree_slp_vectorize) Optimization
 Enable basic block vectorization (SLP) on trees
 
+fvect-cost-model=
+Common Joined RejectNegative Enum(vect_cost_model) Var(flag_vect_cost_model) Init(VECT_COST_MODEL_DEFAULT)
+Specifies the cost model for vectorization
+ 
+Enum
+Name(vect_cost_model) Type(enum vect_cost_model) UnknownError(unknown vectorizer cost model %qs)
+
+EnumValue
+Enum(vect_cost_model) String(unlimited) Value(VECT_COST_MODEL_UNLIMITED)
+
+EnumValue
+Enum(vect_cost_model) String(dynamic) Value(VECT_COST_MODEL_DYNAMIC)
+
+EnumValue
+Enum(vect_cost_model) String(cheap) Value(VECT_COST_MODEL_CHEAP)
+
 fvect-cost-model
-Common Report Var(flag_vect_cost_model) Optimization
-Enable use of cost model in vectorization
+Common RejectNegative Alias(fvect-cost-model=,dynamic)
+Enables the dynamic vectorizer cost model.  Preserved for backward compatibility.
+
+fno-vect-cost-model
+Common RejectNegative Alias(fvect-cost-model=,unlimited)
+Enables the unlimited vectorizer cost model.  Preserved for backward compatibility.
 
 ftree-vect-loop-version
-Common Report Var(flag_tree_vect_loop_version) Init(1) Optimization
-Enable loop versioning when doing loop vectorization on trees
+Common Ignore
+Does nothing. Preserved for backward compatibility.
 
 ftree-scev-cprop
 Common Report Var(flag_tree_scev_cprop) Init(1) Optimization
@@ -2310,6 +2338,30 @@ Enum(symbol_visibility) String(hidden) Value(VISIBILITY_HIDDEN)
 
 EnumValue
 Enum(symbol_visibility) String(protected) Value(VISIBILITY_PROTECTED)
+
+fvtable-verify=
+Common Joined RejectNegative Enum(vtv_priority) Var(flag_vtable_verify) Init(VTV_NO_PRIORITY)
+Validate vtable pointers before using them.
+
+Enum
+Name(vtv_priority) Type(enum vtv_priority) UnknownError(unknown vtable verify initialization priority %qs)
+
+EnumValue
+Enum(vtv_priority) String(none) Value(VTV_NO_PRIORITY)
+
+EnumValue
+Enum(vtv_priority) String(std) Value(VTV_STANDARD_PRIORITY)
+
+EnumValue
+Enum(vtv_priority) String(preinit) Value(VTV_PREINIT_PRIORITY)
+
+fvtv-counts
+Common Var(flag_vtv_counts)
+Output vtable verification counters.
+
+fvtv-debug
+Common Var(flag_vtv_debug)
+Output vtable verification pointer sets information.
 
 fvpt
 Common Report Var(flag_value_profile_transformations) Optimization
@@ -2578,6 +2630,9 @@ static-libasan
 Driver
 
 static-libtsan
+Driver
+
+static-libubsan
 Driver
 
 symbolic

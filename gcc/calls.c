@@ -40,7 +40,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cgraph.h"
 #include "except.h"
 #include "dbgcnt.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 
 /* Like PREFERRED_STACK_BOUNDARY but in units of bytes, not bits.  */
 #define STACK_BYTES (PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT)
@@ -1026,7 +1026,7 @@ store_unaligned_arguments_into_pseudos (struct arg_data *args, int num_actuals)
 	    int bitsize = MIN (bytes * BITS_PER_UNIT, BITS_PER_WORD);
 
 	    args[i].aligned_regs[j] = reg;
-	    word = extract_bit_field (word, bitsize, 0, 1, false, NULL_RTX,
+	    word = extract_bit_field (word, bitsize, 0, 1, NULL_RTX,
 				      word_mode, word_mode);
 
 	    /* There is no need to restrict this code to loading items
@@ -1732,7 +1732,8 @@ internal_arg_pointer_based_exp_scan (void)
 	  if (val != NULL_RTX)
 	    {
 	      if (idx >= internal_arg_pointer_exp_state.cache.length ())
-		internal_arg_pointer_exp_state.cache.safe_grow_cleared(idx + 1);
+		internal_arg_pointer_exp_state.cache
+		  .safe_grow_cleared (idx + 1);
 	      internal_arg_pointer_exp_state.cache[idx] = val;
 	    }
 	}

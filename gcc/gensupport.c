@@ -392,7 +392,7 @@ static struct queue_elem *
 queue_pattern (rtx pattern, struct queue_elem ***list_tail,
 	       const char *filename, int lineno)
 {
-  struct queue_elem *e = XNEW(struct queue_elem);
+  struct queue_elem *e = XNEW (struct queue_elem);
   e->data = pattern;
   e->filename = filename;
   e->lineno = lineno;
@@ -429,7 +429,7 @@ remove_from_queue (struct queue_elem *elem, struct queue_elem **queue)
 static void
 add_define_attr (const char *name)
 {
-  struct queue_elem *e = XNEW(struct queue_elem);
+  struct queue_elem *e = XNEW (struct queue_elem);
   rtx t1 = rtx_alloc (DEFINE_ATTR);
   XSTR (t1, 0) = name;
   XSTR (t1, 1) = "no,yes";
@@ -2178,8 +2178,8 @@ subst_dup (rtx pattern, int n_alt, int n_subst_alt)
 	  if (XVEC (pattern, i) == NULL)
 	    break;
 	case 'E':
-	  for (j = XVECLEN (pattern, i) - 1; j >= 0; --j)
-	    if (code != MATCH_DUP && code != MATCH_OP_DUP)
+	  if (code != MATCH_DUP && code != MATCH_OP_DUP)
+	    for (j = XVECLEN (pattern, i) - 1; j >= 0; --j)
 	      XVECEXP (pattern, i, j) = subst_dup (XVECEXP (pattern, i, j),
 						   n_alt, n_subst_alt);
 	  break;
@@ -2870,7 +2870,7 @@ record_insn_name (int code, const char *name)
       new_size = (insn_name_ptr_size ? insn_name_ptr_size * 2 : 512);
       insn_name_ptr = XRESIZEVEC (char *, insn_name_ptr, new_size);
       memset (insn_name_ptr + insn_name_ptr_size, 0,
-	      sizeof(char *) * (new_size - insn_name_ptr_size));
+	      sizeof (char *) * (new_size - insn_name_ptr_size));
       insn_name_ptr_size = new_size;
     }
 

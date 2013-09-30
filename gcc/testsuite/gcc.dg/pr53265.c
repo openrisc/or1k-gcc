@@ -1,6 +1,7 @@
 /* PR tree-optimization/53265 */
 /* { dg-do compile } */
 /* { dg-options "-O2 -Wall" } */
+/* { dg-require-effective-target size32plus } */
 
 void bar (void *);
 int baz (int);
@@ -89,7 +90,7 @@ fn7 (void)
     baz (b);
 }
 
-/* { dg-message "note: containing loop" "" { target *-*-* } 88 } */
+/* { dg-message "note: containing loop" "" { target *-*-* } 89 } */
 
 const void *va, *vb, *vc, *vd, *ve;
 const void *vf[4];

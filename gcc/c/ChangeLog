@@ -1,3 +1,90 @@
+2013-09-25  Tom Tromey  <tromey@redhat.com>
+
+	* Make-lang.in (c/gccspec.o): Remove.
+	(CFLAGS-c/gccspec.o): New variable.
+	(cc1-checksum.o, C_TREE_H, c/c-aux-info.o, c/c-convert.o)
+	(c/c-decl.o, c/c-errors.o, c/c-lang.o, c/c-objc-common.o)
+	(c/c-parser.o, c/c-typeck.o, c/c-array-notation.o): Remove.
+
+2013-09-25  Tom Tromey  <tromey@redhat.com>
+
+	* Make-lang.in (c/gccspec.o): Don't use subshell.
+
+2013-09-18  Marek Polacek  <polacek@redhat.com>
+
+	PR sanitize/58443
+	* c-typeck.c (build_binary_op): Properly honor -fsanitize options.
+	Remove unnecessary check.
+
+2013-09-18  Marek Polacek  <polacek@redhat.com>
+
+	PR sanitizer/58411
+	* c-typeck.c (build_binary_op): Don't sanitize function if it has the
+	no_sanitize_undefined attribute.
+
+2013-09-13  Kai Tietz  <ktietz@redhat.com>
+
+	PR target/57848
+	* c-decl.c (c_builtin_function_ext_scope): Remove
+	wrong assumption that it is never called on prexisting
+	symbol.
+
+2013-09-08  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* c-typeck.c (build_binary_op): Use vector_types_compatible_elements_p.
+
+2013-09-03  Gabriel Dos Reis  <gdr@integrable-solutions.net>
+
+	* c-objc-common.c (c_tree_printer): Tidy.
+
+2013-08-30  Marek Polacek  <polacek@redhat.com>
+
+	* c-typeck.c (build_binary_op): Add division by zero and shift
+	instrumentation.
+
+2013-08-26  Joern Rennecke  <joern.rennecke@embecosm.com>
+	    Joseph Myers  <joseph@codesourcery.com>
+
+	PR c/35649
+	* c-typeck.c (c_common_type): Prefer double_type_node over
+	other REAL_TYPE types with the same precision.
+	(convert_arguments): Likewise.
+
+2013-08-23  Gabriel Dos Reis  <gdr@integrable-solutions.net>
+
+	* c-objc-common.c (c_tree_printer): Document the nature of the cast.
+	(c_initialize_diagnostics): Call a destructor for the early printer.
+
+2013-08-22  Gabriel Dos Reis  <gdr@integrable-solutions.net>
+
+	* c-objc-common.c (c_initialize_diagnostics): Simplify C pretty
+	printer initialization.
+
+2013-08-19  Balaji V. Iyer  <balaji.v.iyer@intel.com>
+
+	PR c/57490
+	* c-array-notation.c (fix_conditional_array_notations_1): Added a
+	check for truth values.
+	(expand_array_notation_exprs): Added truth values case.  Removed an
+	unwanted else.  Added for-loop to walk through subtrees in default
+	case.
+
+2013-08-04  Gabriel Dos Reis  <gdr@integrable-solutions.net>
+
+	* c-objc-common.c (c_initialize_diagnostics): Don't call pp_base.
+
+2013-07-23  Joseph Myers  <joseph@codesourcery.com>
+
+	* c-parser.c (struct c_generic_association): Fix typo.
+
+2013-07-23  Tom Tromey  <tromey@redhat.com>
+	    Joseph Myers  <joseph@codesourcery.com>
+
+	* c-parser.c (struct c_generic_association): New.
+	(c_generic_association_d): New typedef.
+	(c_parser_generic_selection): New function.
+	(c_parser_postfix_expression): Handle RID_GENERIC.
+
 2013-07-13  Jason Merrill  <jason@redhat.com>
 
 	PR c++/57793

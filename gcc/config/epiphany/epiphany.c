@@ -45,6 +45,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "ggc.h"
 #include "tm-constrs.h"
 #include "tree-pass.h"	/* for current_pass */
+#include "context.h"
+#include "pass_manager.h"
 
 /* Which cpu we're compiling for.  */
 int epiphany_cpu_type;
@@ -58,6 +60,9 @@ char epiphany_punct_chars[256];
 
 /* The rounding mode that we generally use for floating point.  */
 int epiphany_normal_fp_rounding;
+
+/* The pass instance, for use in epiphany_optimize_mode_switching. */
+static opt_pass *pass_mode_switch_use;
 
 static void epiphany_init_reg_tables (void);
 static int get_epiphany_condition_code (rtx);
@@ -165,20 +170,26 @@ epiphany_init (void)
      pass because of the side offect of epiphany_mode_needed on
      MACHINE_FUNCTION(cfun)->unknown_mode_uses.  But it must run before
      pass_resolve_sw_modes.  */
-  static struct register_pass_info insert_use_info
-    = { &pass_mode_switch_use.pass, "mode_sw",
+  pass_mode_switch_use = make_pass_mode_switch_use (g);
+  struct register_pass_info insert_use_info
+    = { pass_mode_switch_use, "mode_sw",
 	1, PASS_POS_INSERT_AFTER
       };
-  static struct register_pass_info mode_sw2_info
-    = { &pass_mode_switching.pass, "mode_sw",
+  opt_pass *mode_sw2
+    = g->get_passes()->get_pass_mode_switching ()->clone ();
+  struct register_pass_info mode_sw2_info
+    = { mode_sw2, "mode_sw",
 	1, PASS_POS_INSERT_AFTER
       };
-  static struct register_pass_info mode_sw3_info
-    = { &pass_resolve_sw_modes.pass, "mode_sw",
+  opt_pass *mode_sw3 = make_pass_resolve_sw_modes (g);
+  struct register_pass_info mode_sw3_info
+    = { mode_sw3, "mode_sw",
 	1, PASS_POS_INSERT_AFTER
       };
-  static struct register_pass_info mode_sw4_info
-    = { &pass_split_all_insns.pass, "mode_sw",
+  opt_pass *mode_sw4
+    = g->get_passes()->get_pass_split_all_insns ()->clone ();
+  struct register_pass_info mode_sw4_info
+    = { mode_sw4, "mode_sw",
 	1, PASS_POS_INSERT_AFTER
       };
   static const int num_modes[] = NUM_MODES_FOR_MODE_SWITCHING;
@@ -205,8 +216,10 @@ epiphany_init (void)
          (see http://gcc.gnu.org/ml/gcc-patches/2011-10/msg02819.html,)
          we need a second peephole2 pass to get reasonable code.  */
   {
-    static struct register_pass_info peep2_2_info
-      = { &pass_peephole2.pass, "peephole2",
+    opt_pass *extra_peephole2
+      = g->get_passes ()->get_pass_peephole2 ()->clone ();
+    struct register_pass_info peep2_2_info
+      = { extra_peephole2, "peephole2",
 	  1, PASS_POS_INSERT_AFTER
 	};
 
@@ -884,6 +897,11 @@ struct epiphany_frame_info
   int      stld_sz;             /* Current load/store data size for offset
 				   adjustment. */
   int      need_fp;             /* value to override "frame_pointer_needed */
+  /* FIRST_SLOT is the slot that is saved first, at the very start of
+     the frame, with a POST_MODIFY to allocate the frame, if the size fits,
+     or at least the parm and register save areas, otherwise.
+     In the case of a large frame, LAST_SLOT is the slot that is saved last,
+     with a POST_MODIFY to allocate the rest of the frame.  */
   int first_slot, last_slot, first_slot_offset, last_slot_offset;
   int first_slot_size;
   int small_threshold;
@@ -1069,7 +1087,10 @@ epiphany_compute_frame_size (int size /* # of var. bytes allocated.  */)
 	 to be a lot of code complexity for little gain.  */
       || (reg_size > 8 && optimize))
     reg_size = EPIPHANY_STACK_ALIGN (reg_size);
-  if (total_size + reg_size <= (unsigned) epiphany_stack_offset
+  if (((total_size + reg_size
+	/* Reserve space for UNKNOWN_REGNUM.  */
+	+ EPIPHANY_STACK_ALIGN (4))
+       <= (unsigned) epiphany_stack_offset)
       && !interrupt_p
       && crtl->is_leaf && !frame_pointer_needed)
     {
@@ -1108,7 +1129,7 @@ epiphany_compute_frame_size (int size /* # of var. bytes allocated.  */)
       if (total_size + reg_size <= (unsigned) epiphany_stack_offset)
 	{
 	  gcc_assert (first_slot < 0);
-	  gcc_assert (reg_size == 0);
+	  gcc_assert (reg_size == 0 || reg_size == epiphany_stack_offset);
 	  last_slot_offset = EPIPHANY_STACK_ALIGN (total_size + reg_size);
 	}
       else
@@ -2248,7 +2269,7 @@ epiphany_optimize_mode_switching (int entity)
       return (MACHINE_FUNCTION (cfun)->sw_entities_processed
 	      & (1 << EPIPHANY_MSW_ENTITY_ROUND_UNKNOWN)) != 0;
     case EPIPHANY_MSW_ENTITY_FPU_OMNIBUS:
-      return optimize == 0 || current_pass == &pass_mode_switch_use.pass;
+      return optimize == 0 || current_pass == pass_mode_switch_use;
     }
   gcc_unreachable ();
 }

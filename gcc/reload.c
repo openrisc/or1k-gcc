@@ -680,8 +680,8 @@ find_valid_class (enum machine_mode outer ATTRIBUTE_UNUSED,
 	    if (HARD_REGNO_MODE_OK (regno, inner))
 	      {
 		good = 1;
-		if (! TEST_HARD_REG_BIT (reg_class_contents[rclass], regno + n)
-		    || ! HARD_REGNO_MODE_OK (regno + n, outer))
+		if (TEST_HARD_REG_BIT (reg_class_contents[rclass], regno + n)
+		    && ! HARD_REGNO_MODE_OK (regno + n, outer))
 		  bad = 1;
 	      }
 	  }
@@ -3324,7 +3324,10 @@ find_reloads (rtx insn, int replace, int ind_levels, int live_known,
 		      for (j = 0; j < i; j++)
 			if (this_alternative_matches[j]
 			    == this_alternative_matches[i])
-			  badop = 1;
+			  {
+			    badop = 1;
+			    break;
+			  }
 		    break;
 
 		  case 'p':
@@ -4640,7 +4643,10 @@ find_reloads (rtx insn, int replace, int ind_levels, int live_known,
 
 	    for (nri = 1; nri < nr; nri ++)
 	      if (! TEST_HARD_REG_BIT (reg_class_contents[rld[i].rclass], regno + nri))
-		ok = 0;
+		{
+		  ok = 0;
+		  break;
+		}
 
 	    if (ok)
 	      rld[i].reg_rtx = dest;

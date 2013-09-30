@@ -56,6 +56,10 @@ get_symbol_class (symtab_node node)
   /* Inline clones are always duplicated.
      This include external delcarations.   */
   cgraph_node *cnode = dyn_cast <cgraph_node> (node);
+
+  if (DECL_ABSTRACT (node->symbol.decl))
+    return SYMBOL_EXTERNAL;
+
   if (cnode && cnode->global.inlined_to)
     return SYMBOL_DUPLICATE;
 
@@ -444,12 +448,10 @@ void
 lto_balanced_map (void)
 {
   int n_nodes = 0;
-  int n_varpool_nodes = 0, varpool_pos = 0;
-  struct cgraph_node **postorder =
-    XCNEWVEC (struct cgraph_node *, cgraph_n_nodes);
+  int n_varpool_nodes = 0, varpool_pos = 0, best_varpool_pos = 0;
   struct cgraph_node **order = XNEWVEC (struct cgraph_node *, cgraph_max_uid);
   struct varpool_node **varpool_order = NULL;
-  int i, postorder_len;
+  int i;
   struct cgraph_node *node;
   int total_size = 0, best_total_size = 0;
   int partition_size;
@@ -464,24 +466,20 @@ lto_balanced_map (void)
 
   FOR_EACH_VARIABLE (vnode)
     gcc_assert (!vnode->symbol.aux);
-  /* Until we have better ordering facility, use toplogical order.
-     Include only nodes we will partition and compute estimate of program
-     size.  Note that since nodes that are not partitioned might be put into
-     multiple partitions, this is just an estimate of real size.  This is why
-     we keep partition_size updated after every partition is finalized.  */
-  postorder_len = ipa_reverse_postorder (postorder);
     
-  for (i = 0; i < postorder_len; i++)
-    {
-      node = postorder[i];
-      if (get_symbol_class ((symtab_node) node) == SYMBOL_PARTITION)
-	{
-	  order[n_nodes++] = node;
-          total_size += inline_summary (node)->size;
-	}
-    }
-  free (postorder);
+  FOR_EACH_DEFINED_FUNCTION (node)
+    if (get_symbol_class ((symtab_node) node) == SYMBOL_PARTITION)
+      {
+	order[n_nodes++] = node;
+	total_size += inline_summary (node)->size;
+      }
 
+  /* Streaming works best when the source units do not cross partition
+     boundaries much.  This is because importing function from a source
+     unit tends to import a lot of global trees defined there.  We should
+     get better about minimizing the function bounday, but until that
+     things works smoother if we order in source order.  */
+  qsort (order, n_nodes, sizeof (struct cgraph_node *), node_cmp);
   if (!flag_toplevel_reorder)
     {
       qsort (order, n_nodes, sizeof (struct cgraph_node *), node_cmp);
@@ -684,6 +682,7 @@ lto_balanced_map (void)
 	  best_i = i;
 	  best_n_nodes = lto_symtab_encoder_size (partition->encoder);
 	  best_total_size = total_size;
+	  best_varpool_pos = varpool_pos;
 	}
       if (cgraph_dump_file)
 	fprintf (cgraph_dump_file, "Step %i: added %s/%i, size %i, cost %i/%i "
@@ -701,6 +700,7 @@ lto_balanced_map (void)
 		fprintf (cgraph_dump_file, "Unwinding %i insertions to step %i\n",
 			 i - best_i, best_i);
 	      undo_partition (partition, best_n_nodes);
+	      varpool_pos = best_varpool_pos;
 	    }
 	  i = best_i;
  	  /* When we are finished, avoid creating empty partition.  */
@@ -838,8 +838,6 @@ may_need_named_section_p (lto_symtab_encoder_t encoder, symtab_node node)
     return false;
   if (symtab_real_symbol_p (node))
     return false;
-  if (!cnode->global.inlined_to && !cnode->clones)
-    return false;
   return (!encoder
 	  || (lto_symtab_encoder_lookup (encoder, node) != LCC_NOT_FOUND
               && lto_symtab_encoder_encode_body_p (encoder,
@@ -850,7 +848,7 @@ may_need_named_section_p (lto_symtab_encoder_t encoder, symtab_node node)
    of the same name in partition ENCODER (or in whole compilation unit if
    ENCODER is NULL) and if so, mangle the statics.  Always mangle all
    conflicting statics, so we reduce changes of silently miscompiling
-   asm statemnets refering to them by symbol name.  */
+   asm statemnets referring to them by symbol name.  */
 
 static void
 rename_statics (lto_symtab_encoder_t encoder, symtab_node node)
@@ -900,7 +898,7 @@ rename_statics (lto_symtab_encoder_t encoder, symtab_node node)
 	    || lto_symtab_encoder_lookup (encoder, s) != LCC_NOT_FOUND))
       {
         if (privatize_symbol_name (s))
-	  /* Re-start from beggining since we do not know how many symbols changed a name.  */
+	  /* Re-start from beginning since we do not know how many symbols changed a name.  */
 	  s = symtab_node_for_asm (name);
         else s = s->symbol.next_sharing_asm_name;
       }

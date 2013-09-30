@@ -652,7 +652,7 @@ class Tr1HashtableIterator:
 
 class StdHashtableIterator:
     def __init__(self, hash):
-        self.node = hash['_M_bbegin']['_M_node']['_M_nxt']
+        self.node = hash['_M_before_begin']['_M_nxt']
         self.node_type = find_type(hash.type, '__node_type').pointer()
 
     def __iter__(self):
@@ -786,6 +786,11 @@ class RxPrinter(object):
     def invoke(self, value):
         if not self.enabled:
             return None
+
+        if value.type.code == gdb.TYPE_CODE_REF:
+            if hasattr(gdb.Value,"referenced_value"):
+                value = value.referenced_value()
+
         return self.function(self.name, value)
 
 # A pretty-printer that conforms to the "PrettyPrinter" protocol from
@@ -841,6 +846,11 @@ class Printer(object):
             return None
 
         basename = match.group(1)
+
+        if val.type.code == gdb.TYPE_CODE_REF:
+            if hasattr(gdb.Value,"referenced_value"):
+                val = val.referenced_value()
+
         if basename in self.lookup:
             return self.lookup[basename].invoke(val)
 

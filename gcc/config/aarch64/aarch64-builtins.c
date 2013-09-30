@@ -989,6 +989,8 @@ aarch64_simd_expand_args (rtx target, int icode, int have_retval,
 	  switch (thisarg)
 	    {
 	    case SIMD_ARG_COPY_TO_REG:
+	      if (POINTER_TYPE_P (TREE_TYPE (arg[argc])))
+		op[argc] = convert_memory_address (Pmode, op[argc]);
 	      /*gcc_assert (GET_MODE (op[argc]) == mode[argc]); */
 	      if (!(*insn_data[icode].operand[argc + have_retval].predicate)
 		  (op[argc], mode[argc]))
@@ -1325,7 +1327,7 @@ aarch64_fold_builtin (tree fndecl, int n_args ATTRIBUTE_UNUSED, tree *args,
 
   switch (fcode)
     {
-      BUILTIN_VDQF (UNOP, abs, 2)
+      BUILTIN_VALLDI (UNOP, abs, 2)
 	return fold_build1 (ABS_EXPR, type, args[0]);
 	break;
       BUILTIN_VALLDI (BINOP, cmge, 0)

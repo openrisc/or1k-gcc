@@ -1880,7 +1880,7 @@ needed.",
 DEFHOOK
 (function_attribute_inlinable_p,
  "@cindex inlining\n\
-This target hook returns @code{true} if it is ok to inline @var{fndecl}\n\
+This target hook returns @code{true} if it is OK to inline @var{fndecl}\n\
 into the current function, despite its having target-specific\n\
 attributes, @code{false} otherwise.  By default, if a function has a\n\
 target specific attribute attached to it, it will not be inlined.",
@@ -1967,7 +1967,7 @@ DEFHOOK
 should use the narrowest mode possible.  It should return @code{false} if\n\
 these accesses should use the bitfield container type.\n\
 \n\
-The default is @code{!TARGET_STRICT_ALIGN}.",
+The default is @code{false}.",
  bool, (void),
  hook_bool_void_false)
 
@@ -2200,6 +2200,13 @@ need to override this if your target has special flags that might be\n\
 set via @code{__attribute__}.",
  unsigned int, (tree decl, const char *name, int reloc),
  default_section_type_flags)
+
+DEFHOOK
+(libc_has_function,
+ "This hook determines whether a function from a class of functions\n\
+@var{fn_class} is present at the runtime.",
+ bool, (enum function_class fn_class),
+ default_libc_has_function)
 
 /* True if new jumps cannot be created, to replace existing ones or
    not, at the current point in the compilation.  */
@@ -2529,7 +2536,7 @@ The default value of this hook is based on target's libc.",
    this is an indirect call.  */
 DEFHOOK
 (function_ok_for_sibcall,
- "True if it is ok to do sibling call optimization for the specified\n\
+ "True if it is OK to do sibling call optimization for the specified\n\
 call expression @var{exp}.  @var{decl} will be the called function,\n\
 or @code{NULL} if this is an indirect call.\n\
 \n\

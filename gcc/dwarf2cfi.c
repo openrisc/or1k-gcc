@@ -246,7 +246,8 @@ init_return_column_size (enum machine_mode mode, rtx mem, unsigned int c)
 {
   HOST_WIDE_INT offset = c * GET_MODE_SIZE (mode);
   HOST_WIDE_INT size = GET_MODE_SIZE (Pmode);
-  emit_move_insn (adjust_address (mem, mode, offset), GEN_INT (size));
+  emit_move_insn (adjust_address (mem, mode, offset),
+		  gen_int_mode (size, mode));
 }
 
 /* Generate code to initialize the register size table.  */
@@ -2840,14 +2841,14 @@ create_cie_data (void)
   dw_stack_pointer_regnum = DWARF_FRAME_REGNUM (STACK_POINTER_REGNUM);
   dw_frame_pointer_regnum = DWARF_FRAME_REGNUM (HARD_FRAME_POINTER_REGNUM);
 
-  memset (&cie_trace, 0, sizeof(cie_trace));
+  memset (&cie_trace, 0, sizeof (cie_trace));
   cur_trace = &cie_trace;
 
   add_cfi_vec = &cie_cfi_vec;
   cie_cfi_row = cur_row = new_cfi_row ();
 
   /* On entry, the Canonical Frame Address is at SP.  */
-  memset(&loc, 0, sizeof (loc));
+  memset (&loc, 0, sizeof (loc));
   loc.reg = dw_stack_pointer_regnum;
   loc.offset = INCOMING_FRAME_SP_OFFSET;
   def_cfa_1 (&loc);
@@ -3267,7 +3268,7 @@ dump_cfi_row (FILE *f, dw_cfi_row *row)
   if (!cfi)
     {
       dw_cfa_location dummy;
-      memset(&dummy, 0, sizeof(dummy));
+      memset (&dummy, 0, sizeof (dummy));
       dummy.reg = INVALID_REGNUM;
       cfi = def_cfa_0 (&dummy, &row->cfa);
     }
@@ -3370,24 +3371,42 @@ gate_dwarf2_frame (void)
   return dwarf2out_do_frame ();
 }
 
-struct rtl_opt_pass pass_dwarf2_frame =
+namespace {
+
+const pass_data pass_data_dwarf2_frame =
 {
- {
-  RTL_PASS,
-  "dwarf2",			/* name */
-  OPTGROUP_NONE,                /* optinfo_flags */
-  gate_dwarf2_frame,		/* gate */
-  execute_dwarf2_frame,		/* execute */
-  NULL,				/* sub */
-  NULL,				/* next */
-  0,				/* static_pass_number */
-  TV_FINAL,			/* tv_id */
-  0,				/* properties_required */
-  0,				/* properties_provided */
-  0,				/* properties_destroyed */
-  0,				/* todo_flags_start */
-  0				/* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "dwarf2", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_FINAL, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_dwarf2_frame : public rtl_opt_pass
+{
+public:
+  pass_dwarf2_frame (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_dwarf2_frame, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_dwarf2_frame (); }
+  unsigned int execute () { return execute_dwarf2_frame (); }
+
+}; // class pass_dwarf2_frame
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_dwarf2_frame (gcc::context *ctxt)
+{
+  return new pass_dwarf2_frame (ctxt);
+}
 
 #include "gt-dwarf2cfi.h"

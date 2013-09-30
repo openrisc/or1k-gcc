@@ -798,13 +798,14 @@ write_name (tree decl, const int ignore_local_scope)
 
   context = decl_mangling_context (decl);
 
+  gcc_assert (context != NULL_TREE);
+
   /* A decl in :: or ::std scope is treated specially.  The former is
      mangled using <unscoped-name> or <unscoped-template-name>, the
      latter with a special substitution.  Also, a name that is
      directly in a local function scope is also mangled with
      <unscoped-name> rather than a full <nested-name>.  */
-  if (context == NULL
-      || context == global_namespace
+  if (context == global_namespace
       || DECL_NAMESPACE_STD_P (context)
       || (ignore_local_scope
 	  && (TREE_CODE (context) == FUNCTION_DECL
@@ -837,10 +838,10 @@ write_name (tree decl, const int ignore_local_scope)
 	     directly in that function's scope, either decl or one of
 	     its enclosing scopes.  */
 	  tree local_entity = decl;
-	  while (context != NULL && context != global_namespace)
+	  while (context != global_namespace)
 	    {
 	      /* Make sure we're always dealing with decls.  */
-	      if (context != NULL && TYPE_P (context))
+	      if (TYPE_P (context))
 		context = TYPE_NAME (context);
 	      /* Is this a function?  */
 	      if (TREE_CODE (context) == FUNCTION_DECL
@@ -883,9 +884,10 @@ write_unscoped_name (const tree decl)
   else
     {
       /* If not, it should be either in the global namespace, or directly
-	 in a local function scope.  */
+	 in a local function scope.  A lambda can also be mangled in the
+	 scope of a default argument.  */
       gcc_assert (context == global_namespace
-		  || context != NULL
+		  || TREE_CODE (context) == PARM_DECL
 		  || TREE_CODE (context) == FUNCTION_DECL);
 
       write_unqualified_name (decl);
@@ -1446,7 +1448,7 @@ write_closure_type_name (const tree type)
 /* Convert NUMBER to ascii using base BASE and generating at least
    MIN_DIGITS characters. BUFFER points to the _end_ of the buffer
    into which to store the characters. Returns the number of
-   characters generated (these will be layed out in advance of where
+   characters generated (these will be laid out in advance of where
    BUFFER points).  */
 
 static int
@@ -3884,6 +3886,36 @@ write_java_integer_type_codes (const tree type)
     write_char ('b');
   else
     gcc_unreachable ();
+}
+
+/* Given a CLASS_TYPE, such as a record for std::bad_exception this
+   function generates a mangled name for the vtable map variable of
+   the class type.  For example, if the class type is
+   "std::bad_exception", the mangled name for the class is
+   "St13bad_exception".  This function would generate the name
+   "_ZN4_VTVISt13bad_exceptionE12__vtable_mapE", which unmangles as:
+   "_VTV<std::bad_exception>::__vtable_map".  */
+
+
+char *
+get_mangled_vtable_map_var_name (tree class_type)
+{
+  char *var_name = NULL;
+  const char *prefix = "_ZN4_VTVI";
+  const char *postfix = "E12__vtable_mapE";
+
+  gcc_assert (TREE_CODE (class_type) == RECORD_TYPE);
+
+  tree class_id = DECL_ASSEMBLER_NAME (TYPE_NAME (class_type));
+  unsigned int len = strlen (IDENTIFIER_POINTER (class_id)) +
+                     strlen (prefix) +
+                     strlen (postfix) + 1;
+
+  var_name = (char *) xmalloc (len);
+
+  sprintf (var_name, "%s%s%s", prefix, IDENTIFIER_POINTER (class_id), postfix);
+
+  return var_name;
 }
 
 #include "gt-cp-mangle.h"

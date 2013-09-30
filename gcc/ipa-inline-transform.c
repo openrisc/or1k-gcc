@@ -38,7 +38,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "intl.h"
 #include "coverage.h"
 #include "ggc.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "ipa-prop.h"
 #include "ipa-inline.h"
 #include "tree-inline.h"
@@ -46,6 +46,7 @@ along with GCC; see the file COPYING3.  If not see
 
 int ncalls_inlined;
 int nfunctions_inlined;
+bool speculation_removed;
 
 /* Scale frequency of NODE edges by FREQ_SCALE.  */
 
@@ -87,6 +88,7 @@ can_remove_node_now_p_1 (struct cgraph_node *node)
      the callgraph so references can point to it.  */
   return (!node->symbol.address_taken
 	  && !ipa_ref_has_aliases_p (&node->symbol.ref_list)
+	  && !node->used_as_abstract_origin
 	  && cgraph_can_remove_if_no_direct_calls_p (node)
 	  /* Inlining might enable more devirtualizing, so we want to remove
 	     those only after all devirtualizable virtual calls are processed.
@@ -133,6 +135,7 @@ clone_inlined_nodes (struct cgraph_edge *e, bool duplicate,
 		     bool update_original, int *overall_size)
 {
   struct cgraph_node *inlining_into;
+  struct cgraph_edge *next;
 
   if (e->caller->global.inlined_to)
     inlining_into = e->caller->global.inlined_to;
@@ -185,9 +188,17 @@ clone_inlined_nodes (struct cgraph_edge *e, bool duplicate,
   e->callee->global.inlined_to = inlining_into;
 
   /* Recursively clone all bodies.  */
-  for (e = e->callee->callees; e; e = e->next_callee)
-    if (!e->inline_failed)
-      clone_inlined_nodes (e, duplicate, update_original, overall_size);
+  for (e = e->callee->callees; e; e = next)
+    {
+      next = e->next_callee;
+      if (!e->inline_failed)
+        clone_inlined_nodes (e, duplicate, update_original, overall_size);
+      if (e->speculative && !speculation_useful_p (e, true))
+	{
+	  cgraph_resolve_speculation (e, NULL);
+	  speculation_removed = true;
+	}
+    }
 }
 
 
@@ -217,6 +228,7 @@ inline_call (struct cgraph_edge *e, bool update_original,
   bool predicated = inline_edge_summary (e)->predicate != NULL;
 #endif
 
+  speculation_removed = false;
   /* Don't inline inlined edges.  */
   gcc_assert (e->inline_failed);
   /* Don't even think of inlining inline clone.  */
@@ -266,6 +278,7 @@ inline_call (struct cgraph_edge *e, bool update_original,
      error due to INLINE_SIZE_SCALE roudoff errors.  */
   gcc_assert (!update_overall_summary || !overall_size || new_edges_found
 	      || abs (estimated_growth - (new_size - old_size)) <= 1
+	      || speculation_removed
 	      /* FIXME: a hack.  Edges with false predicate are accounted
 		 wrong, we should remove them from callgraph.  */
 	      || predicated);
@@ -399,7 +412,7 @@ unsigned int
 inline_transform (struct cgraph_node *node)
 {
   unsigned int todo = 0;
-  struct cgraph_edge *e;
+  struct cgraph_edge *e, *next;
  
   /* FIXME: Currently the pass manager is adding inline transform more than
      once to some clones.  This needs revisiting after WPA cleanups.  */
@@ -411,11 +424,15 @@ inline_transform (struct cgraph_node *node)
   if (preserve_function_body_p (node))
     save_inline_function_body (node);
 
-  for (e = node->callees; e; e = e->next_callee)
-    cgraph_redirect_edge_call_stmt_to_callee (e);
+  for (e = node->callees; e; e = next)
+    {
+      next = e->next_callee;
+      cgraph_redirect_edge_call_stmt_to_callee (e);
+    }
+  ipa_remove_all_references (&node->symbol.ref_list);
 
   timevar_push (TV_INTEGRATION);
-  if (node->callees)
+  if (node->callees && optimize)
     todo = optimize_inline_calls (current_function_decl);
   timevar_pop (TV_INTEGRATION);
 

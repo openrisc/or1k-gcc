@@ -25,7 +25,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "basic-block.h"
 #include "tree-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 
 /* This pass combines COND_EXPRs to simplify control flow.  It
@@ -648,23 +648,40 @@ gate_ifcombine (void)
   return 1;
 }
 
-struct gimple_opt_pass pass_tree_ifcombine =
+namespace {
+
+const pass_data pass_data_tree_ifcombine =
 {
- {
-  GIMPLE_PASS,
-  "ifcombine",			/* name */
-  OPTGROUP_NONE,                /* optinfo_flags */
-  gate_ifcombine,		/* gate */
-  tree_ssa_ifcombine,		/* execute */
-  NULL,				/* sub */
-  NULL,				/* next */
-  0,				/* static_pass_number */
-  TV_TREE_IFCOMBINE,		/* tv_id */
-  PROP_cfg | PROP_ssa,		/* properties_required */
-  0,				/* properties_provided */
-  0,				/* properties_destroyed */
-  0,				/* todo_flags_start */
-  TODO_update_ssa
-  | TODO_verify_ssa		/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "ifcombine", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_IFCOMBINE, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_update_ssa | TODO_verify_ssa ), /* todo_flags_finish */
 };
+
+class pass_tree_ifcombine : public gimple_opt_pass
+{
+public:
+  pass_tree_ifcombine (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_tree_ifcombine, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_ifcombine (); }
+  unsigned int execute () { return tree_ssa_ifcombine (); }
+
+}; // class pass_tree_ifcombine
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_tree_ifcombine (gcc::context *ctxt)
+{
+  return new pass_tree_ifcombine (ctxt);
+}

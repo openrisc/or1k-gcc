@@ -382,7 +382,7 @@ typedef unsigned HOST_WIDEST_INT gcov_type_unsigned;
 /* Return nonzero if SUB is an immediate subtag of TAG.  */
 #define GCOV_TAG_IS_SUBTAG(TAG,SUB)				\
 	(GCOV_TAG_MASK (TAG) >> 8 == GCOV_TAG_MASK (SUB) 	\
-	 && !(((SUB) ^ (TAG)) & ~GCOV_TAG_MASK(TAG)))
+	 && !(((SUB) ^ (TAG)) & ~GCOV_TAG_MASK (TAG)))
 
 /* Return nonzero if SUB is at a sublevel to TAG.  */
 #define GCOV_TAG_IS_SUBLEVEL(TAG,SUB)				\
@@ -515,7 +515,7 @@ extern void __gcov_merge_ior (gcov_type *, unsigned) ATTRIBUTE_HIDDEN;
 extern void __gcov_interval_profiler (gcov_type *, gcov_type, int, unsigned);
 extern void __gcov_pow2_profiler (gcov_type *, gcov_type);
 extern void __gcov_one_value_profiler (gcov_type *, gcov_type);
-extern void __gcov_indirect_call_profiler (gcov_type *, gcov_type, void *, void *);
+extern void __gcov_indirect_call_profiler_v2 (gcov_type, void *);
 extern void __gcov_average_profiler (gcov_type *, gcov_type);
 extern void __gcov_ior_profiler (gcov_type *, gcov_type);
 

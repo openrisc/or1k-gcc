@@ -144,7 +144,7 @@ and warnings}.
 -Wconversion -Wfunction-elimination -Wimplicit-interface @gol
 -Wimplicit-procedure -Wintrinsic-shadow -Wintrinsics-std @gol
 -Wline-truncation -Wno-align-commons -Wno-tabs -Wreal-q-constant @gol
--Wsurprising -Wunderflow -Wunused-parameter -Wrealloc-lhs Wrealloc-lhs-all @gol
+-Wsurprising -Wunderflow -Wunused-parameter -Wrealloc-lhs -Wrealloc-lhs-all @gol
 -Wtarget-lifetime -fmax-errors=@var{n} -fsyntax-only -pedantic -pedantic-errors
 }
 
@@ -953,6 +953,11 @@ This option is implied by @option{-Wextra}.
 @opindex @code{Wtargt-lifetime}
 Warn if the pointer in a pointer assignment might be longer than the its
 target. This option is implied by @option{-Wall}.
+
+@item -Wzerotrip
+@opindex @code{Wzerotrip}
+Warn if a @code{DO} loop is known to execute zero times at compile
+time.  This option is implied by @option{-Wall}.
 
 @item -Werror
 @opindex @code{Werror}

@@ -32,7 +32,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-inline.h"
 #include "gimple.h"
 #include "tree-iterator.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-mudflap.h"
 #include "tree-pass.h"
 #include "hashtab.h"
@@ -106,20 +106,12 @@ mf_build_string (const char *string)
 static tree
 mf_varname_tree (tree decl)
 {
-  static pretty_printer buf_rec;
-  static int initialized = 0;
-  pretty_printer *buf = & buf_rec;
   const char *buf_contents;
   tree result;
 
   gcc_assert (decl);
 
-  if (!initialized)
-    {
-      pp_construct (buf, /* prefix */ NULL, /* line-width */ 0);
-      initialized = 1;
-    }
-  pp_clear_output_area (buf);
+  pretty_printer buf;
 
   /* Add FILENAME[:LINENUMBER[:COLUMNNUMBER]].  */
   {
@@ -134,17 +126,17 @@ mf_varname_tree (tree decl)
     if (sourcefile == NULL)
       sourcefile = "<unknown file>";
 
-    pp_string (buf, sourcefile);
+    pp_string (&buf, sourcefile);
 
     if (sourceline != 0)
       {
-        pp_string (buf, ":");
-        pp_decimal_int (buf, sourceline);
+        pp_colon (&buf);
+        pp_decimal_int (&buf, sourceline);
 
         if (sourcecolumn != 0)
           {
-            pp_string (buf, ":");
-            pp_decimal_int (buf, sourcecolumn);
+            pp_colon (&buf);
+            pp_decimal_int (&buf, sourcecolumn);
           }
       }
   }
@@ -152,7 +144,7 @@ mf_varname_tree (tree decl)
   if (current_function_decl != NULL_TREE)
     {
       /* Add (FUNCTION) */
-      pp_string (buf, " (");
+      pp_string (&buf, " (");
       {
         const char *funcname = NULL;
         if (DECL_NAME (current_function_decl))
@@ -160,12 +152,12 @@ mf_varname_tree (tree decl)
         if (funcname == NULL)
           funcname = "anonymous fn";
 
-        pp_string (buf, funcname);
+        pp_string (&buf, funcname);
       }
-      pp_string (buf, ") ");
+      pp_string (&buf, ") ");
     }
   else
-    pp_string (buf, " ");
+    pp_space (&buf);
 
   /* Add <variable-declaration>, possibly demangled.  */
   {
@@ -186,13 +178,13 @@ mf_varname_tree (tree decl)
     if (declname == NULL)
       declname = "<unnamed variable>";
 
-    pp_string (buf, declname);
+    pp_string (&buf, declname);
   }
 
   /* Return the lot as a new STRING_CST.  */
-  buf_contents = pp_base_formatted_text (buf);
+  buf_contents = ggc_strdup (pp_formatted_text (&buf));
   result = mf_build_string (buf_contents);
-  pp_clear_output_area (buf);
+  pp_clear_output_area (&buf);
 
   return result;
 }
@@ -1378,45 +1370,81 @@ gate_mudflap (void)
   return flag_mudflap != 0;
 }
 
-struct gimple_opt_pass pass_mudflap_1 =
+namespace {
+
+const pass_data pass_data_mudflap_1 =
 {
- {
-  GIMPLE_PASS,
-  "mudflap1",                           /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_mudflap,                         /* gate */
-  execute_mudflap_function_decls,       /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_NONE,                              /* tv_id */
-  PROP_gimple_any,                      /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  0                                     /* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "mudflap1", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  PROP_gimple_any, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
 
-struct gimple_opt_pass pass_mudflap_2 =
+class pass_mudflap_1 : public gimple_opt_pass
 {
- {
-  GIMPLE_PASS,
-  "mudflap2",                           /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_mudflap,                         /* gate */
-  execute_mudflap_function_ops,         /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_NONE,                              /* tv_id */
-  PROP_ssa | PROP_cfg | PROP_gimple_leh,/* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  TODO_verify_flow | TODO_verify_stmts
-  | TODO_update_ssa                     /* todo_flags_finish */
- }
+public:
+  pass_mudflap_1 (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_mudflap_1, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_mudflap (); }
+  unsigned int execute () { return execute_mudflap_function_decls (); }
+
+}; // class pass_mudflap_1
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_mudflap_1 (gcc::context *ctxt)
+{
+  return new pass_mudflap_1 (ctxt);
+}
+
+namespace {
+
+const pass_data pass_data_mudflap_2 =
+{
+  GIMPLE_PASS, /* type */
+  "mudflap2", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  ( PROP_ssa | PROP_cfg | PROP_gimple_leh ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_verify_flow | TODO_verify_stmts
+    | TODO_update_ssa ), /* todo_flags_finish */
 };
+
+class pass_mudflap_2 : public gimple_opt_pass
+{
+public:
+  pass_mudflap_2 (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_mudflap_2, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_mudflap (); }
+  unsigned int execute () { return execute_mudflap_function_ops (); }
+
+}; // class pass_mudflap_2
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_mudflap_2 (gcc::context *ctxt)
+{
+  return new pass_mudflap_2 (ctxt);
+}
 
 #include "gt-tree-mudflap.h"

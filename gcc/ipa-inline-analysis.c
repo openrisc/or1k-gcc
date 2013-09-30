@@ -79,7 +79,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-pass.h"
 #include "coverage.h"
 #include "ggc.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "ipa-prop.h"
 #include "lto-streamer.h"
 #include "data-streamer.h"
@@ -87,8 +87,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "ipa-inline.h"
 #include "alloc-pool.h"
 #include "cfgloop.h"
-#include "cfgloop.h"
 #include "tree-scalar-evolution.h"
+#include "ipa-utils.h"
 
 /* Estimate runtime of function can easilly run into huge numbers with many
    nested loops.  Be sure we can compute time * INLINE_SIZE_SCALE * 2 in an
@@ -337,7 +337,7 @@ add_clause (conditions conditions, struct predicate *p, clause_t clause)
          and thus there is no point for looking for them.  */
       if (cc1->code == CHANGED || cc1->code == IS_NOT_CONSTANT)
 	continue;
-      for (c2 = c1 + 1; c2 <= NUM_CONDITIONS; c2++)
+      for (c2 = c1 + 1; c2 < NUM_CONDITIONS; c2++)
 	if (clause & (1 << c2))
 	  {
 	    condition *cc1 =
@@ -1101,12 +1101,13 @@ inline_node_duplication_hook (struct cgraph_node *src,
       known_vals.safe_grow_cleared (count);
       for (i = 0; i < count; i++)
 	{
-	  tree t = ipa_get_param (parms_info, i);
 	  struct ipa_replace_map *r;
 
 	  for (j = 0; vec_safe_iterate (dst->clone.tree_map, j, &r); j++)
 	    {
-	      if (r->old_tree == t && r->replace_p && !r->ref_p)
+	      if (((!r->old_tree && r->parm_num == i)
+		   || (r->old_tree && r->old_tree == ipa_get_param (parms_info, i)))
+		   && r->replace_p && !r->ref_p)
 		{
 		  known_vals[i] = r->new_tree;
 		  break;
@@ -2663,7 +2664,11 @@ compute_inline_parameters (struct cgraph_node *node, bool early)
   info->stack_frame_offset = 0;
 
   /* Can this function be inlined at all?  */
-  info->inlinable = tree_inlinable_function_p (node->symbol.decl);
+  if (!optimize && !lookup_attribute ("always_inline",
+				      DECL_ATTRIBUTES (node->symbol.decl)))
+    info->inlinable = false;
+  else
+    info->inlinable = tree_inlinable_function_p (node->symbol.decl);
 
   /* Type attributes can use parameter indices to describe them.  */
   if (TYPE_ATTRIBUTES (TREE_TYPE (node->symbol.decl)))
@@ -2714,25 +2719,45 @@ compute_inline_parameters_for_current (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_inline_parameters = 
+namespace {
+
+const pass_data pass_data_inline_parameters =
 {
- {
-  GIMPLE_PASS,
-  "inline_param",		/* name */
-  OPTGROUP_INLINE,		/* optinfo_flags */
-  NULL,			/* gate */
-  compute_inline_parameters_for_current,	/* execute */
-  NULL,			/* sub */
-  NULL,			/* next */
-  0,				/* static_pass_number */
-  TV_INLINE_PARAMETERS,	/* tv_id */
-  0,				/* properties_required */
-  0,				/* properties_provided */
-  0,				/* properties_destroyed */
-  0,				/* todo_flags_start */
-  0				/* todo_flags_finish */
-  }
+  GIMPLE_PASS, /* type */
+  "inline_param", /* name */
+  OPTGROUP_INLINE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_INLINE_PARAMETERS, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_inline_parameters : public gimple_opt_pass
+{
+public:
+  pass_inline_parameters (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_inline_parameters, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_inline_parameters (ctxt_); }
+  unsigned int execute () {
+    return compute_inline_parameters_for_current ();
+  }
+
+}; // class pass_inline_parameters
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_inline_parameters (gcc::context *ctxt)
+{
+  return new pass_inline_parameters (ctxt);
+}
 
 
 /* Estimate benefit devirtualizing indirect edge IE, provided KNOWN_VALS and
@@ -3081,7 +3106,7 @@ inline_update_callee_summaries (struct cgraph_node *node, int depth)
     + callee_info->estimated_self_stack_size;
   if (inline_summary (node->global.inlined_to)->estimated_stack_size < peak)
       inline_summary (node->global.inlined_to)->estimated_stack_size = peak;
-  cgraph_propagate_frequency (node);
+  ipa_propagate_frequency (node);
   for (e = node->callees; e; e = e->next_callee)
     {
       if (!e->inline_failed)
@@ -3559,6 +3584,7 @@ estimate_size_after_inlining (struct cgraph_node *node,
 
 struct growth_data
 {
+  struct cgraph_node *node;
   bool self_recursive;
   int growth;
 };
@@ -3576,9 +3602,9 @@ do_estimate_growth_1 (struct cgraph_node *node, void *data)
     {
       gcc_checking_assert (e->inline_failed);
 
-      if (e->caller == node
+      if (e->caller == d->node
 	  || (e->caller->global.inlined_to
-	      && e->caller->global.inlined_to == node))
+	      && e->caller->global.inlined_to == d->node))
 	d->self_recursive = true;
       d->growth += estimate_edge_growth (e);
     }
@@ -3591,7 +3617,7 @@ do_estimate_growth_1 (struct cgraph_node *node, void *data)
 int
 do_estimate_growth (struct cgraph_node *node)
 {
-  struct growth_data d = { 0, false };
+  struct growth_data d = { node, 0, false };
   struct inline_summary *info = inline_summary (node);
 
   cgraph_for_node_and_aliases (node, do_estimate_growth_1, &d, true);
@@ -3656,6 +3682,22 @@ inline_analyze_function (struct cgraph_node *node)
   if (optimize && !node->thunk.thunk_p)
     inline_indirect_intraprocedural_analysis (node);
   compute_inline_parameters (node, false);
+  if (!optimize)
+    {
+      struct cgraph_edge *e;
+      for (e = node->callees; e; e = e->next_callee)
+	{
+	  if (e->inline_failed == CIF_FUNCTION_NOT_CONSIDERED)
+	    e->inline_failed = CIF_FUNCTION_NOT_OPTIMIZED;
+	  e->call_stmt_cannot_inline_p = true;
+	}
+      for (e = node->indirect_calls; e; e = e->next_callee)
+	{
+	  if (e->inline_failed == CIF_FUNCTION_NOT_CONSIDERED)
+	    e->inline_failed = CIF_FUNCTION_NOT_OPTIMIZED;
+	  e->call_stmt_cannot_inline_p = true;
+	}
+    }
 
   pop_cfun ();
 }
@@ -3676,6 +3718,11 @@ void
 inline_generate_summary (void)
 {
   struct cgraph_node *node;
+
+  /* When not optimizing, do not bother to analyze.  Inlining is still done
+     because edge redirection needs to happen there.  */
+  if (!optimize && !flag_lto && !flag_wpa)
+    return;
 
   function_insertion_hook_holder =
     cgraph_add_function_insertion_hook (&add_new_function, NULL);

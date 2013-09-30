@@ -514,6 +514,12 @@ compare_type (gfc_symbol *s1, gfc_symbol *s2)
   if (s2->attr.ext_attr & (1 << EXT_ATTR_NO_ARG_CHECK))
     return 1;
 
+  /* TYPE and CLASS of the same declared type are type compatible,
+     but have different characteristics.  */
+  if ((s1->ts.type == BT_CLASS && s2->ts.type == BT_DERIVED)
+      || (s1->ts.type == BT_DERIVED && s2->ts.type == BT_CLASS))
+    return 0;
+
   return gfc_compare_types (&s1->ts, &s2->ts) || s2->ts.type == BT_ASSUMED;
 }
 
@@ -1410,7 +1416,8 @@ gfc_compare_interfaces (gfc_symbol *s1, gfc_symbol *s2, const char *name2,
       if (s1->attr.function && s2->attr.function)
 	{
 	  /* If both are functions, check result characteristics.  */
-	  if (!check_result_characteristics (s1, s2, errmsg, err_len))
+	  if (!check_result_characteristics (s1, s2, errmsg, err_len)
+	      || !check_result_characteristics (s2, s1, errmsg, err_len))
 	    return 0;
 	}
 
@@ -1966,7 +1973,8 @@ compare_parameter (gfc_symbol *formal, gfc_expr *actual,
     }
 
   /* F2008, 12.5.2.5; IR F08/0073.  */
-  if (formal->ts.type == BT_CLASS && actual->expr_type != EXPR_NULL
+  if (formal->ts.type == BT_CLASS && formal->attr.class_ok
+      && actual->expr_type != EXPR_NULL
       && ((CLASS_DATA (formal)->attr.class_pointer
 	   && !formal->attr.intent == INTENT_IN)
           || CLASS_DATA (formal)->attr.allocatable))
@@ -1978,6 +1986,10 @@ compare_parameter (gfc_symbol *formal, gfc_expr *actual,
 			formal->name, &actual->where);
 	  return 0;
 	}
+
+      if (!gfc_expr_attr (actual).class_ok)
+	return 0;
+
       if (!gfc_compare_derived_types (CLASS_DATA (actual)->ts.u.derived,
 				      CLASS_DATA (formal)->ts.u.derived))
 	{
@@ -3073,7 +3085,8 @@ check_some_aliasing (gfc_formal_arglist *f, gfc_actual_arglist *a)
 	    break;
 	  f2_intent = p[j].f->sym->attr.intent;
 	  if ((f1_intent == INTENT_IN && f2_intent == INTENT_OUT)
-	      || (f1_intent == INTENT_OUT && f2_intent == INTENT_IN))
+	      || (f1_intent == INTENT_OUT && f2_intent == INTENT_IN)
+	      || (f1_intent == INTENT_OUT && f2_intent == INTENT_OUT))
 	    {
 	      gfc_warning ("Same actual argument associated with INTENT(%s) "
 			   "argument '%s' and INTENT(%s) argument '%s' at %L",
@@ -3170,7 +3183,7 @@ gfc_procedure_use (gfc_symbol *sym, gfc_actual_arglist **ap, locus *where)
   gfc_formal_arglist *dummy_args;
 
   /* Warn about calls with an implicit interface.  Special case
-     for calling a ISO_C_BINDING becase c_loc and c_funloc
+     for calling a ISO_C_BINDING because c_loc and c_funloc
      are pseudo-unknown.  Additionally, warn about procedures not
      explicitly declared at all if requested.  */
   if (sym->attr.if_source == IFSRC_UNKNOWN && ! sym->attr.is_iso_c)
@@ -3287,7 +3300,7 @@ void
 gfc_ppc_use (gfc_component *comp, gfc_actual_arglist **ap, locus *where)
 {
   /* Warn about calls with an implicit interface.  Special case
-     for calling a ISO_C_BINDING becase c_loc and c_funloc
+     for calling a ISO_C_BINDING because c_loc and c_funloc
      are pseudo-unknown.  */
   if (gfc_option.warn_implicit_interface
       && comp->attr.if_source == IFSRC_UNKNOWN
@@ -3742,20 +3755,18 @@ gfc_extend_expr (gfc_expr *e)
 }
 
 
-/* Tries to replace an assignment code node with a subroutine call to
-   the subroutine associated with the assignment operator.  Return
-   true if the node was replaced.  On false, no error is
-   generated.  */
+/* Tries to replace an assignment code node with a subroutine call to the
+   subroutine associated with the assignment operator. Return true if the node
+   was replaced. On false, no error is generated.  */
 
 bool
 gfc_extend_assign (gfc_code *c, gfc_namespace *ns)
 {
   gfc_actual_arglist *actual;
-  gfc_expr *lhs, *rhs;
-  gfc_symbol *sym;
-  const char *gname;
-
-  gname = NULL;
+  gfc_expr *lhs, *rhs, *tb_base;
+  gfc_symbol *sym = NULL;
+  const char *gname = NULL;
+  gfc_typebound_proc* tbo;
 
   lhs = c->expr1;
   rhs = c->expr2;
@@ -3773,8 +3784,26 @@ gfc_extend_assign (gfc_code *c, gfc_namespace *ns)
   actual->next = gfc_get_actual_arglist ();
   actual->next->expr = rhs;
 
-  sym = NULL;
+  /* TODO: Ambiguity-check, see above for gfc_extend_expr.  */
 
+  /* See if we find a matching type-bound assignment.  */
+  tbo = matching_typebound_op (&tb_base, actual, INTRINSIC_ASSIGN,
+			       NULL, &gname);
+
+  if (tbo)
+    {
+      /* Success: Replace the expression with a type-bound call.  */
+      gcc_assert (tb_base);
+      c->expr1 = gfc_get_expr ();
+      build_compcall_for_operator (c->expr1, actual, tb_base, tbo, gname);
+      c->expr1->value.compcall.assign = 1;
+      c->expr1->where = c->loc;
+      c->expr2 = NULL;
+      c->op = EXEC_COMPCALL;
+      return true;
+    }
+
+  /* See if we find an 'ordinary' (non-typebound) assignment procedure.  */
   for (; ns; ns = ns->parent)
     {
       sym = gfc_search_interface (ns->op[INTRINSIC_ASSIGN], 1, &actual);
@@ -3782,47 +3811,21 @@ gfc_extend_assign (gfc_code *c, gfc_namespace *ns)
 	break;
     }
 
-  /* TODO: Ambiguity-check, see above for gfc_extend_expr.  */
-
-  if (sym == NULL)
+  if (sym)
     {
-      gfc_typebound_proc* tbo;
-      gfc_expr* tb_base;
-
-      /* See if we find a matching type-bound assignment.  */
-      tbo = matching_typebound_op (&tb_base, actual,
-				   INTRINSIC_ASSIGN, NULL, &gname);
-
-      /* If there is one, replace the expression with a call to it and
-	 succeed.  */
-      if (tbo)
-	{
-	  gcc_assert (tb_base);
-	  c->expr1 = gfc_get_expr ();
-	  build_compcall_for_operator (c->expr1, actual, tb_base, tbo, gname);
-	  c->expr1->value.compcall.assign = 1;
-	  c->expr1->where = c->loc;
-	  c->expr2 = NULL;
-	  c->op = EXEC_COMPCALL;
-
-	  /* c is resolved from the caller, so no need to do it here.  */
-
-	  return true;
-	}
-
-      free (actual->next);
-      free (actual);
-      return false;
+      /* Success: Replace the assignment with the call.  */
+      c->op = EXEC_ASSIGN_CALL;
+      c->symtree = gfc_find_sym_in_symtree (sym);
+      c->expr1 = NULL;
+      c->expr2 = NULL;
+      c->ext.actual = actual;
+      return true;
     }
 
-  /* Replace the assignment with the call.  */
-  c->op = EXEC_ASSIGN_CALL;
-  c->symtree = gfc_find_sym_in_symtree (sym);
-  c->expr1 = NULL;
-  c->expr2 = NULL;
-  c->ext.actual = actual;
-
-  return true;
+  /* Failure: No assignment procedure found.  */
+  free (actual->next);
+  free (actual);
+  return false;
 }
 
 

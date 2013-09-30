@@ -23,17 +23,15 @@ along with GCC; see the file COPYING3.  If not see
 #define GCC_TREE_PRETTY_PRINT_H
 
 #include "pretty-print.h"
-
-#define pp_tree_identifier(PP, T)                      \
-  pp_base_tree_identifier (pp_base (PP), T)
+#include "double-int.h"
 
 #define pp_unsupported_tree(PP, T)                         \
-  pp_verbatim (pp_base (PP), "#%qs not supported by %s#", \
+  pp_verbatim (PP, "#%qs not supported by %s#", \
                tree_code_name[(int) TREE_CODE (T)], __FUNCTION__)
 
 #define pp_ti_abstract_origin(TI) ((tree *) (TI)->x_data)
 
-extern void pp_base_tree_identifier (pretty_printer *, tree);
+extern void pp_tree_identifier (pretty_printer *, tree);
 
 /* In tree-pretty-print.c  */
 extern void print_declaration (pretty_printer *, tree, int, int);
@@ -49,6 +47,7 @@ extern void debug_generic_stmt (tree);
 extern void debug_tree_chain (tree);
 extern void percent_K_format (text_info *);
 extern void dump_function_header (FILE *, tree, int);
+extern void pp_double_int (pretty_printer *pp, double_int d, bool uns);
 /* In c-pretty-print.c  */
 extern void debug_c_tree (tree);
 

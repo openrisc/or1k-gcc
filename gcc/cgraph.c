@@ -42,7 +42,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple.h"
 #include "timevar.h"
 #include "dumpfile.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "value-prof.h"
 #include "except.h"
 #include "diagnostic-core.h"
@@ -674,14 +674,38 @@ edge_eq (const void *x, const void *y)
 /* Add call graph edge E to call site hash of its caller.  */
 
 static inline void
-cgraph_add_edge_to_call_site_hash (struct cgraph_edge *e)
+cgraph_update_edge_in_call_site_hash (struct cgraph_edge *e)
 {
   void **slot;
   slot = htab_find_slot_with_hash (e->caller->call_site_hash,
 				   e->call_stmt,
 				   htab_hash_pointer (e->call_stmt),
 				   INSERT);
-  gcc_assert (!*slot);
+  *slot = e;
+}
+
+/* Add call graph edge E to call site hash of its caller.  */
+
+static inline void
+cgraph_add_edge_to_call_site_hash (struct cgraph_edge *e)
+{
+  void **slot;
+  /* There are two speculative edges for every statement (one direct,
+     one indirect); always hash the direct one.  */
+  if (e->speculative && e->indirect_unknown_callee)
+    return;
+  slot = htab_find_slot_with_hash (e->caller->call_site_hash,
+				   e->call_stmt,
+				   htab_hash_pointer (e->call_stmt),
+				   INSERT);
+  if (*slot)
+    {
+      gcc_assert (((struct cgraph_edge *)*slot)->speculative);
+      if (e->callee)
+	*slot = e;
+      return;
+    }
+  gcc_assert (!*slot || e->speculative);
   *slot = e;
 }
 
@@ -732,14 +756,33 @@ cgraph_edge (struct cgraph_node *node, gimple call_stmt)
 }
 
 
-/* Change field call_stmt of edge E to NEW_STMT.  */
+/* Change field call_stmt of edge E to NEW_STMT.
+   If UPDATE_SPECULATIVE and E is any component of speculative
+   edge, then update all components.  */
 
 void
-cgraph_set_call_stmt (struct cgraph_edge *e, gimple new_stmt)
+cgraph_set_call_stmt (struct cgraph_edge *e, gimple new_stmt,
+		      bool update_speculative)
 {
   tree decl;
 
-  if (e->caller->call_site_hash)
+  /* Speculative edges has three component, update all of them
+     when asked to.  */
+  if (update_speculative && e->speculative)
+    {
+      struct cgraph_edge *direct, *indirect;
+      struct ipa_ref *ref;
+
+      cgraph_speculative_call_info (e, direct, indirect, ref);
+      cgraph_set_call_stmt (direct, new_stmt, false);
+      cgraph_set_call_stmt (indirect, new_stmt, false);
+      ref->stmt = new_stmt;
+      return;
+    }
+
+  /* Only direct speculative edges go to call_site_hash.  */
+  if (e->caller->call_site_hash
+      && (!e->speculative || !e->indirect_unknown_callee))
     {
       htab_remove_elt_with_hash (e->caller->call_site_hash,
 				 e->call_stmt,
@@ -755,7 +798,7 @@ cgraph_set_call_stmt (struct cgraph_edge *e, gimple new_stmt)
       struct cgraph_node *new_callee = cgraph_get_node (decl);
 
       gcc_checking_assert (new_callee);
-      cgraph_make_edge_direct (e, new_callee);
+      e = cgraph_make_edge_direct (e, new_callee);
     }
 
   push_cfun (DECL_STRUCT_FUNCTION (e->caller->symbol.decl));
@@ -781,7 +824,10 @@ cgraph_create_edge_1 (struct cgraph_node *caller, struct cgraph_node *callee,
     {
       /* This is a rather expensive check possibly triggering
 	 construction of call stmt hashtable.  */
-      gcc_checking_assert (!cgraph_edge (caller, call_stmt));
+#ifdef ENABLE_CHECKING
+      struct cgraph_edge *e;
+      gcc_checking_assert (!(e=cgraph_edge (caller, call_stmt)) || e->speculative);
+#endif
 
       gcc_assert (is_gimple_call (call_stmt));
     }
@@ -804,6 +850,7 @@ cgraph_create_edge_1 (struct cgraph_node *caller, struct cgraph_node *callee,
   edge->next_caller = NULL;
   edge->prev_callee = NULL;
   edge->next_callee = NULL;
+  edge->lto_stmt_uid = 0;
 
   edge->count = count;
   gcc_assert (count >= 0);
@@ -823,11 +870,12 @@ cgraph_create_edge_1 (struct cgraph_node *caller, struct cgraph_node *callee,
     edge->call_stmt_cannot_inline_p = true;
   else
     edge->call_stmt_cannot_inline_p = false;
-  if (call_stmt && caller->call_site_hash)
-    cgraph_add_edge_to_call_site_hash (edge);
 
   edge->indirect_info = NULL;
   edge->indirect_inlining_edge = 0;
+  edge->speculative = false;
+  if (call_stmt && caller->call_site_hash)
+    cgraph_add_edge_to_call_site_hash (edge);
 
   return edge;
 }
@@ -879,12 +927,30 @@ cgraph_create_indirect_edge (struct cgraph_node *caller, gimple call_stmt,
 {
   struct cgraph_edge *edge = cgraph_create_edge_1 (caller, NULL, call_stmt,
 						   count, freq);
+  tree target;
 
   edge->indirect_unknown_callee = 1;
   initialize_inline_failed (edge);
 
   edge->indirect_info = cgraph_allocate_init_indirect_info ();
   edge->indirect_info->ecf_flags = ecf_flags;
+
+  /* Record polymorphic call info.  */
+  if (call_stmt
+      && (target = gimple_call_fn (call_stmt))
+      && virtual_method_call_p (target))
+    {
+      tree type = obj_type_ref_class (target);
+
+
+      /* Only record types can have virtual calls.  */
+      gcc_assert (TREE_CODE (type) == RECORD_TYPE);
+      edge->indirect_info->param_index = -1;
+      edge->indirect_info->otr_token
+	 = tree_low_cst (OBJ_TYPE_REF_TOKEN (target), 1);
+      edge->indirect_info->otr_type = type;
+      edge->indirect_info->polymorphic = 1;
+    }
 
   edge->next_callee = caller->indirect_calls;
   if (caller->indirect_calls)
@@ -937,6 +1003,9 @@ cgraph_free_edge (struct cgraph_edge *e)
 {
   int uid = e->uid;
 
+  if (e->indirect_info)
+    ggc_free (e->indirect_info);
+
   /* Clear out the edge so we do not dangle pointers.  */
   memset (e, 0, sizeof (*e));
   e->uid = uid;
@@ -977,6 +1046,123 @@ cgraph_set_edge_callee (struct cgraph_edge *e, struct cgraph_node *n)
   e->callee = n;
 }
 
+/* Turn edge E into speculative call calling N2. Update
+   the profile so the direct call is taken COUNT times
+   with FREQUENCY.  
+
+   At clone materialization time, the indirect call E will
+   be expanded as:
+
+   if (call_dest == N2)
+     n2 ();
+   else
+     call call_dest
+
+   At this time the function just creates the direct call,
+   the referencd representing the if conditional and attaches
+   them all to the orginal indirect call statement.  
+
+   Return direct edge created.  */
+
+struct cgraph_edge *
+cgraph_turn_edge_to_speculative (struct cgraph_edge *e,
+				 struct cgraph_node *n2,
+				 gcov_type direct_count,
+				 int direct_frequency)
+{
+  struct cgraph_node *n = e->caller;
+  struct ipa_ref *ref;
+  struct cgraph_edge *e2;
+
+  if (dump_file)
+    {
+      fprintf (dump_file, "Indirect call -> speculative call"
+	       " %s/%i => %s/%i\n",
+	       xstrdup (cgraph_node_name (n)), n->symbol.order,
+	       xstrdup (cgraph_node_name (n2)), n2->symbol.order);
+    }
+  e->speculative = true;
+  e2 = cgraph_create_edge (n, n2, e->call_stmt, direct_count, direct_frequency);
+  initialize_inline_failed (e2);
+  e2->speculative = true;
+  if (TREE_NOTHROW (n2->symbol.decl))
+    e2->can_throw_external = false;
+  else
+    e2->can_throw_external = e->can_throw_external;
+  e2->lto_stmt_uid = e->lto_stmt_uid;
+  e->count -= e2->count;
+  e->frequency -= e2->frequency;
+  cgraph_call_edge_duplication_hooks (e, e2);
+  ref = ipa_record_reference ((symtab_node)n, (symtab_node)n2,
+			      IPA_REF_ADDR, e->call_stmt);
+  ref->lto_stmt_uid = e->lto_stmt_uid;
+  ref->speculative = e->speculative;
+  cgraph_mark_address_taken_node (n2);
+  return e2;
+}
+
+/* Speculative call consist of three components:
+   1) an indirect edge representing the original call
+   2) an direct edge representing the new call
+   3) ADDR_EXPR reference representing the speculative check.
+   All three components are attached to single statement (the indirect
+   call) and if one of them exists, all of them must exist.
+
+   Given speculative call edge E, return all three components. 
+ */
+
+void
+cgraph_speculative_call_info (struct cgraph_edge *e,
+			      struct cgraph_edge *&direct,
+			      struct cgraph_edge *&indirect,
+			      struct ipa_ref *&reference)
+{
+  struct ipa_ref *ref;
+  int i;
+  struct cgraph_edge *e2;
+
+  if (!e->indirect_unknown_callee)
+    for (e2 = e->caller->indirect_calls;
+	 e2->call_stmt != e->call_stmt || e2->lto_stmt_uid != e->lto_stmt_uid;
+	 e2 = e2->next_callee)
+      ;
+  else
+    {
+      e2 = e;
+      /* We can take advantage of the call stmt hash.  */
+      if (e2->call_stmt)
+	{
+	  e = cgraph_edge (e->caller, e2->call_stmt);
+	  gcc_assert (e->speculative && !e->indirect_unknown_callee);
+	}
+      else
+	for (e = e->caller->callees; 
+	     e2->call_stmt != e->call_stmt
+	     || e2->lto_stmt_uid != e->lto_stmt_uid;
+	     e = e->next_callee)
+	  ;
+    }
+  gcc_assert (e->speculative && e2->speculative);
+  direct = e;
+  indirect = e2;
+
+  reference = NULL;
+  for (i = 0; ipa_ref_list_reference_iterate (&e->caller->symbol.ref_list,
+					      i, ref); i++)
+    if (ref->speculative
+	&& ((ref->stmt && ref->stmt == e->call_stmt)
+	    || (!ref->stmt && ref->lto_stmt_uid == e->lto_stmt_uid)))
+      {
+	reference = ref;
+	break;
+      }
+
+  /* Speculative edge always consist of all three components - direct edge,
+     indirect and reference.  */
+  
+  gcc_assert (e && e2 && ref);
+}
+
 /* Redirect callee of E to N.  The function does not update underlying
    call expression.  */
 
@@ -990,14 +1176,89 @@ cgraph_redirect_edge_callee (struct cgraph_edge *e, struct cgraph_node *n)
   cgraph_set_edge_callee (e, n);
 }
 
+/* Speculative call EDGE turned out to be direct call to CALLE_DECL.
+   Remove the speculative call sequence and return edge representing the call.
+   It is up to caller to redirect the call as appropriate. */
+
+struct cgraph_edge *
+cgraph_resolve_speculation (struct cgraph_edge *edge, tree callee_decl)
+{
+  struct cgraph_edge *e2;
+  struct ipa_ref *ref;
+
+  gcc_assert (edge->speculative);
+  cgraph_speculative_call_info (edge, e2, edge, ref);
+  if (!callee_decl
+      || !symtab_semantically_equivalent_p ((symtab_node) ref->referred,
+					    symtab_get_node (callee_decl)))
+    {
+      if (dump_file)
+	{
+	  if (callee_decl)
+	    {
+	      fprintf (dump_file, "Speculative indirect call %s/%i => %s/%i has "
+		       "turned out to have contradicting known target ",
+		       xstrdup (cgraph_node_name (edge->caller)), edge->caller->symbol.order,
+		       xstrdup (cgraph_node_name (e2->callee)), e2->callee->symbol.order);
+	      print_generic_expr (dump_file, callee_decl, 0);
+	      fprintf (dump_file, "\n");
+	    }
+	  else
+	    {
+	      fprintf (dump_file, "Removing speculative call %s/%i => %s/%i\n",
+		       xstrdup (cgraph_node_name (edge->caller)), edge->caller->symbol.order,
+		       xstrdup (cgraph_node_name (e2->callee)), e2->callee->symbol.order);
+	    }
+	}
+    }
+  else
+    {
+      struct cgraph_edge *tmp = edge;
+      if (dump_file)
+        fprintf (dump_file, "Speculative call turned into direct call.\n");
+      edge = e2;
+      e2 = tmp;
+      /* FIXME:  If EDGE is inlined, we should scale up the frequencies and counts
+         in the functions inlined through it.  */
+    }
+  edge->count += e2->count;
+  edge->frequency += e2->frequency;
+  if (edge->frequency > CGRAPH_FREQ_MAX)
+    edge->frequency = CGRAPH_FREQ_MAX;
+  edge->speculative = false;
+  e2->speculative = false;
+  ipa_remove_reference (ref);
+  if (e2->indirect_unknown_callee || e2->inline_failed)
+    cgraph_remove_edge (e2);
+  else
+    cgraph_remove_node_and_inline_clones (e2->callee, NULL);
+  if (edge->caller->call_site_hash)
+    cgraph_update_edge_in_call_site_hash (edge);
+  return edge;
+}
+
 /* Make an indirect EDGE with an unknown callee an ordinary edge leading to
    CALLEE.  DELTA is an integer constant that is to be added to the this
    pointer (first parameter) to compensate for skipping a thunk adjustment.  */
 
-void
+struct cgraph_edge *
 cgraph_make_edge_direct (struct cgraph_edge *edge, struct cgraph_node *callee)
 {
+  gcc_assert (edge->indirect_unknown_callee);
+
+  /* If we are redirecting speculative call, make it non-speculative.  */
+  if (edge->indirect_unknown_callee && edge->speculative)
+    {
+      edge = cgraph_resolve_speculation (edge, callee->symbol.decl);
+
+      /* On successful speculation just return the pre existing direct edge.  */
+      if (!edge->indirect_unknown_callee)
+        return edge;
+    }
+
   edge->indirect_unknown_callee = 0;
+  ggc_free (edge->indirect_info);
+  edge->indirect_info = NULL;
 
   /* Get the edge out of the indirect edge list. */
   if (edge->prev_callee)
@@ -1024,6 +1285,7 @@ cgraph_make_edge_direct (struct cgraph_edge *edge, struct cgraph_node *callee)
 
   /* We need to re-determine the inlining status of the edge.  */
   initialize_inline_failed (edge);
+  return edge;
 }
 
 /* If necessary, change the function declaration in the call statement
@@ -1038,6 +1300,82 @@ cgraph_redirect_edge_call_stmt_to_callee (struct cgraph_edge *e)
 #ifdef ENABLE_CHECKING
   struct cgraph_node *node;
 #endif
+
+  if (e->speculative)
+    {
+      struct cgraph_edge *e2;
+      gimple new_stmt;
+      struct ipa_ref *ref;
+
+      cgraph_speculative_call_info (e, e, e2, ref);
+      /* If there already is an direct call (i.e. as a result of inliner's
+	 substitution), forget about speculating.  */
+      if (decl)
+	e = cgraph_resolve_speculation (e, decl);
+      /* If types do not match, speculation was likely wrong. 
+         The direct edge was posisbly redirected to the clone with a different
+	 signature.  We did not update the call statement yet, so compare it 
+	 with the reference that still points to the proper type.  */
+      else if (!gimple_check_call_matching_types (e->call_stmt,
+						  ref->referred->symbol.decl,
+						  true))
+	{
+	  if (dump_file)
+	    fprintf (dump_file, "Not expanding speculative call of %s/%i -> %s/%i\n"
+		     "Type mismatch.\n",
+		     xstrdup (cgraph_node_name (e->caller)),
+		     e->caller->symbol.order,
+		     xstrdup (cgraph_node_name (e->callee)),
+		     e->callee->symbol.order);
+	  e = cgraph_resolve_speculation (e, NULL);
+	  /* We are producing the final function body and will throw away the
+	     callgraph edges really soon.  Reset the counts/frequencies to
+	     keep verifier happy in the case of roundoff errors.  */
+	  e->count = gimple_bb (e->call_stmt)->count;
+	  e->frequency = compute_call_stmt_bb_frequency
+			  (e->caller->symbol.decl, gimple_bb (e->call_stmt));
+	}
+      /* Expand speculation into GIMPLE code.  */
+      else
+	{
+	  if (dump_file)
+	    fprintf (dump_file,
+		     "Expanding speculative call of %s/%i -> %s/%i count:"
+		     HOST_WIDEST_INT_PRINT_DEC"\n",
+		     xstrdup (cgraph_node_name (e->caller)),
+		     e->caller->symbol.order,
+		     xstrdup (cgraph_node_name (e->callee)),
+		     e->callee->symbol.order,
+		     (HOST_WIDEST_INT)e->count);
+	  gcc_assert (e2->speculative);
+	  push_cfun (DECL_STRUCT_FUNCTION (e->caller->symbol.decl));
+	  new_stmt = gimple_ic (e->call_stmt, cgraph (ref->referred),
+				e->count || e2->count
+				?  RDIV (e->count * REG_BR_PROB_BASE,
+					 e->count + e2->count)
+				: e->frequency || e2->frequency
+				? RDIV (e->frequency * REG_BR_PROB_BASE,
+					e->frequency + e2->frequency)
+				: REG_BR_PROB_BASE / 2,
+				e->count, e->count + e2->count);
+	  e->speculative = false;
+	  cgraph_set_call_stmt_including_clones (e->caller, e->call_stmt,
+						 new_stmt, false);
+	  e->frequency = compute_call_stmt_bb_frequency
+			   (e->caller->symbol.decl, gimple_bb (e->call_stmt));
+	  e2->frequency = compute_call_stmt_bb_frequency
+			   (e2->caller->symbol.decl, gimple_bb (e2->call_stmt));
+	  e2->speculative = false;
+	  ref->speculative = false;
+	  ref->stmt = NULL;
+	  /* Indirect edges are not both in the call site hash.
+	     get it updated.  */
+	  if (e->caller->call_site_hash)
+	    cgraph_update_edge_in_call_site_hash (e2);
+	  pop_cfun ();
+	  /* Continue redirecting E to proper target.  */
+	}
+    }
 
   if (e->indirect_unknown_callee
       || decl == e->callee->symbol.decl)
@@ -1099,7 +1437,7 @@ cgraph_redirect_edge_call_stmt_to_callee (struct cgraph_edge *e)
       update_stmt (new_stmt);
     }
 
-  cgraph_set_call_stmt_including_clones (e->caller, e->call_stmt, new_stmt);
+  cgraph_set_call_stmt_including_clones (e->caller, e->call_stmt, new_stmt, false);
 
   if (cgraph_dump_file)
     {
@@ -1266,17 +1604,16 @@ cgraph_node_remove_callers (struct cgraph_node *node)
   node->callers = NULL;
 }
 
-/* Release memory used to represent body of function NODE.
-   Use this only for functions that are released before being translated to
-   target code (i.e. RTL).  Functions that are compiled to RTL and beyond
-   are free'd in final.c via free_after_compilation().  */
+/* Helper function for cgraph_release_function_body and free_lang_data.
+   It releases body from function DECL without having to inspect its
+   possibly non-existent symtab node.  */
 
 void
-cgraph_release_function_body (struct cgraph_node *node)
+release_function_body (tree decl)
 {
-  if (DECL_STRUCT_FUNCTION (node->symbol.decl))
+  if (DECL_STRUCT_FUNCTION (decl))
     {
-      push_cfun (DECL_STRUCT_FUNCTION (node->symbol.decl));
+      push_cfun (DECL_STRUCT_FUNCTION (decl));
       if (cfun->cfg
 	  && current_loops)
 	{
@@ -1298,20 +1635,38 @@ cgraph_release_function_body (struct cgraph_node *node)
 	}
       if (cfun->value_histograms)
 	free_histograms ();
-      pop_cfun();
-      gimple_set_body (node->symbol.decl, NULL);
-      node->ipa_transforms_to_apply.release ();
+      pop_cfun ();
+      gimple_set_body (decl, NULL);
       /* Struct function hangs a lot of data that would leak if we didn't
          removed all pointers to it.   */
-      ggc_free (DECL_STRUCT_FUNCTION (node->symbol.decl));
-      DECL_STRUCT_FUNCTION (node->symbol.decl) = NULL;
+      ggc_free (DECL_STRUCT_FUNCTION (decl));
+      DECL_STRUCT_FUNCTION (decl) = NULL;
     }
-  DECL_SAVED_TREE (node->symbol.decl) = NULL;
+  DECL_SAVED_TREE (decl) = NULL;
+}
+
+/* Release memory used to represent body of function NODE.
+   Use this only for functions that are released before being translated to
+   target code (i.e. RTL).  Functions that are compiled to RTL and beyond
+   are free'd in final.c via free_after_compilation().  */
+
+void
+cgraph_release_function_body (struct cgraph_node *node)
+{
+  node->ipa_transforms_to_apply.release ();
+  if (!node->used_as_abstract_origin && cgraph_state != CGRAPH_STATE_PARSING)
+    {
+      DECL_RESULT (node->symbol.decl) = NULL;
+      DECL_ARGUMENTS (node->symbol.decl) = NULL;
+    }
   /* If the node is abstract and needed, then do not clear DECL_INITIAL
      of its associated function function declaration because it's
      needed to emit debug info later.  */
-  if (!node->abstract_and_needed && DECL_INITIAL (node->symbol.decl))
+  if (!node->used_as_abstract_origin && DECL_INITIAL (node->symbol.decl))
     DECL_INITIAL (node->symbol.decl) = error_mark_node;
+  release_function_body (node->symbol.decl);
+  if (node->symbol.lto_file_data)
+    lto_free_function_in_decl_state_for_node ((symtab_node) node);
 }
 
 /* Remove the node from cgraph.  */
@@ -1384,15 +1739,18 @@ cgraph_remove_node (struct cgraph_node *node)
      itself is kept in the cgraph even after it is compiled.  Check whether
      we are done with this body and reclaim it proactively if this is the case.
      */
-  n = cgraph_get_node (node->symbol.decl);
-  if (!n
-      || (!n->clones && !n->clone_of && !n->global.inlined_to
-	  && (cgraph_global_info_ready
-	      && (TREE_ASM_WRITTEN (n->symbol.decl)
-		  || DECL_EXTERNAL (n->symbol.decl)
-		  || !n->symbol.analyzed
-		  || n->symbol.in_other_partition))))
-    cgraph_release_function_body (node);
+  if (cgraph_state != CGRAPH_LTO_STREAMING)
+    {
+      n = cgraph_get_node (node->symbol.decl);
+      if (!n
+	  || (!n->clones && !n->clone_of && !n->global.inlined_to
+	      && (cgraph_global_info_ready
+		  && (TREE_ASM_WRITTEN (n->symbol.decl)
+		      || DECL_EXTERNAL (n->symbol.decl)
+		      || !n->symbol.analyzed
+		      || (!flag_wpa && n->symbol.in_other_partition)))))
+	cgraph_release_function_body (node);
+    }
 
   node->symbol.decl = NULL;
   if (node->call_site_hash)
@@ -1404,7 +1762,7 @@ cgraph_remove_node (struct cgraph_node *node)
 
   /* Clear out the node to NULL all pointers and add the node to the free
      list.  */
-  memset (node, 0, sizeof(*node));
+  memset (node, 0, sizeof (*node));
   node->symbol.type = SYMTAB_FUNCTION;
   node->uid = uid;
   SET_NEXT_FREE_NODE (node, free_nodes);
@@ -1526,6 +1884,9 @@ dump_cgraph_node (FILE *f, struct cgraph_node *node)
     fprintf (f, "  Availability: %s\n",
 	     cgraph_availability_names [cgraph_function_body_availability (node)]);
 
+  if (node->profile_id)
+    fprintf (f, "  Profile id: %i\n",
+	     node->profile_id);
   fprintf (f, "  Function flags:");
   if (node->count)
     fprintf (f, " executed "HOST_WIDEST_INT_PRINT_DEC"x",
@@ -1585,12 +1946,14 @@ dump_cgraph_node (FILE *f, struct cgraph_node *node)
       if (edge->frequency)
 	fprintf (f, "(%.2f per call) ",
 		 edge->frequency / (double)CGRAPH_FREQ_BASE);
+      if (edge->speculative)
+	fprintf (f, "(speculative) ");
       if (!edge->inline_failed)
-	fprintf(f, "(inlined) ");
+	fprintf (f, "(inlined) ");
       if (edge->indirect_inlining_edge)
-	fprintf(f, "(indirect_inlining) ");
+	fprintf (f, "(indirect_inlining) ");
       if (edge->can_throw_external)
-	fprintf(f, "(can throw external) ");
+	fprintf (f, "(can throw external) ");
     }
 
   fprintf (f, "\n  Calls: ");
@@ -1598,10 +1961,12 @@ dump_cgraph_node (FILE *f, struct cgraph_node *node)
     {
       fprintf (f, "%s/%i ", cgraph_node_asm_name (edge->callee),
 	       edge->callee->symbol.order);
+      if (edge->speculative)
+	fprintf (f, "(speculative) ");
       if (!edge->inline_failed)
-	fprintf(f, "(inlined) ");
+	fprintf (f, "(inlined) ");
       if (edge->indirect_inlining_edge)
-	fprintf(f, "(indirect_inlining) ");
+	fprintf (f, "(indirect_inlining) ");
       if (edge->count)
 	fprintf (f, "("HOST_WIDEST_INT_PRINT_DEC"x) ",
 		 (HOST_WIDEST_INT)edge->count);
@@ -1609,7 +1974,7 @@ dump_cgraph_node (FILE *f, struct cgraph_node *node)
 	fprintf (f, "(%.2f per call) ",
 		 edge->frequency / (double)CGRAPH_FREQ_BASE);
       if (edge->can_throw_external)
-	fprintf(f, "(can throw external) ");
+	fprintf (f, "(can throw external) ");
     }
   fprintf (f, "\n");
 
@@ -1679,11 +2044,14 @@ enum availability
 cgraph_function_body_availability (struct cgraph_node *node)
 {
   enum availability avail;
-  gcc_assert (cgraph_function_flags_ready);
   if (!node->symbol.analyzed)
     avail = AVAIL_NOT_AVAILABLE;
   else if (node->local.local)
     avail = AVAIL_LOCAL;
+  else if (node->symbol.alias && node->symbol.weakref)
+    cgraph_function_or_thunk_node (node, &avail);
+  else if (lookup_attribute ("ifunc", DECL_ATTRIBUTES (node->symbol.decl)))
+    avail = AVAIL_OVERWRITABLE;
   else if (!node->symbol.externally_visible)
     avail = AVAIL_AVAILABLE;
   /* Inline functions are safe to be analyzed even if their symbol can
@@ -1915,128 +2283,6 @@ cgraph_set_pure_flag (struct cgraph_node *node, bool pure, bool looping)
 				      false);
 }
 
-/* Data used by cgraph_propagate_frequency.  */
-
-struct cgraph_propagate_frequency_data
-{
-  bool maybe_unlikely_executed;
-  bool maybe_executed_once;
-  bool only_called_at_startup;
-  bool only_called_at_exit;
-};
-
-/* Worker for cgraph_propagate_frequency_1.  */
-
-static bool
-cgraph_propagate_frequency_1 (struct cgraph_node *node, void *data)
-{
-  struct cgraph_propagate_frequency_data *d;
-  struct cgraph_edge *edge;
-
-  d = (struct cgraph_propagate_frequency_data *)data;
-  for (edge = node->callers;
-       edge && (d->maybe_unlikely_executed || d->maybe_executed_once
-	        || d->only_called_at_startup || d->only_called_at_exit);
-       edge = edge->next_caller)
-    {
-      if (edge->caller != node)
-	{
-          d->only_called_at_startup &= edge->caller->only_called_at_startup;
-	  /* It makes sense to put main() together with the static constructors.
-	     It will be executed for sure, but rest of functions called from
-	     main are definitely not at startup only.  */
-	  if (MAIN_NAME_P (DECL_NAME (edge->caller->symbol.decl)))
-	    d->only_called_at_startup = 0;
-          d->only_called_at_exit &= edge->caller->only_called_at_exit;
-	}
-      if (!edge->frequency)
-	continue;
-      switch (edge->caller->frequency)
-        {
-	case NODE_FREQUENCY_UNLIKELY_EXECUTED:
-	  break;
-	case NODE_FREQUENCY_EXECUTED_ONCE:
-	  if (dump_file && (dump_flags & TDF_DETAILS))
-	    fprintf (dump_file, "  Called by %s that is executed once\n",
-		     cgraph_node_name (edge->caller));
-	  d->maybe_unlikely_executed = false;
-	  if (inline_edge_summary (edge)->loop_depth)
-	    {
-	      d->maybe_executed_once = false;
-	      if (dump_file && (dump_flags & TDF_DETAILS))
-	        fprintf (dump_file, "  Called in loop\n");
-	    }
-	  break;
-	case NODE_FREQUENCY_HOT:
-	case NODE_FREQUENCY_NORMAL:
-	  if (dump_file && (dump_flags & TDF_DETAILS))
-	    fprintf (dump_file, "  Called by %s that is normal or hot\n",
-		     cgraph_node_name (edge->caller));
-	  d->maybe_unlikely_executed = false;
-	  d->maybe_executed_once = false;
-	  break;
-	}
-    }
-  return edge != NULL;
-}
-
-/* See if the frequency of NODE can be updated based on frequencies of its
-   callers.  */
-bool
-cgraph_propagate_frequency (struct cgraph_node *node)
-{
-  struct cgraph_propagate_frequency_data d = {true, true, true, true};
-  bool changed = false;
-
-  if (!node->local.local)
-    return false;
-  gcc_assert (node->symbol.analyzed);
-  if (dump_file && (dump_flags & TDF_DETAILS))
-    fprintf (dump_file, "Processing frequency %s\n", cgraph_node_name (node));
-
-  cgraph_for_node_and_aliases (node, cgraph_propagate_frequency_1, &d, true);
-
-  if ((d.only_called_at_startup && !d.only_called_at_exit)
-      && !node->only_called_at_startup)
-    {
-       node->only_called_at_startup = true;
-       if (dump_file)
-         fprintf (dump_file, "Node %s promoted to only called at startup.\n",
-		  cgraph_node_name (node));
-       changed = true;
-    }
-  if ((d.only_called_at_exit && !d.only_called_at_startup)
-      && !node->only_called_at_exit)
-    {
-       node->only_called_at_exit = true;
-       if (dump_file)
-         fprintf (dump_file, "Node %s promoted to only called at exit.\n",
-		  cgraph_node_name (node));
-       changed = true;
-    }
-  /* These come either from profile or user hints; never update them.  */
-  if (node->frequency == NODE_FREQUENCY_HOT
-      || node->frequency == NODE_FREQUENCY_UNLIKELY_EXECUTED)
-    return changed;
-  if (d.maybe_unlikely_executed)
-    {
-      node->frequency = NODE_FREQUENCY_UNLIKELY_EXECUTED;
-      if (dump_file)
-	fprintf (dump_file, "Node %s promoted to unlikely executed.\n",
-		 cgraph_node_name (node));
-      changed = true;
-    }
-  else if (d.maybe_executed_once && node->frequency != NODE_FREQUENCY_EXECUTED_ONCE)
-    {
-      node->frequency = NODE_FREQUENCY_EXECUTED_ONCE;
-      if (dump_file)
-	fprintf (dump_file, "Node %s promoted to executed once.\n",
-		 cgraph_node_name (node));
-      changed = true;
-    }
-  return changed;
-}
-
 /* Return true when NODE can not return or throw and thus
    it is safe to ignore its side effects for IPA analysis.  */
 
@@ -2245,6 +2491,7 @@ verify_edge_count_and_frequency (struct cgraph_edge *e)
     }
   if (gimple_has_body_p (e->caller->symbol.decl)
       && !e->caller->global.inlined_to
+      && !e->speculative
       /* FIXME: Inline-analysis sets frequency to 0 when edge is optimized out.
 	 Remove this once edges are actually removed from the function at that time.  */
       && (e->frequency
@@ -2299,7 +2546,7 @@ verify_edge_corresponds_to_fndecl (struct cgraph_edge *e, tree decl)
 
   /* We do not know if a node from a different partition is an alias or what it
      aliases and therefore cannot do the former_clone_of check reliably.  */
-  if (!node || node->symbol.in_other_partition)
+  if (!node || node->symbol.in_other_partition || e->callee->symbol.in_other_partition)
     return false;
   node = cgraph_function_or_thunk_node (node, NULL);
 
@@ -2346,7 +2593,7 @@ verify_cgraph_node (struct cgraph_node *node)
       error ("inline clone in same comdat group list");
       error_found = true;
     }
-  if (!node->symbol.definition && node->local.local)
+  if (!node->symbol.definition && !node->symbol.in_other_partition && node->local.local)
     {
       error ("local symbols must be defined");
       error_found = true;
@@ -2520,55 +2767,75 @@ verify_cgraph_node (struct cgraph_node *node)
     {
       if (this_cfun->cfg)
 	{
+	  pointer_set_t *stmts = pointer_set_create ();
+	  int i;
+	  struct ipa_ref *ref;
+
 	  /* Reach the trees by walking over the CFG, and note the
 	     enclosing basic-blocks in the call edges.  */
 	  FOR_EACH_BB_FN (this_block, this_cfun)
-	    for (gsi = gsi_start_bb (this_block);
-                 !gsi_end_p (gsi);
-                 gsi_next (&gsi))
-	      {
-		gimple stmt = gsi_stmt (gsi);
-		if (is_gimple_call (stmt))
-		  {
-		    struct cgraph_edge *e = cgraph_edge (node, stmt);
-		    tree decl = gimple_call_fndecl (stmt);
-		    if (e)
-		      {
-			if (e->aux)
-			  {
-			    error ("shared call_stmt:");
-			    cgraph_debug_gimple_stmt (this_cfun, stmt);
-			    error_found = true;
-			  }
-			if (!e->indirect_unknown_callee)
-			  {
-			    if (verify_edge_corresponds_to_fndecl (e, decl))
-			      {
-				error ("edge points to wrong declaration:");
-				debug_tree (e->callee->symbol.decl);
-				fprintf (stderr," Instead of:");
-				debug_tree (decl);
-				error_found = true;
-			      }
-			  }
-			else if (decl)
-			  {
-			    error ("an indirect edge with unknown callee "
-				   "corresponding to a call_stmt with "
-				   "a known declaration:");
-			    error_found = true;
-			    cgraph_debug_gimple_stmt (this_cfun, e->call_stmt);
-			  }
-			e->aux = (void *)1;
-		      }
-		    else if (decl)
-		      {
-			error ("missing callgraph edge for call stmt:");
-			cgraph_debug_gimple_stmt (this_cfun, stmt);
-			error_found = true;
-		      }
-		  }
+	    {
+	      for (gsi = gsi_start_phis (this_block);
+		   !gsi_end_p (gsi); gsi_next (&gsi))
+		pointer_set_insert (stmts, gsi_stmt (gsi));
+	      for (gsi = gsi_start_bb (this_block);
+		   !gsi_end_p (gsi);
+		   gsi_next (&gsi))
+		{
+		  gimple stmt = gsi_stmt (gsi);
+		  pointer_set_insert (stmts, stmt);
+		  if (is_gimple_call (stmt))
+		    {
+		      struct cgraph_edge *e = cgraph_edge (node, stmt);
+		      tree decl = gimple_call_fndecl (stmt);
+		      if (e)
+			{
+			  if (e->aux)
+			    {
+			      error ("shared call_stmt:");
+			      cgraph_debug_gimple_stmt (this_cfun, stmt);
+			      error_found = true;
+			    }
+			  if (!e->indirect_unknown_callee)
+			    {
+			      if (verify_edge_corresponds_to_fndecl (e, decl))
+				{
+				  error ("edge points to wrong declaration:");
+				  debug_tree (e->callee->symbol.decl);
+				  fprintf (stderr," Instead of:");
+				  debug_tree (decl);
+				  error_found = true;
+				}
+			    }
+			  else if (decl)
+			    {
+			      error ("an indirect edge with unknown callee "
+				     "corresponding to a call_stmt with "
+				     "a known declaration:");
+			      error_found = true;
+			      cgraph_debug_gimple_stmt (this_cfun, e->call_stmt);
+			    }
+			  e->aux = (void *)1;
+			}
+		      else if (decl)
+			{
+			  error ("missing callgraph edge for call stmt:");
+			  cgraph_debug_gimple_stmt (this_cfun, stmt);
+			  error_found = true;
+			}
+		    }
+		}
 	      }
+	    for (i = 0;
+		 ipa_ref_list_reference_iterate (&node->symbol.ref_list, i, ref);
+		 i++)
+	      if (ref->stmt && !pointer_set_contains (stmts, ref->stmt))
+		{
+		  error ("reference to dead statement");
+		  cgraph_debug_gimple_stmt (this_cfun, ref->stmt);
+		  error_found = true;
+		}
+	    pointer_set_destroy (stmts);
 	}
       else
 	/* No CFG available?!  */
@@ -2588,7 +2855,7 @@ verify_cgraph_node (struct cgraph_node *node)
 	}
       for (e = node->indirect_calls; e; e = e->next_callee)
 	{
-	  if (!e->aux)
+	  if (!e->aux && !e->speculative)
 	    {
 	      error ("an indirect edge from %s has no corresponding call_stmt",
 		     identifier_to_locale (cgraph_node_name (e->caller)));
@@ -2688,6 +2955,47 @@ cgraph_function_node (struct cgraph_node *node, enum availability *availability)
 	}
     } while (node && node->thunk.thunk_p);
   return node;
+}
+
+/* When doing LTO, read NODE's body from disk if it is not already present.  */
+
+bool
+cgraph_get_body (struct cgraph_node *node)
+{
+  struct lto_file_decl_data *file_data;
+  const char *data, *name;
+  size_t len;
+  tree decl = node->symbol.decl;
+
+  if (DECL_RESULT (decl))
+    return false;
+
+  gcc_assert (in_lto_p);
+
+  file_data = node->symbol.lto_file_data;
+  name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
+
+  /* We may have renamed the declaration, e.g., a static function.  */
+  name = lto_get_decl_name_mapping (file_data, name);
+
+  data = lto_get_section_data (file_data, LTO_section_function_body,
+			       name, &len);
+  if (!data)
+    {
+	dump_cgraph_node (stderr, node);
+    fatal_error ("%s: section %s is missing",
+		 file_data->file_name,
+		 name);
+    }
+
+  gcc_assert (DECL_STRUCT_FUNCTION (decl) == NULL);
+
+  lto_input_function_body (file_data, node, data);
+  lto_stats.num_function_bodies++;
+  lto_free_section_data (file_data, LTO_section_function_body, name,
+			 data, len);
+  lto_free_function_in_decl_state_for_node ((symtab_node) node);
+  return true;
 }
 
 #include "gt-cgraph.h"

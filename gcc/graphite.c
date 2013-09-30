@@ -47,7 +47,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "system.h"
 #include "coretypes.h"
 #include "diagnostic-core.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-dump.h"
 #include "cfgloop.h"
 #include "tree-chrec.h"
@@ -265,7 +265,7 @@ graphite_transform_loops (void)
     return;
 
   ctx = isl_ctx_alloc ();
-  isl_options_set_on_error(ctx, ISL_ON_ERROR_ABORT);
+  isl_options_set_on_error (ctx, ISL_ON_ERROR_ABORT);
   if (!graphite_initialize (ctx))
     return;
 

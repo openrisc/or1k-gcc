@@ -30,7 +30,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "function.h"
 #include "ggc.h"
 #include "gimple-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-dump.h"
 #include "tree-pass.h"
 #include "diagnostic-core.h"
@@ -253,25 +253,42 @@ execute_build_cfg (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_build_cfg =
+namespace {
+
+const pass_data pass_data_build_cfg =
 {
- {
-  GIMPLE_PASS,
-  "cfg",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  execute_build_cfg,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_CFG,				/* tv_id */
-  PROP_gimple_leh, 			/* properties_required */
-  PROP_cfg | PROP_loops,		/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_stmts			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "cfg", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_CFG, /* tv_id */
+  PROP_gimple_leh, /* properties_required */
+  ( PROP_cfg | PROP_loops ), /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_stmts, /* todo_flags_finish */
 };
+
+class pass_build_cfg : public gimple_opt_pass
+{
+public:
+  pass_build_cfg (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_build_cfg, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return execute_build_cfg (); }
+
+}; // class pass_build_cfg
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_build_cfg (gcc::context *ctxt)
+{
+  return new pass_build_cfg (ctxt);
+}
 
 
 /* Return true if T is a computed goto.  */
@@ -3343,7 +3360,7 @@ verify_gimple_assign_unary (gimple stmt)
       {
 	if ((!INTEGRAL_TYPE_P (rhs1_type) || !SCALAR_FLOAT_TYPE_P (lhs_type))
 	    && (!VECTOR_INTEGER_TYPE_P (rhs1_type)
-	        || !VECTOR_FLOAT_TYPE_P(lhs_type)))
+	        || !VECTOR_FLOAT_TYPE_P (lhs_type)))
 	  {
 	    error ("invalid types in conversion to floating point");
 	    debug_generic_expr (lhs_type);
@@ -3358,7 +3375,7 @@ verify_gimple_assign_unary (gimple stmt)
       {
         if ((!INTEGRAL_TYPE_P (lhs_type) || !SCALAR_FLOAT_TYPE_P (rhs1_type))
             && (!VECTOR_INTEGER_TYPE_P (lhs_type)
-                || !VECTOR_FLOAT_TYPE_P(rhs1_type)))
+                || !VECTOR_FLOAT_TYPE_P (rhs1_type)))
 	  {
 	    error ("invalid types in conversion to integer");
 	    debug_generic_expr (lhs_type);
@@ -3554,11 +3571,10 @@ verify_gimple_assign_binary (gimple stmt)
     case PLUS_EXPR:
     case MINUS_EXPR:
       {
-	/* We use regular PLUS_EXPR and MINUS_EXPR for vectors.
-	   ???  This just makes the checker happy and may not be what is
-	   intended.  */
-	if (TREE_CODE (lhs_type) == VECTOR_TYPE
-	    && POINTER_TYPE_P (TREE_TYPE (lhs_type)))
+	tree lhs_etype = lhs_type;
+	tree rhs1_etype = rhs1_type;
+	tree rhs2_etype = rhs2_type;
+	if (TREE_CODE (lhs_type) == VECTOR_TYPE)
 	  {
 	    if (TREE_CODE (rhs1_type) != VECTOR_TYPE
 		|| TREE_CODE (rhs2_type) != VECTOR_TYPE)
@@ -3566,22 +3582,13 @@ verify_gimple_assign_binary (gimple stmt)
 		error ("invalid non-vector operands to vector valued plus");
 		return true;
 	      }
-	    lhs_type = TREE_TYPE (lhs_type);
-	    rhs1_type = TREE_TYPE (rhs1_type);
-	    rhs2_type = TREE_TYPE (rhs2_type);
-	    /* PLUS_EXPR is commutative, so we might end up canonicalizing
-	       the pointer to 2nd place.  */
-	    if (POINTER_TYPE_P (rhs2_type))
-	      {
-		tree tem = rhs1_type;
-		rhs1_type = rhs2_type;
-		rhs2_type = tem;
-	      }
-	    goto do_pointer_plus_expr_check;
+	    lhs_etype = TREE_TYPE (lhs_type);
+	    rhs1_etype = TREE_TYPE (rhs1_type);
+	    rhs2_etype = TREE_TYPE (rhs2_type);
 	  }
-	if (POINTER_TYPE_P (lhs_type)
-	    || POINTER_TYPE_P (rhs1_type)
-	    || POINTER_TYPE_P (rhs2_type))
+	if (POINTER_TYPE_P (lhs_etype)
+	    || POINTER_TYPE_P (rhs1_etype)
+	    || POINTER_TYPE_P (rhs2_etype))
 	  {
 	    error ("invalid (pointer) operands to plus/minus");
 	    return true;
@@ -3593,7 +3600,6 @@ verify_gimple_assign_binary (gimple stmt)
 
     case POINTER_PLUS_EXPR:
       {
-do_pointer_plus_expr_check:
 	if (!POINTER_TYPE_P (rhs1_type)
 	    || !useless_type_conversion_p (lhs_type, rhs1_type)
 	    || !ptrofftype_p (rhs2_type))
@@ -4235,6 +4241,12 @@ verify_gimple_label (gimple stmt)
 
   if (TREE_CODE (decl) != LABEL_DECL)
     return true;
+  if (!DECL_NONLOCAL (decl) && !FORCED_LABEL (decl)
+      && DECL_CONTEXT (decl) != current_function_decl)
+    {
+      error ("label's context is not the current function decl");
+      err |= true;
+    }
 
   uid = LABEL_DECL_UID (decl);
   if (cfun->cfg
@@ -5551,6 +5563,7 @@ gimple_duplicate_bb (basic_block bb)
       copy = create_phi_node (NULL_TREE, new_bb);
       create_new_def_for (gimple_phi_result (phi), copy,
 			  gimple_phi_result_ptr (copy));
+      gimple_set_uid (copy, gimple_uid (phi));
     }
 
   gsi_tgt = gsi_start_bb (new_bb);
@@ -6649,12 +6662,13 @@ move_sese_region_to_fn (struct function *dest_cfun, basic_block entry_bb,
   struct function *saved_cfun = cfun;
   int *entry_flag, *exit_flag;
   unsigned *entry_prob, *exit_prob;
-  unsigned i, num_entry_edges, num_exit_edges;
+  unsigned i, num_entry_edges, num_exit_edges, num_nodes;
   edge e;
   edge_iterator ei;
   htab_t new_label_map;
   struct pointer_map_t *vars_map, *eh_map;
   struct loop *loop = entry_bb->loop_father;
+  struct loop *loop0 = get_loop (saved_cfun, 0);
   struct move_stmt_d d;
 
   /* If ENTRY does not strictly dominate EXIT, this cannot be an SESE
@@ -6747,16 +6761,29 @@ move_sese_region_to_fn (struct function *dest_cfun, basic_block entry_bb,
   set_loops_for_fn (dest_cfun, loops);
 
   /* Move the outlined loop tree part.  */
+  num_nodes = bbs.length ();
   FOR_EACH_VEC_ELT (bbs, i, bb)
     {
-      if (bb->loop_father->header == bb
-	  && loop_outer (bb->loop_father) == loop)
+      if (bb->loop_father->header == bb)
 	{
-	  struct loop *loop = bb->loop_father;
-	  flow_loop_tree_node_remove (bb->loop_father);
-	  flow_loop_tree_node_add (get_loop (dest_cfun, 0), loop);
-	  fixup_loop_arrays_after_move (saved_cfun, cfun, loop);
+	  struct loop *this_loop = bb->loop_father;
+	  struct loop *outer = loop_outer (this_loop);
+	  if (outer == loop
+	      /* If the SESE region contains some bbs ending with
+		 a noreturn call, those are considered to belong
+		 to the outermost loop in saved_cfun, rather than
+		 the entry_bb's loop_father.  */
+	      || outer == loop0)
+	    {
+	      if (outer != loop)
+		num_nodes -= this_loop->num_nodes;
+	      flow_loop_tree_node_remove (bb->loop_father);
+	      flow_loop_tree_node_add (get_loop (dest_cfun, 0), this_loop);
+	      fixup_loop_arrays_after_move (saved_cfun, cfun, this_loop);
+	    }
 	}
+      else if (bb->loop_father == loop0 && loop0 != loop)
+	num_nodes--;
 
       /* Remove loop exits from the outlined region.  */
       if (loops_for_fn (saved_cfun)->exits)
@@ -6776,6 +6803,7 @@ move_sese_region_to_fn (struct function *dest_cfun, basic_block entry_bb,
 
   /* Setup a mapping to be used by move_block_to_fn.  */
   loop->aux = current_loops->tree_root;
+  loop0->aux = current_loops->tree_root;
 
   pop_cfun ();
 
@@ -6804,11 +6832,30 @@ move_sese_region_to_fn (struct function *dest_cfun, basic_block entry_bb,
     }
 
   loop->aux = NULL;
+  loop0->aux = NULL;
   /* Loop sizes are no longer correct, fix them up.  */
-  loop->num_nodes -= bbs.length ();
+  loop->num_nodes -= num_nodes;
   for (struct loop *outer = loop_outer (loop);
        outer; outer = loop_outer (outer))
-    outer->num_nodes -= bbs.length ();
+    outer->num_nodes -= num_nodes;
+  loop0->num_nodes -= bbs.length () - num_nodes;
+
+  if (saved_cfun->has_simduid_loops || saved_cfun->has_force_vect_loops)
+    {
+      struct loop *aloop;
+      for (i = 0; vec_safe_iterate (loops->larray, i, &aloop); i++)
+	if (aloop != NULL)
+	  {
+	    if (aloop->simduid)
+	      {
+		replace_by_duplicate_decl (&aloop->simduid, d.vars_map,
+					   d.to_context);
+		dest_cfun->has_simduid_loops = true;
+	      }
+	    if (aloop->force_vect)
+	      dest_cfun->has_force_vect_loops = true;
+	  }
+    }
 
   /* Rewire BLOCK_SUBBLOCKS of orig_block.  */
   if (orig_block)
@@ -7890,25 +7937,43 @@ split_critical_edges (void)
   return 0;
 }
 
-struct gimple_opt_pass pass_split_crit_edges =
+namespace {
+
+const pass_data pass_data_split_crit_edges =
 {
- {
-  GIMPLE_PASS,
-  "crited",                          /* name */
-  OPTGROUP_NONE,                 /* optinfo_flags */
-  NULL,                          /* gate */
-  split_critical_edges,          /* execute */
-  NULL,                          /* sub */
-  NULL,                          /* next */
-  0,                             /* static_pass_number */
-  TV_TREE_SPLIT_EDGES,           /* tv_id */
-  PROP_cfg,                      /* properties required */
-  PROP_no_crit_edges,            /* properties_provided */
-  0,                             /* properties_destroyed */
-  0,                             /* todo_flags_start */
-  TODO_verify_flow               /* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "crited", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_SPLIT_EDGES, /* tv_id */
+  PROP_cfg, /* properties_required */
+  PROP_no_crit_edges, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_flow, /* todo_flags_finish */
 };
+
+class pass_split_crit_edges : public gimple_opt_pass
+{
+public:
+  pass_split_crit_edges (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_split_crit_edges, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return split_critical_edges (); }
+
+  opt_pass * clone () { return new pass_split_crit_edges (ctxt_); }
+}; // class pass_split_crit_edges
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_split_crit_edges (gcc::context *ctxt)
+{
+  return new pass_split_crit_edges (ctxt);
+}
 
 
 /* Build a ternary operation and gimplify it.  Emit code before GSI.
@@ -8044,25 +8109,42 @@ extract_true_false_edges_from_block (basic_block b,
     }
 }
 
-struct gimple_opt_pass pass_warn_function_return =
+namespace {
+
+const pass_data pass_data_warn_function_return =
 {
- {
-  GIMPLE_PASS,
-  "*warn_function_return",		/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  execute_warn_function_return,		/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_NONE,				/* tv_id */
-  PROP_cfg,				/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0					/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "*warn_function_return", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  PROP_cfg, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_warn_function_return : public gimple_opt_pass
+{
+public:
+  pass_warn_function_return (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_warn_function_return, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return execute_warn_function_return (); }
+
+}; // class pass_warn_function_return
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_warn_function_return (gcc::context *ctxt)
+{
+  return new pass_warn_function_return (ctxt);
+}
 
 /* Emit noreturn warnings.  */
 
@@ -8081,25 +8163,43 @@ gate_warn_function_noreturn (void)
   return warn_suggest_attribute_noreturn;
 }
 
-struct gimple_opt_pass pass_warn_function_noreturn =
+namespace {
+
+const pass_data pass_data_warn_function_noreturn =
 {
- {
-  GIMPLE_PASS,
-  "*warn_function_noreturn",		/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_warn_function_noreturn,		/* gate */
-  execute_warn_function_noreturn,	/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_NONE,				/* tv_id */
-  PROP_cfg,				/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  0					/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "*warn_function_noreturn", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  PROP_cfg, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_warn_function_noreturn : public gimple_opt_pass
+{
+public:
+  pass_warn_function_noreturn (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_warn_function_noreturn, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_warn_function_noreturn (); }
+  unsigned int execute () { return execute_warn_function_noreturn (); }
+
+}; // class pass_warn_function_noreturn
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_warn_function_noreturn (gcc::context *ctxt)
+{
+  return new pass_warn_function_noreturn (ctxt);
+}
 
 
 /* Walk a gimplified function and warn for functions whose return value is
@@ -8180,25 +8280,43 @@ gate_warn_unused_result (void)
   return flag_warn_unused_result;
 }
 
-struct gimple_opt_pass pass_warn_unused_result =
+namespace {
+
+const pass_data pass_data_warn_unused_result =
 {
-  {
-    GIMPLE_PASS,
-    "*warn_unused_result",		/* name */
-    OPTGROUP_NONE,                        /* optinfo_flags */
-    gate_warn_unused_result,		/* gate */
-    run_warn_unused_result,		/* execute */
-    NULL,				/* sub */
-    NULL,				/* next */
-    0,					/* static_pass_number */
-    TV_NONE,				/* tv_id */
-    PROP_gimple_any,			/* properties_required */
-    0,					/* properties_provided */
-    0,					/* properties_destroyed */
-    0,					/* todo_flags_start */
-    0,					/* todo_flags_finish */
-  }
+  GIMPLE_PASS, /* type */
+  "*warn_unused_result", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_NONE, /* tv_id */
+  PROP_gimple_any, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_warn_unused_result : public gimple_opt_pass
+{
+public:
+  pass_warn_unused_result (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_warn_unused_result, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_warn_unused_result (); }
+  unsigned int execute () { return run_warn_unused_result (); }
+
+}; // class pass_warn_unused_result
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_warn_unused_result (gcc::context *ctxt)
+{
+  return new pass_warn_unused_result (ctxt);
+}
 
 
 /* Garbage collection support for edge_def.  */

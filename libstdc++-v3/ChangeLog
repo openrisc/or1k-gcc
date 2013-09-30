@@ -1,3 +1,1153 @@
+2013-09-28  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/stl_algo.h (remove_copy, remove_copy_if): Declare
+	inline.
+	(rotate_copy, stable_partition, partial_sort_copy): Likewise.
+	(lower_bound, upper_bound, equal_range, inplace_merge): Likewise.
+	(includes, next_permutation, prev_permutation): Likewise.
+	(replace_copy, replace_copy_if, is_sorted_until): Likewise.
+	(minmax_element, is_permutation, adjacent_find): Likewise.
+	(count, count_if, search, search_n, merge): Likewise.
+	(set_intersection, set_difference): Likewise.
+	(set_symmetric_difference, min_element, max_element): Likewise.
+	* include/bits/stl_algobase.h (lower_bound): Likewise.
+	(lexicographical_compare, mismatch): Likewise.
+
+2013-09-28  Tim Shen <timshen91@gmail.com>
+
+	* include/bits/regex_scanner.tcc (_Scanner<>::_M_eat_escape_posix):
+	Let ordinary char escaping in POSIX be valid.
+	* testsuite/28_regex/basic_regex/ctors/basic/raw_string.cc: Test this
+	change.
+
+2013-09-27  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/predefined_ops.h: New.
+	* include/bits/stl_heap.h: Include <bits/predefined_ops.h>.
+	(__is_heap_until, __push_heap, __adjust_heap, __pop_heap): Remove
+	algo duplication.
+	(__is_heap): Adapt.
+	(__make_heap): New.
+	(make_heap): Adapt to use latter.
+	(__sort_heap): New.
+	(sort_heap): Adapt to use latter.
+	* include/bits/algobase.h: Include <bits/predefined_ops.h>.
+	(__lexicographical_compare_impl): New.
+	(__lexicographical_compare<false>::__lc): Adapt to use latter.
+	(lexicographical_compare): Likewise.
+	(__lower_bound): New.
+	(lower_bound): Adapt to use latter.
+	(equal): Use _GLIBCXX_STD_A::equal in N3671 overloads.
+	(__mismatch): New.
+	(mismatch): Use latter.
+	* include/bits/algo.h: Include <bits/predefined_ops.h>. Remove
+	<functional> include.
+	(__move_median_first, __find, __find_if, __find_if_not): Remove
+	algo duplication.
+	(__find_end): Likewise.
+	(__search_n): Rename into ...
+	(__search_n_aux): ... this.
+	(__search_n): Renew, use latter.
+	(search_n): Use latter.
+	(__search): New.
+	(search): Use latter.
+	(__find_end): Likewise.
+	(__remove_copy_if): New.
+	(remove_copy): Use latter.
+	(__adjacent_find): New.
+	(adjacent_find): Use latter.
+	(__unique): New.
+	(unique): Use latter.
+	(__unique_copy): Remove algo duplication.
+	(__stable_partition): New.
+	(stable_partition): Use latter.
+	(__heap_select): Remove algo duplication, use __make_heap.
+	(__partial_sort): New, use latter.
+	(partial_sort): Use latter.
+	(__partial_sort_copy): New.
+	(partial_sort_copy): Use latter.
+	(__unguarded_linear_insert, __insertion_sort): Remove algo
+	duplication.
+	(__unguarded_insertion_sort, __final_insertion_sort): Likewise.
+	(__unguarded_partition, __unguarded_partition_pivot): Likewise.
+	(__partial_sort): New.
+	(partial_sort): Use latter.
+	(__sort): New.
+	(sort): Use latter.
+	(lower_bound): Use __lower_bound.
+	(__upper_bound): New.
+	(upper_bound): Use latter.
+	(__equal_range): New.
+	(equal_range): Use latter.
+	(__move_merge_adaptive, __move_merge_adaptive_backward): Remove
+	algo duplication.
+	(__merge_adaptive, __merge_without_buffer): Likewise.
+	(__inplace_merge): New.
+	(inplace_merge): Use latter.
+	(__move_merge, __merge_sort_loop, __chunk_insertion_sort): Remove
+	algo duplication.
+	(__merge_sort_with_buffer, __stable_sort_adaptive): Likewise.
+	(__inplace_stable_sort): Likewise.
+	(__include): New.
+	(includes): Use latter.
+	(__next_permutation): New.
+	(next_permutation): Use latter.
+	(__prev_permutation): New.
+	(prev_permutation): Use latter.
+	(__replace_copy_if): New.
+	(replace_copy): Use latter.
+	(__is_sorted_until): New.
+	(is_sorted_unitl): Use latter.
+	(__minmax_element): New.
+	(minmax_element): Use latter.
+	(__is_permutation): New.
+	(is_permutation): Use latter.
+	(__adjacent_find): New.
+	(adjacent_find): Use latter.
+	(__count_if): New.
+	(count): Use latter.
+	(count_if): Likewise.
+	(__merge): New.
+	(merge): Use latter.
+	(__stable_sort): New.
+	(stable_sort): Use latter.
+	(__set_union): New.
+	(set_union): Use latter.
+	(__set_intersection): New.
+	(set_intersection): Use latter.
+	(__set_difference): New.
+	(set_difference): Use latter.
+	(__set_symmetric_difference): New.
+	(set_symmetric_difference): Use latter.
+	(__min_element): New.
+	(min_element): Use latter.
+	(__max_element): New.
+	(max_element): Use latter.
+	* include/Makefile.am: Add predefined_ops.h.
+	* include/Makefile.in: Regenerate.
+	* include/parallel/algobase.h (equal, mismatch): Add overloads
+	from N3671.
+	* testsuite/25_algorithms/is_permutation/vectorbool.cc: New.
+	* testsuite/25_algorithms/adjacent_find/vectorbool.cc: Likewise.
+	* testsuite/25_algorithms/find/vectorbool.cc: Likewise.
+	* testsuite/25_algorithms/find_if/vectorbool.cc: Likewise.
+	* testsuite/25_algorithms/find_first_of/vectorbool.cc: Likewise.
+	* testsuite/25_algorithms/heap/vectorbool.cc: Likewise.
+	* testsuite/25_algorithms/find_end/vectorbool.cc: Likewise.
+	* testsuite/25_algorithms/find_if_not/vectorbool.cc: Likewise.
+
+2013-09-27  Jonathan Wakely  <jwakely.gcc@gmail.com>
+
+	PR libstdc++/57465
+	* include/std/functional
+	(_Function_base::_Base_manager::_M_not_empty_function): Fix overload
+	for pointers.
+	* testsuite/20_util/function/cons/57465.cc: New.
+
+2013-09-26  Tim Shen  <timshen91@gmail.com>
+
+	* regex_error.h: Remove _S_error_last to follow the standard.
+	* regex_scanner.tcc:
+	(_Scanner<_FwdIter>::_M_scan_in_brace): Change error_brace to
+	error_badbrace.
+	(_Scanner<>::_M_eat_escape_posix): Extended doesn't support
+	back-reference.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/53622.cc:
+	Move here from ../../extended.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/57173.cc:
+	Likewise.
+
+2013-09-25  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR libstdc++/58338
+	* include/bits/forward_list.h (_Fwd_list_node_base::_M_transfer_after):
+	Mark as noexcept.
+	(_Fwd_list_iterator) [_Fwd_list_iterator, operator*, operator->,
+	operator++, operator==, operator!=, _M_next]: Likewise.
+	(_Fwd_list_const_iterator) [_Fwd_list_const_iterator, operator*,
+	operator->, operator++, operator==, operator!=, _M_next]: Likewise.
+	(operator==(const _Fwd_list_iterator&, const _Fwd_list_const_iterator&),
+	operator!=(const _Fwd_list_iterator&, const _Fwd_list_const_iterator&)):
+	Likewise.
+	* include/bits/hashtable_policy.h (_Hash_node_base::_Hash_node_base,
+	_Hash_node::_M_next, _Node_iterator_base::_Node_iterator_base,
+	_Node_iterator_base::_M_incr, operator==(const _Node_iterator_base&,
+	const _Node_iterator_base&), operator!=(const _Node_iterator_base&,
+	const _Node_iterator_base&)): Likewise.
+	(_Node_iterator) [_Node_iterator, operator*, operator->, operator++]:
+	Likewise.
+	(_Node_const_iterator) [_Node_const_iterator, operator*, operator->,
+	operator++]: Likewise.
+	* include/debug/safe_iterator.h (_Safe_iterator) [_Safe_iterator,
+	operator=, operator*, operator->, operator++, operator--, operator[],
+	operator+=, operator+, operator-=, operator-, base, operator _Iterator]:
+	Likewise.
+	(operator==(const _Safe_iterator&, const _Safe_iterator&),
+	operator!=(const _Safe_iterator&, const _Safe_iterator&),
+	operator<(const _Safe_iterator&, const _Safe_iterator&),
+	operator<=(const _Safe_iterator&, const _Safe_iterator&),
+	operator>(const _Safe_iterator&, const _Safe_iterator&),
+	operator>=(const _Safe_iterator&, const _Safe_iterator&),
+	operator-(const _Safe_iterator&, const _Safe_iterator&),
+	operator+(difference_type, const _Safe_iterator&)): Likewise.
+	* include/profile/iterator_tracker.h (__iterator_tracker)
+	[__iterator_tracker, base, operator _Iterator, operator->, operator++,
+	operator--, operator=, operator*, operator[], operator+=, operator+,
+	operator-=, operator-]: Likewise.
+	(operator==(const __iterator_tracker&, const __iterator_tracker&),
+	operator!=(const __iterator_tracker&, const __iterator_tracker&),
+	operator<(const __iterator_tracker&, const __iterator_tracker&),
+	operator<=(const __iterator_tracker&, const __iterator_tracker&),
+	operator>(const __iterator_tracker&, const __iterator_tracker&),
+	operator>=(const __iterator_tracker&, const __iterator_tracker&),
+	operator-(const __iterator_tracker&, const __iterator_tracker&),
+	operator+(difference_type, const __iterator_tracker&)): Likewise.
+
+2013-09-24  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR libstdc++/58338
+	PR libstdc++/56166
+	* include/bits/basic_string.h (basic_string)
+	[basic_string(basic_string&&)]: Make the noexcept conditional.
+	[operator=(basic_string&&), assign(basic_string&&)]: Link to PR 58265.
+	[begin(), end(), rbegin(), rend(), clear]: Remove noexcept.
+	[pop_back]: Comment on the lack of noexcept.
+	* include/debug/string (basic_string) [basic_string(const _Allocator&),
+	basic_string(basic_string&&), begin(), end(), rbegin(), rend(), clear,
+	operator[](size_type), pop_back]: Comment out noexcept, until vstring
+	replaces basic_string.
+
+2013-09-24  Tim Shen  <timshen91@gmail.com>
+
+	* include/Makefile.am: Add regex.tcc.
+	* include/Makefile.in: Regenerate.
+	* include/bits/regex.h: Remove definitions to regex.tcc.
+	* include/bits/regex.tcc: New.
+	(match_results::format, regex_replace): Implement;
+	* include/bits/regex_compiler.h: Move _M_flags to the top of class
+	member list, because other members' initialization depend on it.
+	* include/bits/regex_compiler.tcc
+	(_Compiler<>::_Compiler): Adjust member initializations.
+	(_Compiler<>::_M_quantifier): Fix ungreedy interval quantifier.
+	* include/bits/regex_executor.h: Remove _RegexT from _*Executor classes.
+	In the future, all regex classes may refactor to *Impl style.
+	* include/bits/regex_executor.tcc (_Executor::_M_set_results):
+	Merge identical code from _*Executor classes.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	string_dispatch_01.cc (fake_match<>): Adjust the hacking-style testcase
+	caller for new __get_executors interface.
+	* testsuite/28_regex/algorithms/regex_replace/char/basic_replace.cc:
+	New.
+	* testsuite/28_regex/match_results/format.cc: New.
+	* testsuite/28_regex/traits/char/lookup_collatename.cc: Remove digraph
+	testcase.
+	* testsuite/28_regex/traits/wchar_t/lookup_collatename.cc: Likewise.
+
+2013-09-23  Paul Pluzhnikov  <ppluzhnikov@google.com>
+
+	* src/c++11/snprintf_lite.cc (__concat_size_t): Use
+	unsigned long long conditionally.
+
+2013-09-23  Paul Pluzhnikov  <ppluzhnikov@google.com>
+
+	* src/c++11/snprintf_lite.cc (__concat_size_t): Use only
+	std::__int_to_char<unsigned long long>()
+
+2013-09-21  Paul Pluzhnikov  <ppluzhnikov@google.com>
+
+	* include/bits/functexcept.h (__throw_out_of_range_fmt): New.
+	* src/c++11/functexcept.cc (__throw_out_of_range_fmt): New.
+	* src/c++11/snprintf_lite.cc: New.
+	* src/c++11/Makefile.am: Add snprintf_lite.cc.
+	* src/c++11/Makefile.in: Regenerate.
+	* config/abi/pre/gnu.ver: Add _ZSt24__throw_out_of_range_fmtPKcz.
+	* include/std/array (at): Use __throw_out_of_range_fmt.
+	* include/debug/array (at): Likewise.
+	* include/profile/array (at): Likewise.
+	* include/std/bitset (_M_check_initial_position, _M_check): New.
+	(bitset::bitset): Use _M_check_initial_position.
+	(set, reset, flip, test): Use _M_check.
+	* include/ext/vstring.h (_M_check, at): Use __throw_out_of_range_fmt.
+	* include/bits/stl_vector.h (_M_range_check): Likewise.
+	* include/bits/stl_bvector.h (_M_range_check): Likewise.
+	* include/bits/stl_deque.h (_M_range_check): Likewise.
+	* include/bits/basic_string.h (_M_check, at): Likewise.
+	* testsuite/23_containers/vector/requirements/dr438/assign_neg.cc: Adjust.
+	* testsuite/23_containers/vector/requirements/dr438/insert_neg.cc: Likewise.
+	* testsuite/23_containers/vector/requirements/dr438/constructor_1_neg.cc:
+	Likewise.
+	* testsuite/23_containers/vector/requirements/dr438/constructor_2_neg.cc:
+	Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/assign_neg.cc: Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/insert_neg.cc: Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/constructor_1_neg.cc:
+	Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/constructor_2_neg.cc:
+	Likewise.
+	* testsuite/23_containers/array/tuple_interface/tuple_element_neg.cc: Likewise.
+	* testsuite/23_containers/array/tuple_interface/tuple_element_debug_neg.cc:
+	Likewise.
+	* testsuite/23_containers/array/tuple_interface/get_neg.cc: Likewise.
+	* testsuite/23_containers/array/tuple_interface/get_debug_neg.cc: Likewise.
+	* testsuite/util/exception/safety.h (generate): Use __throw_out_of_range_fmt.
+
+2013-09-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR testsuite/57605
+	* testsuite/lib/libstdc++.exp (libstdc++_init): Prepend
+	-fdiagnostics-color=never to cxxflags.
+
+2013-09-20  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR libstdc++/58338
+	* include/bits/allocator.h (__alloc_swap::_S_do_it,
+	__shrink_to_fit_aux::_S_do_it): Mark as noexcept.
+	* include/bits/basic_string.h (basic_string::_Rep) [_S_empty_rep,
+	_M_is_leaked, _M_is_shared, _M_set_leaked, _M_set_sharable,
+	_M_set_length_and_sharable, _M_dispose]: Likewise.
+	(basic_string::_Alloc_hider::_Alloc_hider): Likewise.
+	(basic_string) [_M_data, _M_rep, _M_ibegin, _M_iend, _M_limit,
+	_M_disjunct, _M_copy, _M_move, _M_assign, _S_copy_chars, _S_compare,
+	_S_empty_rep, shrink_to_fit, operator[] const, front const, back const]:
+	Likewise.
+	[clear]: Link to PR 56166.
+	[swap]: Link to PR 58265.
+	* include/bits/stl_deque.h (_Deque_iterator) [_S_buffer_size,
+	_Deque_iterator, _M_const_cast, operator*, operator->, operator++,
+	operator--, operator+=, operator+, operator-=, operator-, operator[],
+	_M_set_node]: Mark as noexcept.
+	(operator==(const _Deque_iterator&, const _Deque_iterator&),
+	operator!=(const _Deque_iterator&, const _Deque_iterator&),
+	operator<(const _Deque_iterator&, const _Deque_iterator&),
+	operator>(const _Deque_iterator&, const _Deque_iterator&),
+	operator<=(const _Deque_iterator&, const _Deque_iterator&),
+	operator>=(const _Deque_iterator&, const _Deque_iterator&),
+	operator-(const _Deque_iterator&, const _Deque_iterator&),
+	operator+(ptrdiff_t, const _Deque_iterator&)): Likewise.
+	(_Deque_base) [_Deque_base(const allocator_type&)]: Add missing call to
+	_M_initialize_map.
+	[~_Deque_base, _M_deallocate_node, _M_deallocate_map, _M_destroy_nodes]:
+	Mark as noexcept.
+	(_Deque_base::_Deque_impl) [_Deque_impl(const _Tp_alloc_type&),
+	_Deque_impl(_Tp_alloc_type&&)]: Likewise.
+	(deque) [_S_buffer_size, operator=(deque&&), shrink_to_fit, operator[],
+	front, back, pop_front, pop_back, swap]: Likewise.
+	[deque(), deque(const allocator_type&)]: Merge.
+	* include/debug/deque (deque) [operator=(deque&&), shrink_to_fit,
+	operator[], front, back, pop_front, pop_back, swap]: Mark as noexcept.
+	* include/profile/deque (deque) [operator=(deque&&), operator[], front,
+	back, pop_front, pop_back, swap]: Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/assign_neg.cc:
+	Adjust line number.
+	* testsuite/23_containers/deque/requirements/dr438/constructor_1_neg.cc:
+	Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/constructor_2_neg.cc:
+	Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/insert_neg.cc:
+	Likewise.
+
+2013-09-20  Alan Modra  <amodra@gmail.com>
+
+	* configure: Regenerate.
+
+2013-09-19  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR libstdc++/58338
+	* include/bits/stl_tree.h (_Rb_tree_node_base) [_S_minimum, _S_maximum]:
+	Mark as noexcept.
+	(_Rb_tree_iterator) [_Rb_tree_iterator, operator*, operator->,
+	operator++, operator--, operator==, operator!=]: Likewise.
+	(_Rb_tree_const_iterator) [_Rb_tree_const_iterator, _M_const_cast,
+	operator*, operator->, operator++, operator--, operator==, operator!=]:
+	Likewise.
+	(operator==(const _Rb_tree_iterator&, const _Rb_tree_const_iterator&),
+	operator!=(const _Rb_tree_iterator&, const _Rb_tree_const_iterator&)):
+	Likewise.
+	(_Rb_tree) [_M_put_node, _M_destroy_node, _M_root, _M_leftmost,
+	_M_rightmost, _M_begin, _M_end, _S_left, _S_right, _S_minimum,
+	_S_maximum]: Likewise.
+	* include/debug/string (basic_string) [basic_string(const _Allocator&),
+	shrink_to_fit, operator[], pop_back]: Likewise.
+	* include/ext/vstring.h (__versa_string) [_M_limit, _M_disjunct,
+	_M_ibegin, _M_iend, __versa_string(const _Alloc&),
+	operator=(__versa_string&&), shrink_to_fit, operator[], front,
+	back, assign(__versa_string&&), swap]: Likewise.
+	(__versa_string) [__versa_string(), __versa_string(const _Alloc&)]:
+	Merge.
+
+2013-09-18  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR libstdc++/58338
+	* include/bits/stl_iterator.h (__normal_iterator) [__normal_iterator,
+	_M_const_cast, operator*, operator->, operator++, operator--,
+	operator[], operator+=, operator+, operator-=, operator-, base]:
+	Mark as noexcept.
+	(operator==(const __normal_iterator&, const __normal_iterator&),
+	operator!=(const __normal_iterator&, const __normal_iterator&),
+	operator<(const __normal_iterator&, const __normal_iterator&),
+	operator>(const __normal_iterator&, const __normal_iterator&),
+	operator<=(const __normal_iterator&, const __normal_iterator&),
+	operator>=(const __normal_iterator&, const __normal_iterator&),
+	operator-(const __normal_iterator&, const __normal_iterator&),
+	operator+(difference_type, const __normal_iterator&)): Likewise.
+	* include/bits/stl_list.h (list) [splice, _M_check_equal_allocators]:
+	Likewise.
+	(list::_M_check_equal_allocators): Abort instead of throwing.
+	* include/debug/array (array) [operator[], front, back]: Mark as
+	noexcept.
+	* include/profile/array (array) [operator[], front, back]: Likewise.
+	* include/std/array (array) [operator[], front, back]: Likewise.
+	* include/debug/list (list::splice): Likewise.
+	* include/profile/list (list::splice): Likewise.
+	* testsuite/23_containers/list/operations/5.cc: Remove file.
+	* testsuite/23_containers/list/operations/5.h: Likewise.
+
+2013-09-18  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex.h: Add friend classes.
+	(match_results<>::position, regex_iterator<>::operator++):
+	Implement position specification in regex_iterator.
+	(regex_match<>, regex_search<>):
+	Move match_results initializations to these function. Remove `todo`.
+	* include/bits/regex_compiler.tcc:
+	(_Compiler<>::_M_quantifier): Fix greedy/ungreedy of interval matching.
+	* include/bits/regex_constants.h:
+	Fix indentation. Change match_flag_type to enum type.
+	* include/bits/regex_executor.h:
+	Merge identical code to the base class _Executor.
+	Support flags in regex_constants.
+	* include/bits/regex_executor.tcc: Likewise.
+	* include/bits/regex_scanner.h: Add comments.
+	* include/bits/regex_scanner.tcc: Same.
+	* testsuite/28_regex/algorithms/regex_search/ecma/assertion.cc:
+	Add a testcase.
+	* testsuite/28_regex/algorithms/regex_search/ecma/flags.cc: New.
+	* testsuite/28_regex/iterators/regex_iterator/char/
+	string_position_01.cc: Remove `xfail`.
+	* testsuite/28_regex/iterators/regex_iterator/wchar_t/string_02.cc:
+	Remove `xfail` and make the case really work.
+
+2013-09-18  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* testsuite/performance/25_algorithms/search_n.cc: Fix typo.
+
+2013-09-18  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR libstdc++/58338
+	* include/bits/list.tcc (_List_base::_M_clear, list::erase): Mark as
+	noexcept.
+	* include/bits/stl_list.h (_List_iterator) [_List_iterator,
+	_M_const_cast, operator*, operator->, operator++, operator--,
+	operator==, operator!=]: Likewise.
+	(_List_const_iterator) [_List_const_iterator, _M_const_cast, operator*,
+	operator->, operator++, operator--, operator==, operator!=]: Likewise.
+	(operator==(const _List_iterator&, const _List_const_iterator&),
+	operator!=(const _List_iterator&, const _List_const_iterator&)):
+	Likewise.
+	(_List_impl) [_List_impl(const _Node_alloc_type&),
+	_List_impl(_Node_alloc_type&&)]: Likewise.
+	(_List_base) [_M_put_node, _List_base(const _Node_alloc_type&),
+	_List_base(_List_base&&), _M_clear, _M_init]: Likewise.
+	(list) [list(), list(const allocator_type&)]: Merge.
+	(list) [list(const allocator_type&), front, back, pop_front, pop_back,
+	erase, _M_erase]: Mark as noexcept.
+	* include/debug/list (list) [list(const _Allocator&), front, back,
+	pop_front, pop_back, _M_erase, erase]: Likewise.
+	* include/profile/list (list) [list(const _Allocator&), front, back,
+	pop_front, pop_back, erase]: Likewise.
+	* testsuite/23_containers/list/requirements/dr438/assign_neg.cc:
+	Adjust line number.
+	* testsuite/23_containers/list/requirements/dr438/constructor_1_neg.cc:
+	Likewise.
+	* testsuite/23_containers/list/requirements/dr438/constructor_2_neg.cc:
+	Likewise.
+	* testsuite/23_containers/list/requirements/dr438/insert_neg.cc:
+	Likewise.
+
+2013-09-17  Marc Glisse  <marc.glisse@inria.fr>
+
+	PR libstdc++/58338
+	* include/bits/stl_vector.h (vector::vector(),
+	vector::vector(const allocator_type&)): Merge.
+	(_Vector_impl::_Vector_impl(_Tp_alloc_type const&),
+	_Vector_impl::_Vector_impl(_Tp_alloc_type&&),
+	_Vector_impl::_M_swap_data,
+	_Vector_base::_Vector_base(const allocator_type&),
+	_Vector_base::_Vector_base(allocator_type&&),
+	_Vector_base::_Vector_base(_Vector_base&&), _Vector_base::~_Vector_base,
+	vector::vector(const allocator_type&), vector::operator[],
+	vector::operator[] const, vector::front, vector::front const,
+	vector::back, vector::back const, vector::pop_back,
+	vector::_M_erase_at_end): Mark as noexcept.
+	* include/debug/vector (vector::vector(const _Allocator&),
+	vector::operator[], vector::operator[] const, vector::front,
+	vector::front const, vector::back, vector::back const, vector::pop_back,
+	_M_requires_reallocation, _M_update_guaranteed_capacity,
+	_M_invalidate_after_nth): Mark as noexcept.
+	* include/profile/vector (vector::vector(const _Allocator&),
+	vector::operator[], vector::operator[] const, vector::front,
+	vector::front const, vector::back, vector::back const): Mark as
+	noexcept.
+	(vector::vector(vector&&, const _Allocator&)): Remove wrong noexcept.
+	* testsuite/23_containers/vector/requirements/dr438/assign_neg.cc:
+	Adjust line number.
+	* testsuite/23_containers/vector/requirements/dr438/
+	constructor_1_neg.cc: Likewise.
+	* testsuite/23_containers/vector/requirements/dr438/
+	constructor_2_neg.cc: Likewise.
+	* testsuite/23_containers/vector/requirements/dr438/insert_neg.cc:
+	Likewise.
+
+2013-09-14  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex.h (regex_match<>, regex_search<>):
+	Change regex_executor caller. Now use their return value instead
+	of checking __m[0].matched to find out if it's successful.
+	(regex_search<>): Move the search logic to regex_executor.
+	* include/bits/regex_automaton.h: Add some new _Opcode. Refactor
+	_NFA::_M_insert_*.
+	* include/bits/regex_automaton.tcc: Add DEBUG dump for new
+	_Opcode. Refactor _NFA::_M_insert_*.
+	* include/bits/regex_compiler.h (_Compiler<>::_M_get_nfa):
+	Use make_shared instead of construct by hand.
+	* include/bits/regex_compiler.tcc: Implement _Compiler<>::_M_assertion.
+	* include/bits/regex_constants.h: Fix indentation and line breaking.
+	* include/bits/regex_executor.h: Add _ResultsEntry to support
+	greedy/ungreedy mode. Move regex_search logic here.
+	* include/bits/regex_executor.tcc: Implement assertions and
+	greedy/ungreedy matching.
+	* include/bits/regex_scanner.h: Add a new token _S_token_ungreedy.
+	* include/bits/regex_scanner.tcc: Parse a new token _S_token_ungreedy.
+	* testsuite/28_regex/algorithms/regex_search/ecma/assertion.cc: New.
+	* testsuite/28_regex/algorithms/regex_search/ecma/greedy.cc: New.
+	* testsuite/28_regex/algorithms/regex_search/ecma/string_01.cc:
+	Fix comment.
+
+2013-09-13  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/58415
+	* include/ext/sso_string_base.h (__sso_string_base<>::
+	__sso_string_base(__sso_string_base&&)): Fix thinkos about
+	_M_length vs _M_set_length.
+	* testsuite/ext/vstring/cons/58415-1.cc: New.
+	* testsuite/ext/vstring/cons/58415-2.cc: Likewise.
+
+2013-09-12  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/58403
+	* include/bits/stl_iterator.h (__normal_iterator<>::operator[],
+	operator+=, operator+, operator-=, operator-): Take the argument
+	by value.
+	* testsuite/24_iterators/normal_iterator/58403.cc: New.
+
+2013-09-11  Mitsuru Kariya  <kariya_mitsuru@hotmail.com>
+	    Chris Jefferson  <chris@bubblescope.net>
+
+	PR libstdc++/58358
+	* include/bits/stl_algo.h (search_n): Fix to guarantee a number
+	of comparisons <= number of elements in the range.
+	* testsuite/25_algorithms/search_n/58358.cc: New.
+	* testsuite/25_algorithms/search_n/iterator.cc: Extend.
+
+2013-09-10  Ed Smith-Rowland  <3dw4rd@verizon.net>
+
+	* testsuite/28_regex/traits/wchar_t/value.cc: Change template args
+	from char to wchar_t, literals from 'x' to L'x'.
+
+2013-09-10  Kai Tietz  <ktietz@redhat.com>
+
+	PR libstdc++/54314
+	* config/abi/pre/gnu-versioned-namespace.ver: Add thunk _ZTv0_n12_NS*
+	like in gnu.ver.
+
+2013-09-07  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/58341
+	* include/bits/stl_algobase.h (copy_backward): Fix documentation
+	per DR 1206.
+
+2013-09-05  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex_automaton.h: Add dummy node type. Rewrite
+	_StateSeq.
+	* include/bits/regex_automaton.tcc: Implement them.
+	* include/bits/regex_compiler.h: Rewrite _Compiler to use new
+	_StateSeq interfaces.
+	* include/bits/regex_compiler.tcc: Implement them.
+	* include/bits/regex_scanner.h: Add word boundry assertion token.
+	* include/bits/regex_scanner.tcc (_Scanner<>::_M_eat_escape_ecma):
+	Support word boundry.
+	* testsuite/28_regex/algorithms/regex_match/basic/
+	string_range_02_03.cc: Remove "xfail".
+	* testsuite/28_regex/algorithms/regex_match/extended/cstring_plus.cc:
+	Likewise.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	string_range_02_03.cc: Likewise.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	cstring_questionmark.cc: Remove xfail and get correct length of
+	c-string.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	string_range_00_03.cc: Likewise.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/quoted_char.cc:
+	New.
+	* testsuite/28_regex/algorithms/regex_match/extended/cstring_range.cc:
+	New.
+	* testsuite/28_regex/iterators/regex_iterator/wchar_t/string_02.cc: New.
+
+2013-09-03  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/58302
+	* include/bits/random.tcc (negative_binomial_distribution<>::
+	operator()(_UniformRandomNumberGenerator&, const param_type&)):
+	Fix typo in template argument.
+	* testsuite/26_numerics/random/negative_binomial_distribution/
+	operators/58302.cc: New.
+
+2013-09-02  Tim Shen  <timshen91@gmail.com>
+
+	* regex_automaton.h: Rearrange _NFA's layout.
+	* include/bits/regex_compiler.h: Add _AnyMatcher and _CharMatcher.
+	  Rearrange _BracketMatcher's layout.
+	  (_BracketMatcher<>::_M_add_char): Use set instead of vector for
+	  _M_char_set.
+	  (_BracketMatcher<>::_M_add_collating_element): Likewise.
+	  (_BracketMatcher<>::_M_make_range): Likewise.
+	* include/bits/regex_compiler.tcc (_Compiler<>::_M_atom): Use
+	  apropriate constructors of matchers above.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/anymatcher.cc:
+	  New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/backref.cc: New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/empty_range.cc:
+	  New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/emptygroup.cc:
+	  New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/char/hex.cc: New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/wchar_t/anymatcher.cc:
+	  New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/wchar_t/hex.cc: New.
+
+2013-08-30  François Dumont  <fdumont@gcc.gnu.org>
+
+	PR libstdc++/58148
+	* include/debug/functions.h (__foreign_iterator_aux4): Use
+	sequence const_pointer as common type to compare pointers. Add a
+	fallback overload in case pointers cannot be cast to sequence
+	const_pointer.
+	* testsuite/23_containers/vector/modifiers/insert/58148.cc: New.
+
+2013-08-30  François Dumont  <fdumont@gcc.gnu.org>
+
+	PR libstdc++/58191
+	* include/debug/macros.h (__glibcxx_check_partitioned_lower): Add
+	__gnu_debug::__base calls on iterators passed to internal debug
+	check.
+	(__glibcxx_check_partitioned_lower_pred): Likewise.
+	(__glibcxx_check_partitioned_upper): Likewise.
+	(__glibcxx_check_partitioned_upper_pred): Likewise.
+	(__glibcxx_check_sorted): Likewise.
+	(__glibcxx_check_sorted_pred): Likewise.
+	(__glibcxx_check_sorted_set): Likewise.
+	(__glibcxx_check_sorted_set_pred): Likewise.
+	* include/debug/functions.h (__check_partitioned_lower):
+	Remove code to detect safe iterators.
+	(__check_partitioned_upper): Likewise.
+	(__check_sorted): Likewise.
+
+2013-08-29  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex.h (basic_regex<>::assign): Don't lose _M_traits.
+	  (regex_iterator<>::regex_iterator): Return nullptr when regex_search
+	     failed.
+	  (regex_token_iterator<>::_M_end_of_seq): Should be defined true when
+	    _M_result is(not isn't) nullptr.
+	* include/bits/regex_compiler.h: Store _Compiler::_M_traits by reference
+	  instead of by value.
+	* include/bits/regex_executor.h (_DFSExecutor<>::_DFSExecutor): Add
+	  _M_traits to _DFSExecutor.
+	* include/bits/regex_executor.tcc (__get_executor<>): Pass traits to
+	  _DFSExecutor too.
+	* testsuite/28_regex/algorithms/regex_match/extended/wstring_locale.cc:
+	  New.
+	* testsuite/28_regex/iterators/regex_token_iterator/wchar_t/
+	  wstring_02.cc: New.
+
+2013-08-26  Tim Shen  <timshen91@gmail.com>
+
+	* include/Makefile.am: Add regex_scanner.{h,tcc}.
+	* include/Makefile.in: Regenerate.
+	* include/bits/regex.h (match_search): Handle the `__first == __last`
+	  situation correctly.
+	* include/bits/regex_compiler.h: Move _Scanner...
+	* include/bits/regex_scanner.h: ...to here. New.
+	* include/bits/regex_compiler.tcc: Move _Scanner...
+	* include/bits/regex_scanner.tcc: ...to here, too. New.
+	* include/bits/regex_executor.tcc: Use value instead of reference for
+	  submatch.
+	* include/std/regex: Add regex_scanner.h
+	* testsuite/28_regex/algorithms/regex_match/awk/cstring_01.cc: New.
+	* testsuite/28_regex/algorithms/regex_match/basic/empty_range.cc: New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/cstring_hex.cc: New.
+	* testsuite/28_regex/algorithms/regex_match/ecma/empty_range.cc: New.
+	* testsuite/28_regex/algorithms/regex_search/ecma/string_01.cc: New.
+
+2013-08-22  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex.h: Replace 8 spaces in indentation with a tab.
+	* include/bits/regex_automaton.h: Same.
+	* include/bits/regex_automaton.tcc: Same.
+	* include/bits/regex_compiler.h: Same.
+	* include/bits/regex_compiler.tcc: Same.
+	* include/bits/regex_constants.h: Same.
+	* include/bits/regex_executor.h: Same.
+	* include/bits/regex_executor.tcc: Same.
+
+2013-08-22  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex.h: Executor caller.
+	* include/bits/regex_executor.h: Fix empty grouping problem.
+	* include/bits/regex_executor.tcc: Same.
+	* testsuite/28_regex/algorithms/regex_match/ecma/cstring_emptygroup.cc:
+	  New.
+
+2013-08-20  Phil Muldoon  <pmuldoon@redhat.com>
+
+	PR libstdc++/53477
+	http://sourceware.org/bugzilla/show_bug.cgi?id=15195
+
+	* python/libstdcxx/v6/printers.py (Printer.__call__): If a value
+	is a reference, fetch referenced value.
+	(RxPrinter.invoke): Ditto.
+	* testsuite/libstdc++-prettyprinters/cxx11.cc (main): Add -O0
+	flag. Add referenced value tests.
+
+2013-08-20  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex_constants.h: Add underlying `unsigned int` for
+	  enum syntax_option_type.
+
+2013-08-18  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex_automaton.h: _S_opcode_backref.
+	* include/bits/regex_automaton.tcc: Backref automaton support.
+	* include/bits/regex_compiler.tcc: Parsing support.
+	* include/bits/regex_executor.h: Add _M_traits for _DFSExecutor.
+	* include/bits/regex_executor.tcc: Add _S_opcode_backref support.
+	* testsuite/28_regex/algorithms/regex_match/ecma/string_backref.cc: New.
+
+2013-08-16  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex.h (regex_traits<>::transform_primary):
+	Avoid past-the-end dereferences.
+
+2013-08-14  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/58163
+	* include/bits/basic_string.h (basic_string<>::operator[]): Fix
+	_GLIBCXX_DEBUG_PEDASSERT check vs C++11.
+	* include/ext/vstring.h: Likewise.
+	* testsuite/21_strings/basic_string/element_access/char/58163.cc:
+	New.
+	* testsuite/21_strings/basic_string/element_access/wchar_t/58163.cc:
+	Likewise.
+	* testsuite/ext/vstring/element_access/char/58163.cc: Likewise.
+	* testsuite/ext/vstring/element_access/wchar_t/58163.cc: Likewise.
+
+2013-08-14  Uros Bizjak  <ubizjak@gmail.com>
+
+	* src/c++98/compatibility.cc (_ZTIe): Use
+	reinterpret_cast<const cast *> to avoid -Wcast-qual warnings.
+	(_ZTIPe): Ditto.
+	(ZTIPKe): Ditto.
+
+2013-08-09  Tim Shen  <timshen91@gmail.com>
+
+	* include/bits/regex_constants.h: Change syntax_option_type to enum
+	type.
+
+2013-08-08  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* include/bits/regex.h: Replace _A, _B, _C, _R by _Ap, _Bp, _Cp, _Rp.
+
+2013-08-08  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/hashtable_policy.h (_Hashtable_alloc): New.
+	(_ReuseOrAllocNode, _AllocNode): Adapt to use latter rather than
+	_Hashtable.
+	(_Before_begin<>): Remove.
+	* include/bits/hashtable.h (_Hashtable): Inherit from
+	_Hashtable_alloc and adapt. Restore _M_before_begin field.
+	* src/c++11/hashtable_c++0x.cc: Add ext/alloc_traits.h include.
+	* python/libstdcxx/v6/printers.py (StdHashtableIterator): Adapt
+	access to hashtable before begin.
+	* testsuite/23_containers/unordered_set/
+	not_default_constructible_hash_neg.cc: Adapt dg-error line number.
+	* testsuite/23_containers/unordered_set/instantiation_neg.cc:
+	Likewise.
+
+2013-08-07  Tim Shen  <timshen91@gmail.com>
+
+	* include/Makefile.am: Adjust to new files.
+	* include/Makefile.in: Regenerate.
+	* include/bits/regex.h: Adjust to new interfaces.
+	* include/bits/regex_automaton.h: New.
+	* include/bits/regex_automaton.tcc: New.
+	* include/bits/regex_compiler.h: Adjust to new files.
+	* include/bits/regex_compiler.tcc: New.
+	* include/bits/regex_constants.h: Tail spaces.
+	* include/bits/regex_error.h: Likewise.
+	* include/bits/regex_executor.h: New.
+	* include/bits/regex_executor.tcc: New.
+	* include/std/regex: Adjust to new files.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	string_dispatch_01.cc: Adjust to new interfaces.
+
+2013-08-07  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* include/ext/atomicity.h: Add #pragma GCC system_header.
+
+2013-08-07  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/58098
+	* include/bits/random.h (cauchy_distribution<>::min,
+	extreme_value_distribution<>::min, normal_distribution<>::min,
+	student_t_distribution<>::min): Fix.
+	* include/ext/random (normal_mv_distribution<>::min): Likewise.
+	* testsuite/26_numerics/random/cauchy_distribution/cons/parms.cc:
+	Adjust.
+	testsuite/26_numerics/random/cauchy_distribution/cons/default.cc:
+	Likewise.
+	* testsuite/26_numerics/random/extreme_value_distribution/cons/
+	parms.cc: Likewise.
+	testsuite/26_numerics/random/extreme_value_distribution/cons/
+	default.cc: Likewise.
+	* testsuite/26_numerics/random/normal_distribution/cons/parms.cc:
+	Likewise.
+	* testsuite/26_numerics/random/normal_distribution/cons/default.cc:
+	Likewise.
+	* testsuite/26_numerics/random/student_t_distribution/cons/parms.cc:
+	Likewise.
+	* testsuite/26_numerics/random/student_t_distribution/cons/default.cc:
+	Likewise.
+	* testsuite/ext/random/normal_mv_distribution/cons/parms.cc: Likewise.
+	* testsuite/ext/random/normal_mv_distribution/cons/default.cc: Likewise.
+
+	* testsuite/26_numerics/random/exponential_distribution/cons/parms.cc:
+	Minor tweak.
+	* testsuite/26_numerics/random/exponential_distribution/cons/default.cc:
+	Likewise.
+
+	* testsuite/ext/von_mises_distribution/*: Move to...
+	* testsuite/ext/random/von_mises_distribution/*: ... here.
+	* testsuite/ext/triangular_distribution/*: Move to...
+	* testsuite/ext/random/triangular_distribution/*: ... here.
+
+2013-08-06  Caroline Tice  <cmtice@google.com>
+
+	* fragment.am: Add XTEMPLATE_FLAGS.
+	* configure.ac: Add definitions for --enable-vtable-verify.
+	* acinclude.m4:  Add --enable-vtable-verify and
+	--disable-vtable-verify; define --enable-vtable-verify; define
+	VTV_CXXFLAGS, VTV_PCH_CXXFLAGS and VTV_CXXLINKFLAGS.
+	* config/abi/pre/gnu.ver: Export symbols for vtable verification.
+	* libsupc++/Makefile.am: Define vtv_sources and add it to
+	libsupc___la_SOURCES and libsupc__convenience_la_SOURCES.
+	* libsupc++/vtv_stubs.cc: New file.
+	* include/Makefile.am: Add VTV_PCH_CXXFLAGS to PCHFLAGS.
+	* src/Makefile.am: Add VTV_CXXFLAGS to AM_CXXFLAGS; add
+	VTV_CXXLINKFLAGS to CXXLINK.
+	* src/c++98/Makefile.am: Comment out XTEMPLATE_FLAGS; add VTV_CXXFLAGS
+	to AM_CXXFLAGS; add VTV_CXXXLINKFLAGS to CXXLINK.
+	* src/C++11/Makefile.am: Ditto.
+	* doc/xml/manual/configure.xml: Add entry for --enable-vtable-verify.
+	* scripts/testsuite_flags.in: Add cxxvtvflags to Usage; cause
+	cxxvtvflags to use VTV_CXXFLAGS and VTV_CXXLINKFLAGS.
+	* testsuite/lib/libstdc++.exp: Add cxxvtvflags; add code to locate
+	libvtv if --enable-vtable-verify was used; set cxxvtvflags; add
+	cxxvtvflags to cxx_final.
+	* testsuite/18_support/bad_exception/23591_thread-1.c: Add
+	-fvtable-verify=none to compiler flags.
+	* testsuite/17_intro/freestanding.cc: Add -fvtable-verify=none
+	to compiler flags.
+	* configure: Regenerated.
+	* Makefile.in: Regenerated.
+	* python/Makefile.in: Regenerated.
+	* include/Makefile.in: Regenerated.
+	* libsupc++/Makefile.in: Regenerated.
+	* config.h.in: Regenerated.
+	* po/Makefile.in: Regenerated.
+	* src/Makefile.in: Regenerated.
+	* src/c++98/Makefile.in: Regenerated.
+	* src/c++11/Makefile.in: Regenerated.
+	* doc/Makefile.in: Regenerated.
+	* testsuite/Makefile.in: Regenerated.
+
+2013-08-06  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	Revert the last commit.
+
+2013-08-06  François Dumont  <fdumont@gcc.gnu.org>
+
+	* include/bits/hashtable_policy.h (_Hashtable_alloc): New.
+	(_ReuseOrAllocNode, _AllocNode): Adapt to use latter rather than
+	_Hashtable.
+	(_Before_begin<>): Remove.
+	* include/bits/hashtable.h (_Hashtable): Inherit from
+	_Hashtable_alloc and adapt. Restore _M_before_begin field.
+	* python/libstdcxx/v6/printers.py (StdHashtableIterator): Adapt
+	access to hashtable before begin.
+	* testsuite/23_containers/unordered_set/
+	not_default_constructible_hash_neg.cc: Adapt dg-error line number.
+	* testsuite/23_containers/unordered_set/instantiation_neg.cc:
+	Likewise.
+
+2013-08-03  Tim Shen  <timshen91@gmail.com>
+
+	Implement bracket expression.
+	* include/bits/regex.h: Remove constexpr from "|=", etc.
+	* include/bits/regex_compiler.h: Parse bracket expression.
+	* include/bits/regex_nfa.h: _Comparator and _BracketMatcher(old
+	_RangeMatcher).
+	* include/bits/regex_nfa.tcc: Implement them.
+	* testsuite/28_regex/algorithms/regex_match/extended/53622.cc:
+	from regex_search to regex_match.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	cstring_bracket_01.cc: New.
+
+2013-08-02  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* include/debug/functions.h (__foreign_iterator_aux4):
+	Initialize __l and __ge.
+
+2013-08-02  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/58049
+	* include/debug/functions.h: Include <bits/move.h>; minor formatting
+	changes.
+	(__foreign_iterator_aux4): Declare __l and __ge constexpr.
+	* include/debug/safe_iterator.h (_Safe_iterator<>::operator->):
+	Use __addressof.
+	* include/debug/safe_local_iterator.h (_Safe_local_iterator<>::
+	operator->): Likewise.
+
+2013-08-01  François Dumont  <fdumont@gcc.gnu.org>
+
+	PR libstdc++/57779
+	* include/debug/formatter.h (_Debug_msg_id): Add
+	__msg_insert_itself_range entry.
+	* include/debug/functions.h (_Insert_range_from_self_is_safe<>):
+	New, indicate container types supporting self range insertion in
+	GNU implementation.
+	(__foreign_iterator): New, check if an iterator points to a given
+	sequence.
+	* include/debug/macros.h (__glibcxx_check_insert_range): Add check
+	using __foreign_iterator.
+	(__gibcxx_check_insert_range_after): Likewise.
+	* include/debug/string (_Insert_range_from_self_is_safe<>):
+	Partially specialized to mark __gnu_debug::basic_string<> as
+	supporting self range insert.
+	* include/debug/list (_Insert_range_from_self_is_safe<>):
+	Partially specialized to mark std::list as supporting self range
+	insert if _GLIBCXX_DEBUG_PEDANTIC is not defined.
+	* include/debug/forward_list (_Insert_range_from_self_is_safe<>):
+	Likewise.
+	* src/c++11/debug.cc (_S_debug_messages): Add
+	__msg_insert_itself_range_entry message.
+	(_Error_formatter::_Parameter::_M_print_description): Display
+	iterator sequence address rather than sequence address when the
+	parameter type is an iterator.
+	(_Error_formatter::_M_print_word): Enhance behavior when
+	displaying a word with an appended '\n'.
+	* testsuite/util/debug/checks.h (check_insert4<>): New.
+	* testsuite/23_containers/deque/debug/insert5_neg.cc: New.
+	* testsuite/23_containers/vector/debug/insert5_neg.cc: Likewise.
+	* testsuite/23_containers/vector/debug/insert6_neg.cc: Likewise.
+	* testsuite/23_containers/vector/debug/57779_neg.cc: Likewise.
+	* testsuite/23_containers/list/debug/insert5_neg.cc: Likewise.
+	* testsuite/23_containers/forward_list/debug/insert_after4_neg.cc:
+	Likewise.
+
+2013-08-01  Fabien Chêne  <fabien@gcc.gnu.org>
+
+	PR c++/54537
+	* include/tr1/cmath: Remove pow(double,double) overload, remove a
+	duplicated comment about DR 550. Add a comment to explain the
+	issue.
+	* testsuite/tr1/8_c_compatibility/cmath/pow_cmath.cc: New.
+
+2013-07-31  Tim Shen  <timshen91@gmail.com>
+
+	Thompson matcher refactored. Fix grouping problem.
+	* include/bits/regex.h: Use a dispatcher _M_get_matcher().
+	* include/bits/regex_compiler.h: Tweak for auto switching.
+	* include/bits/regex_grep_matcher.h: Class structure.
+	* include/bits/regex_grep_matcher.tcc: _BFSMatcher(Thompson
+	matcher) refactoring.
+	* include/bits/regex_nfa.h: Change _Results's interfaces.
+	* include/std/regex: Includes <map> and <queue>.
+	* testsuite/28_regex/algorithms/regex_match/extended/53622.cc:
+	For both matchers.
+	* testsuite/28_regex/algorithms/regex_match/extended/57173.cc:
+	For both matchers.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	string_dispatch_01.cc: New.
+
+2013-07-31  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/56627
+	* include/bits/stl_bvector.h: Use friend struct hash intead of
+	friend class hash to work around useless warnings produced by
+	some compilers.
+	* include/std/bitset: Likewise.
+
+2013-07-31  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* src/c++11/functexcept.cc: Do not include the whole <regex>.
+	* src/c++11/regex.cc: Likewise.
+
+2013-07-31  Tim Shen  <timshen91@gmail.com>
+
+	Revert last commit.
+
+2013-07-31  Tim Shen  <timshen91@gmail.com>
+
+	Thompson matcher refactored. Fix grouping problem.
+	* include/bits/regex.h: Use a dispatcher _M_get_matcher().
+	* include/bits/regex_compiler.h: Tweak for auto switching.
+	* include/bits/regex_grep_matcher.h: Class structure.
+	* include/bits/regex_grep_matcher.tcc: _BFSMatcher(Thompson
+	matcher) refactoring.
+	* include/bits/regex_nfa.h: Change _Results's interfaces.
+	* include/std/regex: Includes <map> and <queue>.
+	* testsuite/28_regex/algorithms/regex_match/extended/53622.cc:
+	For both matchers.
+	* testsuite/28_regex/algorithms/regex_match/extended/57173.cc:
+	For both matchers.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	string_dispatch_01.cc: New.
+
+2013-07-30  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	Revert last commit.
+
+2013-07-30  Tim Shen  <timshen91@gmail.com>
+
+	Thompson matcher refactored. Fix grouping problem.
+	* include/bits/regex.h: Use a dispatcher _M_get_matcher().
+	* include/bits/regex_compiler.h: Tweak for auto switching.
+	* include/bits/regex_grep_matcher.h: Class structure.
+	* include/bits/regex_grep_matcher.tcc: _BFSMatcher(Thompson
+	matcher) refactoring.
+	* include/bits/regex_nfa.h: Change _Results's interfaces.
+	* include/std/regex: Includes <map> and <queue>.
+	* testsuite/28_regex/algorithms/regex_match/extended/53622.cc:
+	For both matchers.
+	* testsuite/28_regex/algorithms/regex_match/extended/57173.cc:
+	For both matchers.
+	* testsuite/28_regex/algorithms/regex_match/extended/
+	string_dispatch_01.cc: New.
+
+2013-07-29  Nathan Froyd  <froydnj@gcc.gnu.org>
+
+	* include/std/atomic (compare_exchange_weak, compare_exchange_strong):
+	Add call to __cmpexch_failure_order.
+	* testsuite/util/testsuite_common_types.h
+	(compare_exchange_order_lowering): New generator.
+	* testsuite/29_atomics/atomic/requirements/compare_exchange_lowering.cc:
+	New test.
+
+2013-07-25  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* include/std/complex (pow(const complex<>&, int)): Enable in
+	C++11 mode too.
+	* testsuite/26_numerics/complex/dr844.cc: Adjust.
+	* doc/xml/manual/intro.xml: Update.
+
+2013-07-25  Tim Shen  <timshen91@gmail.com>
+
+	Add documents and comments.
+	* include/bits/regex.h: Documents and comments.
+	* include/bits/regex_grep_matcher.h: Likewise.
+	* include/bits/regex_grep_matcher.tcc: Likewise.
+	* testsuite/28_regex/iterators/regex_iterator/char/
+	string_position_01.cc: New.
+
+2013-07-24  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/57976
+	* doc/xml/manual/status_cxx2011.xml: Note missing time_get::get and
+	time_get::do_get.
+
+2013-07-24  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* include/bits/random.h (random_device): Avoid using the FILE type.
+	* include/std/random: Do not include <cstdio>.
+	* src/c++11/random.cc: ... include it here.
+	(random_device::_M_init, random_device::_M_fini,
+	random_device::_M_getval): Cast back and forth void* and FILE*.
+
+2013-07-24  Tim Shen  <timshen91@gmail.com>
+
+	Reimplment matcher using Depth-first search(backtracking).
+	PR libstdc++/53622
+	PR libstdc++/57173
+	* include/bits/regex.h: regex_match() and regex_search().
+	* include/bits/regex_cursor.h: Fix _M_set_pos().
+	* include/bits/regex_grep_matcher.h: add _M_dfs_match().
+	* include/bits/regex_grep_matcher.tcc: Implement it.
+	* testsuite/28_regex/algorithms/regex_match/extended/53622.cc: New.
+	* testsuite/28_regex/algorithms/regex_match/extended/57173.cc: New.
+	* testsuite/28_regex/algorithms/regex_search/basic/string_01.cc:
+	Remove xfail.
+
+2013-07-23  Tim Shen  <timshen91@gmail.com>
+
+	Implement regex_iterator and regex_token_iterator.
+	* include/bits/regex.h: regex_iterator and regex_token_iterator.
+	* testsuite/28_regex/iterators/regex_iterator/char/string_01.cc:
+	New.
+	* testsuite/28_regex/iterators/regex_iterator/wchar_t/string_01.cc:
+	New.
+	* testsuite/28_regex/iterators/regex_token_iterator/char/string_01.cc:
+	New.
+	* testsuite/28_regex/iterators/regex_token_iterator/wchar_t/
+	string_01.cc: New.
+
+2013-07-23  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* include/std/random: Add back <cstdio> include.
+	* src/c++11/random.cc: Don't include <cstdio> here.
+
+2013-07-22  Jason Merrill  <jason@redhat.com>
+
+	PR libstdc++/57914
+	* libsupc++/atexit_thread.cc (run): Delete cleanup elts.
+
+2013-07-22  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/57920
+	* src/c++11/random.cc (random_device::_M_getval): If possible, use
+	read instead of std::fread.
+	* include/std/random: Do not include <cstdio> unnecessarily.
+
+2013-07-21  Tim Shen  <timshen91@gmail.com>
+
+	Partially implement regex_search.
+	* include/bits/regex.h: regex_search.
+	* include/bits/regex_grep_matcher.h: _M_search_from_first.
+	* include/bits/regex_grep_matcher.tcc: Implement it.
+	* testsuite/28_regex/algorithms/regex_search/basic/string_01.cc: New.
+
+2013-07-21  Jonathan Wakely  <jwakely.gcc@gmail.com>
+
+	PR libstdc++/54352
+	* include/std/condition_variable (condition_variable_any): Move into
+	inline namespace _V2 and replace mutex member with shared_ptr<mutex>.
+	* src/c++11/condition_variable.cc (condition_variable_any): Move
+	definitions to ...
+	* src/c++11/compatibility-condvar.cc (condition_variable_any): Here.
+	* src/Makefile.am: Add new source file.
+	* src/Makefile.in: Regenerate.
+
 2013-07-09  Tim Shen  <timshen91@gmail.com>
 
 	Implement class regex_traits.

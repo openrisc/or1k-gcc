@@ -80,7 +80,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree.h"
 #include "gimple.h"
 #include "cgraph.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "ipa-prop.h"
 #include "statistics.h"
@@ -91,6 +91,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-inline.h"
 #include "gimple-pretty-print.h"
 #include "ipa-inline.h"
+#include "ipa-utils.h"
 
 /* Enumeration of all aggregate reductions we can do.  */
 enum sra_mode { SRA_MODE_EARLY_IPA,   /* early call regularization */
@@ -1256,8 +1257,7 @@ scan_function (void)
 		      if (DECL_BUILT_IN_CLASS (dest) == BUILT_IN_NORMAL
 			  && DECL_FUNCTION_CODE (dest) == BUILT_IN_APPLY_ARGS)
 			encountered_apply_args = true;
-		      if (cgraph_get_node (dest)
-			  == cgraph_get_node (current_function_decl))
+		      if (recursive_call_p (current_function_decl, dest))
 			{
 			  encountered_recursive_call = true;
 			  if (!callsite_has_enough_arguments_p (stmt))
@@ -1466,6 +1466,7 @@ build_ref_for_offset (location_t loc, tree base, HOST_WIDE_INT offset,
 {
   tree prev_base = base;
   tree off;
+  tree mem_ref;
   HOST_WIDE_INT base_offset;
   unsigned HOST_WIDE_INT misalign;
   unsigned int align;
@@ -1516,7 +1517,12 @@ build_ref_for_offset (location_t loc, tree base, HOST_WIDE_INT offset,
   if (align < TYPE_ALIGN (exp_type))
     exp_type = build_aligned_type (exp_type, align);
 
-  return fold_build2_loc (loc, MEM_REF, exp_type, base, off);
+  mem_ref = fold_build2_loc (loc, MEM_REF, exp_type, base, off);
+  if (TREE_THIS_VOLATILE (prev_base))
+    TREE_THIS_VOLATILE (mem_ref) = 1;
+  if (TREE_SIDE_EFFECTS (prev_base))
+    TREE_SIDE_EFFECTS (mem_ref) = 1;
+  return mem_ref;
 }
 
 /* Construct a memory reference to a part of an aggregate BASE at the given
@@ -3442,47 +3448,81 @@ gate_intra_sra (void)
 }
 
 
-struct gimple_opt_pass pass_sra_early =
+namespace {
+
+const pass_data pass_data_sra_early =
 {
- {
-  GIMPLE_PASS,
-  "esra",	 			/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_intra_sra,			/* gate */
-  early_intra_sra,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_SRA,				/* tv_id */
-  PROP_cfg | PROP_ssa,                  /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_update_ssa
-  | TODO_verify_ssa			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "esra", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_SRA, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_update_ssa | TODO_verify_ssa ), /* todo_flags_finish */
 };
 
-struct gimple_opt_pass pass_sra =
+class pass_sra_early : public gimple_opt_pass
 {
- {
-  GIMPLE_PASS,
-  "sra",	 			/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_intra_sra,			/* gate */
-  late_intra_sra,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_SRA,				/* tv_id */
-  PROP_cfg | PROP_ssa,                  /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  TODO_update_address_taken,		/* todo_flags_start */
-  TODO_update_ssa
-  | TODO_verify_ssa			/* todo_flags_finish */
- }
+public:
+  pass_sra_early (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_sra_early, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_intra_sra (); }
+  unsigned int execute () { return early_intra_sra (); }
+
+}; // class pass_sra_early
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_sra_early (gcc::context *ctxt)
+{
+  return new pass_sra_early (ctxt);
+}
+
+namespace {
+
+const pass_data pass_data_sra =
+{
+  GIMPLE_PASS, /* type */
+  "sra", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_SRA, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  TODO_update_address_taken, /* todo_flags_start */
+  ( TODO_update_ssa | TODO_verify_ssa ), /* todo_flags_finish */
 };
+
+class pass_sra : public gimple_opt_pass
+{
+public:
+  pass_sra (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_sra, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_intra_sra (); }
+  unsigned int execute () { return late_intra_sra (); }
+
+}; // class pass_sra
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_sra (gcc::context *ctxt)
+{
+  return new pass_sra (ctxt);
+}
 
 
 /* Return true iff PARM (which must be a parm_decl) is an unused scalar
@@ -4252,7 +4292,7 @@ analyze_all_param_acesses (void)
 
   repr_state = splice_all_param_accesses (representatives);
   if (repr_state == NO_GOOD_ACCESS)
-    return ipa_parm_adjustment_vec();
+    return ipa_parm_adjustment_vec ();
 
   /* If there are any parameters passed by reference which are not modified
      directly, we need to check whether they can be modified indirectly.  */
@@ -4316,7 +4356,7 @@ analyze_all_param_acesses (void)
     adjustments = turn_representatives_into_adjustments (representatives,
 							 adjustments_count);
   else
-    adjustments = ipa_parm_adjustment_vec();
+    adjustments = ipa_parm_adjustment_vec ();
 
   representatives.release ();
   return adjustments;
@@ -4866,6 +4906,16 @@ modify_function (struct cgraph_node *node, ipa_parm_adjustment_vec adjustments)
   return cfg_changed;
 }
 
+/* If NODE has a caller, return true.  */
+
+static bool
+has_caller_p (struct cgraph_node *node, void *data ATTRIBUTE_UNUSED)
+{
+  if (node->callers)
+    return true;
+  return false;
+}
+
 /* Return false the function is apparently unsuitable for IPA-SRA based on it's
    attributes, return true otherwise.  NODE is the cgraph node of the current
    function.  */
@@ -4902,14 +4952,14 @@ ipa_sra_preliminary_function_checks (struct cgraph_node *node)
     }
 
   if ((DECL_COMDAT (node->symbol.decl) || DECL_EXTERNAL (node->symbol.decl))
-      && inline_summary(node)->size >= MAX_INLINE_INSNS_AUTO)
+      && inline_summary (node)->size >= MAX_INLINE_INSNS_AUTO)
     {
       if (dump_file)
 	fprintf (dump_file, "Function too big to be made truly local.\n");
       return false;
     }
 
-  if (!node->callers)
+  if (!cgraph_for_node_and_aliases (node, has_caller_p, NULL, true))
     {
       if (dump_file)
 	fprintf (dump_file,
@@ -5018,22 +5068,40 @@ ipa_early_sra_gate (void)
   return flag_ipa_sra && dbg_cnt (eipa_sra);
 }
 
-struct gimple_opt_pass pass_early_ipa_sra =
+namespace {
+
+const pass_data pass_data_early_ipa_sra =
 {
- {
-  GIMPLE_PASS,
-  "eipa_sra",	 			/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  ipa_early_sra_gate,			/* gate */
-  ipa_early_sra,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_IPA_SRA,				/* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_dump_symtab              	/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "eipa_sra", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_IPA_SRA, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_dump_symtab, /* todo_flags_finish */
 };
+
+class pass_early_ipa_sra : public gimple_opt_pass
+{
+public:
+  pass_early_ipa_sra (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_early_ipa_sra, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return ipa_early_sra_gate (); }
+  unsigned int execute () { return ipa_early_sra (); }
+
+}; // class pass_early_ipa_sra
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_early_ipa_sra (gcc::context *ctxt)
+{
+  return new pass_early_ipa_sra (ctxt);
+}

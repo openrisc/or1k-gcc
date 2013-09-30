@@ -33,7 +33,7 @@ along with GCC; see the file COPYING3.  If not see
 
 #include "system.h"
 #include "coretypes.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "cfgloop.h"
 #include "tree-chrec.h"
@@ -665,7 +665,7 @@ extract_affine_name (scop_p s, tree e, __isl_take isl_space *space)
 
   id = isl_id_for_ssa_name (s, e);
   dimension = isl_space_find_dim_by_id (space, isl_dim_param, id);
-  isl_id_free(id);
+  isl_id_free (id);
   dom = isl_set_universe (isl_space_copy (space));
   aff = isl_aff_zero_on_domain (isl_local_space_from_space (space));
   aff = isl_aff_add_coefficient_si (aff, isl_dim_param, dimension, 1);
@@ -994,7 +994,7 @@ build_loop_iteration_domains (scop_p scop, struct loop *loop,
   if (TREE_CODE (nb_iters) == INTEGER_CST)
     {
       c = isl_inequality_alloc
-	  (isl_local_space_from_space(isl_space_copy (space)));
+	  (isl_local_space_from_space (isl_space_copy (space)));
       c = isl_constraint_set_coefficient_si (c, isl_dim_set, pos, -1);
       tree_int_to_gmp (nb_iters, g);
       isl_int_set_gmp (v, g);
@@ -1132,8 +1132,8 @@ add_condition_to_pbb (poly_bb_p pbb, gimple stmt, enum tree_code code)
 	break;
 
       default:
-	isl_pw_aff_free(lhs);
-	isl_pw_aff_free(rhs);
+	isl_pw_aff_free (lhs);
+	isl_pw_aff_free (rhs);
 	return;
     }
 
@@ -1191,14 +1191,6 @@ add_conditions_to_constraints (scop_p scop)
     add_conditions_to_domain (pbb);
 }
 
-/* Structure used to pass data to dom_walk.  */
-
-struct bsc
-{
-  vec<gimple> *conditions, *cases;
-  sese region;
-};
-
 /* Returns a COND_EXPR statement when BB has a single predecessor, the
    edge between BB and its predecessor is not a loop exit edge, and
    the last statement of the single predecessor is a COND_EXPR.  */
@@ -1224,20 +1216,43 @@ single_pred_cond_non_loop_exit (basic_block bb)
   return NULL;
 }
 
+class sese_dom_walker : public dom_walker
+{
+public:
+  sese_dom_walker (cdi_direction, sese);
+  ~sese_dom_walker ();
+
+  virtual void before_dom_children (basic_block);
+  virtual void after_dom_children (basic_block);
+
+private:
+  vec<gimple> conditions_, cases_;
+  sese region_;
+};
+
+sese_dom_walker::sese_dom_walker (cdi_direction direction, sese region)
+  : dom_walker (direction), region_ (region)
+{
+  conditions_.create (3);
+  cases_.create (3);
+}
+
+sese_dom_walker::~sese_dom_walker ()
+{
+  conditions_.release ();
+  cases_.release ();
+}
+
 /* Call-back for dom_walk executed before visiting the dominated
    blocks.  */
 
-static void
-build_sese_conditions_before (struct dom_walk_data *dw_data,
-			      basic_block bb)
+void
+sese_dom_walker::before_dom_children (basic_block bb)
 {
-  struct bsc *data = (struct bsc *) dw_data->global_data;
-  vec<gimple> *conditions = data->conditions;
-  vec<gimple> *cases = data->cases;
   gimple_bb_p gbb;
   gimple stmt;
 
-  if (!bb_in_sese_p (bb, data->region))
+  if (!bb_in_sese_p (bb, region_))
     return;
 
   stmt = single_pred_cond_non_loop_exit (bb);
@@ -1246,73 +1261,37 @@ build_sese_conditions_before (struct dom_walk_data *dw_data,
     {
       edge e = single_pred_edge (bb);
 
-      conditions->safe_push (stmt);
+      conditions_.safe_push (stmt);
 
       if (e->flags & EDGE_TRUE_VALUE)
-	cases->safe_push (stmt);
+	cases_.safe_push (stmt);
       else
-	cases->safe_push (NULL);
+	cases_.safe_push (NULL);
     }
 
   gbb = gbb_from_bb (bb);
 
   if (gbb)
     {
-      GBB_CONDITIONS (gbb) = conditions->copy ();
-      GBB_CONDITION_CASES (gbb) = cases->copy ();
+      GBB_CONDITIONS (gbb) = conditions_.copy ();
+      GBB_CONDITION_CASES (gbb) = cases_.copy ();
     }
 }
 
 /* Call-back for dom_walk executed after visiting the dominated
    blocks.  */
 
-static void
-build_sese_conditions_after (struct dom_walk_data *dw_data,
-			     basic_block bb)
+void
+sese_dom_walker::after_dom_children (basic_block bb)
 {
-  struct bsc *data = (struct bsc *) dw_data->global_data;
-  vec<gimple> *conditions = data->conditions;
-  vec<gimple> *cases = data->cases;
-
-  if (!bb_in_sese_p (bb, data->region))
+  if (!bb_in_sese_p (bb, region_))
     return;
 
   if (single_pred_cond_non_loop_exit (bb))
     {
-      conditions->pop ();
-      cases->pop ();
+      conditions_.pop ();
+      cases_.pop ();
     }
-}
-
-/* Record all conditions in REGION.  */
-
-static void
-build_sese_conditions (sese region)
-{
-  struct dom_walk_data walk_data;
-  vec<gimple> conditions;
-  conditions.create (3);
-  vec<gimple> cases;
-  cases.create (3);
-  struct bsc data;
-
-  data.conditions = &conditions;
-  data.cases = &cases;
-  data.region = region;
-
-  walk_data.dom_direction = CDI_DOMINATORS;
-  walk_data.initialize_block_local_data = NULL;
-  walk_data.before_dom_children = build_sese_conditions_before;
-  walk_data.after_dom_children = build_sese_conditions_after;
-  walk_data.global_data = &data;
-  walk_data.block_local_data_size = 0;
-
-  init_walk_dominator_tree (&walk_data);
-  walk_dominator_tree (&walk_data, SESE_ENTRY_BB (region));
-  fini_walk_dominator_tree (&walk_data);
-
-  conditions.release ();
-  cases.release ();
 }
 
 /* Add constraints on the possible values of parameter P from the type
@@ -3179,7 +3158,8 @@ build_poly_scop (scop_p scop)
     rewrite_commutative_reductions_out_of_ssa (scop);
 
   build_sese_loop_nests (region);
-  build_sese_conditions (region);
+  /* Record all conditions in REGION.  */
+  sese_dom_walker (CDI_DOMINATORS, region).walk (cfun->cfg->x_entry_block_ptr);
   find_scop_parameters (scop);
 
   max_dim = PARAM_VALUE (PARAM_GRAPHITE_MAX_NB_SCOP_PARAMS);

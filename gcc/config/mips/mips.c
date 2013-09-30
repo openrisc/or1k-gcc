@@ -56,6 +56,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "target-globals.h"
 #include "opts.h"
 #include "tree-pass.h"
+#include "context.h"
 
 /* True if X is an UNSPEC wrapper around a SYMBOL_REF or LABEL_REF.  */
 #define UNSPEC_ADDRESS_P(X)					\
@@ -3857,7 +3858,7 @@ mips_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
 
     case MINUS:
       if (float_mode_p
-	  && (ISA_HAS_NMADD4_NMSUB4 (mode) || ISA_HAS_NMADD3_NMSUB3 (mode))
+	  && (ISA_HAS_NMADD4_NMSUB4 || ISA_HAS_NMADD3_NMSUB3)
 	  && TARGET_FUSED_MADD
 	  && !HONOR_NANS (mode)
 	  && !HONOR_SIGNED_ZEROS (mode))
@@ -3890,7 +3891,7 @@ mips_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
 	{
 	  /* If this is part of a MADD or MSUB, treat the PLUS as
 	     being free.  */
-	  if (ISA_HAS_FP4
+	  if ((ISA_HAS_FP_MADD4_MSUB4 || ISA_HAS_FP_MADD3_MSUB3)
 	      && TARGET_FUSED_MADD
 	      && GET_CODE (XEXP (x, 0)) == MULT)
 	    *total = 0;
@@ -3909,7 +3910,7 @@ mips_rtx_costs (rtx x, int code, int outer_code, int opno ATTRIBUTE_UNUSED,
 
     case NEG:
       if (float_mode_p
-	  && (ISA_HAS_NMADD4_NMSUB4 (mode) || ISA_HAS_NMADD3_NMSUB3 (mode))
+	  && (ISA_HAS_NMADD4_NMSUB4 || ISA_HAS_NMADD3_NMSUB3)
 	  && TARGET_FUSED_MADD
 	  && !HONOR_NANS (mode)
 	  && HONOR_SIGNED_ZEROS (mode))
@@ -8843,6 +8844,11 @@ mips_file_start (void)
     fprintf (asm_out_file, "\t.section .gcc_compiled_long%d\n"
 	     "\t.previous\n", TARGET_LONG64 ? 64 : 32);
 
+  /* Record the NaN encoding.  */
+  if (HAVE_AS_NAN || mips_nan != MIPS_IEEE_754_DEFAULT)
+    fprintf (asm_out_file, "\t.nan\t%s\n",
+	     mips_nan == MIPS_IEEE_754_2008 ? "2008" : "legacy");
+
 #ifdef HAVE_AS_GNU_ATTRIBUTE
   {
     int attr;
@@ -12291,6 +12297,7 @@ mips_adjust_insn_length (rtx insn, int length)
   /* mips.md uses MAX_PIC_BRANCH_LENGTH as a placeholder for the length
      of a PIC long-branch sequence.  Substitute the correct value.  */
   if (length == MAX_PIC_BRANCH_LENGTH
+      && JUMP_P (insn)
       && INSN_CODE (insn) >= 0
       && get_attr_type (insn) == TYPE_BRANCH)
     {
@@ -12312,7 +12319,9 @@ mips_adjust_insn_length (rtx insn, int length)
     length += TARGET_MIPS16 ? 2 : 4;
 
   /* See how many nops might be needed to avoid hardware hazards.  */
-  if (!cfun->machine->ignore_hazard_length_p && INSN_CODE (insn) >= 0)
+  if (!cfun->machine->ignore_hazard_length_p
+      && INSN_P (insn)
+      && INSN_CODE (insn) >= 0)
     switch (get_attr_hazard (insn))
       {
       case HAZARD_NONE:
@@ -16332,33 +16341,43 @@ mips_machine_reorg2 (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_mips_machine_reorg2 =
+namespace {
+
+const pass_data pass_data_mips_machine_reorg2 =
 {
- {
-  RTL_PASS,
-  "mach2",				/* name */
-  OPTGROUP_NONE,			/* optinfo_flags */
-  NULL,					/* gate */
-  mips_machine_reorg2,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_MACH_DEP,				/* tv_id */
-  0,					/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_rtl_sharing,		/* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "mach2", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_MACH_DEP, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_rtl_sharing, /* todo_flags_finish */
 };
 
-struct register_pass_info insert_pass_mips_machine_reorg2 =
+class pass_mips_machine_reorg2 : public rtl_opt_pass
 {
-  &pass_mips_machine_reorg2.pass,	/* pass */
-  "dbr",				/* reference_pass_name */
-  1,					/* ref_pass_instance_number */
-  PASS_POS_INSERT_AFTER			/* po_op */
-};
+public:
+  pass_mips_machine_reorg2(gcc::context *ctxt)
+    : rtl_opt_pass(pass_data_mips_machine_reorg2, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return mips_machine_reorg2 (); }
+
+}; // class pass_mips_machine_reorg2
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_mips_machine_reorg2 (gcc::context *ctxt)
+{
+  return new pass_mips_machine_reorg2 (ctxt);
+}
+
 
 /* Implement TARGET_ASM_OUTPUT_MI_THUNK.  Generate rtl rather than asm text
    in order to avoid duplicating too much logic from elsewhere.  */
@@ -16832,6 +16851,11 @@ mips_option_override (void)
 
   /* End of code shared with GAS.  */
 
+  /* The R5900 FPU only supports single precision.  */
+  if (TARGET_MIPS5900 && TARGET_HARD_FLOAT_ABI && TARGET_DOUBLE_FLOAT)
+    error ("unsupported combination: %s",
+	   "-march=r5900 -mhard-float -mdouble-float");
+
   /* If a -mlong* option was given, check that it matches the ABI,
      otherwise infer the -mlong* setting from the other options.  */
   if ((target_flags_explicit & MASK_LONG64) != 0)
@@ -16973,6 +16997,15 @@ mips_option_override (void)
 	    warning (0, "cannot use small-data accesses for %qs",
 		     "-mabicalls");
 	}
+    }
+
+  /* Pre-IEEE 754-2008 MIPS hardware has a quirky almost-IEEE format
+     for all its floating point.  */
+  if (mips_nan != MIPS_IEEE_754_2008)
+    {
+      REAL_MODE_FORMAT (SFmode) = &mips_single_format;
+      REAL_MODE_FORMAT (DFmode) = &mips_double_format;
+      REAL_MODE_FORMAT (TFmode) = &mips_quad_format;
     }
 
   /* Make sure that the user didn't turn off paired single support when
@@ -17138,7 +17171,18 @@ mips_option_override (void)
   /* We register a second machine specific reorg pass after delay slot
      filling.  Registering the pass must be done at start up.  It's
      convenient to do it here.  */
+  opt_pass *new_pass = make_pass_mips_machine_reorg2 (g);
+  struct register_pass_info insert_pass_mips_machine_reorg2 =
+    {
+      new_pass,		/* pass */
+      "dbr",			/* reference_pass_name */
+      1,			/* ref_pass_instance_number */
+      PASS_POS_INSERT_AFTER	/* po_op */
+    };
   register_pass (&insert_pass_mips_machine_reorg2);
+
+  if (TARGET_HARD_FLOAT_ABI && TARGET_MIPS5900)
+    REAL_MODE_FORMAT (SFmode) = &spu_single_format;
 }
 
 /* Swap the register information for registers I and I + 1, which
@@ -18605,6 +18649,18 @@ mips_expand_vec_minmax (rtx target, rtx op0, rtx op1,
   x = gen_rtx_IOR (vmode, t0, t1);
   emit_insn (gen_rtx_SET (VOIDmode, target, x));
 }
+
+/* Implement TARGET_CASE_VALUES_THRESHOLD.  */
+
+unsigned int
+mips_case_values_threshold (void)
+{
+  /* In MIPS16 mode using a larger case threshold generates smaller code.  */
+  if (TARGET_MIPS16 && optimize_size)
+    return 10;
+  else
+    return default_case_values_threshold ();
+}
 
 /* Initialize the GCC target structure.  */
 #undef TARGET_ASM_ALIGNED_HI_OP
@@ -18835,6 +18891,9 @@ mips_expand_vec_minmax (rtx target, rtx op0, rtx op1,
 
 #undef TARGET_VECTORIZE_VEC_PERM_CONST_OK
 #define TARGET_VECTORIZE_VEC_PERM_CONST_OK mips_vectorize_vec_perm_const_ok
+
+#undef TARGET_CASE_VALUES_THRESHOLD
+#define TARGET_CASE_VALUES_THRESHOLD mips_case_values_threshold
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

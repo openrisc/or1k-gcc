@@ -28,7 +28,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-iterator.h"
 #include "diagnostic.h"
 #include "gimple-pretty-print.h" /* FIXME */
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-dump.h"
 #include "dumpfile.h"
 
@@ -409,8 +409,6 @@ print_node (FILE *file, const char *prefix, tree node, int indent)
       if (code == FIELD_DECL && DECL_NONADDRESSABLE_P (node))
 	fputs (" nonaddressable", file);
 
-      if (code == LABEL_DECL && DECL_ERROR_ISSUED (node))
-	fputs (" error-issued", file);
       if (code == LABEL_DECL && EH_LANDING_PAD_NR (node))
 	fprintf (file, " landing-pad:%d", EH_LANDING_PAD_NR (node));
 
@@ -820,7 +818,7 @@ print_node (FILE *file, const char *prefix, tree node, int indent)
 		if (ch >= ' ' && ch < 127)
 		  putc (ch, file);
 		else
-		  fprintf(file, "\\%03o", ch & 0xFF);
+		  fprintf (file, "\\%03o", ch & 0xFF);
 	      }
 	    fputc ('\"', file);
 	  }

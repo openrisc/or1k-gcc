@@ -271,13 +271,13 @@ rshift_double (unsigned HOST_WIDE_INT l1, HOST_WIDE_INT h1,
     ;
   else if ((prec - count) >= HOST_BITS_PER_WIDE_INT)
     {
-      *hv &= ~((HOST_WIDE_INT) (-1) << (prec - count - HOST_BITS_PER_WIDE_INT));
+      *hv &= ~(HOST_WIDE_INT_M1U << (prec - count - HOST_BITS_PER_WIDE_INT));
       *hv |= signmask << (prec - count - HOST_BITS_PER_WIDE_INT);
     }
   else
     {
       *hv = signmask;
-      *lv &= ~((unsigned HOST_WIDE_INT) (-1) << (prec - count));
+      *lv &= ~(HOST_WIDE_INT_M1U << (prec - count));
       *lv |= signmask << (prec - count);
     }
 }
@@ -328,13 +328,13 @@ lshift_double (unsigned HOST_WIDE_INT l1, HOST_WIDE_INT h1,
     ;
   else if (prec >= HOST_BITS_PER_WIDE_INT)
     {
-      *hv &= ~((HOST_WIDE_INT) (-1) << (prec - HOST_BITS_PER_WIDE_INT));
+      *hv &= ~(HOST_WIDE_INT_M1U << (prec - HOST_BITS_PER_WIDE_INT));
       *hv |= signmask << (prec - HOST_BITS_PER_WIDE_INT);
     }
   else
     {
       *hv = signmask;
-      *lv &= ~((unsigned HOST_WIDE_INT) (-1) << prec);
+      *lv &= ~(HOST_WIDE_INT_M1U << prec);
       *lv |= signmask << prec;
     }
 }
@@ -1555,11 +1555,11 @@ mpz_get_double_int (const_tree type, mpz_t val, bool wrap)
      for representing the value.  The code to calculate count is
      extracted from the GMP manual, section "Integer Import and Export":
      http://gmplib.org/manual/Integer-Import-and-Export.html  */
-  numb = 8*sizeof(HOST_WIDE_INT);
+  numb = 8 * sizeof (HOST_WIDE_INT);
   count = (mpz_sizeinbase (val, 2) + numb-1) / numb;
   if (count < 2)
     count = 2;
-  vp = (unsigned HOST_WIDE_INT *) alloca (count * sizeof(HOST_WIDE_INT));
+  vp = (unsigned HOST_WIDE_INT *) alloca (count * sizeof (HOST_WIDE_INT));
 
   vp[0] = 0;
   vp[1] = 0;

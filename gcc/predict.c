@@ -50,7 +50,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "params.h"
 #include "target.h"
 #include "cfgloop.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "ggc.h"
 #include "tree-pass.h"
 #include "tree-scalar-evolution.h"
@@ -232,8 +232,38 @@ bool
 probably_never_executed_bb_p (struct function *fun, const_basic_block bb)
 {
   gcc_checking_assert (fun);
+  if (profile_status_for_function (fun) == PROFILE_READ)
+    {
+      if ((bb->count * 4 + profile_info->runs / 2) / profile_info->runs > 0)
+	return false;
+      if (!bb->frequency)
+	return true;
+      if (!ENTRY_BLOCK_PTR->frequency)
+	return false;
+      if (ENTRY_BLOCK_PTR->count && ENTRY_BLOCK_PTR->count < REG_BR_PROB_BASE)
+	{
+	  return (RDIV (bb->frequency * ENTRY_BLOCK_PTR->count,
+		        ENTRY_BLOCK_PTR->frequency)
+		  < REG_BR_PROB_BASE / 4);
+	}
+      return true;
+    }
+  if ((!profile_info || !flag_branch_probabilities)
+      && (cgraph_get_node (fun->decl)->frequency
+	  == NODE_FREQUENCY_UNLIKELY_EXECUTED))
+    return true;
+  return false;
+}
+
+
+/* Return true in case edge E is probably never executed.  */
+
+bool
+probably_never_executed_edge_p (struct function *fun, edge e)
+{
+  gcc_checking_assert (fun);
   if (profile_info && flag_branch_probabilities)
-    return ((bb->count + profile_info->runs / 2) / profile_info->runs) == 0;
+    return ((e->count + profile_info->runs / 2) / profile_info->runs) == 0;
   if ((!profile_info || !flag_branch_probabilities)
       && (cgraph_get_node (fun->decl)->frequency
 	  == NODE_FREQUENCY_UNLIKELY_EXECUTED))
@@ -498,7 +528,7 @@ bool
 br_prob_note_reliable_p (const_rtx note)
 {
   gcc_assert (REG_NOTE_KIND (note) == REG_BR_PROB);
-  return probability_reliable_p (INTVAL (XEXP (note, 0)));
+  return probability_reliable_p (XINT (note, 0));
 }
 
 static void
@@ -652,7 +682,7 @@ invert_br_probabilities (rtx insn)
 
   for (note = REG_NOTES (insn); note; note = XEXP (note, 1))
     if (REG_NOTE_KIND (note) == REG_BR_PROB)
-      XEXP (note, 0) = GEN_INT (REG_BR_PROB_BASE - INTVAL (XEXP (note, 0)));
+      XINT (note, 0) = REG_BR_PROB_BASE - XINT (note, 0);
     else if (REG_NOTE_KIND (note) == REG_BR_PRED)
       XEXP (XEXP (note, 0), 1)
 	= GEN_INT (REG_BR_PROB_BASE - INTVAL (XEXP (XEXP (note, 0), 1)));
@@ -806,7 +836,7 @@ combine_predictions_for_insn (rtx insn, basic_block bb)
 
   if (!prob_note)
     {
-      add_reg_note (insn, REG_BR_PROB, GEN_INT (combined_probability));
+      add_int_reg_note (insn, REG_BR_PROB, combined_probability);
 
       /* Save the prediction into CFG in case we are seeing non-degenerated
 	 conditional jump.  */
@@ -819,7 +849,7 @@ combine_predictions_for_insn (rtx insn, basic_block bb)
     }
   else if (!single_succ_p (bb))
     {
-      int prob = INTVAL (XEXP (prob_note, 0));
+      int prob = XINT (prob_note, 0);
 
       BRANCH_EDGE (bb)->probability = prob;
       FALLTHRU_EDGE (bb)->probability = REG_BR_PROB_BASE - prob;
@@ -2841,13 +2871,14 @@ compute_function_frequency (void)
 {
   basic_block bb;
   struct cgraph_node *node = cgraph_get_node (current_function_decl);
+
   if (DECL_STATIC_CONSTRUCTOR (current_function_decl)
       || MAIN_NAME_P (DECL_NAME (current_function_decl)))
     node->only_called_at_startup = true;
   if (DECL_STATIC_DESTRUCTOR (current_function_decl))
     node->only_called_at_exit = true;
 
-  if (!profile_info || !flag_branch_probabilities)
+  if (profile_status != PROFILE_READ)
     {
       int flags = flags_from_decl_or_type (current_function_decl);
       if (lookup_attribute ("cold", DECL_ATTRIBUTES (current_function_decl))
@@ -2865,7 +2896,13 @@ compute_function_frequency (void)
         node->frequency = NODE_FREQUENCY_EXECUTED_ONCE;
       return;
     }
-  node->frequency = NODE_FREQUENCY_UNLIKELY_EXECUTED;
+
+  /* Only first time try to drop function into unlikely executed.
+     After inlining the roundoff errors may confuse us.
+     Ipa-profile pass will drop functions only called from unlikely
+     functions to unlikely and that is most of what we care about.  */
+  if (!cfun->after_inlining)
+    node->frequency = NODE_FREQUENCY_UNLIKELY_EXECUTED;
   FOR_EACH_BB (bb)
     {
       if (maybe_hot_bb_p (cfun, bb))
@@ -2900,45 +2937,81 @@ predictor_name (enum br_predictor predictor)
   return predictor_info[predictor].name;
 }
 
-struct gimple_opt_pass pass_profile =
+namespace {
+
+const pass_data pass_data_profile =
 {
- {
-  GIMPLE_PASS,
-  "profile_estimate",			/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_estimate_probability,		/* gate */
-  tree_estimate_probability_driver,	/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_BRANCH_PROB,			/* tv_id */
-  PROP_cfg,				/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_ssa			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "profile_estimate", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_BRANCH_PROB, /* tv_id */
+  PROP_cfg, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_ssa, /* todo_flags_finish */
 };
 
-struct gimple_opt_pass pass_strip_predict_hints =
+class pass_profile : public gimple_opt_pass
 {
- {
-  GIMPLE_PASS,
-  "*strip_predict_hints",		/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,					/* gate */
-  strip_predict_hints,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_BRANCH_PROB,			/* tv_id */
-  PROP_cfg,				/* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_verify_ssa			/* todo_flags_finish */
- }
+public:
+  pass_profile (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_profile, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_estimate_probability (); }
+  unsigned int execute () { return tree_estimate_probability_driver (); }
+
+}; // class pass_profile
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_profile (gcc::context *ctxt)
+{
+  return new pass_profile (ctxt);
+}
+
+namespace {
+
+const pass_data pass_data_strip_predict_hints =
+{
+  GIMPLE_PASS, /* type */
+  "*strip_predict_hints", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_BRANCH_PROB, /* tv_id */
+  PROP_cfg, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_verify_ssa, /* todo_flags_finish */
 };
+
+class pass_strip_predict_hints : public gimple_opt_pass
+{
+public:
+  pass_strip_predict_hints (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_strip_predict_hints, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  opt_pass * clone () { return new pass_strip_predict_hints (ctxt_); }
+  unsigned int execute () { return strip_predict_hints (); }
+
+}; // class pass_strip_predict_hints
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_strip_predict_hints (gcc::context *ctxt)
+{
+  return new pass_strip_predict_hints (ctxt);
+}
 
 /* Rebuild function frequencies.  Passes are in general expected to
    maintain profile by hand, however in some cases this is not possible:

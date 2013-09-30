@@ -64,7 +64,7 @@
    instead.  */
 #define ALLOCA_THRESHOLD 1000
 
-/* Let code below know whether we are targetting VMS without need of
+/* Let code below know whether we are targeting VMS without need of
    intrusive preprocessor directives.  */
 #ifndef TARGET_ABI_OPEN_VMS
 #define TARGET_ABI_OPEN_VMS 0
@@ -257,6 +257,8 @@ static tree pos_to_constructor (Node_Id, tree, Entity_Id);
 static void validate_unchecked_conversion (Node_Id);
 static tree maybe_implicit_deref (tree);
 static void set_expr_location_from_node (tree, Node_Id);
+static void set_expr_location_from_node1 (tree, Node_Id, bool);
+static bool Sloc_to_locus1 (Source_Ptr, location_t *, bool);
 static bool set_end_locus_from_node (tree, Node_Id);
 static void set_gnu_expr_location_from_node (tree, Node_Id);
 static int lvalue_required_p (Node_Id, tree, bool, bool, bool);
@@ -288,9 +290,6 @@ gigi (Node_Id gnat_root, int max_gnat_node, int number_name ATTRIBUTE_UNUSED,
   tree int64_type = gnat_type_for_size (64, 0);
   struct elab_info *info;
   int i;
-#ifdef ORDINARY_MAP_INSTANCE
-  struct line_map *map;
-#endif
 
   max_gnat_nodes = max_gnat_node;
 
@@ -304,10 +303,6 @@ gigi (Node_Id gnat_root, int max_gnat_node, int number_name ATTRIBUTE_UNUSED,
   List_Headers_Ptr = list_headers_ptr;
 
   type_annotate_only = (gigi_operating_mode == 1);
-
-  /* ??? Disable the generation of the SCO instance table until after the
-     back-end supports instance based debug info discriminators.  */
-  Generate_SCO_Instance_Table = False;
 
   for (i = 0; i < number_file; i++)
     {
@@ -328,11 +323,6 @@ gigi (Node_Id gnat_root, int max_gnat_node, int number_name ATTRIBUTE_UNUSED,
       /* We create the line map for a source file at once, with a fixed number
 	 of columns chosen to avoid jumping over the next power of 2.  */
       linemap_add (line_table, LC_ENTER, 0, filename, 1);
-#ifdef ORDINARY_MAP_INSTANCE
-      map = LINEMAPS_ORDINARY_MAP_AT (line_table, i);
-      if (flag_debug_instances)
-	ORDINARY_MAP_INSTANCE (map) = file_info_ptr[i].Instance;
-#endif
       linemap_line_start (line_table, file_info_ptr[i].Num_Source_Lines, 252);
       linemap_position_for_column (line_table, 252 - 1);
       linemap_add (line_table, LC_LEAVE, 0, NULL, 0);
@@ -1401,6 +1391,7 @@ Pragma_to_gnu (Node_Id gnat_node)
 static tree
 Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 {
+  const Node_Id gnat_prefix = Prefix (gnat_node);
   tree gnu_prefix, gnu_type, gnu_expr;
   tree gnu_result_type, gnu_result = error_mark_node;
   bool prefix_unused = false;
@@ -1410,13 +1401,13 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
      parameter types might be incomplete types coming from a limited with.  */
   if (Ekind (Etype (gnat_node)) == E_Access_Subprogram_Type
       && Is_Dispatch_Table_Entity (Etype (gnat_node))
-      && Nkind (Prefix (gnat_node)) == N_Identifier
-      && Is_Subprogram (Entity (Prefix (gnat_node)))
-      && Is_Public (Entity (Prefix (gnat_node)))
-      && !present_gnu_tree (Entity (Prefix (gnat_node))))
-    gnu_prefix = get_minimal_subprog_decl (Entity (Prefix (gnat_node)));
+      && Nkind (gnat_prefix) == N_Identifier
+      && Is_Subprogram (Entity (gnat_prefix))
+      && Is_Public (Entity (gnat_prefix))
+      && !present_gnu_tree (Entity (gnat_prefix)))
+    gnu_prefix = get_minimal_subprog_decl (Entity (gnat_prefix));
   else
-    gnu_prefix = gnat_to_gnu (Prefix (gnat_node));
+    gnu_prefix = gnat_to_gnu (gnat_prefix);
   gnu_type = TREE_TYPE (gnu_prefix);
 
   /* If the input is a NULL_EXPR, make a new one.  */
@@ -1559,8 +1550,8 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 	 since it can use a special calling convention on some platforms,
 	 which cannot be propagated to the access type.  */
       else if (attribute == Attr_Access
-	       && Nkind (Prefix (gnat_node)) == N_Identifier
-	       && is_cplusplus_method (Entity (Prefix (gnat_node))))
+	       && Nkind (gnat_prefix) == N_Identifier
+	       && is_cplusplus_method (Entity (gnat_prefix)))
 	post_error ("access to C++ constructor or member function not allowed",
 		    gnat_node);
 
@@ -1671,13 +1662,12 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 	  /* If this is a dereference and we have a special dynamic constrained
 	     subtype on the prefix, use it to compute the size; otherwise, use
 	     the designated subtype.  */
-	  if (Nkind (Prefix (gnat_node)) == N_Explicit_Dereference)
+	  if (Nkind (gnat_prefix) == N_Explicit_Dereference)
 	    {
-	      Node_Id gnat_deref = Prefix (gnat_node);
 	      Node_Id gnat_actual_subtype
-		= Actual_Designated_Subtype (gnat_deref);
+		= Actual_Designated_Subtype (gnat_prefix);
 	      tree gnu_ptr_type
-		= TREE_TYPE (gnat_to_gnu (Prefix (gnat_deref)));
+		= TREE_TYPE (gnat_to_gnu (Prefix (gnat_prefix)));
 
 	      if (TYPE_IS_FAT_OR_THIN_POINTER_P (gnu_ptr_type)
 		  && Present (gnat_actual_subtype))
@@ -1738,7 +1728,6 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 	  align = DECL_ALIGN (TREE_OPERAND (gnu_prefix, 1)) / BITS_PER_UNIT;
 	else
 	  {
-	    Node_Id gnat_prefix = Prefix (gnat_node);
 	    Entity_Id gnat_type = Etype (gnat_prefix);
 	    unsigned int double_align;
 	    bool is_capped_double, align_clause;
@@ -1810,28 +1799,38 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 			 : 1), i;
 	struct parm_attr_d *pa = NULL;
 	Entity_Id gnat_param = Empty;
+	bool unconstrained_ptr_deref = false;
 
 	/* Make sure any implicit dereference gets done.  */
 	gnu_prefix = maybe_implicit_deref (gnu_prefix);
 	gnu_prefix = maybe_unconstrained_array (gnu_prefix);
 
-	/* We treat unconstrained array In parameters specially.  */
-	if (!Is_Constrained (Etype (Prefix (gnat_node))))
-	  {
-	    Node_Id gnat_prefix = Prefix (gnat_node);
+	/* We treat unconstrained array In parameters specially.  We also note
+	   whether we are dereferencing a pointer to unconstrained array.  */
+	if (!Is_Constrained (Etype (gnat_prefix)))
+	  switch (Nkind (gnat_prefix))
+	    {
+	    case N_Identifier:
+	      /* This is the direct case.  */
+	      if (Ekind (Entity (gnat_prefix)) == E_In_Parameter)
+		gnat_param = Entity (gnat_prefix);
+	      break;
 
-	    /* This is the direct case.  */
-	    if (Nkind (gnat_prefix) == N_Identifier
-		&& Ekind (Entity (gnat_prefix)) == E_In_Parameter)
-	      gnat_param = Entity (gnat_prefix);
+	    case N_Explicit_Dereference:
+	      /* This is the indirect case.  Note that we need to be sure that
+		 the access value cannot be null as we'll hoist the load.  */
+	      if (Nkind (Prefix (gnat_prefix)) == N_Identifier
+		  && Ekind (Entity (Prefix (gnat_prefix))) == E_In_Parameter)
+		{
+		  if (Can_Never_Be_Null (Entity (Prefix (gnat_prefix))))
+		    gnat_param = Entity (Prefix (gnat_prefix));
+		}
+	      else
+		unconstrained_ptr_deref = true;
+	      break;
 
-	    /* This is the indirect case.  Note that we need to be sure that
-	       the access value cannot be null as we'll hoist the load.  */
-	    if (Nkind (gnat_prefix) == N_Explicit_Dereference
-		&& Nkind (Prefix (gnat_prefix)) == N_Identifier
-		&& Ekind (Entity (Prefix (gnat_prefix))) == E_In_Parameter
-		&& Can_Never_Be_Null (Entity (Prefix (gnat_prefix))))
-	      gnat_param = Entity (Prefix (gnat_prefix));
+	    default:
+	      break;
 	  }
 
 	/* If the prefix is the view conversion of a constrained array to an
@@ -1966,22 +1965,54 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 	  {
 	    gnu_result
 	      = build1 (SAVE_EXPR, TREE_TYPE (gnu_result), gnu_result);
-	    if (attribute == Attr_First)
-	      pa->first = gnu_result;
-	    else if (attribute == Attr_Last)
-	      pa->last = gnu_result;
-	    else
-	      pa->length = gnu_result;
+	    switch (attribute)
+	      {
+	      case Attr_First:
+		pa->first = gnu_result;
+		break;
+
+	      case Attr_Last:
+		pa->last = gnu_result;
+		break;
+
+	      case Attr_Length:
+	      case Attr_Range_Length:
+		pa->length = gnu_result;
+		break;
+
+	      default:
+		gcc_unreachable ();
+	      }
 	  }
 
-	/* Set the source location onto the predicate of the condition in the
-	   'Length case but do not do it if the expression is cached to avoid
-	   messing up the debug info.  */
-	else if ((attribute == Attr_Range_Length || attribute == Attr_Length)
-		 && TREE_CODE (gnu_result) == COND_EXPR
-		 && EXPR_P (TREE_OPERAND (gnu_result, 0)))
-	  set_expr_location_from_node (TREE_OPERAND (gnu_result, 0),
-				       gnat_node);
+	/* Otherwise, evaluate it each time it is referenced.  */
+	else
+	  switch (attribute)
+	    {
+	    case Attr_First:
+	    case Attr_Last:
+	      /* If we are dereferencing a pointer to unconstrained array, we
+		 need to capture the value because the pointed-to bounds may
+		 subsequently be released.  */
+	      if (unconstrained_ptr_deref)
+		gnu_result
+		  = build1 (SAVE_EXPR, TREE_TYPE (gnu_result), gnu_result);
+	      break;
+
+	    case Attr_Length:
+	    case Attr_Range_Length:
+	      /* Set the source location onto the predicate of the condition
+		 but not if the expression is cached to avoid messing up the
+		 debug info.  */
+	      if (TREE_CODE (gnu_result) == COND_EXPR
+		  && EXPR_P (TREE_OPERAND (gnu_result, 0)))
+		set_expr_location_from_node (TREE_OPERAND (gnu_result, 0),
+					     gnat_node);
+	      break;
+
+	    default:
+	      gcc_unreachable ();
+	    }
 
 	break;
       }
@@ -2154,8 +2185,8 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
 
     case Attr_Mechanism_Code:
       {
+	Entity_Id gnat_obj = Entity (gnat_prefix);
 	int code;
-	Entity_Id gnat_obj = Entity (Prefix (gnat_node));
 
 	prefix_unused = true;
 	gnu_result_type = get_unpadded_type (Etype (gnat_node));
@@ -2190,10 +2221,11 @@ Attribute_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, int attribute)
      it has a side-effect.  But don't do it if the prefix is just an entity
      name.  However, if an access check is needed, we must do it.  See second
      example in AARM 11.6(5.e).  */
-  if (prefix_unused && TREE_SIDE_EFFECTS (gnu_prefix)
-      && !Is_Entity_Name (Prefix (gnat_node)))
-    gnu_result = build_compound_expr  (TREE_TYPE (gnu_result), gnu_prefix,
-				       gnu_result);
+  if (prefix_unused
+      && TREE_SIDE_EFFECTS (gnu_prefix)
+      && !Is_Entity_Name (gnat_prefix))
+    gnu_result
+      = build_compound_expr  (TREE_TYPE (gnu_result), gnu_prefix, gnu_result);
 
   *gnu_result_type_p = gnu_result_type;
   return gnu_result;
@@ -2391,7 +2423,10 @@ can_equal_min_or_max_val_p (tree val, tree type, bool max)
   if (TREE_CODE (val) != INTEGER_CST)
     return true;
 
-  return tree_int_cst_equal (val, min_or_max_val) == 1;
+  if (max)
+    return tree_int_cst_lt (val, min_or_max_val) == 0;
+  else
+    return tree_int_cst_lt (min_or_max_val, val) == 0;
 }
 
 /* Return true if VAL (of type TYPE) can equal the minimum value of TYPE.
@@ -2716,7 +2751,7 @@ Loop_Statement_to_gnu (Node_Id gnat_node)
 
       /* First, if we have computed a small number of invariant conditions for
 	 range checks applied to the iteration variable, then initialize these
-	 conditions in front of the loop.  Otherwise, leave them set to True.
+	 conditions in front of the loop.  Otherwise, leave them set to true.
 
 	 ??? The heuristics need to be improved, by taking into account the
 	     following datapoints:
@@ -3600,6 +3635,8 @@ Subprogram_Body_to_gnu (Node_Id gnat_node)
     {
       tree gnu_retval;
 
+      gnu_return_var_stack->pop ();
+
       add_stmt (gnu_result);
       add_stmt (build1 (LABEL_EXPR, void_type_node,
 			gnu_return_label_stack->last ()));
@@ -4019,9 +4056,19 @@ Call_to_gnu (Node_Id gnat_node, tree *gnu_result_type_p, tree gnu_target,
 	  /* Set up to move the copy back to the original if needed.  */
 	  if (!in_param)
 	    {
-	      gnu_stmt = build_binary_op (MODIFY_EXPR, NULL_TREE, gnu_orig,
-					  gnu_temp);
+	      /* If the original is a COND_EXPR whose first arm isn't meant to
+		 be further used, just deal with the second arm.  This is very
+		 likely the conditional expression built for a check.  */
+	      if (TREE_CODE (gnu_orig) == COND_EXPR
+		  && TREE_CODE (TREE_OPERAND (gnu_orig, 1)) == COMPOUND_EXPR
+		  && integer_zerop
+		     (TREE_OPERAND (TREE_OPERAND (gnu_orig, 1), 1)))
+		gnu_orig = TREE_OPERAND (gnu_orig, 2);
+
+	      gnu_stmt
+		= build_binary_op (MODIFY_EXPR, NULL_TREE, gnu_orig, gnu_temp);
 	      set_expr_location_from_node (gnu_stmt, gnat_node);
+
 	      append_to_statement_list (gnu_stmt, &gnu_after_list);
 	    }
 	}
@@ -4458,6 +4505,10 @@ Handled_Sequence_Of_Statements_to_gnu (Node_Id gnat_node)
   tree gnu_result;
   tree gnu_expr;
   Node_Id gnat_temp;
+  /* Node providing the sloc for the cleanup actions.  */
+  Node_Id gnat_cleanup_loc_node = (Present (End_Label (gnat_node)) ?
+                                   End_Label (gnat_node) :
+                                   gnat_node);
 
   /* The GCC exception handling mechanism can handle both ZCX and SJLJ schemes
      and we have our own SJLJ mechanism.  To call the GCC mechanism, we call
@@ -4507,7 +4558,7 @@ Handled_Sequence_Of_Statements_to_gnu (Node_Id gnat_node)
 
       /* When we exit this block, restore the saved value.  */
       add_cleanup (build_call_n_expr (set_jmpbuf_decl, 1, gnu_jmpsave_decl),
-		   End_Label (gnat_node));
+		   gnat_cleanup_loc_node);
     }
 
   /* If we are to call a function when exiting this block, add a cleanup
@@ -4515,7 +4566,7 @@ Handled_Sequence_Of_Statements_to_gnu (Node_Id gnat_node)
      so we must register this cleanup after the EH cleanup just above.  */
   if (at_end)
     add_cleanup (build_call_n_expr (gnat_to_gnu (At_End_Proc (gnat_node)), 0),
-		 End_Label (gnat_node));
+		 gnat_cleanup_loc_node);
 
   /* Now build the tree for the declarations and statements inside this block.
      If this is SJLJ, set our jmp_buf as the current buffer.  */
@@ -4628,14 +4679,18 @@ Handled_Sequence_Of_Statements_to_gnu (Node_Id gnat_node)
       /* Now make the TRY_CATCH_EXPR for the block.  */
       gnu_result = build2 (TRY_CATCH_EXPR, void_type_node,
 			   gnu_inner_block, gnu_handlers);
-      /* Set a location.  We need to find a uniq location for the dispatching
+      /* Set a location.  We need to find a unique location for the dispatching
 	 code, otherwise we can get coverage or debugging issues.  Try with
 	 the location of the end label.  */
       if (Present (End_Label (gnat_node))
 	  && Sloc_to_locus (Sloc (End_Label (gnat_node)), &locus))
 	SET_EXPR_LOCATION (gnu_result, locus);
       else
-	set_expr_location_from_node (gnu_result, gnat_node);
+        /* Clear column information so that the exception handler of an
+           implicit transient block does not incorrectly inherit the slocs
+           of a decision, which would otherwise confuse control flow based
+           coverage analysis tools.  */
+	set_expr_location_from_node1 (gnu_result, gnat_node, true);
     }
   else
     gnu_result = gnu_inner_block;
@@ -4830,9 +4885,10 @@ Exception_Handler_to_gnu_zcx (Node_Id gnat_node)
   add_stmt_with_node (build_call_n_expr (begin_handler_decl, 1,
 					 gnu_incoming_exc_ptr),
 		      gnat_node);
-  /* ??? We don't seem to have an End_Label at hand to set the location.  */
+  /* We don't have an End_Label at hand to set the location of the cleanup
+     actions, so we use that of the exception handler itself instead.  */
   add_cleanup (build_call_n_expr (end_handler_decl, 1, gnu_incoming_exc_ptr),
-	       Empty);
+	       gnat_node);
   add_stmt_list (Statements (gnat_node));
   gnat_poplevel ();
 
@@ -7384,13 +7440,15 @@ mark_visited (tree t)
 }
 
 /* Add GNU_CLEANUP, a cleanup action, to the current code group and
-   set its location to that of GNAT_NODE if present.  */
+   set its location to that of GNAT_NODE if present, but with column info
+   cleared so that conditional branches generated as part of the cleanup
+   code do not interfere with coverage analysis tools.  */
 
 static void
 add_cleanup (tree gnu_cleanup, Node_Id gnat_node)
 {
   if (Present (gnat_node))
-    set_expr_location_from_node (gnu_cleanup, gnat_node);
+    set_expr_location_from_node1 (gnu_cleanup, gnat_node, true);
   append_to_statement_list (gnu_cleanup, &current_stmt_group->cleanups);
 }
 
@@ -9005,10 +9063,11 @@ maybe_implicit_deref (tree exp)
 
 /* Convert SLOC into LOCUS.  Return true if SLOC corresponds to a source code
    location and false if it doesn't.  In the former case, set the Gigi global
-   variable REF_FILENAME to the simple debug file name as given by sinput.  */
+   variable REF_FILENAME to the simple debug file name as given by sinput.
+   If clear_column is true, set column information to 0.  */
 
-bool
-Sloc_to_locus (Source_Ptr Sloc, location_t *locus)
+static bool
+Sloc_to_locus1 (Source_Ptr Sloc, location_t *locus, bool clear_column)
 {
   if (Sloc == No_Location)
     return false;
@@ -9022,7 +9081,7 @@ Sloc_to_locus (Source_Ptr Sloc, location_t *locus)
     {
       Source_File_Index file = Get_Source_File_Index (Sloc);
       Logical_Line_Number line = Get_Logical_Line_Number (Sloc);
-      Column_Number column = Get_Column_Number (Sloc);
+      Column_Number column = (clear_column ? 0 : Get_Column_Number (Sloc));
       struct line_map *map = LINEMAPS_ORDINARY_MAP_AT (line_table, file - 1);
 
       /* We can have zero if pragma Source_Reference is in effect.  */
@@ -9041,18 +9100,34 @@ Sloc_to_locus (Source_Ptr Sloc, location_t *locus)
   return true;
 }
 
+/* Similar to the above, not clearing the column information.  */
+
+bool
+Sloc_to_locus (Source_Ptr Sloc, location_t *locus)
+{
+  return Sloc_to_locus1 (Sloc, locus, false);
+}
+
 /* Similar to set_expr_location, but start with the Sloc of GNAT_NODE and
    don't do anything if it doesn't correspond to a source location.  */
 
 static void
-set_expr_location_from_node (tree node, Node_Id gnat_node)
+set_expr_location_from_node1 (tree node, Node_Id gnat_node, bool clear_column)
 {
   location_t locus;
 
-  if (!Sloc_to_locus (Sloc (gnat_node), &locus))
+  if (!Sloc_to_locus1 (Sloc (gnat_node), &locus, clear_column))
     return;
 
   SET_EXPR_LOCATION (node, locus);
+}
+
+/* Similar to the above, not clearing the column information.  */
+
+static void
+set_expr_location_from_node (tree node, Node_Id gnat_node)
+{
+  set_expr_location_from_node1 (node, gnat_node, false);
 }
 
 /* More elaborate version of set_expr_location_from_node to be used in more
@@ -9163,7 +9238,7 @@ set_end_locus_from_node (tree gnu_node, Node_Id gnat_node)
   /* Pick the GNAT node of which we'll take the sloc to assign to the GCC node
      end_locus when there is one.  We consider only GNAT nodes with a possible
      End_Label attached.  If the End_Label actually was unassigned, fallback
-     on the orginal node.  We'd better assign an explicit sloc associated with
+     on the original node.  We'd better assign an explicit sloc associated with
      the outer construct in any case.  */
 
   switch (Nkind (gnat_node))
@@ -9185,9 +9260,13 @@ set_end_locus_from_node (tree gnu_node, Node_Id gnat_node)
   gnat_node = Present (gnat_end_label) ? gnat_end_label : gnat_node;
 
   /* Some expanded subprograms have neither an End_Label nor a Sloc
-     attached.  Notify that to callers.  */
+     attached.  Notify that to callers.  For a block statement with no
+     End_Label, clear column information, so that the tree for a
+     transient block does not receive the sloc of a source condition.  */
 
-  if (!Sloc_to_locus (Sloc (gnat_node), &end_locus))
+  if (!Sloc_to_locus1 (Sloc (gnat_node), &end_locus,
+                       No (gnat_end_label) &&
+                       (Nkind (gnat_node) == N_Block_Statement)))
     return false;
 
   switch (TREE_CODE (gnu_node))

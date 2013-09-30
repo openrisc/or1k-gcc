@@ -76,12 +76,21 @@
 ;; Vector modes for moves.
 (define_mode_iterator VDQM [V8QI V16QI V4HI V8HI V2SI V4SI])
 
+;; This mode iterator allows :P to be used for patterns that operate on
+;; addresses in different modes.  In LP64, only DI will match, while in
+;; ILP32, either can match.
+(define_mode_iterator P [(SI "ptr_mode == SImode || Pmode == SImode")
+			 (DI "ptr_mode == DImode || Pmode == DImode")])
+
 ;; This mode iterator allows :PTR to be used for patterns that operate on
 ;; pointer-sized quantities.  Exactly one of the two alternatives will match.
-(define_mode_iterator PTR [(SI "Pmode == SImode") (DI "Pmode == DImode")])
+(define_mode_iterator PTR [(SI "ptr_mode == SImode") (DI "ptr_mode == DImode")])
 
 ;; Vector Float modes.
 (define_mode_iterator VDQF [V2SF V4SF V2DF])
+
+;; Vector single Float modes.
+(define_mode_iterator VDQSF [V2SF V4SF])
 
 ;; Modes suitable to use as the return type of a vcond expression.
 (define_mode_iterator VDQF_COND [V2SF V2SI V4SF V4SI V2DF V2DI])
@@ -128,8 +137,14 @@
 ;; Vector modes except double int.
 (define_mode_iterator VDQIF [V8QI V16QI V4HI V8HI V2SI V4SI V2SF V4SF V2DF])
 
+;; Vector modes for Q and H types.
+(define_mode_iterator VDQQH [V8QI V16QI V4HI V8HI])
+
 ;; Vector modes for H and S types.
 (define_mode_iterator VDQHS [V4HI V8HI V2SI V4SI])
+
+;; Vector modes for Q, H and S types.
+(define_mode_iterator VDQQHS [V8QI V16QI V4HI V8HI V2SI V4SI])
 
 ;; Vector and scalar integer modes for H and S
 (define_mode_iterator VSDQ_HSI [V4HI V8HI V2SI V4SI HI SI])
@@ -156,6 +171,12 @@
 
 ;; Double scalar modes
 (define_mode_iterator DX [DI DF])
+
+;; Modes available for <f>mul lane operations.
+(define_mode_iterator VMUL [V4HI V8HI V2SI V4SI V2SF V4SF V2DF])
+
+;; Modes available for <f>mul lane operations changing lane count.
+(define_mode_iterator VMUL_CHANGE_NLANES [V4HI V8HI V2SI V4SI V2SF V4SF])
 
 ;; ------------------------------------------------------------------
 ;; Unspec enumerations for Advance SIMD. These could well go into
@@ -277,6 +298,12 @@
 		    (V2DI "") (V2SF "")
 		    (V4SF "") (V2DF "")])
 
+;; Register Type Name and Vector Arrangement Specifier for when
+;; we are doing scalar for DI and SIMD for SI (ignoring all but
+;; lane 0).
+(define_mode_attr rtn [(DI "d") (SI "")])
+(define_mode_attr vas [(DI "") (SI ".2s")])
+
 ;; Map a floating point mode to the appropriate register name prefix
 (define_mode_attr s [(SF "s") (DF "d")])
 
@@ -340,7 +367,7 @@
                         (V2SI "SI") (V4SI "SI")
                         (DI "DI")   (V2DI "DI")
                         (V2SF "SF") (V4SF "SF")
-                        (V2DF "DF")
+                        (V2DF "DF") (DF "DF")
 			(SI   "SI") (HI   "HI")
 			(QI   "QI")])
 
@@ -365,7 +392,7 @@
 			(V4HI "V8HI") (V8HI "V8HI")
 			(V2SI "V4SI") (V4SI "V4SI")
 			(DI   "V2DI") (V2DI "V2DI")
-			(V2SF "V2SF") (V4SF "V4SF")
+			(V2SF "V4SF") (V4SF "V4SF")
 			(V2DF "V2DF") (SI   "V4SI")
 			(HI   "V8HI") (QI   "V16QI")])
 
@@ -441,6 +468,15 @@
                         (V2SF "s") (V4SF "s")
                         (V2DF "d")])
 
+;; Corresponding core element mode for each vector mode.  This is a
+;; variation on <vw> mapping FP modes to GP regs.
+(define_mode_attr vwcore  [(V8QI "w") (V16QI "w")
+			   (V4HI "w") (V8HI "w")
+			   (V2SI "w") (V4SI "w")
+			   (DI   "x") (V2DI "x")
+			   (V2SF "w") (V4SF "w")
+			   (V2DF "x")])
+
 ;; Double vector types for ALLX.
 (define_mode_attr Vallxd [(QI "8b") (HI "4h") (SI "2s")])
 
@@ -499,6 +535,36 @@
 
 (define_mode_attr fcvt_target [(V2DF "v2di") (V4SF "v4si") (V2SF "v2si")])
 (define_mode_attr FCVT_TARGET [(V2DF "V2DI") (V4SF "V4SI") (V2SF "V2SI")])
+
+(define_mode_attr VSWAP_WIDTH [(V8QI "V16QI") (V16QI "V8QI")
+				(V4HI "V8HI") (V8HI  "V4HI")
+				(V2SI "V4SI") (V4SI  "V2SI")
+				(DI   "V2DI") (V2DI  "DI")
+				(V2SF "V4SF") (V4SF  "V2SF")
+				(DF   "V2DF") (V2DF  "DF")])
+
+(define_mode_attr vswap_width_name [(V8QI "to_128") (V16QI "to_64")
+				    (V4HI "to_128") (V8HI  "to_64")
+				    (V2SI "to_128") (V4SI  "to_64")
+				    (DI   "to_128") (V2DI  "to_64")
+				    (V2SF "to_128") (V4SF  "to_64")
+				    (DF   "to_128") (V2DF  "to_64")])
+
+;; For certain vector-by-element multiplication instructions we must
+;; constrain the HI cases to use only V0-V15.  This is covered by
+;; the 'x' constraint.  All other modes may use the 'w' constraint.
+(define_mode_attr h_con [(V2SI "w") (V4SI "w")
+			 (V4HI "x") (V8HI "x")
+			 (V2SF "w") (V4SF "w")
+			 (V2DF "w") (DF "w")])
+
+;; Defined to 'f' for types whose element type is a float type.
+(define_mode_attr f [(V8QI "")  (V16QI "")
+		     (V4HI "")  (V8HI  "")
+		     (V2SI "")  (V4SI  "")
+		     (DI   "")  (V2DI  "")
+		     (V2SF "f") (V4SF  "f")
+		     (V2DF "f") (DF    "f")])
 
 ;; -------------------------------------------------------------------
 ;; Code Iterators

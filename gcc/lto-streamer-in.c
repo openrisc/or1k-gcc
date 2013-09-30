@@ -32,7 +32,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "input.h"
 #include "hashtab.h"
 #include "basic-block.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "cgraph.h"
 #include "function.h"
@@ -652,7 +652,7 @@ input_cfg (struct lto_input_block *ib, struct function *fn,
       index = streamer_read_hwi (ib);
     }
 
-  p_bb = ENTRY_BLOCK_PTR_FOR_FUNCTION(fn);
+  p_bb = ENTRY_BLOCK_PTR_FOR_FUNCTION (fn);
   index = streamer_read_hwi (ib);
   while (index != -1)
     {
@@ -755,14 +755,42 @@ input_ssa_names (struct lto_input_block *ib, struct data_in *data_in,
    so they point to STMTS.  */
 
 static void
-fixup_call_stmt_edges_1 (struct cgraph_node *node, gimple *stmts)
+fixup_call_stmt_edges_1 (struct cgraph_node *node, gimple *stmts,
+			 struct function *fn)
 {
   struct cgraph_edge *cedge;
+  struct ipa_ref *ref;
+  unsigned int i;
+
   for (cedge = node->callees; cedge; cedge = cedge->next_callee)
-    cedge->call_stmt = stmts[cedge->lto_stmt_uid];
+    {
+      if (gimple_stmt_max_uid (fn) < cedge->lto_stmt_uid)
+        fatal_error ("Cgraph edge statement index out of range");
+      cedge->call_stmt = stmts[cedge->lto_stmt_uid - 1];
+      if (!cedge->call_stmt)
+        fatal_error ("Cgraph edge statement index not found");
+    }
   for (cedge = node->indirect_calls; cedge; cedge = cedge->next_callee)
-    cedge->call_stmt = stmts[cedge->lto_stmt_uid];
+    {
+      if (gimple_stmt_max_uid (fn) < cedge->lto_stmt_uid)
+        fatal_error ("Cgraph edge statement index out of range");
+      cedge->call_stmt = stmts[cedge->lto_stmt_uid - 1];
+      if (!cedge->call_stmt)
+        fatal_error ("Cgraph edge statement index not found");
+    }
+  for (i = 0;
+       ipa_ref_list_reference_iterate (&node->symbol.ref_list, i, ref);
+       i++)
+    if (ref->lto_stmt_uid)
+      {
+	if (gimple_stmt_max_uid (fn) < ref->lto_stmt_uid)
+	  fatal_error ("Reference statement index out of range");
+	ref->stmt = stmts[ref->lto_stmt_uid - 1];
+	if (!ref->stmt)
+	  fatal_error ("Reference statement index not found");
+      }
 }
+
 
 /* Fixup call_stmt pointers in NODE and all clones.  */
 
@@ -770,15 +798,17 @@ static void
 fixup_call_stmt_edges (struct cgraph_node *orig, gimple *stmts)
 {
   struct cgraph_node *node;
+  struct function *fn;
 
   while (orig->clone_of)
     orig = orig->clone_of;
+  fn = DECL_STRUCT_FUNCTION (orig->symbol.decl);
 
-  fixup_call_stmt_edges_1 (orig, stmts);
+  fixup_call_stmt_edges_1 (orig, stmts, fn);
   if (orig->clones)
     for (node = orig->clones; node != orig;)
       {
-	fixup_call_stmt_edges_1 (node, stmts);
+	fixup_call_stmt_edges_1 (node, stmts, fn);
 	if (node->clones)
 	  node = node->clones;
 	else if (node->next_sibling_clone)
@@ -851,7 +881,7 @@ input_struct_function_base (struct function *fn, struct data_in *data_in,
 
 static void
 input_function (tree fn_decl, struct data_in *data_in,
-		struct lto_input_block *ib)
+		struct lto_input_block *ib, struct lto_input_block *ib_cfg)
 {
   struct function *fn;
   enum LTO_tags tag;
@@ -859,13 +889,30 @@ input_function (tree fn_decl, struct data_in *data_in,
   basic_block bb;
   struct cgraph_node *node;
 
-  fn = DECL_STRUCT_FUNCTION (fn_decl);
   tag = streamer_read_record_start (ib);
-
-  gimple_register_cfg_hooks ();
   lto_tag_check (tag, LTO_function);
 
+  /* Read decls for parameters and args.  */
+  DECL_RESULT (fn_decl) = stream_read_tree (ib, data_in);
+  DECL_ARGUMENTS (fn_decl) = streamer_read_chain (ib, data_in);
+
+  /* Read the tree of lexical scopes for the function.  */
+  DECL_INITIAL (fn_decl) = stream_read_tree (ib, data_in);
+
+  if (!streamer_read_uhwi (ib))
+    return;
+
+  push_struct_function (fn_decl);
+  fn = DECL_STRUCT_FUNCTION (fn_decl);
+  init_tree_ssa (fn);
+  /* We input IL in SSA form.  */
+  cfun->gimple_df->in_ssa_p = true;
+
+  gimple_register_cfg_hooks ();
+
+  node = cgraph_get_create_node (fn_decl);
   input_struct_function_base (fn, data_in, ib);
+  input_cfg (ib_cfg, fn, node->count_materialization_scale);
 
   /* Read all the SSA names.  */
   input_ssa_names (ib, data_in, fn);
@@ -873,11 +920,8 @@ input_function (tree fn_decl, struct data_in *data_in,
   /* Read the exception handling regions in the function.  */
   input_eh_regions (ib, data_in, fn);
 
-  /* Read the tree of lexical scopes for the function.  */
-  DECL_INITIAL (fn_decl) = stream_read_tree (ib, data_in);
   gcc_assert (DECL_INITIAL (fn_decl));
   DECL_SAVED_TREE (fn_decl) = NULL_TREE;
-  node = cgraph_get_create_node (fn_decl);
 
   /* Read all the basic blocks.  */
   tag = streamer_read_record_start (ib);
@@ -894,6 +938,11 @@ input_function (tree fn_decl, struct data_in *data_in,
   FOR_ALL_BB (bb)
     {
       gimple_stmt_iterator gsi;
+      for (gsi = gsi_start_phis (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+	{
+	  gimple stmt = gsi_stmt (gsi);
+	  gimple_set_uid (stmt, inc_gimple_stmt_max_uid (cfun));
+	}
       for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
 	{
 	  gimple stmt = gsi_stmt (gsi);
@@ -903,7 +952,14 @@ input_function (tree fn_decl, struct data_in *data_in,
   stmts = (gimple *) xcalloc (gimple_stmt_max_uid (fn), sizeof (gimple));
   FOR_ALL_BB (bb)
     {
-      gimple_stmt_iterator bsi = gsi_start_bb (bb);
+      gimple_stmt_iterator bsi = gsi_start_phis (bb);
+      while (!gsi_end_p (bsi))
+	{
+	  gimple stmt = gsi_stmt (bsi);
+	  gsi_next (&bsi);
+	  stmts[gimple_uid (stmt)] = stmt;
+	}
+      bsi = gsi_start_bb (bb);
       while (!gsi_end_p (bsi))
 	{
 	  gimple stmt = gsi_stmt (bsi);
@@ -942,17 +998,18 @@ input_function (tree fn_decl, struct data_in *data_in,
   free_dominance_info (CDI_DOMINATORS);
   free_dominance_info (CDI_POST_DOMINATORS);
   free (stmts);
+  pop_cfun ();
 }
 
 
-/* Read the body from DATA for function FN_DECL and fill it in.
+/* Read the body from DATA for function NODE and fill it in.
    FILE_DATA are the global decls and types.  SECTION_TYPE is either
    LTO_section_function_body or LTO_section_static_initializer.  If
    section type is LTO_section_function_body, FN must be the decl for
    that function.  */
 
 static void
-lto_read_body (struct lto_file_decl_data *file_data, tree fn_decl,
+lto_read_body (struct lto_file_decl_data *file_data, struct cgraph_node *node,
 	       const char *data, enum lto_section_type section_type)
 {
   const struct lto_function_header *header;
@@ -962,6 +1019,7 @@ lto_read_body (struct lto_file_decl_data *file_data, tree fn_decl,
   int string_offset;
   struct lto_input_block ib_cfg;
   struct lto_input_block ib_main;
+  tree fn_decl = node->symbol.decl;
 
   header = (const struct lto_function_header *) data;
   cfg_offset = sizeof (struct lto_function_header);
@@ -987,28 +1045,20 @@ lto_read_body (struct lto_file_decl_data *file_data, tree fn_decl,
 
   if (section_type == LTO_section_function_body)
     {
-      struct function *fn = DECL_STRUCT_FUNCTION (fn_decl);
       struct lto_in_decl_state *decl_state;
-      struct cgraph_node *node = cgraph_get_node (fn_decl);
       unsigned from;
 
       gcc_checking_assert (node);
-      push_cfun (fn);
-      init_tree_ssa (fn);
-
-      /* We input IL in SSA form.  */
-      cfun->gimple_df->in_ssa_p = true;
 
       /* Use the function's decl state. */
       decl_state = lto_get_function_in_decl_state (file_data, fn_decl);
       gcc_assert (decl_state);
       file_data->current_decl_state = decl_state;
 
-      input_cfg (&ib_cfg, fn, node->count_materialization_scale);
 
       /* Set up the struct function.  */
       from = data_in->reader_cache->nodes.length ();
-      input_function (fn_decl, data_in, &ib_main);
+      input_function (fn_decl, data_in, &ib_main, &ib_cfg);
       /* And fixup types we streamed locally.  */
 	{
 	  struct streamer_tree_cache_d *cache = data_in->reader_cache;
@@ -1037,22 +1087,20 @@ lto_read_body (struct lto_file_decl_data *file_data, tree fn_decl,
 
       /* Restore decl state */
       file_data->current_decl_state = file_data->global_decl_state;
-
-      pop_cfun ();
     }
 
   lto_data_in_delete (data_in);
 }
 
 
-/* Read the body of FN_DECL using DATA.  FILE_DATA holds the global
+/* Read the body of NODE using DATA.  FILE_DATA holds the global
    decls and types.  */
 
 void
 lto_input_function_body (struct lto_file_decl_data *file_data,
-			 tree fn_decl, const char *data)
+			 struct cgraph_node *node, const char *data)
 {
-  lto_read_body (file_data, fn_decl, data, LTO_section_function_body);
+  lto_read_body (file_data, node, data, LTO_section_function_body);
 }
 
 

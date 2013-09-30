@@ -435,7 +435,7 @@ init_reload (void)
 		   gen_rtx_PLUS (Pmode,
 				 gen_rtx_REG (Pmode,
 					      LAST_VIRTUAL_REGISTER + 1),
-				 GEN_INT (4)));
+				 gen_int_mode (4, Pmode)));
   spill_indirect_levels = 0;
 
   while (memory_address_p (QImode, tem))
@@ -2325,7 +2325,7 @@ mark_home_live_1 (int regno, enum machine_mode mode)
     return;
   lim = end_hard_regno (mode, i);
   while (i < lim)
-    df_set_regs_ever_live(i++, true);
+    df_set_regs_ever_live (i++, true);
 }
 
 /* Mark the slots in regs_ever_live for the hard regs
@@ -2776,6 +2776,7 @@ eliminate_regs_1 (rtx x, enum machine_mode mem_mode, rtx insn,
       /* ... fall through ...  */
 
     case INSN_LIST:
+    case INT_LIST:
       /* Now do eliminations in the rest of the chain.  If this was
 	 an EXPR_LIST, this might result in allocating more memory than is
 	 strictly needed, but it simplifies the code.  */
@@ -9157,7 +9158,9 @@ inc_for_reload (rtx reloadreg, rtx in, rtx value, int inc_amount)
       emit_insn (gen_add2_insn (reloadreg, inc));
       emit_insn (gen_move_insn (incloc, reloadreg));
       if (CONST_INT_P (inc))
-	emit_insn (gen_add2_insn (reloadreg, GEN_INT (-INTVAL (inc))));
+	emit_insn (gen_add2_insn (reloadreg,
+				  gen_int_mode (-INTVAL (inc),
+						GET_MODE (reloadreg))));
       else
 	emit_insn (gen_sub2_insn (reloadreg, inc));
     }

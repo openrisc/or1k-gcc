@@ -39,6 +39,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple.h"
 #include "c-family/c-objc.h"
 #include "c-family/c-common.h"
+#include "c-family/c-ubsan.h"
 
 /* Possible cases of implicit bad conversions.  Used to select
    diagnostic messages in convert_for_assignment.  */
@@ -918,6 +919,13 @@ c_common_type (tree t1, tree t2)
   if (TYPE_MAIN_VARIANT (t1) == long_double_type_node
       || TYPE_MAIN_VARIANT (t2) == long_double_type_node)
     return long_double_type_node;
+
+  /* Likewise, prefer double to float even if same size.
+     We got a couple of embedded targets with 32 bit doubles, and the
+     pdp11 might have 64 bit floats.  */
+  if (TYPE_MAIN_VARIANT (t1) == double_type_node
+      || TYPE_MAIN_VARIANT (t2) == double_type_node)
+    return double_type_node;
 
   /* Otherwise prefer the unsigned one.  */
 
@@ -3156,7 +3164,9 @@ convert_arguments (tree typelist, vec<tree, va_gc> *values,
 	}
       else if (TREE_CODE (valtype) == REAL_TYPE
 	       && (TYPE_PRECISION (valtype)
-		   < TYPE_PRECISION (double_type_node))
+		   <= TYPE_PRECISION (double_type_node))
+	       && TYPE_MAIN_VARIANT (valtype) != double_type_node
+	       && TYPE_MAIN_VARIANT (valtype) != long_double_type_node
 	       && !DECIMAL_FLOAT_MODE_P (TYPE_MODE (valtype)))
         {
 	  if (type_generic)
@@ -9532,6 +9542,15 @@ build_binary_op (location_t location, enum tree_code code,
      operands to truth-values.  */
   bool boolean_op = false;
 
+  /* Remember whether we're doing / or %.  */
+  bool doing_div_or_mod = false;
+
+  /* Remember whether we're doing << or >>.  */
+  bool doing_shift = false;
+
+  /* Tree holding instrumentation expression.  */
+  tree instrument_expr = NULL;
+
   if (location == UNKNOWN_LOCATION)
     location = input_location;
 
@@ -9733,6 +9752,7 @@ build_binary_op (location_t location, enum tree_code code,
     case FLOOR_DIV_EXPR:
     case ROUND_DIV_EXPR:
     case EXACT_DIV_EXPR:
+      doing_div_or_mod = true;
       warn_for_div_by_zero (location, op1);
 
       if ((code0 == INTEGER_TYPE || code0 == REAL_TYPE
@@ -9780,6 +9800,7 @@ build_binary_op (location_t location, enum tree_code code,
 
     case TRUNC_MOD_EXPR:
     case FLOOR_MOD_EXPR:
+      doing_div_or_mod = true;
       warn_for_div_by_zero (location, op1);
 
       if (code0 == VECTOR_TYPE && code1 == VECTOR_TYPE
@@ -9878,6 +9899,7 @@ build_binary_op (location_t location, enum tree_code code,
       else if ((code0 == INTEGER_TYPE || code0 == FIXED_POINT_TYPE)
 	  && code1 == INTEGER_TYPE)
 	{
+	  doing_shift = true;
 	  if (TREE_CODE (op1) == INTEGER_CST)
 	    {
 	      if (tree_int_cst_sgn (op1) < 0)
@@ -9930,6 +9952,7 @@ build_binary_op (location_t location, enum tree_code code,
       else if ((code0 == INTEGER_TYPE || code0 == FIXED_POINT_TYPE)
 	  && code1 == INTEGER_TYPE)
 	{
+	  doing_shift = true;
 	  if (TREE_CODE (op1) == INTEGER_CST)
 	    {
 	      if (tree_int_cst_sgn (op1) < 0)
@@ -9964,7 +9987,7 @@ build_binary_op (location_t location, enum tree_code code,
       if (code0 == VECTOR_TYPE && code1 == VECTOR_TYPE)
         {
           tree intt;
-          if (TREE_TYPE (type0) != TREE_TYPE (type1))
+	  if (!vector_types_compatible_elements_p (type0, type1))
             {
               error_at (location, "comparing vectors with different "
                                   "element types");
@@ -10101,7 +10124,7 @@ build_binary_op (location_t location, enum tree_code code,
       if (code0 == VECTOR_TYPE && code1 == VECTOR_TYPE)
         {
           tree intt;
-          if (TREE_TYPE (type0) != TREE_TYPE (type1))
+	  if (!vector_types_compatible_elements_p (type0, type1))
             {
               error_at (location, "comparing vectors with different "
                                   "element types");
@@ -10207,8 +10230,7 @@ build_binary_op (location_t location, enum tree_code code,
 
   if (code0 == VECTOR_TYPE && code1 == VECTOR_TYPE
       && (!tree_int_cst_equal (TYPE_SIZE (type0), TYPE_SIZE (type1))
-	  || !same_scalar_type_ignoring_signedness (TREE_TYPE (type0),
-						    TREE_TYPE (type1))))
+	  || !vector_types_compatible_elements_p (type0, type1)))
     {
       binary_op_error (location, code, type0, type1);
       return error_mark_node;
@@ -10474,6 +10496,23 @@ build_binary_op (location_t location, enum tree_code code,
 	return error_mark_node;
     }
 
+  if ((flag_sanitize & (SANITIZE_SHIFT | SANITIZE_DIVIDE))
+      && current_function_decl != 0
+      && !lookup_attribute ("no_sanitize_undefined",
+			    DECL_ATTRIBUTES (current_function_decl))
+      && (doing_div_or_mod || doing_shift))
+    {
+      /* OP0 and/or OP1 might have side-effects.  */
+      op0 = c_save_expr (op0);
+      op1 = c_save_expr (op1);
+      op0 = c_fully_fold (op0, false, NULL);
+      op1 = c_fully_fold (op1, false, NULL);
+      if (doing_div_or_mod && (flag_sanitize & SANITIZE_DIVIDE))
+	instrument_expr = ubsan_instrument_division (location, op0, op1);
+      else if (doing_shift && (flag_sanitize & SANITIZE_SHIFT))
+	instrument_expr = ubsan_instrument_shift (location, code, op0, op1);
+    }
+
   /* Treat expressions in initializers specially as they can't trap.  */
   if (int_const_or_overflow)
     ret = (require_constant_value
@@ -10497,6 +10536,11 @@ build_binary_op (location_t location, enum tree_code code,
   if (semantic_result_type)
     ret = build1 (EXCESS_PRECISION_EXPR, semantic_result_type, ret);
   protected_set_expr_location (ret, location);
+
+  if (instrument_expr != NULL)
+    ret = fold_build2 (COMPOUND_EXPR, TREE_TYPE (ret),
+		       instrument_expr, ret);
+
   return ret;
 }
 

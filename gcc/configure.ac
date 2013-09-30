@@ -278,18 +278,8 @@ rm -f a.out a.exe b.out
 
 # Find the native compiler
 AC_PROG_CC
-AM_PROG_CC_C_O
 AC_PROG_CXX
 ACX_PROG_GNAT([-I"$srcdir"/ada])
-
-# autoconf is lame and doesn't give us any substitution variable for this.
-if eval "test \"`echo '$ac_cv_prog_cc_'${ac_cc}_c_o`\" = no"; then
-  NO_MINUS_C_MINUS_O=yes
-else
-  OUTPUT_OPTION='-o $@'
-fi
-AC_SUBST(NO_MINUS_C_MINUS_O)
-AC_SUBST(OUTPUT_OPTION)
 
 # Remove the -O2: for historical reasons, unless bootstrapping we prefer
 # optimizations to be activated explicitly by the toplevel.
@@ -839,7 +829,7 @@ esac],
 [enable_languages=c])
 
 AC_ARG_WITH(multilib-list,
-[AS_HELP_STRING([--with-multilib-list], [select multilibs (SH and x86-64 only)])],
+[AS_HELP_STRING([--with-multilib-list], [select multilibs (AArch64, SH and x86-64 only)])],
 :,
 with_multilib_list=default)
 
@@ -969,6 +959,22 @@ AC_CHECK_HEADERS(unordered_map)
 AC_CHECK_HEADERS(tr1/unordered_map)
 AC_CHECK_HEADERS(ext/hash_map)
 
+AC_LANG_POP(C++)
+
+# --------
+# Dependency checking.
+# --------
+
+AC_LANG_PUSH(C++)
+ZW_CREATE_DEPDIR
+AC_CONFIG_COMMANDS([gccdepdir],[
+  ${CONFIG_SHELL-/bin/sh} $ac_aux_dir/mkinstalldirs build/$DEPDIR
+  for lang in $subdirs c-family common
+  do
+      ${CONFIG_SHELL-/bin/sh} $ac_aux_dir/mkinstalldirs $lang/$DEPDIR
+  done], [subdirs="$subdirs" ac_aux_dir=$ac_aux_dir DEPDIR=$DEPDIR])
+
+ZW_PROG_COMPILER_DEPENDENCIES([CC])
 AC_LANG_POP(C++)
 
 # --------
@@ -3627,6 +3633,19 @@ foo:
        kasumi_fi_xor %f46, %f48, %f50, %f52],,
       [AC_DEFINE(HAVE_AS_SPARC4, 1,
                 [Define if your assembler supports SPARC4 instructions.])])
+
+    gcc_GAS_CHECK_FEATURE([LEON instructions],
+      gcc_cv_as_sparc_leon,,
+      [-Aleon],
+      [.text
+       .register %g2, #scratch
+       .register %g3, #scratch
+       .align 4
+       smac %g2, %g3, %g1
+       umac %g2, %g3, %g1
+       cas [[%g2]], %g3, %g1],,
+      [AC_DEFINE(HAVE_AS_LEON, 1,
+                [Define if your assembler supports LEON instructions.])])
     ;;
 
 changequote(,)dnl
@@ -4182,6 +4201,17 @@ EOF
       [Define if your linker can relax absolute .eh_frame personality
 pointers into PC-relative form.])
     fi
+
+    gcc_GAS_CHECK_FEATURE([-mnan= support],
+      gcc_cv_as_mips_nan,,
+      [-mnan=2008],,,
+      [AC_DEFINE(HAVE_AS_NAN, 1,
+		 [Define if the assembler understands -mnan=.])])
+    if test x$gcc_cv_as_mips_nan = xno \
+       && test x$with_nan != x; then
+      AC_MSG_ERROR(
+	[Requesting --with-nan= requires assembler support for -mnan=])
+    fi
     ;;
 esac
 
@@ -4209,8 +4239,9 @@ esac
 # ??? Once 2.11 is released, probably need to add first known working
 # version to the per-target configury.
 case "$cpu_type" in
-  alpha | arm | avr | bfin | cris | i386 | m32c | m68k | microblaze | mips \
-  | pa | rs6000 | score | sparc | spu | tilegx | tilepro | xstormy16 | xtensa)
+  aarch64 | alpha | arm | avr | bfin | cris | i386 | m32c | m68k | microblaze \
+  | mips | pa | rs6000 | score | sparc | spu | tilegx | tilepro | xstormy16 \
+  | xtensa)
     insn="nop"
     ;;
   ia64 | s390)
@@ -5170,6 +5201,7 @@ if test "x$subdirs" != x; then
 	done
 fi
 echo "source ${srcdir}/gdbinit.in" >> .gdbinit
+echo "python import sys; sys.path.append('${srcdir}'); import gdbhooks" >> .gdbinit
 
 gcc_tooldir='$(libsubdir)/$(libsubdir_to_prefix)$(target_noncanonical)'
 AC_SUBST(gcc_tooldir)

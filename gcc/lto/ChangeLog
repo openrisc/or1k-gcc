@@ -1,3 +1,115 @@
+2013-09-25  Tom Tromey  <tromey@redhat.com>
+
+	* Make-lang.in (LTO_H, LINKER_PLUGIN_API_H, LTO_TREE_H)
+	(lto/lto-lang.o, lto/lto.o, lto/lto-partition.o)
+	(lto/lto-object.o): Remove.
+
+2013-09-06  Richard Biener  <rguenther@suse.de>
+
+	* lto-symtab.c: Move from gcc/
+	* lto.h: Include vec.h.
+	(lto_global_var_decls): Declare.
+	* lto.c (lto_global_var_decls): Move definition here.
+	* Make-lang.in (LTO_OBJS): Add lto-symtab.o.
+	(lto-symtab.o): Add.
+	* config-lang.in (gtfiles): Add lto.h.
+
+2013-08-31  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (mentions_vars_p_field_decl, lto_fixup_prevailing_decls): 
+	DECL_FIELD_OFFSET can contain an reference to variable.
+
+2013-08-31  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (tree_with_vars): Turn into vector.
+	(MAYBE_REMEMBER_WITH_VARS): Change to...
+	(CHECK_VAR): ... this one.
+	(CHECK_NO_VAR): New macro.
+	(maybe_remember_with_vars_typed): Turn to ...
+	(mentions_vars_p_typed): ... this one.
+	(maybe_remember_with_vars_common): Turn to ...
+	(mentions_vars_p_comon): ... this one.
+	(maybe_remember_with_vars_decl_minimal): Turn to ...
+	(mentions_vars_p_decl_minmal): ... this one.
+	(maybe_remember_with_vars_decl_common): Turn to ...
+	(mentions_vars_p_decl_common): ... this one.
+	(maybe_remember_with_vars_decl_with_vis): Turn to ...
+	(mentions_vars_p_decl_with_vis): ... this one.
+	(maybe_remember_with_vars_decl_non_common): Turn to ...
+	(mentions_vars_p_decl_non_common): ... this one.
+	(maybe_remember_with_vars_function): Turn to ...
+	(mentions_vars_p_function): ... this one.
+	(maybe_remember_with_vars_field_decl): Turn to ...
+	(mentions_vars_p_field_decl): ... this one.
+	(maybe_remember_with_vars_type): Turn to ...
+	(mentions_vars_p_type): ... this one.
+	(maybe_remember_with_vars_binfo): Turn to ...
+	(mentions_vars_p_binfo): ... this one.
+	(maybe_remember_with_vars_constructor): Turn to ...
+	(mentions_vars_p_constructor): ... this one.
+	(maybe_remember_with_vars_expr): Turn to ...
+	(mentions_vars_p_expr): ... this one.
+	(maybe_remember_with_vars): Turn to ...
+	(mentions_vars_p): ... this one.
+	(lto_read_decls): Update.
+	(LTO_SET_PREVAIL): Do not call function for internal decls.
+	(lto_fixup_prevailing_decls): Update to match mentions_vars_p;
+	check that something was updated.
+	(lto_fixup_state): Do not care about internal decls.
+	(lto_fixup_decls): Update.
+	(read_cgraph_and_symbols): Update.
+
+2013-08-29  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (read_cgraph_and_symbols): Free decl states.
+
+2013-08-29  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (compare_tree_sccs_1): Compare  DECL_FINAL_P,
+	DECL_CXX_CONSTRUCTOR_P, DECL_CXX_DESTRUCTOR_P and
+	TYPE_FINAL_P.
+
+2013-08-28  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (compare_tree_sccs_1): Drop DECL_ERROR_ISSUED,
+	DECL_DEFER_OUTPUT and DECL_IN_TEXT_SECTION.
+	(unify_scc): Do checking assert.
+
+2013-08-06  Jan Hubicka  <jh@suse.cz>
+	    Martin Liska  <marxin.liska@gmail.com>
+
+	* lto-partition.c (lto_balanced_map): Always base order on 
+	source file order.
+
+2013-08-06  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (lto_materialize_function): Do not read body anymore.
+
+2013-08-02  Jan Hubicka  <jh@suse.cz>
+
+	* lto.c (lto_materialize_function): Do not push struct function.
+	* lto-partition.c (get_symbol_class): Handle abstracts correctly.
+	(may_need_named_section_p): Even abstract origins may need
+	named section.
+
+2013-07-30  David Malcolm  <dmalcolm@redhat.com>
+
+	* Make-lang.in (lto/lto.o:): Depend on CONTEXT_H and
+	PASS_MANAGER_H.
+
+	* lto.c (do_whole_program_analysis): Update for move of
+	all_regular_ipa_passes from a global to a field of class
+	pass_manager.
+
+2013-07-21   OndÅej BÃ­lka  <neleai@seznam.cz>
+
+	* lto-partition.c: Fix typos.
+
+2013-06-20  Jan Hubicka  <jh@suse.cz>
+
+	* lto-partition.c (lto_balanced_map): Fix -fno-toplevel-reorder
+	partitioning of variables.
+
 2013-06-20  Jan Hubicka  <jh@suse.cz>
 
 	* lto.c (read_cgraph_and_symbols): Set cgraph state.

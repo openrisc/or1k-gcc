@@ -7390,6 +7390,7 @@ syntax:
 
 
 /* Check a derived type that is being extended.  */
+
 static gfc_symbol*
 check_extended_derived_type (char *name)
 {
@@ -7401,13 +7402,14 @@ check_extended_derived_type (char *name)
       return NULL;
     }
 
+  extended = gfc_find_dt_in_generic (extended);
+
+  /* F08:C428.  */
   if (!extended)
     {
-      gfc_error ("No such symbol in TYPE definition at %C");
+      gfc_error ("Symbol '%s' at %C has not been previously defined", name);
       return NULL;
     }
-
-  extended = gfc_find_dt_in_generic (extended);
 
   if (extended->attr.flavor != FL_DERIVED)
     {
@@ -8255,7 +8257,7 @@ match_procedure_in_type (void)
 	}
 
       /* See if we already have a binding with this name in the symtree which
-	 would be an error.  If a GENERIC already targetted this binding, it may
+	 would be an error.  If a GENERIC already targeted this binding, it may
 	 be already there but then typebound is still NULL.  */
       stree = gfc_find_symtree (ns->tb_sym_root, name);
       if (stree && stree->n.tb)

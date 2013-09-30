@@ -1111,8 +1111,8 @@ setup_class_translate_array (enum reg_class *class_translate,
 	      min_cost = INT_MAX;
 	      for (mode = 0; mode < MAX_MACHINE_MODE; mode++)
 		{
-		  cost = (ira_memory_move_cost[mode][cl][0]
-			  + ira_memory_move_cost[mode][cl][1]);
+		  cost = (ira_memory_move_cost[mode][aclass][0]
+			  + ira_memory_move_cost[mode][aclass][1]);
 		  if (min_cost > cost)
 		    min_cost = cost;
 		}
@@ -2944,11 +2944,8 @@ update_equiv_regs (void)
      prevent access beyond allocated memory for paradoxical memory subreg.  */
   FOR_EACH_BB (bb)
     FOR_BB_INSNS (bb, insn)
-      {
-	if (! INSN_P (insn))
-	  continue;
-	for_each_rtx (&insn, set_paradoxical_subreg, (void *)pdx_subregs);
-      }
+      if (NONDEBUG_INSN_P (insn))
+	for_each_rtx (&insn, set_paradoxical_subreg, (void *) pdx_subregs);
 
   /* Scan the insns and find which registers have equivalences.  Do this
      in a separate scan of the insns because (due to -fcse-follow-jumps)
@@ -3518,7 +3515,7 @@ setup_reg_equiv (void)
 static void
 print_insn_chain (FILE *file, struct insn_chain *c)
 {
-  fprintf (file, "insn=%d, ", INSN_UID(c->insn));
+  fprintf (file, "insn=%d, ", INSN_UID (c->insn));
   bitmap_print (file, &c->live_throughout, "live_throughout: ", ", ");
   bitmap_print (file, &c->dead_or_set, "dead_or_set: ", "\n");
 }
@@ -4394,9 +4391,9 @@ allocate_initial_values (void)
 		  /* Update global register liveness information.  */
 		  FOR_EACH_BB (bb)
 		    {
-		      if (REGNO_REG_SET_P(df_get_live_in (bb), regno))
+		      if (REGNO_REG_SET_P (df_get_live_in (bb), regno))
 			SET_REGNO_REG_SET (df_get_live_in (bb), new_regno);
-		      if (REGNO_REG_SET_P(df_get_live_out (bb), regno))
+		      if (REGNO_REG_SET_P (df_get_live_out (bb), regno))
 			SET_REGNO_REG_SET (df_get_live_out (bb), new_regno);
 		    }
 		}
@@ -4775,25 +4772,42 @@ rest_of_handle_ira (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_ira =
+namespace {
+
+const pass_data pass_data_ira =
 {
- {
-  RTL_PASS,
-  "ira",                                /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  rest_of_handle_ira,		        /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_IRA,	                        /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  TODO_do_not_ggc_collect               /* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "ira", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_IRA, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  TODO_do_not_ggc_collect, /* todo_flags_finish */
 };
+
+class pass_ira : public rtl_opt_pass
+{
+public:
+  pass_ira (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_ira, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return rest_of_handle_ira (); }
+
+}; // class pass_ira
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_ira (gcc::context *ctxt)
+{
+  return new pass_ira (ctxt);
+}
 
 static unsigned int
 rest_of_handle_reload (void)
@@ -4802,22 +4816,39 @@ rest_of_handle_reload (void)
   return 0;
 }
 
-struct rtl_opt_pass pass_reload =
+namespace {
+
+const pass_data pass_data_reload =
 {
- {
-  RTL_PASS,
-  "reload",                             /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  NULL,                                 /* gate */
-  rest_of_handle_reload,	        /* execute */
-  NULL,                                 /* sub */
-  NULL,                                 /* next */
-  0,                                    /* static_pass_number */
-  TV_RELOAD,	                        /* tv_id */
-  0,                                    /* properties_required */
-  0,                                    /* properties_provided */
-  0,                                    /* properties_destroyed */
-  0,                                    /* todo_flags_start */
-  0					/* todo_flags_finish */
- }
+  RTL_PASS, /* type */
+  "reload", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  false, /* has_gate */
+  true, /* has_execute */
+  TV_RELOAD, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_reload : public rtl_opt_pass
+{
+public:
+  pass_reload (gcc::context *ctxt)
+    : rtl_opt_pass (pass_data_reload, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  unsigned int execute () { return rest_of_handle_reload (); }
+
+}; // class pass_reload
+
+} // anon namespace
+
+rtl_opt_pass *
+make_pass_reload (gcc::context *ctxt)
+{
+  return new pass_reload (ctxt);
+}

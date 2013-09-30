@@ -313,7 +313,7 @@ aarch64*-*-*)
 	cpu_type=aarch64
 	need_64bit_hwint=yes
 	extra_headers="arm_neon.h"
-	extra_objs="aarch64-builtins.o"
+	extra_objs="aarch64-builtins.o aarch-common.o"
 	target_has_targetm_common=yes
 	;;
 alpha*-*-*)
@@ -327,9 +327,11 @@ am33_2.0-*-linux*)
 arm*-*-*)
 	cpu_type=arm
 	extra_headers="mmintrin.h arm_neon.h"
+	extra_objs="aarch-common.o"
 	target_type_format_char='%'
 	c_target_objs="arm-c.o"
 	cxx_target_objs="arm-c.o"
+	need_64bit_hwint=yes
 	extra_options="${extra_options} arm/arm-tables.opt"
 	;;
 avr-*-*)
@@ -501,6 +503,27 @@ then
 fi
 
 case ${target} in
+aarch64*-*-*)
+	tm_p_file="${tm_p_file} arm/aarch-common-protos.h"
+	case ${with_abi} in
+	"")
+		if test "x$with_multilib_list" = xilp32; then
+			tm_file="aarch64/biarchilp32.h ${tm_file}"
+		else
+			tm_file="aarch64/biarchlp64.h ${tm_file}"
+		fi
+		;;
+	ilp32)
+		tm_file="aarch64/biarchilp32.h ${tm_file}"
+		;;
+	lp64)
+		tm_file="aarch64/biarchlp64.h ${tm_file}"
+		;;
+	*)
+		echo "Unknown ABI used in --with-abi=$with_abi"
+		exit 1
+	esac
+	;;
 i[34567]86-*-*)
 	if test "x$with_abi" != x; then
 		echo "This target does not support --with-abi."
@@ -541,7 +564,11 @@ x86_64-*-*)
 	fi
 	tm_file="vxworks-dummy.h ${tm_file}"
 	;;
-arm*-*-* | mips*-*-* | sh*-*-* | sparc*-*-*)
+arm*-*-*)
+	tm_p_file="${tm_p_file} arm/aarch-common-protos.h"
+	tm_file="vxworks-dummy.h ${tm_file}"
+	;;
+mips*-*-* | sh*-*-* | sparc*-*-*)
 	tm_file="vxworks-dummy.h ${tm_file}"
 	;;
 esac
@@ -742,6 +769,7 @@ case ${target} in
     yes) thread_file='rtems' ;;
   esac
   extra_options="${extra_options} rtems.opt"
+  default_use_cxa_atexit=yes
   use_gcc_stdint=wrap
   ;;
 *-*-uclinux*)
@@ -806,7 +834,7 @@ case ${target} in
   tmake_file=t-vxworks
   xm_defines=POSIX
   extra_options="${extra_options} vxworks.opt"
-  extra_objs=vxworks.o
+  extra_objs="$extra_objs vxworks.o"
   case ${enable_threads} in
     no) ;;
     "" | yes | vxworks) thread_file='vxworks' ;;
@@ -831,6 +859,22 @@ aarch64*-*-elf)
 		tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=1"
 		;;
 	esac
+	aarch64_multilibs="${with_multilib_list}"
+	if test "$aarch64_multilibs" = "default"; then
+		aarch64_multilibs="lp64,ilp32"
+	fi
+	aarch64_multilibs=`echo $aarch64_multilibs | sed -e 's/,/ /g'`
+	for aarch64_multilib in ${aarch64_multilibs}; do
+		case ${aarch64_multilib} in
+		ilp32 | lp64 )
+			TM_MULTILIB_CONFIG="${TM_MULTILIB_CONFIG},${aarch64_multilib}"
+			;;
+		*)
+			echo "--with-multilib-list=${aarch64_multilib} not supported."
+			exit 1
+		esac
+	done
+	TM_MULTILIB_CONFIG=`echo $TM_MULTILIB_CONFIG | sed 's/^,//'`
 	;;
 aarch64*-*-linux*)
 	tm_file="${tm_file} dbxelf.h elfos.h gnu-user.h linux.h glibc-stdint.h"
@@ -841,6 +885,24 @@ aarch64*-*-linux*)
 		tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=1"
 		;;
 	esac
+	aarch64_multilibs="${with_multilib_list}"
+	if test "$aarch64_multilibs" = "default"; then
+		# TODO: turn on ILP32 multilib build after its support is mature.
+		# aarch64_multilibs="lp64,ilp32"
+		aarch64_multilibs="lp64"
+	fi
+	aarch64_multilibs=`echo $aarch64_multilibs | sed -e 's/,/ /g'`
+	for aarch64_multilib in ${aarch64_multilibs}; do
+		case ${aarch64_multilib} in
+		ilp32 | lp64 )
+			TM_MULTILIB_CONFIG="${TM_MULTILIB_CONFIG},${aarch64_multilib}"
+			;;
+		*)
+			echo "--with-multilib-list=${aarch64_multilib} not supported."
+			exit 1
+		esac
+	done
+	TM_MULTILIB_CONFIG=`echo $TM_MULTILIB_CONFIG | sed 's/^,//'`
 	;;
 alpha*-*-linux*)
 	tm_file="elfos.h ${tm_file} alpha/elf.h alpha/linux.h alpha/linux-elf.h glibc-stdint.h"
@@ -892,10 +954,6 @@ arm*-*-linux-*)			# ARM GNU/Linux with ELF
 	    tmake_file="$tmake_file arm/t-linux-androideabi"
 	    ;;
 	esac
-  	# The BPABI long long divmod functions return a 128-bit value in
-	# registers r0-r3.  Correctly modeling that requires the use of
-	# TImode.
-	need_64bit_hwint=yes
 	# The EABI requires the use of __cxa_atexit.
 	default_use_cxa_atexit=yes
 	with_tls=${with_tls:-gnu}
@@ -904,10 +962,6 @@ arm*-*-uclinux*eabi*)		# ARM ucLinux
 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/linux-gas.h arm/uclinux-elf.h glibc-stdint.h"
 	tmake_file="arm/t-arm arm/t-arm-elf arm/t-bpabi"
 	tm_file="$tm_file arm/bpabi.h arm/uclinux-eabi.h arm/aout.h vxworks-dummy.h arm/arm.h"
-	# The BPABI long long divmod functions return a 128-bit value in
-	# registers r0-r3.  Correctly modeling that requires the use of
-	# TImode.
-	need_64bit_hwint=yes
 	# The EABI requires the use of __cxa_atexit.
 	default_use_cxa_atexit=yes
 	;;
@@ -916,10 +970,6 @@ arm*-*-eabi* | arm*-*-symbianelf* | arm*-*-rtems*)
 	arm*eb-*-eabi*)
 	  tm_defines="${tm_defines} TARGET_BIG_ENDIAN_DEFAULT=1"
 	esac
-	# The BPABI long long divmod functions return a 128-bit value in
-	# registers r0-r3.  Correctly modeling that requires the use of
-	# TImode.
-	need_64bit_hwint=yes
 	default_use_cxa_atexit=yes
 	tm_file="dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/bpabi.h"
 	tmake_file="arm/t-arm arm/t-arm-elf"
@@ -954,7 +1004,7 @@ avr-*-*)
 	    tm_file="${tm_file} ${cpu_type}/avrlibc.h"
 	    tm_defines="${tm_defines} WITH_AVRLIBC"
 	fi
-	tmake_file="avr/t-avr avr/t-multilib"
+	tmake_file="${tmake_file} avr/t-avr avr/t-multilib"
 	use_gcc_stdint=wrap
 	extra_gcc_objs="driver-avr.o avr-devices.o"
 	extra_objs="avr-devices.o avr-log.o"
@@ -971,7 +1021,7 @@ bfin*-uclinux*)
 	;;
 bfin*-linux-uclibc*)
 	tm_file="${tm_file} dbxelf.h elfos.h bfin/elf.h gnu-user.h linux.h glibc-stdint.h bfin/linux.h ./linux-sysroot-suffix.h"
-	tmake_file="bfin/t-bfin-linux t-slibgcc"
+	tmake_file="bfin/t-bfin-linux t-slibgcc t-linux-android"
 	use_collect2=no
 	;;
 bfin*-rtems*)
@@ -1006,7 +1056,7 @@ cris-*-elf | cris-*-none)
 crisv32-*-linux* | cris-*-linux*)
 	tm_file="dbxelf.h elfos.h ${tm_file} gnu-user.h linux.h glibc-stdint.h cris/linux.h"
 	# We need to avoid using t-linux, so override default tmake_file
-	tmake_file="cris/t-cris cris/t-linux t-slibgcc"
+	tmake_file="cris/t-cris cris/t-linux t-slibgcc t-linux-android"
 	extra_options="${extra_options} cris/linux.opt"
 	case $target in
 	  cris-*-*)
@@ -1080,7 +1130,6 @@ hppa*-*-openbsd*)
 	target_cpu_default="MASK_PA_11"
 	tm_file="${tm_file} dbxelf.h elfos.h openbsd.h openbsd-stdint.h openbsd-libpthread.h \
 		 pa/pa-openbsd.h pa/pa32-regs.h pa/pa32-openbsd.h"
-	tmake_file="${tmake_file} pa/t-openbsd"
 	extra_options="${extra_options} openbsd.opt"
 	gas=yes
 	gnu_ld=yes
@@ -1480,6 +1529,9 @@ x86_64-*-cygwin*)
 i[34567]86-*-mingw* | x86_64-*-mingw*)
 	tm_file="${tm_file} i386/unix.h i386/bsd.h i386/gas.h dbxcoff.h i386/cygming.h"
 	xm_file=i386/xm-mingw32.h
+	c_target_objs="${c_target_objs} winnt-c.o"
+	cxx_target_objs="${cxx_target_objs} winnt-c.o"
+	target_has_targetcm="yes"
 	case ${target} in
 		x86_64-*-* | *-w64-*)
 			need_64bit_isa=yes
@@ -1519,7 +1571,7 @@ i[34567]86-*-mingw* | x86_64-*-mingw*)
 			;;
 	esac
 	tm_file="${tm_file} i386/mingw-stdint.h"
-	tmake_file="${tmake_file} i386/t-cygming t-slibgcc"
+	tmake_file="${tmake_file} t-winnt i386/t-cygming t-slibgcc"
         case ${target} in
                x86_64-w64-*)
                		tmake_file="${tmake_file} i386/t-mingw-w64"
@@ -1659,8 +1711,7 @@ m32r-*-rtems*)
  	;;
 m32r-*-linux*)
 	tm_file="dbxelf.h elfos.h gnu-user.h linux.h glibc-stdint.h ${tm_file} m32r/linux.h"
-	# We override the tmake_file for linux -- why?
-	tmake_file="m32r/t-linux t-slibgcc"
+	tmake_file="${tmake_file} m32r/t-linux t-slibgcc"
 	gnu_ld=yes
 	if test x$enable_threads = xyes; then
 		thread_file='posix'
@@ -1668,8 +1719,7 @@ m32r-*-linux*)
  	;;
 m32rle-*-linux*)
 	tm_file="dbxelf.h elfos.h gnu-user.h linux.h glibc-stdint.h m32r/little.h ${tm_file} m32r/linux.h"
-	# We override the tmake_file for linux -- why?
-	tmake_file="m32r/t-linux t-slibgcc"
+	tmake_file="${tmake_file} m32r/t-linux t-slibgcc"
 	gnu_ld=yes
 	if test x$enable_threads = xyes; then
 		thread_file='posix'
@@ -1986,6 +2036,13 @@ mn10300-*-*)
 	use_collect2=no
 	use_gcc_stdint=wrap
 	;;
+msp430*-*-*)
+	tm_file="dbxelf.h elfos.h newlib-stdint.h ${tm_file}"
+	c_target_objs="msp430-c.o"
+	cxx_target_objs="msp430-c.o"
+	target_has_targetm_common=no
+	tmake_file="${tmake_file} msp430/t-msp430"
+	;;
 or1k-*-elf*)
        tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h ${cpu_type}/elf.h"
        extra_parts="crti.o crtbegin.o crtend.o crtn.o"
@@ -2117,7 +2174,7 @@ powerpc*-*-linux*)
 	tmake_file="rs6000/t-fprules rs6000/t-ppcos ${tmake_file} rs6000/t-ppccomm"
 	case ${target} in
 	    powerpc*le-*-*)
-	    tm_file="${tm_file} rs6000/sysv4le.h" ;;
+		tm_file="${tm_file} rs6000/sysv4le.h" ;;
 	esac
 	maybe_biarch=yes
 	case ${target} in
@@ -2140,6 +2197,19 @@ powerpc*-*-linux*)
 		fi
 		tm_file="rs6000/biarch64.h ${tm_file} rs6000/linux64.h glibc-stdint.h"
 		tmake_file="$tmake_file rs6000/t-linux64"
+		case ${target} in
+		    powerpc*le-*-*)
+			tmake_file="$tmake_file rs6000/t-linux64le"
+			case ${enable_targets} in
+			    all | *powerpc64-* | *powerpc-*)
+				tmake_file="$tmake_file rs6000/t-linux64lebe" ;;
+			esac ;;
+		    *)
+			case ${enable_targets} in
+			    all | *powerpc64le-* | *powerpcle-*)
+				tmake_file="$tmake_file rs6000/t-linux64bele" ;;
+			esac ;;
+		esac
 		extra_options="${extra_options} rs6000/linux64.opt"
 		;;
 	    *)
@@ -3012,11 +3082,18 @@ if test x$with_cpu = x ; then
          with_cpu=8540
       fi       
       ;;
-    sparc-leon*-*)
-      with_cpu=v8;
-      ;;
     sparc*-*-*)
-      with_cpu="`echo ${target} | sed 's/-.*$//'`"
+      case ${target} in
+	*-leon-*)
+	  with_cpu=leon
+	  ;;
+	*-leon[3-9]*)
+	  with_cpu=leon3
+	  ;;
+	*)
+	  with_cpu="`echo ${target} | sed 's/-.*$//'`"
+	  ;;
+      esac
       ;;
   esac
 
@@ -3116,6 +3193,16 @@ if test x$with_float = x; then
   esac
 fi
 
+# Infer a default setting for --with-fpu.
+if test x$with_fpu = x; then
+  case ${target} in
+    mips64r5900-*-* | mips64r5900el-*-* | mipsr5900-*-* | mipsr5900el-*-*)
+      # The R5900 FPU only supports single precision.
+      with_fpu=single
+      ;;
+  esac
+fi
+
 # Support --with-fpmath.
 if test x$with_fpmath != x; then
   case ${target} in
@@ -3173,7 +3260,7 @@ fi
 supported_defaults=
 case "${target}" in
 	aarch64*-*-*)
-		supported_defaults="cpu arch"
+		supported_defaults="abi cpu arch"
 		for which in cpu arch; do
 
 			eval "val=\$with_$which"
@@ -3494,7 +3581,7 @@ case "${target}" in
 		;;
 
 	mips*-*-*)
-		supported_defaults="abi arch arch_32 arch_64 float tune tune_32 tune_64 divide llsc mips-plt synci"
+		supported_defaults="abi arch arch_32 arch_64 float fpu nan tune tune_32 tune_64 divide llsc mips-plt synci"
 
 		case ${with_float} in
 		"" | soft | hard)
@@ -3502,6 +3589,26 @@ case "${target}" in
 			;;
 		*)
 			echo "Unknown floating point type used in --with-float=$with_float" 1>&2
+			exit 1
+			;;
+		esac
+
+		case ${with_fpu} in
+		"" | single | double)
+			# OK
+			;;
+		*)
+			echo "Unknown fpu type used in --with-fpu=$with_fpu" 1>&2
+			exit 1
+			;;
+		esac
+
+		case ${with_nan} in
+		"" | 2008 | legacy)
+			# OK
+			;;
+		*)
+			echo "Unknown NaN encoding used in --with-nan=$with_nan" 1>&2
 			exit 1
 			;;
 		esac
@@ -3667,7 +3774,7 @@ case "${target}" in
 			case ${val} in
 			"" | sparc | sparcv9 | sparc64 \
 			| v7 | cypress \
-			| v8 | supersparc | hypersparc | leon \
+			| v8 | supersparc | hypersparc | leon | leon3 \
 			| sparclite | f930 | f934 | sparclite86x \
 			| sparclet | tsc701 \
 			| v9 | ultrasparc | ultrasparc3 | niagara | niagara2 \
@@ -3786,7 +3893,9 @@ case ${target} in
 		;;
 	i[34567]86-*-solaris2* | x86_64-*-solaris2.1[0-9]*)
 		;;
-	i[34567]86-*-cygwin* | i[34567]86-*-mingw* | x86_64-*-mingw*)
+	i[34567]86-*-cygwin* | x86_64-*-cygwin*)
+		;;
+	i[34567]86-*-mingw* | x86_64-*-mingw*)
 		;;
 	i[34567]86-*-freebsd* | x86_64-*-freebsd*)
 		;;
@@ -3824,15 +3933,6 @@ case ${target} in
 		cxx_target_objs="${cxx_target_objs} sh-c.o"
 		;;
 
-	sparc-leon*-*)
-		if test x$with_tune = x ; then
-		  with_tune=leon;
-		fi
-
-		# The SPARC port checks this value at compile-time.
-		target_cpu_default2="TARGET_CPU_$with_cpu"
-		;;
-
 	sparc*-*-*)
 		# Some standard aliases.
 		case x$with_cpu in
@@ -3843,6 +3943,17 @@ case ${target} in
 			with_cpu=v9
 			;;
 		esac
+
+		if test x$with_tune = x ; then
+		      case ${target} in
+		      *-leon-*)
+			  with_tune=leon
+			  ;;
+		      *-leon[3-9]*)
+			  with_tune=leon3
+			  ;;
+		      esac
+		fi
 
 		# The SPARC port checks this value at compile-time.
 		target_cpu_default2="TARGET_CPU_$with_cpu"
@@ -3863,7 +3974,7 @@ case ${target} in
 esac
 
 t=
-all_defaults="abi cpu cpu_32 cpu_64 arch arch_32 arch_64 tune tune_32 tune_64 schedule float mode fpu divide llsc mips-plt synci tls"
+all_defaults="abi cpu cpu_32 cpu_64 arch arch_32 arch_64 tune tune_32 tune_64 schedule float mode fpu nan divide llsc mips-plt synci tls"
 for option in $all_defaults
 do
 	eval "val=\$with_"`echo $option | sed s/-/_/g`

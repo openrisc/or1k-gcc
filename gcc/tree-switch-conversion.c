@@ -31,7 +31,7 @@ Software Foundation, 51 Franklin Street, Fifth Floor, Boston, MA
 #include "flags.h"
 #include "tree.h"
 #include "basic-block.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-flow-inline.h"
 #include "tree-ssa-operands.h"
 #include "tree-pass.h"
@@ -365,7 +365,7 @@ emit_case_bit_tests (gimple swtch, tree index_expr,
 	  test[k].lo |= (HOST_WIDE_INT) 1 << j;
     }
 
-  qsort (test, count, sizeof(*test), case_bit_test_cmp);
+  qsort (test, count, sizeof (*test), case_bit_test_cmp);
 
   /* We generate two jumps to the default case label.
      Split the default edge, so that we don't have to do any PHI node
@@ -1463,25 +1463,42 @@ switchconv_gate (void)
   return flag_tree_switch_conversion != 0;
 }
 
-struct gimple_opt_pass pass_convert_switch =
+namespace {
+
+const pass_data pass_data_convert_switch =
 {
- {
-  GIMPLE_PASS,
-  "switchconv",				/* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  switchconv_gate,			/* gate */
-  do_switchconv,			/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_TREE_SWITCH_CONVERSION,		/* tv_id */
-  PROP_cfg | PROP_ssa,	                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,					/* todo_flags_start */
-  TODO_update_ssa 
-  | TODO_verify_ssa
-  | TODO_verify_stmts
-  | TODO_verify_flow			/* todo_flags_finish */
- }
+  GIMPLE_PASS, /* type */
+  "switchconv", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  true, /* has_execute */
+  TV_TREE_SWITCH_CONVERSION, /* tv_id */
+  ( PROP_cfg | PROP_ssa ), /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  ( TODO_update_ssa | TODO_verify_ssa
+    | TODO_verify_stmts
+    | TODO_verify_flow ), /* todo_flags_finish */
 };
+
+class pass_convert_switch : public gimple_opt_pass
+{
+public:
+  pass_convert_switch (gcc::context *ctxt)
+    : gimple_opt_pass (pass_data_convert_switch, ctxt)
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return switchconv_gate (); }
+  unsigned int execute () { return do_switchconv (); }
+
+}; // class pass_convert_switch
+
+} // anon namespace
+
+gimple_opt_pass *
+make_pass_convert_switch (gcc::context *ctxt)
+{
+  return new pass_convert_switch (ctxt);
+}

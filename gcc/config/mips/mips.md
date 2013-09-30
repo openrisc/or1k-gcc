@@ -2367,7 +2367,7 @@
 		   (mult:ANYF (match_operand:ANYF 1 "register_operand" "f")
 			      (match_operand:ANYF 2 "register_operand" "f"))
 		   (match_operand:ANYF 3 "register_operand" "f"))))]
-  "ISA_HAS_NMADD4_NMSUB4 (<MODE>mode)
+  "ISA_HAS_NMADD4_NMSUB4
    && TARGET_FUSED_MADD
    && HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2382,7 +2382,7 @@
 		   (mult:ANYF (match_operand:ANYF 1 "register_operand" "f")
 			      (match_operand:ANYF 2 "register_operand" "f"))
 		   (match_operand:ANYF 3 "register_operand" "0"))))]
-  "ISA_HAS_NMADD3_NMSUB3 (<MODE>mode)
+  "ISA_HAS_NMADD3_NMSUB3
    && TARGET_FUSED_MADD
    && HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2397,7 +2397,7 @@
 	 (mult:ANYF (neg:ANYF (match_operand:ANYF 1 "register_operand" "f"))
 		    (match_operand:ANYF 2 "register_operand" "f"))
 	 (match_operand:ANYF 3 "register_operand" "f")))]
-  "ISA_HAS_NMADD4_NMSUB4 (<MODE>mode)
+  "ISA_HAS_NMADD4_NMSUB4
    && TARGET_FUSED_MADD
    && !HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2412,7 +2412,7 @@
 	 (mult:ANYF (neg:ANYF (match_operand:ANYF 1 "register_operand" "f"))
 		    (match_operand:ANYF 2 "register_operand" "f"))
 	 (match_operand:ANYF 3 "register_operand" "0")))]
-  "ISA_HAS_NMADD3_NMSUB3 (<MODE>mode)
+  "ISA_HAS_NMADD3_NMSUB3
    && TARGET_FUSED_MADD
    && !HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2427,7 +2427,7 @@
 		   (mult:ANYF (match_operand:ANYF 2 "register_operand" "f")
 			      (match_operand:ANYF 3 "register_operand" "f"))
 		   (match_operand:ANYF 1 "register_operand" "f"))))]
-  "ISA_HAS_NMADD4_NMSUB4 (<MODE>mode)
+  "ISA_HAS_NMADD4_NMSUB4
    && TARGET_FUSED_MADD
    && HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2442,7 +2442,7 @@
 		   (mult:ANYF (match_operand:ANYF 2 "register_operand" "f")
 			      (match_operand:ANYF 3 "register_operand" "f"))
 		   (match_operand:ANYF 1 "register_operand" "0"))))]
-  "ISA_HAS_NMADD3_NMSUB3 (<MODE>mode)
+  "ISA_HAS_NMADD3_NMSUB3
    && TARGET_FUSED_MADD
    && HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2457,7 +2457,7 @@
 	 (match_operand:ANYF 1 "register_operand" "f")
 	 (mult:ANYF (match_operand:ANYF 2 "register_operand" "f")
 		    (match_operand:ANYF 3 "register_operand" "f"))))]
-  "ISA_HAS_NMADD4_NMSUB4 (<MODE>mode)
+  "ISA_HAS_NMADD4_NMSUB4
    && TARGET_FUSED_MADD
    && !HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2472,7 +2472,7 @@
 	 (match_operand:ANYF 1 "register_operand" "f")
 	 (mult:ANYF (match_operand:ANYF 2 "register_operand" "f")
 		    (match_operand:ANYF 3 "register_operand" "0"))))]
-  "ISA_HAS_NMADD3_NMSUB3 (<MODE>mode)
+  "ISA_HAS_NMADD3_NMSUB3
    && TARGET_FUSED_MADD
    && !HONOR_SIGNED_ZEROS (<MODE>mode)
    && !HONOR_NANS (<MODE>mode)"
@@ -2711,14 +2711,15 @@
 ;; Do not use the integer abs macro instruction, since that signals an
 ;; exception on -2147483648 (sigh).
 
-;; abs.fmt is an arithmetic instruction and treats all NaN inputs as
-;; invalid; it does not clear their sign bits.  We therefore can't use
-;; abs.fmt if the signs of NaNs matter.
+;; The "legacy" (as opposed to "2008") form of ABS.fmt is an arithmetic
+;; instruction that treats all NaN inputs as invalid; it does not clear
+;; their sign bit.  We therefore can't use that form if the signs of
+;; NaNs matter.
 
 (define_insn "abs<mode>2"
   [(set (match_operand:ANYF 0 "register_operand" "=f")
 	(abs:ANYF (match_operand:ANYF 1 "register_operand" "f")))]
-  "!HONOR_NANS (<MODE>mode)"
+  "mips_abs == MIPS_IEEE_754_2008 || !HONOR_NANS (<MODE>mode)"
   "abs.<fmt>\t%0,%1"
   [(set_attr "type" "fabs")
    (set_attr "mode" "<UNITMODE>")])
@@ -2793,14 +2794,15 @@
   [(set_attr "alu_type"	"sub")
    (set_attr "mode"	"DI")])
 
-;; neg.fmt is an arithmetic instruction and treats all NaN inputs as
-;; invalid; it does not flip their sign bit.  We therefore can't use
-;; neg.fmt if the signs of NaNs matter.
+;; The "legacy" (as opposed to "2008") form of NEG.fmt is an arithmetic
+;; instruction that treats all NaN inputs as invalid; it does not flip
+;; their sign bit.  We therefore can't use that form if the signs of
+;; NaNs matter.
 
 (define_insn "neg<mode>2"
   [(set (match_operand:ANYF 0 "register_operand" "=f")
 	(neg:ANYF (match_operand:ANYF 1 "register_operand" "f")))]
-  "!HONOR_NANS (<MODE>mode)"
+  "mips_abs == MIPS_IEEE_754_2008 || !HONOR_NANS (<MODE>mode)"
   "neg.<fmt>\t%0,%1"
   [(set_attr "type" "fneg")
    (set_attr "mode" "<UNITMODE>")])
@@ -6671,8 +6673,13 @@
   "ISA_HAS_PREFETCH && TARGET_EXPLICIT_RELOCS"
 {
   if (TARGET_LOONGSON_2EF || TARGET_LOONGSON_3A)
-    /* Loongson 2[ef] and Loongson 3a use load to $0 to perform prefetching.  */
-    return "ld\t$0,%a0";
+    {
+      /* Loongson 2[ef] and Loongson 3a use load to $0 for prefetching.  */
+      if (TARGET_64BIT)
+        return "ld\t$0,%a0";
+      else
+        return "lw\t$0,%a0";
+    }
   operands[1] = mips_prefetch_cookie (operands[1], operands[2]);
   return "pref\t%1,%a0";
 }

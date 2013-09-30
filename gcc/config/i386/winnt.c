@@ -110,6 +110,11 @@ i386_pe_determine_dllexport_p (tree decl)
   if (!TREE_PUBLIC (decl))
     return false;
 
+  if (TREE_CODE (decl) == FUNCTION_DECL
+      && DECL_DECLARED_INLINE_P (decl)
+      && !flag_keep_inline_dllexport)
+    return false; 
+
   if (lookup_attribute ("dllexport", DECL_ATTRIBUTES (decl)))
     return true;
 
@@ -1173,10 +1178,10 @@ i386_pe_seh_unwind_emit (FILE *asm_out_file, rtx insn)
 
   for (note = REG_NOTES (insn); note ; note = XEXP (note, 1))
     {
-      pat = XEXP (note, 0);
       switch (REG_NOTE_KIND (note))
 	{
 	case REG_FRAME_RELATED_EXPR:
+	  pat = XEXP (note, 0);
 	  goto found;
 
 	case REG_CFA_DEF_CFA:
@@ -1190,6 +1195,7 @@ i386_pe_seh_unwind_emit (FILE *asm_out_file, rtx insn)
 	  gcc_unreachable ();
 
 	case REG_CFA_ADJUST_CFA:
+	  pat = XEXP (note, 0);
 	  if (pat == NULL)
 	    {
 	      pat = PATTERN (insn);
@@ -1201,6 +1207,7 @@ i386_pe_seh_unwind_emit (FILE *asm_out_file, rtx insn)
 	  break;
 
 	case REG_CFA_OFFSET:
+	  pat = XEXP (note, 0);
 	  if (pat == NULL)
 	    pat = single_set (insn);
 	  seh_cfa_offset (asm_out_file, seh, pat);

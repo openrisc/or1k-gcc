@@ -67,12 +67,23 @@
 
 (define_insn_reservation "cortex_a53_alu" 2
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "alu_reg,simple_alu_imm"))
+       (eq_attr "type" "alu_imm,alus_imm,logic_imm,logics_imm,\
+                        alu_reg,alus_reg,logic_reg,logics_reg,\
+                        adc_imm,adcs_imm,adc_reg,adcs_reg,\
+                        adr,bfm,csel,rev,\
+                        shift_imm,shift_reg,\
+                        mov_imm,mov_reg,mvn_imm,mvn_reg,\
+                        mrs,multiple,no_insn"))
   "cortex_a53_slot_any")
 
 (define_insn_reservation "cortex_a53_alu_shift" 2
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "alu_shift,alu_shift_reg"))
+       (eq_attr "type" "alu_shift_imm,alus_shift_imm,\
+                        logic_shift_imm,logics_shift_imm,\
+                        alu_shift_reg,alus_shift_reg,\
+                        logic_shift_reg,logics_shift_reg,\
+                        extend,mov_shift,mov_shift_reg,\
+                        mvn_shift,mvn_shift_reg"))
   "cortex_a53_slot_any")
 
 ;; Forwarding path for unshifted operands.
@@ -127,12 +138,12 @@
 
 (define_insn_reservation "cortex_a53_load1" 3
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "load_byte,load1"))
+       (eq_attr "type" "load_byte,load1,load_acq"))
   "cortex_a53_slot_any+cortex_a53_ls")
 
 (define_insn_reservation "cortex_a53_store1" 2
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "store1"))
+       (eq_attr "type" "store1,store_rel"))
   "cortex_a53_slot_any+cortex_a53_ls+cortex_a53_store")
 
 (define_insn_reservation "cortex_a53_load2" 3
@@ -198,8 +209,9 @@
 
 (define_insn_reservation "cortex_a53_fpalu" 4
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "ffariths, fadds, ffarithd, faddd, fcpys, fmuls, f_cvt,\
-			fcmps, fcmpd"))
+       (eq_attr "type" "ffariths, fadds, ffarithd, faddd, fmov, fmuls,\
+                        f_cvt,f_cvtf2i,f_cvti2f,\
+			fcmps, fcmpd, fcsel"))
   "cortex_a53_slot0+cortex_a53_fpadd_pipe")
 
 (define_insn_reservation "cortex_a53_fconst" 2
@@ -227,12 +239,12 @@
 
 (define_insn_reservation "cortex_a53_fdivs" 14
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "fdivs"))
+       (eq_attr "type" "fdivs, fsqrts"))
   "cortex_a53_slot0, cortex_a53_fp_div_sqrt * 13")
 
 (define_insn_reservation "cortex_a53_fdivd" 29
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "fdivd"))
+       (eq_attr "type" "fdivd, fsqrtd"))
   "cortex_a53_slot0, cortex_a53_fp_div_sqrt * 28")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -241,12 +253,12 @@
 
 (define_insn_reservation "cortex_a53_r2f" 4
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "r_2_f"))
+       (eq_attr "type" "f_mcr,f_mcrr"))
   "cortex_a53_slot0")
 
 (define_insn_reservation "cortex_a53_f2r" 2
   (and (eq_attr "tune" "cortexa53")
-       (eq_attr "type" "f_2_r"))
+       (eq_attr "type" "f_mrc,f_mrrc"))
   "cortex_a53_slot0")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

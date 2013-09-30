@@ -40,7 +40,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tm_p.h"
 #include "basic-block.h"
 #include "gimple-pretty-print.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "cfgloop.h"
 #include "tree-pass.h"
 #include "tree-chrec.h"
@@ -376,7 +376,7 @@ tree_estimate_loop_size (struct loop *loop, edge exit, edge edge_to_cancel, stru
    is dead and that some instructions will be eliminated after
    peeling.
 
-   Loop body is likely going to simplify futher, this is difficult
+   Loop body is likely going to simplify further, this is difficult
    to guess, we just decrease the result by 1/3.  */
 
 static unsigned HOST_WIDE_INT
@@ -782,7 +782,7 @@ try_unroll_loop_completely (struct loop *loop,
 	 storing or cumulating the return value.  */
       else if (size.num_pure_calls_on_hot_path
 	       /* One IV increment, one test, one ivtmp store
-		  and one usefull stmt.  That is about minimal loop
+		  and one useful stmt.  That is about minimal loop
 		  doing pure call.  */
 	       && (size.non_call_stmts_on_hot_path
 		   <= 3 + size.num_pure_calls_on_hot_path))
@@ -870,11 +870,12 @@ try_unroll_loop_completely (struct loop *loop,
     {
       if (!n_unroll)
         dump_printf_loc (MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS, locus,
-                         "Turned loop into non-loop; it never loops.\n");
+                         "loop turned into non-loop; it never loops\n");
       else
         {
           dump_printf_loc (MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS, locus,
-                           "Completely unroll loop %d times", (int)n_unroll);
+                           "loop with %d iterations completely unrolled",
+			   (int) (n_unroll + 1));
           if (profile_info)
             dump_printf (MSG_OPTIMIZED_LOCATIONS | TDF_DETAILS,
                          " (header execution count %d)",
@@ -1124,6 +1125,11 @@ tree_unroll_loops_completely_1 (bool may_increase_size, bool unroll_outer,
      siblings of outer loops instead.  */
   if (changed)
     return true;
+
+  /* Don't unroll #pragma omp simd loops until the vectorizer
+     attempts to vectorize those.  */
+  if (loop->force_vect)
+    return false;
 
   /* Try to unroll this loop.  */
   loop_father = loop_outer (loop);

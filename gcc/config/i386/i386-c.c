@@ -156,8 +156,7 @@ ix86_target_macros_internal (HOST_WIDE_INT isa_flag,
     /* use PROCESSOR_max to not set/unset the arch macro.  */
     case PROCESSOR_max:
       break;
-    case PROCESSOR_GENERIC32:
-    case PROCESSOR_GENERIC64:
+    case PROCESSOR_GENERIC:
       gcc_unreachable ();
     }
 
@@ -248,8 +247,7 @@ ix86_target_macros_internal (HOST_WIDE_INT isa_flag,
     case PROCESSOR_SLM:
       def_or_undef (parse_in, "__tune_slm__");
       break;
-    case PROCESSOR_GENERIC32:
-    case PROCESSOR_GENERIC64:
+    case PROCESSOR_GENERIC:
       break;
     /* use PROCESSOR_max to not set/unset the tune macro.  */
     case PROCESSOR_max:
@@ -306,6 +304,14 @@ ix86_target_macros_internal (HOST_WIDE_INT isa_flag,
     def_or_undef (parse_in, "__AVX__");
   if (isa_flag & OPTION_MASK_ISA_AVX2)
     def_or_undef (parse_in, "__AVX2__");
+  if (isa_flag & OPTION_MASK_ISA_AVX512F)
+    def_or_undef (parse_in, "__AVX512F__");
+  if (isa_flag & OPTION_MASK_ISA_AVX512ER)
+    def_or_undef (parse_in, "__AVX512ER__");
+  if (isa_flag & OPTION_MASK_ISA_AVX512CD)
+    def_or_undef (parse_in, "__AVX512CD__");
+  if (isa_flag & OPTION_MASK_ISA_AVX512PF)
+    def_or_undef (parse_in, "__AVX512PF__");
   if (isa_flag & OPTION_MASK_ISA_FMA)
     def_or_undef (parse_in, "__FMA__");
   if (isa_flag & OPTION_MASK_ISA_RTM)

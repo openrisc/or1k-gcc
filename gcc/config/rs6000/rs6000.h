@@ -892,7 +892,9 @@ enum data_align { align_abi, align_opt, align_both };
    in inline functions.
 
    Another pseudo (not included in DWARF_FRAME_REGISTERS) is soft frame
-   pointer, which is eventually eliminated in favor of SP or FP.  */
+   pointer, which is eventually eliminated in favor of SP or FP.
+
+   The 3 HTM registers aren't also included in DWARF_FRAME_REGISTERS.  */
 
 #define FIRST_PSEUDO_REGISTER 117
 
@@ -900,7 +902,7 @@ enum data_align { align_abi, align_opt, align_both };
 #define PRE_GCC3_DWARF_FRAME_REGISTERS 77
 
 /* Add 32 dwarf columns for synthetic SPE registers.  */
-#define DWARF_FRAME_REGISTERS ((FIRST_PSEUDO_REGISTER - 1) + 32)
+#define DWARF_FRAME_REGISTERS ((FIRST_PSEUDO_REGISTER - 4) + 32)
 
 /* The SPE has an additional 32 synthetic registers, with DWARF debug
    info numbering for these registers starting at 1200.  While eh_frame
@@ -916,7 +918,7 @@ enum data_align { align_abi, align_opt, align_both };
    We must map them here to avoid huge unwinder tables mostly consisting
    of unused space.  */
 #define DWARF_REG_TO_UNWIND_COLUMN(r) \
-  ((r) > 1200 ? ((r) - 1200 + FIRST_PSEUDO_REGISTER - 1) : (r))
+  ((r) > 1200 ? ((r) - 1200 + (DWARF_FRAME_REGISTERS - 32)) : (r))
 
 /* Use standard DWARF numbering for DWARF debugging information.  */
 #define DBX_REGISTER_NUMBER(REGNO) rs6000_dbx_register_number (REGNO)
@@ -1119,14 +1121,11 @@ enum data_align { align_abi, align_opt, align_both };
 #define VINT_REGNO_P(N) ALTIVEC_REGNO_P (N)
 
 /* Alternate name for any vector register supporting logical operations, no
-   matter which instruction set(s) are available.  For 64-bit mode, we also
-   allow logical operations in the GPRS.  This is to allow atomic quad word
-   builtins not to need the VSX registers for lqarx/stqcx.  It also helps with
-   __int128_t arguments that are passed in GPRs.  */
+   matter which instruction set(s) are available.  Allow GPRs as well as the
+   vector registers.  */
 #define VLOGICAL_REGNO_P(N)						\
-  (ALTIVEC_REGNO_P (N)							\
-   || (TARGET_VSX && FP_REGNO_P (N))					\
-   || (TARGET_VSX && TARGET_POWERPC64 && INT_REGNO_P (N)))
+  (INT_REGNO_P (N) || ALTIVEC_REGNO_P (N)				\
+   || (TARGET_VSX && FP_REGNO_P (N)))					\
 
 /* Return number of consecutive hard regs needed starting at reg REGNO
    to hold something of mode MODE.  */
@@ -1404,15 +1403,18 @@ enum r6000_reg_class_enum {
   RS6000_CONSTRAINT_v,		/* Altivec registers */
   RS6000_CONSTRAINT_wa,		/* Any VSX register */
   RS6000_CONSTRAINT_wd,		/* VSX register for V2DF */
-  RS6000_CONSTRAINT_wg,		/* FPR register for -mmfpgpr */
   RS6000_CONSTRAINT_wf,		/* VSX register for V4SF */
+  RS6000_CONSTRAINT_wg,		/* FPR register for -mmfpgpr */
   RS6000_CONSTRAINT_wl,		/* FPR register for LFIWAX */
   RS6000_CONSTRAINT_wm,		/* VSX register for direct move */
   RS6000_CONSTRAINT_wr,		/* GPR register if 64-bit  */
   RS6000_CONSTRAINT_ws,		/* VSX register for DF */
   RS6000_CONSTRAINT_wt,		/* VSX register for TImode */
-  RS6000_CONSTRAINT_wv,		/* Altivec register for power8 vector */
+  RS6000_CONSTRAINT_wu,		/* Altivec register for float load/stores.  */
+  RS6000_CONSTRAINT_wv,		/* Altivec register for double load/stores.  */
+  RS6000_CONSTRAINT_ww,		/* FP or VSX register for vsx float ops.  */
   RS6000_CONSTRAINT_wx,		/* FPR register for STFIWX */
+  RS6000_CONSTRAINT_wy,		/* VSX register for SF */
   RS6000_CONSTRAINT_wz,		/* FPR register for LFIWZX */
   RS6000_CONSTRAINT_MAX
 };
@@ -1499,7 +1501,8 @@ extern enum reg_class rs6000_constraints[RS6000_CONSTRAINT_MAX];
 
    On the RS/6000, we grow upwards, from the area after the outgoing
    arguments.  */
-#define FRAME_GROWS_DOWNWARD (flag_stack_protect != 0 || flag_asan != 0)
+#define FRAME_GROWS_DOWNWARD (flag_stack_protect != 0			\
+			      || (flag_sanitize & SANITIZE_ADDRESS) != 0)
 
 /* Size of the outgoing register save area */
 #define RS6000_REG_SAVE ((DEFAULT_ABI == ABI_AIX			\
@@ -2139,9 +2142,15 @@ extern int toc_initialized;
 	    }								\
 	  else if (TARGET_XCOFF)					\
 	    {								\
-	      fputs ("\t.lglobl\t.", FILE);				\
-	      RS6000_OUTPUT_BASENAME (FILE, alias);			\
-	      putc ('\n', FILE);					\
+	      if (!RS6000_WEAK || !DECL_WEAK (DECL))			\
+		{							\
+		  fputs ("\t.lglobl\t.", FILE);				\
+		  RS6000_OUTPUT_BASENAME (FILE, alias);			\
+		  putc ('\n', FILE);					\
+		  fputs ("\t.lglobl\t", FILE);				\
+		  RS6000_OUTPUT_BASENAME (FILE, alias);			\
+		  putc ('\n', FILE);					\
+		}							\
 	    }								\
 	  fputs ("\t.set\t.", FILE);					\
 	  RS6000_OUTPUT_BASENAME (FILE, alias);				\

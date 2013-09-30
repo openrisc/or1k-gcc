@@ -1,3 +1,112 @@
+2013-09-17  Jacek Caban  <jacek@codeweavers.com>
+
+	* config/i386/gthr-win32.c: CreateSemaphoreW instead of
+	CreateSemaphoreA.
+	* config/i386/gthr-win32.h: Likewise.
+
+2013-09-16  DJ Delorie  <dj@redhat.com>
+
+	* config/rl78/vregs.h: Add G10 register definitions.
+	* config/rl78/lib2mul.c: Enable for RL78/G10.
+	* config/rl78/lib2div.c: Likewise.
+	* config/rl78/lshrsi3.S: Use vregs.h.
+	* config/rl78/cmpsi2.S: Likewise.
+	* config/rl78/trampoline.S: Likewise.
+	* config/rl78/mulsi2.S: Likewise.  Disable for RL78/G10.
+
+2013-09-14  DJ Delorie  <dj@redhat.com>
+	    Nick Clifton  <nickc@redhat.com>
+
+	* config/rl78/mulsi3.S: Remove a few unneeded moves and branches.
+	* config/rl78/vregs.h: New.
+	* config/rl78/signbit.S: New file.  Implements signbit function.
+	* config/rl78/divmodsi.S: New.
+	* config/rl78/divmodhi.S: New.
+	* config/rl78/divmodqi.S: New.
+	* config/rl78/t-rl78: Build them here...
+	* config/rl78/lib2div.c: ...but not here.
+
+2013-09-12  DJ Delorie  <dj@redhat.com>
+
+	* config.host (msp*-*-elf): New.
+	* config/msp430/: New port.
+
+2013-08-18  Iain Sandoe  <iain@codesourcery.com>
+
+	PR gcov-profile/58127
+	* libgcov.c (__gcov_indirect_call_callee): Don't make this a
+	__thread var for emulated TLS.
+	(__gcov_indirect_call_counters): Likewise.
+
+2013-08-16  Maciej W. Rozycki  <macro@codesourcery.com>
+            Catherine Moore  <clm@codesourcery.com>
+            Richard Sandiford <rdsandiford@googlemail.com>
+
+	* config/mips/mips16.S (CE_STARTFN, CE_ENDFN): New macros.
+	(RET_FUNCTION): Use them in place of STARTFN and ENDFN.
+	(CALL_STUB_NO_RET): Likewise.
+	(CALL_STUB_RET): Likewise.
+	* config/mips/libgcc-mips16.ver: Remove __mips16_call_stub and
+	__mips16_ret call/return stub symbols.
+	* config.host <mips*-*-linux>: For non-R5900 add t-slibgcc-libgcc
+	to tmake_file.
+
+2013-08-13  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	* config.host <mips*-*-linux*>: Remove a stray comment.
+
+2013-08-10  Jan Hubicka  <jh@suse.cz>
+
+	Work around binutils PR14342
+	* Makefile.in: Add _gcov_indirect_call_profiler_v2 symbol.
+	* libgcov.c (L_gcov_indirect_call_profiler): Restore original API.
+	(L_gcov_indirect_call_profiler_v2): New.
+
+2013-08-06  Jan Hubicka  <jh@suse.cz>
+
+	* libgcov.c (__gcov_indirect_call_callee,
+	__gcov_indirect_call_counters): New global vars.
+	(__gcov_indirect_call_profiler): replace by ...
+	(__gcov_indirect_call_profiler_v2) ... this one.
+
+2013-08-06  Caroline Tice  <cmtice@google.com>
+
+	* config.host (extra_parts): Add vtv_start.o, vtv_end.o
+	vtv_start_preinit.o and vtv_end_preinit.o.
+	* configure.ac: Add code to check/set enable_vtable_verify.
+	* Makefile.in: Add rules to build vtv_*.o, if enable_vtable_verify is
+	true.
+	* vtv_start_preinit.c: New file.
+	* vtv_end_preinit.c: New file.
+	* vtv_start.c: New file.
+	* vtv_end.c: New file.
+	* configure: Regenerated.
+
+2013-08-01  Maxim Kuvyrkov  <maxim@kugelworks.com>
+
+	* config/aarch64/sfp-machine.h, config/aarch64/sync-cache.c,
+	* config/i386/cpuinfo.c, config/ia64/unwind-ia64.h,
+	* config/mips/vr4120-div.S: Fix license from GPL-3.0+ to
+	GPL-3.0-with-GCC-exception.
+
+2013-07-30  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	* config/mips/mips16.S (DELAYf): Alias to DELAYt for the MIPS IV
+	ISA and up.
+
+2013-07-23  Andreas Krebbel  <Andreas.Krebbel@de.ibm.com>
+
+	* config/s390/linux-unwind.h: Use the proper dwarf to hard reg
+	mapping for FPRs when creating the fallback framestate.
+
+2013-07-19  Georg-Johann Lay  <avr@gjlay.de>
+
+	PR target/57516
+	* config/avr/lib1funcs-fixed.S (__roundqq3, __rounduqq3)
+	(__round_s2_const, __round_u2_const)
+	(__round_s4_const, __round_u4_const, __round_x8):
+	Saturate result if addition result cannot be represented.
+
 2013-07-15  Matthias Klose  <doko@ubuntu.com>
 
 	* libgcc2.c: Don't include <limits.h>.

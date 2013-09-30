@@ -46,6 +46,7 @@
 #include "cgraph.h"
 #include "langhooks.h"
 #include "bfin-protos.h"
+#include "tm_p.h"
 #include "tm-preds.h"
 #include "tm-constrs.h"
 #include "gt-bfin.h"
@@ -2437,7 +2438,7 @@ cbranch_predicted_taken_p (rtx insn)
 
   if (x)
     {
-      int pred_val = INTVAL (XEXP (x, 0));
+      int pred_val = XINT (x, 0);
 
       return pred_val >= REG_BR_PROB_BASE / 2;
     }

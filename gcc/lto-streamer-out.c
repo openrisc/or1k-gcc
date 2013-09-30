@@ -31,7 +31,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "input.h"
 #include "hashtab.h"
 #include "basic-block.h"
-#include "tree-flow.h"
+#include "tree-ssa.h"
 #include "tree-pass.h"
 #include "cgraph.h"
 #include "function.h"
@@ -124,8 +124,11 @@ output_type_ref (struct output_block *ob, tree node)
 static bool
 tree_is_indexable (tree t)
 {
-  if (TREE_CODE (t) == PARM_DECL)
-    return true;
+  /* Parameters and return values of functions of variably modified types
+     must go to global stream, because they may be used in the type
+     definition.  */
+  if (TREE_CODE (t) == PARM_DECL || TREE_CODE (t) == RESULT_DECL)
+    return variably_modified_type_p (TREE_TYPE (DECL_CONTEXT (t)), NULL_TREE);
   else if (TREE_CODE (t) == VAR_DECL && decl_function_context (t)
 	   && !TREE_STATIC (t))
     return false;
@@ -506,13 +509,7 @@ DFS_write_tree_body (struct output_block *ob,
 
   if (CODE_CONTAINS_STRUCT (code, TS_DECL_NON_COMMON))
     {
-      if (TREE_CODE (expr) == FUNCTION_DECL)
-	{
-	  for (tree t = DECL_ARGUMENTS (expr); t; t = TREE_CHAIN (t))
-	    DFS_follow_tree_edge (t);
-	  DFS_follow_tree_edge (DECL_RESULT (expr));
-	}
-      else if (TREE_CODE (expr) == TYPE_DECL)
+      if (TREE_CODE (expr) == TYPE_DECL)
 	DFS_follow_tree_edge (DECL_ORIGINAL_TYPE (expr));
       DFS_follow_tree_edge (DECL_VINDEX (expr));
     }
@@ -648,9 +645,8 @@ DFS_write_tree_body (struct output_block *ob,
       FOR_EACH_VEC_SAFE_ELT (BINFO_BASE_ACCESSES (expr), i, t)
 	DFS_follow_tree_edge (t);
 
-      DFS_follow_tree_edge (BINFO_INHERITANCE_CHAIN (expr));
-      DFS_follow_tree_edge (BINFO_SUBVTT_INDEX (expr));
-      DFS_follow_tree_edge (BINFO_VPTR_INDEX (expr));
+      /* Do not walk BINFO_INHERITANCE_CHAIN, BINFO_SUBVTT_INDEX
+	 and BINFO_VPTR_INDEX; these are used by C++ FE only.  */
     }
 
   if (CODE_CONTAINS_STRUCT (code, TS_CONSTRUCTOR))
@@ -754,7 +750,6 @@ hash_tree (struct streamer_tree_cache_d *cache, tree t)
       v = iterative_hash_host_wide_int (DECL_ALIGN (t), v);
       if (code == LABEL_DECL)
 	{
-	  v = iterative_hash_host_wide_int (DECL_ERROR_ISSUED (t), v);
 	  v = iterative_hash_host_wide_int (EH_LANDING_PAD_NR (t), v);
 	  v = iterative_hash_host_wide_int (LABEL_DECL_UID (t), v);
 	}
@@ -787,23 +782,27 @@ hash_tree (struct streamer_tree_cache_d *cache, tree t)
 
   if (CODE_CONTAINS_STRUCT (code, TS_DECL_WITH_VIS))
     {
-      v = iterative_hash_host_wide_int (DECL_DEFER_OUTPUT (t)
-					| (DECL_COMMON (t) << 1)
-					| (DECL_DLLIMPORT_P (t) << 2)
-					| (DECL_WEAK (t) << 3)
-					| (DECL_SEEN_IN_BIND_EXPR_P (t) << 4)
-					| (DECL_COMDAT (t) << 5)
+      v = iterative_hash_host_wide_int ((DECL_COMMON (t))
+					| (DECL_DLLIMPORT_P (t) << 1)
+					| (DECL_WEAK (t) << 2)
+					| (DECL_SEEN_IN_BIND_EXPR_P (t) << 3)
+					| (DECL_COMDAT (t) << 4)
 					| (DECL_VISIBILITY_SPECIFIED (t) << 6),
 					v);
       v = iterative_hash_host_wide_int (DECL_VISIBILITY (t), v);
       if (code == VAR_DECL)
 	{
+	  /* DECL_IN_TEXT_SECTION is set during final asm output only.  */
 	  v = iterative_hash_host_wide_int (DECL_HARD_REGISTER (t)
-					    | (DECL_IN_TEXT_SECTION (t) << 1)
-					    | (DECL_IN_CONSTANT_POOL (t) << 2),
+					    | (DECL_IN_CONSTANT_POOL (t) << 1),
 					    v);
 	  v = iterative_hash_host_wide_int (DECL_TLS_MODEL (t), v);
 	}
+      if (TREE_CODE (t) == FUNCTION_DECL)
+	v = iterative_hash_host_wide_int (DECL_FINAL_P (t)
+					  | (DECL_CXX_CONSTRUCTOR_P (t) << 1)
+					  | (DECL_CXX_DESTRUCTOR_P (t) << 2),
+					  v);
       if (VAR_OR_FUNCTION_DECL_P (t))
 	v = iterative_hash_host_wide_int (DECL_INIT_PRIORITY (t), v);
     }
@@ -844,7 +843,10 @@ hash_tree (struct streamer_tree_cache_d *cache, tree t)
 					| (TYPE_USER_ALIGN (t) << 5)
 					| (TYPE_READONLY (t) << 6), v);
       if (RECORD_OR_UNION_TYPE_P (t))
-	v = iterative_hash_host_wide_int (TYPE_TRANSPARENT_AGGR (t), v);
+	{
+	  v = iterative_hash_host_wide_int (TYPE_TRANSPARENT_AGGR (t)
+					    | (TYPE_FINAL_P (t) << 1), v);
+	}
       else if (code == ARRAY_TYPE)
 	v = iterative_hash_host_wide_int (TYPE_NONALIASED_COMPONENT (t), v);
       v = iterative_hash_host_wide_int (TYPE_PRECISION (t), v);
@@ -936,13 +938,7 @@ hash_tree (struct streamer_tree_cache_d *cache, tree t)
 
   if (CODE_CONTAINS_STRUCT (code, TS_DECL_NON_COMMON))
     {
-      if (code == FUNCTION_DECL)
-	{
-	  for (tree a = DECL_ARGUMENTS (t); a; a = DECL_CHAIN (a))
-	    visit (a);
-	  visit (DECL_RESULT (t));
-	}
-      else if (code == TYPE_DECL)
+      if (code == TYPE_DECL)
 	visit (DECL_ORIGINAL_TYPE (t));
       visit (DECL_VINDEX (t));
     }
@@ -1033,9 +1029,8 @@ hash_tree (struct streamer_tree_cache_d *cache, tree t)
       visit (BINFO_VPTR_FIELD (t));
       FOR_EACH_VEC_SAFE_ELT (BINFO_BASE_ACCESSES (t), i, b)
 	visit (b);
-      visit (BINFO_INHERITANCE_CHAIN (t));
-      visit (BINFO_SUBVTT_INDEX (t));
-      visit (BINFO_VPTR_INDEX (t));
+      /* Do not walk BINFO_INHERITANCE_CHAIN, BINFO_SUBVTT_INDEX
+	 and BINFO_VPTR_INDEX; these are used by C++ FE only.  */
     }
 
   if (CODE_CONTAINS_STRUCT (code, TS_CONSTRUCTOR))
@@ -1772,50 +1767,83 @@ output_function (struct cgraph_node *node)
 
   streamer_write_record_start (ob, LTO_function);
 
-  output_struct_function_base (ob, fn);
-
-  /* Output all the SSA names used in the function.  */
-  output_ssa_names (ob, fn);
-
-  /* Output any exception handling regions.  */
-  output_eh_regions (ob, fn);
+  /* Output decls for parameters and args.  */
+  stream_write_tree (ob, DECL_RESULT (function), true);
+  streamer_write_chain (ob, DECL_ARGUMENTS (function), true);
 
   /* Output DECL_INITIAL for the function, which contains the tree of
      lexical scopes.  */
   stream_write_tree (ob, DECL_INITIAL (function), true);
 
-  /* We will renumber the statements.  The code that does this uses
-     the same ordering that we use for serializing them so we can use
-     the same code on the other end and not have to write out the
-     statement numbers.  We do not assign UIDs to PHIs here because
-     virtual PHIs get re-computed on-the-fly which would make numbers
-     inconsistent.  */
-  set_gimple_stmt_max_uid (cfun, 0);
-  FOR_ALL_BB (bb)
+  /* We also stream abstract functions where we stream only stuff needed for
+     debug info.  */
+  if (gimple_has_body_p (function))
     {
-      gimple_stmt_iterator gsi;
-      for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+      streamer_write_uhwi (ob, 1);
+      output_struct_function_base (ob, fn);
+
+      /* Output all the SSA names used in the function.  */
+      output_ssa_names (ob, fn);
+
+      /* Output any exception handling regions.  */
+      output_eh_regions (ob, fn);
+
+
+      /* We will renumber the statements.  The code that does this uses
+	 the same ordering that we use for serializing them so we can use
+	 the same code on the other end and not have to write out the
+	 statement numbers.  We do not assign UIDs to PHIs here because
+	 virtual PHIs get re-computed on-the-fly which would make numbers
+	 inconsistent.  */
+      set_gimple_stmt_max_uid (cfun, 0);
+      FOR_ALL_BB (bb)
 	{
-	  gimple stmt = gsi_stmt (gsi);
-	  gimple_set_uid (stmt, inc_gimple_stmt_max_uid (cfun));
+	  gimple_stmt_iterator gsi;
+	  for (gsi = gsi_start_phis (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+	    {
+	      gimple stmt = gsi_stmt (gsi);
+
+	      /* Virtual PHIs are not going to be streamed.  */
+	      if (!virtual_operand_p (gimple_phi_result (stmt)))
+	        gimple_set_uid (stmt, inc_gimple_stmt_max_uid (cfun));
+	    }
+	  for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+	    {
+	      gimple stmt = gsi_stmt (gsi);
+	      gimple_set_uid (stmt, inc_gimple_stmt_max_uid (cfun));
+	    }
 	}
-    }
+      /* To avoid keeping duplicate gimple IDs in the statements, renumber
+	 virtual phis now.  */
+      FOR_ALL_BB (bb)
+	{
+	  gimple_stmt_iterator gsi;
+	  for (gsi = gsi_start_phis (bb); !gsi_end_p (gsi); gsi_next (&gsi))
+	    {
+	      gimple stmt = gsi_stmt (gsi);
+	      if (virtual_operand_p (gimple_phi_result (stmt)))
+	        gimple_set_uid (stmt, inc_gimple_stmt_max_uid (cfun));
+	    }
+	}
 
-  /* Output the code for the function.  */
-  FOR_ALL_BB_FN (bb, fn)
-    output_bb (ob, bb, fn);
+      /* Output the code for the function.  */
+      FOR_ALL_BB_FN (bb, fn)
+	output_bb (ob, bb, fn);
 
-  /* The terminator for this function.  */
-  streamer_write_record_start (ob, LTO_null);
+      /* The terminator for this function.  */
+      streamer_write_record_start (ob, LTO_null);
 
-  output_cfg (ob, fn);
+      output_cfg (ob, fn);
+
+      pop_cfun ();
+   }
+  else
+    streamer_write_uhwi (ob, 0);
 
   /* Create a section to hold the pickled output of this function.   */
   produce_asm (ob, function);
 
   destroy_output_block (ob);
-
-  pop_cfun ();
 }
 
 
@@ -1957,8 +1985,7 @@ lto_output (void)
       cgraph_node *node = dyn_cast <cgraph_node> (snode);
       if (node
 	  && lto_symtab_encoder_encode_body_p (encoder, node)
-	  && !node->symbol.alias
-	  && !node->thunk.thunk_p)
+	  && !node->symbol.alias)
 	{
 #ifdef ENABLE_CHECKING
 	  gcc_assert (!bitmap_bit_p (output, DECL_UID (node->symbol.decl)));
@@ -1966,7 +1993,7 @@ lto_output (void)
 #endif
 	  decl_state = lto_new_out_decl_state ();
 	  lto_push_out_decl_state (decl_state);
-	  if (gimple_has_body_p (node->symbol.decl))
+	  if (gimple_has_body_p (node->symbol.decl) || !flag_wpa)
 	    output_function (node);
 	  else
 	    copy_function (node);
@@ -1987,34 +2014,51 @@ lto_output (void)
 #endif
 }
 
-struct ipa_opt_pass_d pass_ipa_lto_gimple_out =
+namespace {
+
+const pass_data pass_data_ipa_lto_gimple_out =
 {
- {
-  IPA_PASS,
-  "lto_gimple_out",	                /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_lto_out,			        /* gate */
-  NULL,		                	/* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_IPA_LTO_GIMPLE_OUT,		        /* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,            			/* todo_flags_start */
-  0                                     /* todo_flags_finish */
- },
- NULL,		                        /* generate_summary */
- lto_output,           			/* write_summary */
- NULL,		         		/* read_summary */
- lto_output,           			/* write_optimization_summary */
- NULL,					/* read_optimization_summary */
- NULL,					/* stmt_fixup */
- 0,					/* TODOs */
- NULL,			                /* function_transform */
- NULL					/* variable_transform */
+  IPA_PASS, /* type */
+  "lto_gimple_out", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  false, /* has_execute */
+  TV_IPA_LTO_GIMPLE_OUT, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_ipa_lto_gimple_out : public ipa_opt_pass_d
+{
+public:
+  pass_ipa_lto_gimple_out (gcc::context *ctxt)
+    : ipa_opt_pass_d (pass_data_ipa_lto_gimple_out, ctxt,
+		      NULL, /* generate_summary */
+		      lto_output, /* write_summary */
+		      NULL, /* read_summary */
+		      lto_output, /* write_optimization_summary */
+		      NULL, /* read_optimization_summary */
+		      NULL, /* stmt_fixup */
+		      0, /* function_transform_todo_flags_start */
+		      NULL, /* function_transform */
+		      NULL) /* variable_transform */
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_lto_out (); }
+
+}; // class pass_ipa_lto_gimple_out
+
+} // anon namespace
+
+ipa_opt_pass_d *
+make_pass_ipa_lto_gimple_out (gcc::context *ctxt)
+{
+  return new pass_ipa_lto_gimple_out (ctxt);
+}
 
 
 /* Write each node in encoded by ENCODER to OB, as well as those reachable
@@ -2149,9 +2193,9 @@ write_symbol (struct streamer_tree_cache_d *cache,
   if (!TREE_PUBLIC (t)
       || is_builtin_fn (t)
       || DECL_ABSTRACT (t)
-      || TREE_CODE (t) == RESULT_DECL
       || (TREE_CODE (t) == VAR_DECL && DECL_HARD_REGISTER (t)))
     return;
+  gcc_assert (TREE_CODE (t) != RESULT_DECL);
 
   gcc_assert (TREE_CODE (t) == VAR_DECL
 	      || TREE_CODE (t) == FUNCTION_DECL);
@@ -2204,7 +2248,7 @@ write_symbol (struct streamer_tree_cache_d *cache,
       && !targetm.binds_local_p (t))
     visibility = GCCPV_DEFAULT;
   else
-    switch (DECL_VISIBILITY(t))
+    switch (DECL_VISIBILITY (t))
       {
       case VISIBILITY_DEFAULT:
 	visibility = GCCPV_DEFAULT;
@@ -2254,7 +2298,7 @@ output_symbol_p (symtab_node node)
      and devirtualization.  We do not want to see them in symbol table as
      references unless they are really used.  */
   cnode = dyn_cast <cgraph_node> (node);
-  if (cnode && DECL_EXTERNAL (cnode->symbol.decl)
+  if (cnode && (!node->symbol.definition || DECL_EXTERNAL (cnode->symbol.decl))
       && cnode->callers)
     return true;
 
@@ -2262,7 +2306,7 @@ output_symbol_p (symtab_node node)
     part of the compilation unit until they are used by folding.  Some symbols,
     like references to external construction vtables can not be referred to at all.
     We decide this at can_refer_decl_in_current_unit_p.  */
- if (DECL_EXTERNAL (node->symbol.decl))
+ if (!node->symbol.definition || DECL_EXTERNAL (node->symbol.decl))
     {
       int i;
       struct ipa_ref *ref;
@@ -2303,7 +2347,7 @@ produce_symtab (struct output_block *ob)
 
   /* Write the symbol table.
      First write everything defined and then all declarations.
-     This is neccesary to handle cases where we have duplicated symbols.  */
+     This is necessary to handle cases where we have duplicated symbols.  */
   for (lsei = lsei_start (encoder);
        !lsei_end_p (lsei); lsei_next (&lsei))
     {
@@ -2414,7 +2458,7 @@ produce_asm_for_decls (void)
       lto_output_decl_state_refs (ob, decl_state_stream, fn_out_state);
     }
   lto_write_stream (decl_state_stream);
-  free(decl_state_stream);
+  free (decl_state_stream);
 
   lto_write_stream (ob->main_stream);
   lto_write_stream (ob->string_stream);
@@ -2442,31 +2486,48 @@ produce_asm_for_decls (void)
 }
 
 
-struct ipa_opt_pass_d pass_ipa_lto_finish_out =
+namespace {
+
+const pass_data pass_data_ipa_lto_finish_out =
 {
- {
-  IPA_PASS,
-  "lto_decls_out",	                /* name */
-  OPTGROUP_NONE,                        /* optinfo_flags */
-  gate_lto_out,			        /* gate */
-  NULL,        	                        /* execute */
-  NULL,					/* sub */
-  NULL,					/* next */
-  0,					/* static_pass_number */
-  TV_IPA_LTO_DECL_OUT,		        /* tv_id */
-  0,	                                /* properties_required */
-  0,					/* properties_provided */
-  0,					/* properties_destroyed */
-  0,            			/* todo_flags_start */
-  0                                     /* todo_flags_finish */
- },
- NULL,		                        /* generate_summary */
- produce_asm_for_decls,			/* write_summary */
- NULL,		         		/* read_summary */
- produce_asm_for_decls,			/* write_optimization_summary */
- NULL,					/* read_optimization_summary */
- NULL,					/* stmt_fixup */
- 0,					/* TODOs */
- NULL,			                /* function_transform */
- NULL					/* variable_transform */
+  IPA_PASS, /* type */
+  "lto_decls_out", /* name */
+  OPTGROUP_NONE, /* optinfo_flags */
+  true, /* has_gate */
+  false, /* has_execute */
+  TV_IPA_LTO_DECL_OUT, /* tv_id */
+  0, /* properties_required */
+  0, /* properties_provided */
+  0, /* properties_destroyed */
+  0, /* todo_flags_start */
+  0, /* todo_flags_finish */
 };
+
+class pass_ipa_lto_finish_out : public ipa_opt_pass_d
+{
+public:
+  pass_ipa_lto_finish_out (gcc::context *ctxt)
+    : ipa_opt_pass_d (pass_data_ipa_lto_finish_out, ctxt,
+		      NULL, /* generate_summary */
+		      produce_asm_for_decls, /* write_summary */
+		      NULL, /* read_summary */
+		      produce_asm_for_decls, /* write_optimization_summary */
+		      NULL, /* read_optimization_summary */
+		      NULL, /* stmt_fixup */
+		      0, /* function_transform_todo_flags_start */
+		      NULL, /* function_transform */
+		      NULL) /* variable_transform */
+  {}
+
+  /* opt_pass methods: */
+  bool gate () { return gate_lto_out (); }
+
+}; // class pass_ipa_lto_finish_out
+
+} // anon namespace
+
+ipa_opt_pass_d *
+make_pass_ipa_lto_finish_out (gcc::context *ctxt)
+{
+  return new pass_ipa_lto_finish_out (ctxt);
+}
