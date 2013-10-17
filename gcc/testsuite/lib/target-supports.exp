@@ -4510,6 +4510,7 @@ proc check_effective_target_sync_int_128_runtime { } {
 proc check_effective_target_sync_long_long { } {
     if { [istarget x86_64-*-*]
 	 || [istarget i?86-*-*])
+	 || [istarget aarch64*-*-*]
 	 || [istarget arm*-*-*]
 	 || [istarget alpha*-*-*]
 	 || ([istarget sparc*-*-*] && [check_effective_target_lp64]) } {
@@ -4539,6 +4540,8 @@ proc check_effective_target_sync_long_long_runtime { } {
 		}
 	    } ""
 	}]
+    } elseif { [istarget aarch64*-*-*] } {
+	return 1
     } elseif { [istarget arm*-*-linux-*] } {
 	return [check_runtime sync_longlong_runtime {
 	    #include <stdlib.h>
