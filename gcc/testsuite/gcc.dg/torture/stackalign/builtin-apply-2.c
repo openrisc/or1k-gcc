@@ -11,6 +11,7 @@
         do.  */
 /* { dg-skip-if "Variadic funcs have all args on stack. Normal funcs have args in registers." {"or1k-*-*"} { "*" } { "" } } */   
 /* { dg-skip-if "Variadic funcs use different argument passing from normal funcs" { arm_hf_eabi || { avr-*-* } } "*" "" } */
+/* { dg-skip-if "Variadic funcs have all args on stack. Normal funcs have args in registers." { nds32*-*-* } "*" "" } */
    
 
 #define INTEGER_ARG  5
