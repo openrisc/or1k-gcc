@@ -53,8 +53,7 @@ Boston, MA 02111-1307, USA.  */
   while (0)
 
 #undef CPP_SPEC
-#define CPP_SPEC \
-  "%{!mnewlib:%{pthread:-D_XOPEN_SOURCE=700}}"
+#define CPP_SPEC "%{!mnewlib:%{posix:-D_POSIX_SOURCE} %{pthread:-D_REENTRANT}}"
 
 /* Make sure we pick up the crti.o, crtbegin.o, crtend.o and crtn.o files. */
 #undef STARTFILE_SPEC
@@ -90,9 +89,6 @@ Boston, MA 02111-1307, USA.  */
 
 /* Define this if most significant word of a multiword number is numbered.  */
 #define WORDS_BIG_ENDIAN 1
-
-/* Number of bits in an addressable storage unit */
-#define BITS_PER_UNIT 8
 
 #define BITS_PER_WORD 32
 #define SHORT_TYPE_SIZE 16

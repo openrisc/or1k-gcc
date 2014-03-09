@@ -29,6 +29,10 @@
 #include "tm.h"
 #include "rtl.h"
 #include "tree.h"
+#include "stringpool.h"
+#include "stor-layout.h"
+#include "calls.h"
+#include "varasm.h"
 #include "obstack.h"
 #include "regs.h"
 #include "hard-reg-set.h"
@@ -2147,10 +2151,10 @@ or1k_struct_alignment (tree t)
 	special_align_fields++;
       else
 	default_align_fields++;
-      if (!host_integerp (DECL_SIZE (field), 1))
+      if (!tree_fits_uhwi_p (DECL_SIZE (field)))
 	field_size = max_align;
       else
-	field_size = tree_low_cst (DECL_SIZE (field), 1);
+	field_size = tree_to_uhwi (DECL_SIZE (field));
       if (field_size >= BIGGEST_ALIGNMENT)
 	total = max_align;
       if (struct_p)

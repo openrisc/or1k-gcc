@@ -46,6 +46,8 @@
 
 #define __BYTE_ORDER __BIG_ENDIAN
 
+#define _FP_TININESS_AFTER_ROUNDING 0
+
 /* Define ALIASNAME as a strong alias for NAME.  */
 # define strong_alias(name, aliasname) _strong_alias(name, aliasname)
 # define _strong_alias(name, aliasname) \

@@ -392,8 +392,7 @@ proc check_gc_sections_available { } {
 	# Some targets don't support gc-sections despite whatever's
 	# advertised by ld's options.
 	if { [istarget alpha*-*-*]
-	     || [istarget ia64-*-*] 
-	     || [istarget or1k-*-*] } {
+	     || [istarget ia64-*-*] } {
 	    set gc_sections_available_saved 0
 	    return 0
 	}
@@ -533,7 +532,7 @@ proc check_profiling_available { test_what } {
 	     || [istarget msp430-*-*]
 	     || [istarget nds32*-*-elf]
 	     || [istarget nios2-*-elf]
-	     || [istarget or1k-*-elf*]
+	     || [istarget or1k*-*-elf*]
 	     || [istarget picochip-*-*]
 	     || [istarget powerpc-*-eabi*]
 	     || [istarget powerpc-*-elf]

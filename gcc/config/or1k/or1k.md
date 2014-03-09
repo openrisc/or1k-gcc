@@ -793,7 +793,7 @@
 
 
 (define_insn "movsf"
-  [(set (match_operand:SF 0 "general_operand" "=r,r,m")
+  [(set (match_operand:SF 0 "nonimmediate_operand" "=r,r,m")
         (match_operand:SF 1 "general_operand"  "r,m,r"))]
   ""
   "@

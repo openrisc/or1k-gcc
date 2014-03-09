@@ -9,7 +9,7 @@ struct B { char z[50]; };
 inline void
 foo (char *dest, const char *__restrict src, __SIZE_TYPE__ n)
 {
-  __builtin___strncpy_chk (dest, src, n, __builtin_object_size (dest, 0));	// { dg-warning "will always overflow" "" { target { ! or1k-*-* } } }
+  __builtin___strncpy_chk (dest, src, n, __builtin_object_size (dest, 0));	// { dg-warning "will always overflow" "" { target { ! or1k*-*-* } } }
 }
 
 void bar (const char *, int);
