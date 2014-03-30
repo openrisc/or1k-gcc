@@ -92,6 +92,7 @@ Boston, MA 02111-1307, USA.  */
 #undef LINK_SPEC
 #define LINK_SPEC "%{mnewlib:-entry 0x100} \
   -dynamic-linker " GNU_USER_DYNAMIC_LINKER " \
+  %{rdynamic:-export-dynamic} \
   %{static:-static} \
   %{shared:-shared}"
 
