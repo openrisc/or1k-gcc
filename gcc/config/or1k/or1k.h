@@ -121,9 +121,6 @@ Boston, MA 02111-1307, USA.  */
 /* Alignment of field after `int : 0' in a structure.  */
 #define EMPTY_FIELD_BOUNDARY 8
 
-/* Every structure's size must be a multiple of this.  */
-#define STRUCTURE_SIZE_BOUNDARY (TARGET_PADSTRUCT ? 32 : 8)
-
 /* A bitfield declared as `int' forces `int' alignment for the struct.  */
 #define PCC_BITFIELD_TYPE_MATTERS 1
 
@@ -132,15 +129,6 @@ Boston, MA 02111-1307, USA.  */
 
 /* The best alignment to use in cases where we have a choice.  */
 #define FASTEST_ALIGNMENT 32
-
-#define ROUND_TYPE_ALIGN(STRUCT, COMPUTED, SPECIFIED)   \
-  ((TREE_CODE (STRUCT) == RECORD_TYPE                   \
-    || TREE_CODE (STRUCT) == UNION_TYPE                 \
-    || TREE_CODE (STRUCT) == QUAL_UNION_TYPE)           \
-   && !TYPE_PACKED (STRUCT)				\
-   && TYPE_FIELDS (STRUCT) != 0                         \
-     ? MAX (MAX ((COMPUTED), (SPECIFIED)), or1k_struct_alignment (STRUCT)) \
-     : MAX ((COMPUTED), (SPECIFIED)))                   \
 
 /* Make strings word-aligned so strcpy from constants will be faster.  */
 /*
