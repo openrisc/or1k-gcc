@@ -677,62 +677,102 @@ gen_tls_get_addr (void)
 
 /* Emit call to '__tls_get_addr' */
 static void
-or1k_tls_call (rtx arg)
+or1k_tls_call (rtx dest, rtx arg)
 {
-  emit_library_call_value (gen_tls_get_addr(), arg,
+  emit_library_call_value (gen_tls_get_addr(), dest,
       LCT_CONST, Pmode, 1, arg, Pmode);
+}
+
+static rtx
+or1k_legitimize_tls_address (rtx dest, rtx x)
+{
+  rtx sym;
+  rtx tp = gen_rtx_REG(Pmode, THREAD_PTR_REGNUM);
+  rtx addend = NULL_RTX;
+  rtx result = dest;
+
+  enum tls_model tls_kind = or1k_tls_symbolic_operand (x);
+
+  if (GET_CODE (x) == SYMBOL_REF)
+    sym = gen_rtx_SYMBOL_REF(Pmode, XSTR(x, 0));
+  else if (GET_CODE (x) == CONST)
+    {
+      result = gen_reg_rtx (Pmode);
+      split_const (x, &sym, &addend);
+      sym = gen_rtx_SYMBOL_REF(Pmode, XSTR(sym, 0));
+    }
+  else
+    gcc_unreachable ();
+
+  switch (tls_kind) {
+    case TLS_MODEL_GLOBAL_DYNAMIC:
+    case TLS_MODEL_LOCAL_DYNAMIC:
+      {
+        /* TODO: For now, treat LD as GD */
+        rtx hi = gen_reg_rtx (Pmode);
+        rtx offset = gen_reg_rtx (Pmode);
+        rtx addr = gen_reg_rtx (Pmode);
+        crtl->uses_pic_offset_table = 1;
+        /* Generate a new symbol ref that is not marked as TLS or we will recurse
+         * in or1k_legitimate_constant_p. */
+        emit_insn (gen_movsi_tlsgdhi (hi, sym));
+        emit_insn (gen_movsi_tlsgdlo (offset, hi, sym));
+        emit_insn (gen_add3_insn (addr, offset, pic_offset_table_rtx));
+        or1k_tls_call (result, addr);
+        break;
+      }
+    case TLS_MODEL_INITIAL_EXEC:
+      {
+        rtx hi = gen_reg_rtx (Pmode);
+        rtx offset = gen_reg_rtx (Pmode);
+        rtx addr = gen_reg_rtx (Pmode);
+        rtx tpoffset = gen_reg_rtx (Pmode);
+        crtl->uses_pic_offset_table = 1;
+        emit_insn (gen_movsi_gottpoffhi (hi, sym));
+        emit_insn (gen_movsi_gottpofflo (offset, hi, sym));
+        emit_insn (gen_add3_insn (addr, offset, pic_offset_table_rtx));
+        emit_insn (gen_load_gottpoff (tpoffset, addr));
+        emit_insn (gen_add3_insn (result, tpoffset, tp));
+        break;
+      }
+    case TLS_MODEL_LOCAL_EXEC:
+      {
+        rtx hi = gen_reg_rtx (Pmode);
+        rtx addr = gen_reg_rtx (Pmode);
+        emit_insn (gen_movsi_tpoffhi (hi, sym));
+        emit_insn (gen_movsi_tpofflo (addr, hi, sym));
+        emit_insn (gen_add3_insn (result, addr, tp));
+        break;
+      }
+    default:
+      gcc_unreachable ();
+  }
+
+  if (addend != NULL_RTX)
+    emit_insn (gen_add3_insn (dest, result, addend));
+
+  return dest;
+}
+
+static rtx
+or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
+                         enum machine_mode mode ATTRIBUTE_UNUSED)
+{
+  if (or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE)
+    return or1k_legitimize_tls_address (gen_reg_rtx (Pmode), x);
+
+  return x;
+}
+
+static bool
+or1k_cannot_force_const_mem (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
+{
+  return or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE;
 }
 
 bool
 or1k_expand_symbol_ref(enum machine_mode mode, rtx operands[])
 {
-  if (mode == Pmode)
-  {
-    rtx op0, op1;
-    enum tls_model tls_kind;
-
-    op0 = operands[0];
-    op1 = operands[1];
-
-    if ((tls_kind = or1k_tls_symbolic_operand (op1)) != TLS_MODEL_NONE)
-    {
-      rtx tp;
-      tp = gen_rtx_REG(Pmode, THREAD_PTR_REGNUM);
-      switch (tls_kind)
-      {
-        case TLS_MODEL_GLOBAL_DYNAMIC:
-        case TLS_MODEL_LOCAL_DYNAMIC:
-          /* TODO: For now, treat LD as GD */
-          crtl->uses_pic_offset_table = 1;
-          emit_insn (gen_movsi_tlsgdhi (op0, op1));
-          emit_insn (gen_movsi_tlsgdlo (op0, op0, op1));
-          emit_insn (gen_add3_insn (op0, op0, pic_offset_table_rtx));
-          or1k_tls_call (op0);
-          break;
-
-        case TLS_MODEL_INITIAL_EXEC:
-          crtl->uses_pic_offset_table = 1;
-          emit_insn (gen_movsi_gottpoffhi (op0, op1));
-          emit_insn (gen_movsi_gottpofflo (op0, op0, op1));
-          emit_insn (gen_add3_insn (op0, op0, pic_offset_table_rtx));
-          emit_insn (gen_load_gottpoff (op0, op0));
-          emit_insn (gen_add3_insn (op0, op0, tp));
-          break;
-
-        case TLS_MODEL_LOCAL_EXEC:
-          emit_insn (gen_movsi_tpoffhi (op0, op1));
-          emit_insn (gen_movsi_tpofflo (op0, op0, op1));
-          emit_insn (gen_add3_insn (op0, op0, tp));
-          break;
-
-        default:
-          gcc_unreachable ();
-      }
-
-      return true;
-    }
-  }
-
   if (flag_pic && or1k_expand_pic_symbol_ref(mode, operands))
     return true;
 
@@ -751,6 +791,13 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
           /* Source operand for store must be in a register.  */
           operands[1] = force_reg (SImode, operands[1]);
         }
+    }
+
+  if (or1k_tls_symbolic_operand (operands[1]) != TLS_MODEL_NONE)
+    {
+      or1k_legitimize_tls_address (force_reg (Pmode, operands[0]),
+          operands[1]);
+      return true;
     }
 
   if (or1k_expand_symbol_ref (mode, operands))
@@ -2010,8 +2057,14 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 #undef  TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P  or1k_legitimate_address_p
 
+#undef  TARGET_LEGITIMIZE_ADDRESS
+#define TARGET_LEGITIMIZE_ADDRESS or1k_legitimize_address
+
 #undef  TARGET_TRAMPOLINE_INIT
 #define TARGET_TRAMPOLINE_INIT  or1k_trampoline_init
+
+#undef  TARGET_CANNOT_FORCE_CONST_MEM
+#define TARGET_CANNOT_FORCE_CONST_MEM or1k_cannot_force_const_mem
 
 #undef TARGET_DWARF_CALLING_CONVENTION
 #define TARGET_DWARF_CALLING_CONVENTION  or1k_dwarf_calling_convention
@@ -2030,6 +2083,9 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 static bool
 or1k_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 {
+  if (or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE)
+    return 0;
+
   return GET_CODE(x) != CONST_DOUBLE || (GET_MODE (x) == VOIDmode && !flag_pic);
 }
 #undef TARGET_LEGITIMATE_CONSTANT_P
