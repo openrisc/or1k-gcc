@@ -1,3 +1,10 @@
+2014-05-07  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.S: Use delay/no-delay compatibility macros.
+	* config/or1k/lib2funcs.c: Remove.
+	* config/or1k/t-or1k: Set LIB1ASMSRC and LIB1ASMFUNCS. 
+	Remove LIB2ADD define.
+
 2013-07-17  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
 
 	* config/or1k/sfp-machine.h (_FP_QNANNEGATEDP): Define to 0.
