@@ -569,7 +569,7 @@ C++ ObjC++ Var(warn_nontemplate_friend) Init(1) Warning
 Warn when non-templatized friend functions are declared within a template
 
 Wnon-virtual-dtor
-C++ ObjC++ Var(warn_nonvdtor) Warning
+C++ ObjC++ Var(warn_nonvdtor) Warning LangEnabledBy(C++ ObjC++,Weffc++)
 Warn about non-virtual destructors
 
 Wnonnull
@@ -1407,6 +1407,9 @@ Deprecated in favor of -std=gnu++11
 std=gnu++1y
 C++ ObjC++
 Conform to the ISO 201y(7?) C++ draft standard with GNU extensions (experimental and incomplete support)
+
+std=gnu++14
+C++ ObjC++ Alias(std=gnu++1y) Undocumented
 
 std=gnu11
 C ObjC

@@ -386,6 +386,9 @@ add_stmt (tree t)
       STMT_IS_FULL_EXPR_P (t) = stmts_are_full_exprs_p ();
     }
 
+  if (code == LABEL_EXPR || code == CASE_LABEL_EXPR)
+    STATEMENT_LIST_HAS_LABEL (cur_stmt_list) = 1;
+
   /* Add T to the statement-tree.  Non-side-effect statements need to be
      recorded during statement expressions.  */
   gcc_checking_assert (!stmt_list_stack->is_empty ());
@@ -2777,6 +2780,7 @@ begin_class_definition (tree t)
   maybe_process_partial_specialization (t);
   pushclass (t);
   TYPE_BEING_DEFINED (t) = 1;
+  class_binding_level->defining_class_p = 1;
 
   if (flag_pack_struct)
     {
@@ -6860,7 +6864,8 @@ finish_static_assert (tree condition, tree message, location_t location,
       else if (condition && condition != error_mark_node)
 	{
 	  error ("non-constant condition for static assertion");
-	  cxx_constant_value (condition);
+	  if (require_potential_rvalue_constant_expression (condition))
+	    cxx_constant_value (condition);
 	}
       input_location = saved_loc;
     }
@@ -7438,19 +7443,31 @@ retrieve_constexpr_fundef (tree fun)
 static bool
 is_valid_constexpr_fn (tree fun, bool complain)
 {
-  tree parm = FUNCTION_FIRST_USER_PARM (fun);
   bool ret = true;
-  for (; parm != NULL; parm = TREE_CHAIN (parm))
-    if (!literal_type_p (TREE_TYPE (parm)))
-      {
-	ret = false;
-	if (complain)
+
+  if (DECL_INHERITED_CTOR_BASE (fun)
+      && TREE_CODE (fun) == TEMPLATE_DECL)
+    {
+      ret = false;
+      if (complain)
+	error ("inherited constructor %qD is not constexpr",
+	       get_inherited_ctor (fun));
+    }
+  else
+    {
+      for (tree parm = FUNCTION_FIRST_USER_PARM (fun);
+	   parm != NULL_TREE; parm = TREE_CHAIN (parm))
+	if (!literal_type_p (TREE_TYPE (parm)))
 	  {
-	    error ("invalid type for parameter %d of constexpr "
-		   "function %q+#D", DECL_PARM_INDEX (parm), fun);
-	    explain_non_literal_class (TREE_TYPE (parm));
+	    ret = false;
+	    if (complain)
+	      {
+		error ("invalid type for parameter %d of constexpr "
+		       "function %q+#D", DECL_PARM_INDEX (parm), fun);
+		explain_non_literal_class (TREE_TYPE (parm));
+	      }
 	  }
-      }
+    }
 
   if (!DECL_CONSTRUCTOR_P (fun))
     {
@@ -7703,8 +7720,8 @@ sort_constexpr_mem_initializers (tree type, vec<constructor_elt, va_gc> *v)
 {
   tree pri = CLASSTYPE_PRIMARY_BINFO (type);
   tree field_type;
-  constructor_elt elt;
-  int i;
+  unsigned i;
+  constructor_elt *ce;
 
   if (pri)
     field_type = BINFO_TYPE (pri);
@@ -7715,14 +7732,14 @@ sort_constexpr_mem_initializers (tree type, vec<constructor_elt, va_gc> *v)
 
   /* Find the element for the primary base or vptr and move it to the
      beginning of the vec.  */
-  vec<constructor_elt, va_gc> &vref = *v;
-  for (i = 0; ; ++i)
-    if (TREE_TYPE (vref[i].index) == field_type)
+  for (i = 0; vec_safe_iterate (v, i, &ce); ++i)
+    if (TREE_TYPE (ce->index) == field_type)
       break;
 
-  if (i > 0)
+  if (i > 0 && i < vec_safe_length (v))
     {
-      elt = vref[i];
+      vec<constructor_elt, va_gc> &vref = *v;
+      constructor_elt elt = vref[i];
       for (; i > 0; --i)
 	vref[i] = vref[i-1];
       vref[0] = elt;
@@ -10240,6 +10257,7 @@ potential_constant_expression_1 (tree t, bool want_rval, tsubst_flags_t flags)
     case DO_STMT:
     case FOR_STMT:
     case WHILE_STMT:
+    case DECL_EXPR:
       if (flags & tf_error)
         error ("expression %qE is not a constant-expression", t);
       return false;
