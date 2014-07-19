@@ -23,6 +23,8 @@
 
 #define GLIBC_DYNAMIC_LINKER "/lib/ld-linux-aarch64%{mbig-endian:_be}.so.1"
 
+#define MUSL_DYNAMIC_LINKER "/lib/ld-musl-aarch64.so.1"
+
 #define CPP_SPEC "%{pthread:-D_REENTRANT}"
 
 #define LINUX_TARGET_LINK_SPEC  "%{h*}		\
