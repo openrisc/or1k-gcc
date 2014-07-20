@@ -1451,8 +1451,10 @@
 })
 
 (define_insn "cmpxchg"
-   [(unspec:SI [(match_operand:SI 0 "register_operand" "=&r")] UNSPEC_CMPXCHG)
-    (set (match_operand:SI 2 "memory_operand" "+m")
+   [(set (match_operand:SI 0 "register_operand" "=&r")
+         (unspec_volatile:SI [(match_operand:SI 2 "memory_operand" "+m")]
+          UNSPEC_CMPXCHG))
+    (set (match_dup 2)
          (unspec_volatile:SI [(match_operand:SI 3 "register_operand" "r")]
           UNSPEC_CMPXCHG))
     (set (match_operand:SI 1 "register_operand" "=&r")
@@ -1472,8 +1474,10 @@
 1:")
 
 (define_insn "cmpxchg_mask"
-   [(unspec:SI [(match_operand:SI 0 "register_operand" "=&r")] UNSPEC_CMPXCHG)
-    (set (match_operand:SI 2 "memory_operand" "+m")
+   [(set (match_operand:SI 0 "register_operand" "=&r")
+         (unspec_volatile:SI [(match_operand:SI 2 "memory_operand" "+m")]
+          UNSPEC_CMPXCHG))
+    (set (match_dup 2)
          (unspec_volatile:SI [(match_operand:SI 3 "register_operand" "r")]
           UNSPEC_CMPXCHG))
     (set (match_operand:SI 1 "register_operand" "=&r")
