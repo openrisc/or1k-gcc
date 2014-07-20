@@ -1,6 +1,2 @@
 MULTILIB_DIRNAMES = be
 EXTRA_MULTILIB_PARTS = crti.o crtbegin.o crtend.o crtn.o
-
-LIB2ADD += \
-  $(srcdir)/config/or1k/atomic.c
-
