@@ -1655,21 +1655,6 @@
        (const_string "fpstore")])
    (set_attr "length" "4")])
 
-;; Optimize extracting element 1 from memory for little endian
-(define_insn "*vsx_extract_<mode>_one_le"
-  [(set (match_operand:<VS_scalar> 0 "vsx_register_operand" "=ws,d,?wa")
-	(vec_select:<VS_scalar>
-	 (match_operand:VSX_D 1 "indexed_or_indirect_operand" "Z,Z,Z")
-	 (parallel [(const_int 1)])))]
-  "VECTOR_MEM_VSX_P (<MODE>mode) && !WORDS_BIG_ENDIAN"
-  "lxsd%U1x %x0,%y1"
-  [(set (attr "type")
-      (if_then_else
-	(match_test "update_indexed_address_mem (operands[1], VOIDmode)")
-	(const_string "fpload_ux")
-	(const_string "fpload")))
-   (set_attr "length" "4")])  
-
 ;; Extract a SF element from V4SF
 (define_insn_and_split "vsx_extract_v4sf"
   [(set (match_operand:SF 0 "vsx_register_operand" "=f,f")

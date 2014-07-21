@@ -592,9 +592,6 @@ tree gfc_unlikely (tree, enum br_predictor);
 /* Return the string length of a deferred character length component.  */
 bool gfc_deferred_strlen (gfc_component *, tree *);
 
-/* Return the string length of a deferred character length component.  */
-bool gfc_deferred_strlen (gfc_component *, tree *);
-
 /* Generate a runtime error call.  */
 tree gfc_trans_runtime_error (bool, locus*, const char*, ...);
 
