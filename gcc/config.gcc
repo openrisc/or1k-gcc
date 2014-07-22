@@ -2175,6 +2175,10 @@ or1k-*-linux-*)
        tmake_file="or1k/t-or1k or1k/t-linux ${tmake_file}"
        tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
        ;;
+or1k*-*-rtems*)
+       tm_file="${tm_file} newlib-stdint.h or1k/rtems.h rtems.h"
+       extra_parts="crti.o crtbegin.o crtend.o crtn.o"
+       ;;
 or1knd-*-elf*)
        tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h ${cpu_type}/elf.h"
        extra_parts="crti.o crtbegin.o crtend.o crtn.o"
