@@ -6,6 +6,7 @@
 #define ENTRY(symbol)	\
 	.align 4	;\
 	.global symbol	;\
+	.type	symbol, @function ;\
 symbol:
 
 #ifdef L__mulsi3
@@ -35,9 +36,13 @@ OR1K_DELAYED(
 OR1K_DELAYED_NOP(
 	OR1K_INST(l.jr r9)
 )
+.size __mulsi3,.-__mulsi3
 #endif
 
 #ifdef L__udivsi3
+.global __udivsi3_internal
+.hidden __udivsi3_internal
+__udivsi3_internal:
 ENTRY(__udivsi3)
 	l.addi          r1,r1,-4
         l.sw            0(r1),r9
@@ -130,6 +135,7 @@ OR1K_DELAYED(
         OR1K_INST(l.addi r1,r1,4),
         OR1K_INST(l.jr r9)
 )
+.size __udivsi3,.-__udivsi3
 #endif
 
 
@@ -157,7 +163,7 @@ OR1K_DELAYED_NOP(
 1:
 OR1K_DELAYED(
         OR1K_INST(l.addi r3,r5,0),
-        OR1K_INST(l.jal __udivsi3)
+        OR1K_INST(l.jal __udivsi3_internal)
 )
         l.sfeqi         r14,1
 OR1K_DELAYED_NOP(
@@ -171,6 +177,7 @@ OR1K_DELAYED(
         OR1K_INST(l.addi r1,r1,8),
         OR1K_INST(l.jr r9)
 )
+.size __divsi3,.-__divsi3
 #endif
 
 
@@ -179,7 +186,7 @@ ENTRY(__umodsi3)
 	l.addi          r1,r1,-4
 	l.sw            0(r1),r9
 OR1K_DELAYED_NOP(
-	OR1K_INST(l.jal __udivsi3)
+	OR1K_INST(l.jal __udivsi3_internal)
 )
 	l.addi		r11,r7,0
 	l.lwz           r9,0(r1)
@@ -187,6 +194,7 @@ OR1K_DELAYED(
 	OR1K_INST(l.addi r1,r1,4),
 	OR1K_INST(l.jr r9)
 )
+.size __umodsi3,.-__umodsi3
 #endif
 
 
@@ -210,7 +218,7 @@ OR1K_DELAYED_NOP(
         l.sub           r4,r0,r4
 1:
 OR1K_DELAYED_NOP(
-        OR1K_INST(l.jal __udivsi3)
+        OR1K_INST(l.jal __udivsi3_internal)
 )
         l.sfeqi         r14,1
 OR1K_DELAYED(
@@ -225,4 +233,5 @@ OR1K_DELAYED(
         OR1K_INST(l.addi r1,r1,8),
         OR1K_INST(l.jr r9)
 )
+.size __modsi3,.-__modsi3
 #endif

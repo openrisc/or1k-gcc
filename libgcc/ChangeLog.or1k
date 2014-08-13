@@ -1,3 +1,7 @@
+2014-08-13  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.S: make internal calls to __udivsi3 hidden.
+
 2014-05-07  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
 
 	* config/or1k/or1k.S: Use delay/no-delay compatibility macros.

@@ -1181,6 +1181,9 @@ enum reg_class
 #define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
 #define EH_RETURN_HANDLER_RTX   or1k_eh_return_handler_rtx ()
 
+#define ASM_PREFERRED_EH_DATA_FORMAT(CODE, GLOBAL) \
+  (flag_pic ? DW_EH_PE_pcrel : DW_EH_PE_absptr)
+
 #define INIT_EXPANDERS or1k_init_expanders ()
 
 /* A C structure for machine-specific, per-function data.  This is

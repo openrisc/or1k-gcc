@@ -1,97 +1,127 @@
-2014-03-08  Douglas B Rupp  <rupp@gnat.com>
+2014-04-22  Release Manager
 
-	* config/vms/vms.opt (vms_float_format): New variable.
+	* GCC 4.9.0 released.
 
-2014-03-08  Tobias Burnus  <burnus@net-b.de>
+2014-04-18  Richard Henderson  <rth@redhat.com>
 
-	* doc/invoke.texi (-fcilkplus): Update implementation
-	status.
+	* config/aarch64/aarch64.c (aarch64_register_move_cost): Pass a mode
+	to GET_MODE_SIZE, not a reg_class_t.
 
-2014-03-08  Paulo Matos  <paulo@matos-sorge.com>
-	    Richard Biener  <rguenther@suse.de>
+2014-04-17  Jakub Jelinek  <jakub@redhat.com>
 
-	* lto-wrapper.c (merge_and_complain): Ensure -fshort-double is used
-	consistently accross all TUs.
-	(run_gcc): Enable -fshort-double automatically at link at link-time
-	and disallow override.
+	PR target/60847
+	Forward port from 4.8 branch
+	2013-07-19  Kirill Yukhin  <kirill.yukhin@intel.com>
 
-2014-03-08  Richard Sandiford  <rdsandiford@googlemail.com>
+	* config/i386/bmiintrin.h (_blsi_u32): New.
+	(_blsi_u64): Ditto.
+	(_blsr_u32): Ditto.
+	(_blsr_u64): Ditto.
+	(_blsmsk_u32): Ditto.
+	(_blsmsk_u64): Ditto.
+	(_tzcnt_u32): Ditto.
+	(_tzcnt_u64): Ditto.
 
-	PR target/58271
-	* config/mips/mips.c (mips_option_override): Promote -mpaired-single
-	warning to an error.  Disable TARGET_PAIRED_SINGLE and TARGET_MIPS3D
-	if they can't be used.
+2014-04-15  Bill Schmidt  <wschmidt@linux.vnet.ibm.com>
 
-2014-03-07  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+	PR target/60839
+	Revert the following patch
 
-	* configure.ac (HAVE_AS_IX86_TLSLDMPLT): Improve test for Solaris
-	11/x86 ld.
-	* configure: Regenerate.
+	2014-04-02  Michael Meissner  <meissner@linux.vnet.ibm.com>
 
-2014-03-07  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+	PR target/60735
+	* config/rs6000/rs6000.c (rs6000_hard_regno_mode_ok): If we have
+	software floating point or no floating point registers, do not
+	allow any type in the FPRs.  Eliminate a test for SPE SIMD types
+	in GPRs that occurs after we tested for GPRs that would never be
+	true.
 
-	* configure.ac (TLS_SECTION_ASM_FLAG): Save as tls_section_flag.
-	(LIB_TLS_SPEC): Save as ld_tls_libs.
-	(HAVE_AS_IX86_TLSLDMPLT): Define as 1/0.
-	(HAVE_AS_IX86_TLSLDM): New test.
-	* configure, config.in: Regenerate.
-	* config/i386/i386.c (legitimize_tls_address): Fall back to
-	TLS_MODEL_GLOBAL_DYNAMIC on 32-bit Solaris/x86 if tool chain
-	cannot support TLS_MODEL_LOCAL_DYNAMIC.
-	* config/i386/i386.md (*tls_local_dynamic_base_32_gnu): Use if
-	instead of #ifdef in HAVE_AS_IX86_TLSLDMPLT test.
+	* config/rs6000/rs6000.md (mov<mode>_softfloat32, FMOVE64):
+	Rewrite tests to use TARGET_DOUBLE_FLOAT and TARGET_E500_DOUBLE,
+	since the FMOVE64 type is DFmode/DDmode.  If TARGET_E500_DOUBLE,
+	specifically allow DDmode, since that does not use the SPE SIMD
+	instructions.
 
-2014-03-07  Paulo Matos  <paulo@matos-sorge.com>
+2014-04-15  Jakub Jelinek  <jakub@redhat.com>
 
-	* common.opt (fira-loop-pressure): Mark as optimization.
+	PR plugins/59335
+	* Makefile.in (PLUGIN_HEADERS): Add various headers that have been
+	added in 4.9.
 
-2014-03-07  Thomas Schwinge  <thomas@codesourcery.com>
+2014-04-14  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* langhooks.c (lhd_omp_mappable_type): The error_mark_node is not
-	an OpenMP mappable type.
+	* doc/invoke.texi (free): Document AArch64.
 
-2014-03-06  Matthias Klose  <doko@ubuntu.com>
+2013-04-11  Jakub Jelinek  <jakub@redhat.com>
 
-	* Makefile.in (s-mlib): Only pass MULTIARCH_DIRNAME if
-	MULTILIB_OSDIRNAMES is not defined.
+	* DEV-PHASE: Set to prerelease.
 
-2014-03-06  Jakub Jelinek  <jakub@redhat.com>
-	    Meador Inge  <meadori@codesourcery.com>
+2014-04-11  Tobias Burnus  <burnus@net-b.de>
 
-	PR target/58595
-	* config/arm/arm.c (arm_tls_symbol_p): Remove.
-	(arm_legitimize_address): Call legitimize_tls_address for any
-	arm_tls_referenced_p expression, handle constant addend.  Call it
-	before testing for !TARGET_ARM.
-	(thumb_legitimize_address): Don't handle arm_tls_symbol_p here.
+	PR other/59055
+	* doc/bugreport.texi (Bugs): Remove nodes pointing to the
+	nirvana.
+	* doc/gcc.texi (Service): Update description in the @menu
+	* doc/invoke.texi (Option Summary): Remove misplaced and
+	duplicated @menu.
 
-2014-03-06  Richard Biener  <rguenther@suse.de>
+2014-04-11  Steve Ellcey  <sellcey@mips.com>
+	    Jakub Jelinek  <jakub@redhat.com>
 
-	PR middle-end/60445
-	PR lto/60424
-	PR lto/60427
+	PR middle-end/60556
+	* expr.c (convert_move): Use emit_store_flag_force instead of
+	emit_store_flag.  Pass lowpart_mode instead of VOIDmode as 5th
+	argument to it.
+
+2014-04-11  Richard Biener  <rguenther@suse.de>
+
+	PR middle-end/60797
+	* varasm.c (assemble_alias): Avoid endless error reporting
+	recursion by setting TREE_ASM_WRITTEN.
+
+2014-04-11  Andreas Krebbel  <Andreas.Krebbel@de.ibm.com>
+
+	* config/s390/s390.md: Add a splitter for NOT rtx.
+
+2014-04-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/60663
+	* cse.c (cse_insn): Set src_volatile on ASM_OPERANDS in
+	PARALLEL.
+
+2014-04-10  Jan Hubicka  <hubicka@ucw.cz>
+	    Jakub Jelinek  <jakub@redhat.com>
+
+	PR lto/60567
+	* ipa.c (function_and_variable_visibility): Copy forced_by_abi flag from
+	decl_node to node.
+
+2014-04-10  Ramana Radhakrishnan  <ramana.radhakrishnan@arm.com>
+
+	PR debug/60655
+	* config/arm/arm.c (TARGET_CONST_NOT_OK_FOR_DEBUG_P): Define
+	(arm_const_not_ok_for_debug_p): Reject MINUS with SYM_REF's
+	ameliorating the cases where it can be.
+
+2014-04-09  David Edelsohn  <dje.gcc@gmail.com>
+
 	Revert
-	2014-03-04  Paulo Matos  <paulo@matos-sorge.com>
+	2014-04-08  Pat Haugen  <pthaugen@us.ibm.com>
 
-        * tree-streamer.c (record_common_node): Assert we don't record
-        nodes with type double.
-        (preload_common_node): Skip type double, complex double and
-        double pointer since it is now frontend dependent due to
-        fshort-double option.
+	* config/rs6000/sync.md (AINT mode_iterator): Move definition.
+	(loadsync_<mode>): Change mode.
+	(load_quadpti, store_quadpti): New.
+	(atomic_load<mode>, atomic_store<mode>): Add support for TI mode.
+	* config/rs6000/rs6000.md (unspec enum): Add UNSPEC_LSQ.
+	* config/rs6000/predicates.md (quad_memory_operand): !TARGET_SYNC_TI.
 
-2014-03-06  Richard Biener  <rguenther@suse.de>
+2014-04-09  Cong Hou  <congh@google.com>
 
-	* gcc.c (PLUGIN_COND): Always enable unless -fno-use-linker-plugin
-	or -fno-lto is specified and the linker has full plugin support.
-	* collect2.c (lto_mode): Default to LTO_MODE_WHOPR if LTO is
-	enabled.
-	(main): Remove -flto processing, adjust lto_mode using
-	use_plugin late.
-	* lto-wrapper.c (merge_and_complain): Merge compile-time
-	optimization levels.
-	(run_gcc): And pass it through to the link options.
+	PR testsuite/60773
+	* doc/sourcebuild.texi (vect_widen_mult_si_to_di_pattern): Add
+	documentation.
 
-2014-03-06  Alexandre Oliva <aoliva@redhat.com>
+2014-04-08  Bill Schmidt  <wschmidt@linux.vnet.ibm.com>
 
 	* config/rs6000/rs6000.c (rs6000_expand_vector_set): Use vnand
 	instead of vnor to exploit possible fusion opportunity in the
