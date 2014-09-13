@@ -219,7 +219,14 @@ graphite_can_represent_scev (tree scev)
 
   switch (TREE_CODE (scev))
     {
+    case NEGATE_EXPR:
+    case BIT_NOT_EXPR:
+    CASE_CONVERT:
+    case NON_LVALUE_EXPR:
+      return graphite_can_represent_scev (TREE_OPERAND (scev, 0));
+
     case PLUS_EXPR:
+    case POINTER_PLUS_EXPR:
     case MINUS_EXPR:
       return graphite_can_represent_scev (TREE_OPERAND (scev, 0))
 	&& graphite_can_represent_scev (TREE_OPERAND (scev, 1));
@@ -241,13 +248,15 @@ graphite_can_represent_scev (tree scev)
       if (!evolution_function_right_is_integer_cst (scev)
 	  || !graphite_can_represent_init (scev))
 	return false;
+      return graphite_can_represent_scev (CHREC_LEFT (scev));
 
     default:
       break;
     }
 
   /* Only affine functions can be represented.  */
-  if (!scev_is_linear_expression (scev))
+  if (tree_contains_chrecs (scev, NULL)
+      || !scev_is_linear_expression (scev))
     return false;
 
   return true;
@@ -465,8 +474,10 @@ scopdet_basic_block_info (basic_block bb, loop_p outermost_loop,
       result.exits = false;
 
       /* Mark bbs terminating a SESE region difficult, if they start
-	 a condition.  */
-      if (!single_succ_p (bb))
+	 a condition or if the block it exits to cannot be split
+	 with make_forwarder_block.  */
+      if (!single_succ_p (bb)
+	  || bb_has_abnormal_pred (single_succ (bb)))
 	result.difficult = true;
       else
 	result.exit = single_succ (bb);

@@ -24,6 +24,13 @@
 ;; Iterator for the 2 64-bit vector types
 (define_mode_iterator VSX_D [V2DF V2DI])
 
+;; Iterator for the 2 64-bit vector types + 128-bit types that are loaded with
+;; lxvd2x to properly handle swapping words on little endian
+(define_mode_iterator VSX_LE [V2DF
+			      V2DI
+			      V1TI
+			      (TI	"VECTOR_MEM_VSX_P (TImode)")])
+
 ;; Iterator for the 2 32-bit vector types
 (define_mode_iterator VSX_W [V4SF V4SI])
 
@@ -228,8 +235,8 @@
 ;; The patterns for LE permuted loads and stores come before the general
 ;; VSX moves so they match first.
 (define_insn_and_split "*vsx_le_perm_load_<mode>"
-  [(set (match_operand:VSX_D 0 "vsx_register_operand" "=wa")
-        (match_operand:VSX_D 1 "memory_operand" "Z"))]
+  [(set (match_operand:VSX_LE 0 "vsx_register_operand" "=wa")
+        (match_operand:VSX_LE 1 "memory_operand" "Z"))]
   "!BYTES_BIG_ENDIAN && TARGET_VSX"
   "#"
   "!BYTES_BIG_ENDIAN && TARGET_VSX"
@@ -342,16 +349,16 @@
    (set_attr "length" "8")])
 
 (define_insn "*vsx_le_perm_store_<mode>"
-  [(set (match_operand:VSX_D 0 "memory_operand" "=Z")
-        (match_operand:VSX_D 1 "vsx_register_operand" "+wa"))]
+  [(set (match_operand:VSX_LE 0 "memory_operand" "=Z")
+        (match_operand:VSX_LE 1 "vsx_register_operand" "+wa"))]
   "!BYTES_BIG_ENDIAN && TARGET_VSX"
   "#"
   [(set_attr "type" "vecstore")
    (set_attr "length" "12")])
 
 (define_split
-  [(set (match_operand:VSX_D 0 "memory_operand" "")
-        (match_operand:VSX_D 1 "vsx_register_operand" ""))]
+  [(set (match_operand:VSX_LE 0 "memory_operand" "")
+        (match_operand:VSX_LE 1 "vsx_register_operand" ""))]
   "!BYTES_BIG_ENDIAN && TARGET_VSX && !reload_completed"
   [(set (match_dup 2)
         (vec_select:<MODE>
@@ -369,8 +376,8 @@
 ;; The post-reload split requires that we re-permute the source
 ;; register in case it is still live.
 (define_split
-  [(set (match_operand:VSX_D 0 "memory_operand" "")
-        (match_operand:VSX_D 1 "vsx_register_operand" ""))]
+  [(set (match_operand:VSX_LE 0 "memory_operand" "")
+        (match_operand:VSX_LE 1 "vsx_register_operand" ""))]
   "!BYTES_BIG_ENDIAN && TARGET_VSX && reload_completed"
   [(set (match_dup 1)
         (vec_select:<MODE>
@@ -1352,9 +1359,9 @@
 ;; xxpermdi for little endian loads and stores.  We need several of
 ;; these since the form of the PARALLEL differs by mode.
 (define_insn "*vsx_xxpermdi2_le_<mode>"
-  [(set (match_operand:VSX_D 0 "vsx_register_operand" "=wa")
-        (vec_select:VSX_D
-          (match_operand:VSX_D 1 "vsx_register_operand" "wa")
+  [(set (match_operand:VSX_LE 0 "vsx_register_operand" "=wa")
+        (vec_select:VSX_LE
+          (match_operand:VSX_LE 1 "vsx_register_operand" "wa")
           (parallel [(const_int 1) (const_int 0)])))]
   "!BYTES_BIG_ENDIAN && VECTOR_MEM_VSX_P (<MODE>mode)"
   "xxpermdi %x0,%x1,%x1,2"
@@ -1401,9 +1408,9 @@
 ;; lxvd2x for little endian loads.  We need several of
 ;; these since the form of the PARALLEL differs by mode.
 (define_insn "*vsx_lxvd2x2_le_<mode>"
-  [(set (match_operand:VSX_D 0 "vsx_register_operand" "=wa")
-        (vec_select:VSX_D
-          (match_operand:VSX_D 1 "memory_operand" "Z")
+  [(set (match_operand:VSX_LE 0 "vsx_register_operand" "=wa")
+        (vec_select:VSX_LE
+          (match_operand:VSX_LE 1 "memory_operand" "Z")
           (parallel [(const_int 1) (const_int 0)])))]
   "!BYTES_BIG_ENDIAN && VECTOR_MEM_VSX_P (<MODE>mode)"
   "lxvd2x %x0,%y1"
@@ -1450,9 +1457,9 @@
 ;; stxvd2x for little endian stores.  We need several of
 ;; these since the form of the PARALLEL differs by mode.
 (define_insn "*vsx_stxvd2x2_le_<mode>"
-  [(set (match_operand:VSX_D 0 "memory_operand" "=Z")
-        (vec_select:VSX_D
-          (match_operand:VSX_D 1 "vsx_register_operand" "wa")
+  [(set (match_operand:VSX_LE 0 "memory_operand" "=Z")
+        (vec_select:VSX_LE
+          (match_operand:VSX_LE 1 "vsx_register_operand" "wa")
           (parallel [(const_int 1) (const_int 0)])))]
   "!BYTES_BIG_ENDIAN && VECTOR_MEM_VSX_P (<MODE>mode)"
   "stxvd2x %x1,%y0"
@@ -1683,7 +1690,7 @@
     {
       if (GET_CODE (op3) == SCRATCH)
 	op3 = gen_reg_rtx (V4SFmode);
-      emit_insn (gen_vsx_xxsldwi_v4sf (op3, op1, op1, op2));
+      emit_insn (gen_vsx_xxsldwi_v4sf (op3, op1, op1, GEN_INT (ele)));
       tmp = op3;
     }
   emit_insn (gen_vsx_xscvspdp_scalar2 (op0, tmp));
@@ -1891,7 +1898,12 @@
 	  (parallel [(const_int 0) (const_int 4)
 		     (const_int 1) (const_int 5)])))]
   "VECTOR_MEM_VSX_P (<MODE>mode)"
-  "xxmrghw %x0,%x1,%x2"
+{
+  if (BYTES_BIG_ENDIAN)
+    return "xxmrghw %x0,%x1,%x2";
+  else
+    return "xxmrglw %x0,%x2,%x1";
+}
   [(set_attr "type" "vecperm")])
 
 (define_insn "vsx_xxmrglw_<mode>"
@@ -1903,7 +1915,12 @@
 	  (parallel [(const_int 2) (const_int 6)
 		     (const_int 3) (const_int 7)])))]
   "VECTOR_MEM_VSX_P (<MODE>mode)"
-  "xxmrglw %x0,%x1,%x2"
+{
+  if (BYTES_BIG_ENDIAN)
+    return "xxmrglw %x0,%x1,%x2";
+  else
+    return "xxmrghw %x0,%x2,%x1";
+}
   [(set_attr "type" "vecperm")])
 
 ;; Shift left double by word immediate

@@ -484,8 +484,6 @@ negate_expr_p (tree t)
 
     case TRUNC_DIV_EXPR:
     case ROUND_DIV_EXPR:
-    case FLOOR_DIV_EXPR:
-    case CEIL_DIV_EXPR:
     case EXACT_DIV_EXPR:
       /* In general we can't negate A / B, because if A is INT_MIN and
 	 B is 1, we may turn this into INT_MIN / -1 which is undefined
@@ -682,8 +680,6 @@ fold_negate_expr (location_t loc, tree t)
 
     case TRUNC_DIV_EXPR:
     case ROUND_DIV_EXPR:
-    case FLOOR_DIV_EXPR:
-    case CEIL_DIV_EXPR:
     case EXACT_DIV_EXPR:
       /* In general we can't negate A / B, because if A is INT_MIN and
 	 B is 1, we may turn this into INT_MIN / -1 which is undefined
@@ -9312,7 +9308,7 @@ fold_comparison (location_t loc, enum tree_code code, tree type,
   /* Transform comparisons of the form X +- C1 CMP Y +- C2 to
      X CMP Y +- C2 +- C1 for signed X, Y.  This is valid if
      the resulting offset is smaller in absolute value than the
-     original one.  */
+     original one and has the same sign.  */
   if (TYPE_OVERFLOW_UNDEFINED (TREE_TYPE (arg0))
       && (TREE_CODE (arg0) == PLUS_EXPR || TREE_CODE (arg0) == MINUS_EXPR)
       && (TREE_CODE (TREE_OPERAND (arg0, 1)) == INTEGER_CST
@@ -9331,32 +9327,35 @@ fold_comparison (location_t loc, enum tree_code code, tree type,
 				      "a comparison");
 
       /* Put the constant on the side where it doesn't overflow and is
-	 of lower absolute value than before.  */
+	 of lower absolute value and of same sign than before.  */
       cst = int_const_binop (TREE_CODE (arg0) == TREE_CODE (arg1)
 			     ? MINUS_EXPR : PLUS_EXPR,
 			     const2, const1);
       if (!TREE_OVERFLOW (cst)
-	  && tree_int_cst_compare (const2, cst) == tree_int_cst_sgn (const2))
+	  && tree_int_cst_compare (const2, cst) == tree_int_cst_sgn (const2)
+	  && tree_int_cst_sgn (cst) == tree_int_cst_sgn (const2))
 	{
 	  fold_overflow_warning (warnmsg, WARN_STRICT_OVERFLOW_COMPARISON);
 	  return fold_build2_loc (loc, code, type,
-			      variable1,
-			      fold_build2_loc (loc,
-					   TREE_CODE (arg1), TREE_TYPE (arg1),
-					   variable2, cst));
+				  variable1,
+				  fold_build2_loc (loc, TREE_CODE (arg1),
+						   TREE_TYPE (arg1),
+						   variable2, cst));
 	}
 
       cst = int_const_binop (TREE_CODE (arg0) == TREE_CODE (arg1)
 			     ? MINUS_EXPR : PLUS_EXPR,
 			     const1, const2);
       if (!TREE_OVERFLOW (cst)
-	  && tree_int_cst_compare (const1, cst) == tree_int_cst_sgn (const1))
+	  && tree_int_cst_compare (const1, cst) == tree_int_cst_sgn (const1)
+	  && tree_int_cst_sgn (cst) == tree_int_cst_sgn (const1))
 	{
 	  fold_overflow_warning (warnmsg, WARN_STRICT_OVERFLOW_COMPARISON);
 	  return fold_build2_loc (loc, code, type,
-			      fold_build2_loc (loc, TREE_CODE (arg0), TREE_TYPE (arg0),
-					   variable1, cst),
-			      variable2);
+				  fold_build2_loc (loc, TREE_CODE (arg0),
+						   TREE_TYPE (arg0),
+						   variable1, cst),
+				  variable2);
 	}
     }
 
@@ -11430,7 +11429,6 @@ fold_binary_loc (location_t loc,
 	{
 	  double_int c1, c2, c3, msk;
 	  int width = TYPE_PRECISION (type), w;
-	  bool try_simplify = true;
 
 	  c1 = tree_to_double_int (TREE_OPERAND (arg0, 1));
 	  c2 = tree_to_double_int (arg1);
@@ -11467,20 +11465,7 @@ fold_binary_loc (location_t loc,
 		}
 	    }
 
-	  /* If X is a tree of the form (Y * K1) & K2, this might conflict
-	     with that optimization from the BIT_AND_EXPR optimizations.
-	     This could end up in an infinite recursion.  */
-	  if (TREE_CODE (TREE_OPERAND (arg0, 0)) == MULT_EXPR
-	      && TREE_CODE (TREE_OPERAND (TREE_OPERAND (arg0, 0), 1))
-	                    == INTEGER_CST)
-	  {
-	    tree t = TREE_OPERAND (TREE_OPERAND (arg0, 0), 1);
-	    double_int masked = mask_with_tz (type, c3, tree_to_double_int (t));
-
-	    try_simplify = (masked != c1);
-	  }
-
-	  if (try_simplify && c3 != c1)
+	  if (c3 != c1)
 	    return fold_build2_loc (loc, BIT_IOR_EXPR, type,
 				    fold_build2_loc (loc, BIT_AND_EXPR, type,
 						     TREE_OPERAND (arg0, 0),
@@ -11870,16 +11855,25 @@ fold_binary_loc (location_t loc,
 	  && TREE_CODE (arg0) == MULT_EXPR
 	  && TREE_CODE (TREE_OPERAND (arg0, 1)) == INTEGER_CST)
 	{
+	  double_int darg1 = tree_to_double_int (arg1);
 	  double_int masked
-	    = mask_with_tz (type, tree_to_double_int (arg1),
+	    = mask_with_tz (type, darg1,
 	                    tree_to_double_int (TREE_OPERAND (arg0, 1)));
 
 	  if (masked.is_zero ())
 	    return omit_two_operands_loc (loc, type, build_zero_cst (type),
 	                                  arg0, arg1);
-	  else if (masked != tree_to_double_int (arg1))
-	    return fold_build2_loc (loc, code, type, op0,
-	                            double_int_to_tree (type, masked));
+	  else if (masked != darg1)
+	    {
+	      /* Avoid the transform if arg1 is a mask of some
+	         mode which allows further optimizations.  */
+	      int pop = darg1.popcount ();
+	      if (!(pop >= BITS_PER_UNIT
+		    && exact_log2 (pop) != -1
+		    && double_int::mask (pop) == darg1))
+		return fold_build2_loc (loc, code, type, op0,
+					double_int_to_tree (type, masked));
+	    }
 	}
 
       /* For constants M and N, if M == (1LL << cst) - 1 && (N & M) == M,
@@ -12092,11 +12086,17 @@ fold_binary_loc (location_t loc,
 		      /* See if we can shorten the right shift.  */
 		      if (shiftc < prec)
 			shift_type = inner_type;
+		      /* Otherwise X >> C1 is all zeros, so we'll optimize
+			 it into (X, 0) later on by making sure zerobits
+			 is all ones.  */
 		    }
 		}
 	      zerobits = ~(unsigned HOST_WIDE_INT) 0;
-	      zerobits >>= HOST_BITS_PER_WIDE_INT - shiftc;
-	      zerobits <<= prec - shiftc;
+	      if (shiftc < prec)
+		{
+		  zerobits >>= HOST_BITS_PER_WIDE_INT - shiftc;
+		  zerobits <<= prec - shiftc;
+		}
 	      /* For arithmetic shift if sign bit could be set, zerobits
 		 can contain actually sign bits, so no transformation is
 		 possible, unless MASK masks them all away.  In that
@@ -12114,7 +12114,7 @@ fold_binary_loc (location_t loc,
 	  /* ((X << 16) & 0xff00) is (X, 0).  */
 	  if ((mask & zerobits) == mask)
 	    return omit_one_operand_loc (loc, type,
-				     build_int_cst (type, 0), arg0);
+					 build_int_cst (type, 0), arg0);
 
 	  newmask = mask | zerobits;
 	  if (newmask != mask && (newmask & (newmask + 1)) == 0)

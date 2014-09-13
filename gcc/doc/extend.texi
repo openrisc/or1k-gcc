@@ -376,6 +376,8 @@ goto *(&&foo + array[i]);
 This is more friendly to code living in shared libraries, as it reduces
 the number of dynamic relocations that are needed, and by consequence,
 allows the data to be read-only.
+This alternative with label differences is not supported for the AVR target,
+please use the first approach for AVR programs.
 
 The @code{&&foo} expressions for the same label might have different
 values if the containing function is inlined or cloned.  If a program
@@ -9913,9 +9915,6 @@ when the @option{-mfpu=neon} switch is used:
 @node ARM ACLE Intrinsics
 @subsection ARM ACLE Intrinsics
 
-These built-in intrinsics for the ARMv8-A CRC32 extension are available when
-the @option{-march=armv8-a+crc} switch is used:
-
 @include arm-acle-intrinsics.texi
 
 @node AVR Built-in Functions
@@ -11335,7 +11334,7 @@ used. All of them generate the machine instruction that is part of the
 name.
 
 @smallexample
-v32qi __builtin_ia32_mpsadbw256 (v32qi,v32qi,v32qi,int)
+v32qi __builtin_ia32_mpsadbw256 (v32qi,v32qi,int)
 v32qi __builtin_ia32_pabsb256 (v32qi)
 v16hi __builtin_ia32_pabsw256 (v16hi)
 v8si __builtin_ia32_pabsd256 (v8si)
@@ -11570,8 +11569,8 @@ The following built-in functions are available when @option{-mxop} is used.
 @smallexample
 v2df __builtin_ia32_vfrczpd (v2df)
 v4sf __builtin_ia32_vfrczps (v4sf)
-v2df __builtin_ia32_vfrczsd (v2df, v2df)
-v4sf __builtin_ia32_vfrczss (v4sf, v4sf)
+v2df __builtin_ia32_vfrczsd (v2df)
+v4sf __builtin_ia32_vfrczss (v4sf)
 v4df __builtin_ia32_vfrczpd256 (v4df)
 v8sf __builtin_ia32_vfrczps256 (v8sf)
 v2di __builtin_ia32_vpcmov (v2di, v2di, v2di)
@@ -12787,9 +12786,10 @@ float __builtin_recipdivf (float, float);
 float __builtin_rsqrtf (float);
 double __builtin_recipdiv (double, double);
 double __builtin_rsqrt (double);
-long __builtin_bpermd (long, long);
 uint64_t __builtin_ppc_get_timebase ();
 unsigned long __builtin_ppc_mftb ();
+double __builtin_unpack_longdouble (long double, int);
+long double __builtin_pack_longdouble (double, double);
 @end smallexample
 
 The @code{vec_rsqrt}, @code{__builtin_rsqrt}, and
@@ -12808,6 +12808,57 @@ instructions and always returns the 64 bits of the Time Base Register.
 The @code{__builtin_ppc_mftb} function always generates one instruction and
 returns the Time Base Register value as an unsigned long, throwing away
 the most significant word on 32-bit environments.
+
+The following built-in functions are available for the PowerPC family
+of processors, starting with ISA 2.06 or later (@option{-mcpu=power7}
+or @option{-mpopcntd}):
+@smallexample
+long __builtin_bpermd (long, long);
+int __builtin_divwe (int, int);
+int __builtin_divweo (int, int);
+unsigned int __builtin_divweu (unsigned int, unsigned int);
+unsigned int __builtin_divweuo (unsigned int, unsigned int);
+long __builtin_divde (long, long);
+long __builtin_divdeo (long, long);
+unsigned long __builtin_divdeu (unsigned long, unsigned long);
+unsigned long __builtin_divdeuo (unsigned long, unsigned long);
+unsigned int cdtbcd (unsigned int);
+unsigned int cbcdtd (unsigned int);
+unsigned int addg6s (unsigned int, unsigned int);
+@end smallexample
+
+The @code{__builtin_divde}, @code{__builtin_divdeo},
+@code{__builitin_divdeu}, @code{__builtin_divdeou} functions require a
+64-bit environment support ISA 2.06 or later.
+
+The following built-in functions are available for the PowerPC family
+of processors when hardware decimal floating point
+(@option{-mhard-dfp}) is available:
+@smallexample
+_Decimal64 __builtin_dxex (_Decimal64);
+_Decimal128 __builtin_dxexq (_Decimal128);
+_Decimal64 __builtin_ddedpd (int, _Decimal64);
+_Decimal128 __builtin_ddedpdq (int, _Decimal128);
+_Decimal64 __builtin_denbcd (int, _Decimal64);
+_Decimal128 __builtin_denbcdq (int, _Decimal128);
+_Decimal64 __builtin_diex (_Decimal64, _Decimal64);
+_Decimal128 _builtin_diexq (_Decimal128, _Decimal128);
+_Decimal64 __builtin_dscli (_Decimal64, int);
+_Decimal128 __builitn_dscliq (_Decimal128, int);
+_Decimal64 __builtin_dscri (_Decimal64, int);
+_Decimal128 __builitn_dscriq (_Decimal128, int);
+unsigned long long __builtin_unpack_dec128 (_Decimal128, int);
+_Decimal128 __builtin_pack_dec128 (unsigned long long, unsigned long long);
+@end smallexample
+
+The following built-in functions are available for the PowerPC family
+of processors when the Vector Scalar (vsx) instruction set is
+available:
+@smallexample
+unsigned long long __builtin_unpack_vector_int128 (vector __int128_t, int);
+vector __int128_t __builtin_pack_vector_int128 (unsigned long long,
+                                                unsigned long long);
+@end smallexample
 
 @node PowerPC AltiVec/VSX Built-in Functions
 @subsection PowerPC AltiVec Built-in Functions
@@ -15220,6 +15271,17 @@ vector __uint128_t vec_vsubcuq (vector __uint128_t, vector __uint128_t);
 
 __int128_t vec_vsubuqm (__int128_t, __int128_t);
 __uint128_t vec_vsubuqm (__uint128_t, __uint128_t);
+
+vector __int128_t __builtin_bcdadd (vector __int128_t, vector__int128_t);
+int __builtin_bcdadd_lt (vector __int128_t, vector__int128_t);
+int __builtin_bcdadd_eq (vector __int128_t, vector__int128_t);
+int __builtin_bcdadd_gt (vector __int128_t, vector__int128_t);
+int __builtin_bcdadd_ov (vector __int128_t, vector__int128_t);
+vector __int128_t bcdsub (vector __int128_t, vector__int128_t);
+int __builtin_bcdsub_lt (vector __int128_t, vector__int128_t);
+int __builtin_bcdsub_eq (vector __int128_t, vector__int128_t);
+int __builtin_bcdsub_gt (vector __int128_t, vector__int128_t);
+int __builtin_bcdsub_ov (vector __int128_t, vector__int128_t);
 @end smallexample
 
 If the cryptographic instructions are enabled (@option{-mcrypto} or

@@ -2701,6 +2701,29 @@ try_make_edge_direct_simple_call (struct cgraph_edge *ie,
   return cs;
 }
 
+/* Return the target to be used in cases of impossible devirtualization.  IE
+   and target (the latter can be NULL) are dumped when dumping is enabled.  */
+
+tree
+ipa_impossible_devirt_target (struct cgraph_edge *ie, tree target)
+{
+  if (dump_file)
+    {
+      if (target)
+	fprintf (dump_file,
+		 "Type inconsistent devirtualization: %s/%i->%s\n",
+		 ie->caller->name (), ie->caller->order,
+		 IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (target)));
+      else
+	fprintf (dump_file,
+		 "No devirtualization target in %s/%i\n",
+		 ie->caller->name (), ie->caller->order);
+    }
+  tree new_target = builtin_decl_implicit (BUILT_IN_UNREACHABLE);
+  cgraph_get_create_node (new_target);
+  return new_target;
+}
+
 /* Try to find a destination for indirect edge IE that corresponds to a virtual
    call based on a formal parameter which is described by jump function JFUNC
    and if it can be determined, make it direct and return the direct edge.
@@ -2735,15 +2758,7 @@ try_make_edge_direct_virtual_call (struct cgraph_edge *ie,
 		   && DECL_FUNCTION_CODE (target) == BUILT_IN_UNREACHABLE)
 		  || !possible_polymorphic_call_target_p
 		       (ie, cgraph_get_node (target)))
-		{
-		  if (dump_file)
-		    fprintf (dump_file,
-			     "Type inconsident devirtualization: %s/%i->%s\n",
-			     ie->caller->name (), ie->caller->order,
-			     IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (target)));
-		  target = builtin_decl_implicit (BUILT_IN_UNREACHABLE);
-		  cgraph_get_create_node (target);
-		}
+		target = ipa_impossible_devirt_target (ie, target);
 	      return ipa_make_edge_direct_to_target (ie, target);
 	    }
 	}
@@ -2773,10 +2788,7 @@ try_make_edge_direct_virtual_call (struct cgraph_edge *ie,
       if (targets.length () == 1)
 	target = targets[0]->decl;
       else
-	{
-          target = builtin_decl_implicit (BUILT_IN_UNREACHABLE);
-	  cgraph_get_create_node (target);
-	}
+	target = ipa_impossible_devirt_target (ie, NULL_TREE);
     }
   else
     {
@@ -2791,10 +2803,8 @@ try_make_edge_direct_virtual_call (struct cgraph_edge *ie,
 
   if (target)
     {
-#ifdef ENABLE_CHECKING
-      gcc_assert (possible_polymorphic_call_target_p
-	 (ie, cgraph_get_node (target)));
-#endif
+      if (!possible_polymorphic_call_target_p (ie, cgraph_get_node (target)))
+	target = ipa_impossible_devirt_target (ie, target);
       return ipa_make_edge_direct_to_target (ie, target);
     }
   else
@@ -2877,16 +2887,20 @@ update_indirect_edges_after_inlining (struct cgraph_edge *cs,
       else if (jfunc->type == IPA_JF_PASS_THROUGH
 	       && ipa_get_jf_pass_through_operation (jfunc) == NOP_EXPR)
 	{
-	  if (ici->agg_contents
-	      && !ipa_get_jf_pass_through_agg_preserved (jfunc))
+	  if ((ici->agg_contents
+	       && !ipa_get_jf_pass_through_agg_preserved (jfunc))
+	      || (ici->polymorphic
+		  && !ipa_get_jf_pass_through_type_preserved (jfunc)))
 	    ici->param_index = -1;
 	  else
 	    ici->param_index = ipa_get_jf_pass_through_formal_id (jfunc);
 	}
       else if (jfunc->type == IPA_JF_ANCESTOR)
 	{
-	  if (ici->agg_contents
-	      && !ipa_get_jf_ancestor_agg_preserved (jfunc))
+	  if ((ici->agg_contents
+	       && !ipa_get_jf_ancestor_agg_preserved (jfunc))
+	      || (ici->polymorphic
+		  && !ipa_get_jf_ancestor_type_preserved (jfunc)))
 	    ici->param_index = -1;
 	  else
 	    {
@@ -3650,6 +3664,7 @@ ipa_modify_formal_parameters (tree fndecl, ipa_parm_adjustment_vec adjustments)
 
   TREE_TYPE (fndecl) = new_type;
   DECL_VIRTUAL_P (fndecl) = 0;
+  DECL_LANG_SPECIFIC (fndecl) = NULL;
   otypes.release ();
   oparms.release ();
 }

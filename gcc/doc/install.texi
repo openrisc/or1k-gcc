@@ -2544,8 +2544,7 @@ Finally a @code{stagefeedback} compiler is built using the information collected
 
 Unlike standard bootstrap, several additional restrictions apply.  The
 compiler used to build @code{stage1} needs to support a 64-bit integral type.
-It is recommended to only use GCC for this.  Also parallel make is currently
-not supported since collisions in profile collecting may occur.
+It is recommended to only use GCC for this.
 
 @html
 <hr />
@@ -3008,12 +3007,6 @@ OpenServer/Unixware}.
 @item
 Solaris 2 (SPARC, Intel):
 @itemize
-@item
-@uref{http://www.sunfreeware.com/,,Sunfreeware}
-
-@item
-@uref{http://www.blastwave.org/,,Blastwave}
-
 @item
 @uref{http://www.opencsw.org/,,OpenCSW}
 
@@ -3765,9 +3758,9 @@ removed and the system libunwind library will always be used.
 @end html
 @anchor{aarch64-x-x}
 @heading aarch64*-*-*
-Pre 2.24 binutils does not have support for selecting -mabi and does not
-support ILP32.  If GCC 4.9 or later is built with pre 2.24, GCC will not
-support option -mabi=ilp32.
+Binutils pre 2.24 does not have support for selecting @option{-mabi} and
+does not support ILP32.  If it is used to build GCC 4.9 or later, GCC will
+not support option @option{-mabi=ilp32}.
 
 @html
 <hr />

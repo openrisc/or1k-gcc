@@ -373,11 +373,14 @@ vect_analyze_data_ref_dependence (struct data_dependence_relation *ddr,
 		.. = a[i+1];
 	     where we will end up loading { a[i], a[i+1] } once, make
 	     sure that inserting group loads before the first load and
-	     stores after the last store will do the right thing.  */
-	  if ((STMT_VINFO_GROUPED_ACCESS (stmtinfo_a)
-	       && GROUP_SAME_DR_STMT (stmtinfo_a))
-	      || (STMT_VINFO_GROUPED_ACCESS (stmtinfo_b)
-		  && GROUP_SAME_DR_STMT (stmtinfo_b)))
+	     stores after the last store will do the right thing.
+	     Similar for groups like
+	        a[i] = ...;
+		... = a[i];
+		a[i+1] = ...;
+	     where loads from the group interleave with the store.  */
+	  if (STMT_VINFO_GROUPED_ACCESS (stmtinfo_a)
+	      || STMT_VINFO_GROUPED_ACCESS (stmtinfo_b))
 	    {
 	      gimple earlier_stmt;
 	      earlier_stmt = get_earlier_stmt (DR_STMT (dra), DR_STMT (drb));
@@ -3172,7 +3175,7 @@ vect_check_gather (gimple stmt, loop_vec_info loop_vinfo, tree *basep,
 bool
 vect_analyze_data_refs (loop_vec_info loop_vinfo,
 			bb_vec_info bb_vinfo,
-			int *min_vf)
+			int *min_vf, unsigned *n_stmts)
 {
   struct loop *loop = NULL;
   basic_block bb = NULL;
@@ -3207,6 +3210,9 @@ vect_analyze_data_refs (loop_vec_info loop_vinfo,
 	  for (gsi = gsi_start_bb (bbs[i]); !gsi_end_p (gsi); gsi_next (&gsi))
 	    {
 	      gimple stmt = gsi_stmt (gsi);
+	      if (is_gimple_debug (stmt))
+		continue;
+	      ++*n_stmts;
 	      if (!find_data_references_in_stmt (loop, stmt, &datarefs))
 		{
 		  if (is_gimple_call (stmt) && loop->safelen)
@@ -3260,6 +3266,9 @@ vect_analyze_data_refs (loop_vec_info loop_vinfo,
       for (gsi = gsi_start_bb (bb); !gsi_end_p (gsi); gsi_next (&gsi))
 	{
 	  gimple stmt = gsi_stmt (gsi);
+	  if (is_gimple_debug (stmt))
+	    continue;
+	  ++*n_stmts;
 	  if (!find_data_references_in_stmt (NULL, stmt,
 					     &BB_VINFO_DATAREFS (bb_vinfo)))
 	    {
