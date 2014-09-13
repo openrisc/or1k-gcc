@@ -1,3 +1,49 @@
+2014-07-16  Release Manager
+
+	* GCC 4.9.1 released.
+
+2014-06-30  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2014-06-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/60928
+	* c-pragma.c (omp_pragmas_simd): Move PRAGMA_OMP_TASK...
+	(omp_pragmas): ... back here.
+
+2014-06-12  Jakub Jelinek  <jakub@redhat.com>
+
+	PR middle-end/61486
+	* c-omp.c (c_omp_split_clauses): Don't crash on firstprivate in
+	#pragma omp target teams or
+	#pragma omp {,target }teams distribute simd.
+
+2014-06-04  Marek Polacek  <polacek@redhat.com>
+
+	Backport from mainline
+	2014-05-08  Marek Polacek  <polacek@redhat.com>
+
+	PR c/61053
+	* c-common.c (min_align_of_type): New function factored out from...
+	(c_sizeof_or_alignof_type): ...here.
+	* c-common.h (min_align_of_type): Declare.
+
+2014-05-06  Richard Biener  <rguenther@suse.de>
+
+	* c-opts.c (c_common_post_options): For -freestanding,
+	-fno-hosted and -fno-builtin disable pattern recognition
+	if not enabled explicitely.
+
+2014-04-22  Richard Biener  <rguenther@suse.de>
+
+	Backport from mainline
+	2014-04-14  Richard Biener  <rguenther@suse.de>
+		Marc Glisse  <marc.glisse@inria.fr>
+
+	PR c/60819
+	* c-common.c (convert_vector_to_pointer_for_subscript): Properly
+	apply may-alias the scalar pointer type when applicable.
+
 2014-04-22  Release Manager
 
 	* GCC 4.9.0 released.

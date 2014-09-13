@@ -2353,6 +2353,12 @@ avr_notice_update_cc (rtx body ATTRIBUTE_UNUSED, rtx insn)
         }
       break;
 
+    case CC_SET_VZN:
+      /* Insn like INC, DEC, NEG that set Z,N,V.  We currently don't make use
+         of this combination, cf. also PR61055.  */
+      CC_STATUS_INIT;
+      break;
+
     case CC_SET_CZN:
       /* Insn sets the Z,N,C flags of CC to recog_operand[0].
          The V flag may or may not be known but that's ok because
@@ -3987,7 +3993,7 @@ avr_out_store_psi (rtx insn, rtx *op, int *plen)
                                 "std Y+61,%A1"    CR_TAB
                                 "std Y+62,%B1"    CR_TAB
                                 "std Y+63,%C1"    CR_TAB
-                                "sbiw r28,%o0-60", op, plen, -5);
+                                "sbiw r28,%o0-61", op, plen, -5);
 
           return avr_asm_len ("subi r28,lo8(-%o0)" CR_TAB
                               "sbci r29,hi8(-%o0)" CR_TAB
@@ -6284,7 +6290,7 @@ avr_out_plus_1 (rtx *xop, int *plen, enum rtx_code code, int *pcc,
 
   if (REG_P (xop[2]))
     {
-      *pcc = MINUS == code ? (int) CC_SET_CZN : (int) CC_SET_N;
+      *pcc = MINUS == code ? (int) CC_SET_CZN : (int) CC_CLOBBER;
 
       for (i = 0; i < n_bytes; i++)
         {
@@ -6393,7 +6399,7 @@ avr_out_plus_1 (rtx *xop, int *plen, enum rtx_code code, int *pcc,
                                op, plen, 1);
 
                   if (n_bytes == 2 && PLUS == code)
-                    *pcc = CC_SET_ZN;
+                    *pcc = CC_SET_CZN;
                 }
 
               i++;
@@ -6416,6 +6422,7 @@ avr_out_plus_1 (rtx *xop, int *plen, enum rtx_code code, int *pcc,
         {
           avr_asm_len ((code == PLUS) ^ (val8 == 1) ? "dec %0" : "inc %0",
                        op, plen, 1);
+          *pcc = CC_CLOBBER;
           break;
         }
 

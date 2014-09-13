@@ -1231,6 +1231,8 @@ insert_move_for_subreg (rtx *before, rtx *after, rtx origreg, rtx newreg)
     }
 }
 
+static int valid_address_p (enum machine_mode mode, rtx addr, addr_space_t as);
+
 /* Make reloads for subreg in operand NOP with internal subreg mode
    REG_MODE, add new reloads for further processing.  Return true if
    any reload was generated.  */
@@ -1261,10 +1263,26 @@ simplify_operand_subreg (int nop, enum machine_mode reg_mode)
      equivalences in function lra_constraints) and because for spilled
      pseudos we allocate stack memory enough for the biggest
      corresponding paradoxical subreg.  */
-  if ((MEM_P (reg)
-       && (! SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (reg))
-	   || MEM_ALIGN (reg) >= GET_MODE_ALIGNMENT (mode)))
-      || (REG_P (reg) && REGNO (reg) < FIRST_PSEUDO_REGISTER))
+  if (MEM_P (reg)
+      && (! SLOW_UNALIGNED_ACCESS (mode, MEM_ALIGN (reg))
+	  || MEM_ALIGN (reg) >= GET_MODE_ALIGNMENT (mode)))
+    {
+      rtx subst, old = *curr_id->operand_loc[nop];
+
+      alter_subreg (curr_id->operand_loc[nop], false);
+      subst = *curr_id->operand_loc[nop];
+      lra_assert (MEM_P (subst));
+      if (! valid_address_p (GET_MODE (reg), XEXP (reg, 0),
+			     MEM_ADDR_SPACE (reg))
+	  || valid_address_p (GET_MODE (subst), XEXP (subst, 0),
+			      MEM_ADDR_SPACE (subst)))
+	return true;
+      /* If the address was valid and became invalid, prefer to reload
+	 the memory.  Typical case is when the index scale should
+	 correspond the memory.  */
+      *curr_id->operand_loc[nop] = old;
+    }
+  else if (REG_P (reg) && REGNO (reg) < FIRST_PSEUDO_REGISTER)
     {
       alter_subreg (curr_id->operand_loc[nop], false);
       return true;
@@ -2787,9 +2805,14 @@ equiv_address_substitution (struct address_info *ad)
 
    Add reloads to the lists *BEFORE and *AFTER.  We might need to add
    reloads to *AFTER because of inc/dec, {pre, post} modify in the
-   address.  Return true for any RTL change.  */
+   address.  Return true for any RTL change.
+
+   The function is a helper function which does not produce all
+   transformations which can be necessary.  It does just basic steps.
+   To do all necessary transformations use function
+   process_address.  */
 static bool
-process_address (int nop, rtx *before, rtx *after)
+process_address_1 (int nop, rtx *before, rtx *after)
 {
   struct address_info ad;
   rtx new_reg;
@@ -2972,6 +2995,13 @@ process_address (int nop, rtx *before, rtx *after)
       *ad.inner = simplify_gen_binary (PLUS, GET_MODE (new_reg),
 				       new_reg, *ad.index);
     }
+  else if (get_index_scale (&ad) == 1)
+    {
+      /* The last transformation to one reg will be made in
+	 curr_insn_transform function.  */
+      end_sequence ();
+      return false;
+    }
   else
     {
       /* base + scale * index => base + new_reg,
@@ -2987,6 +3017,18 @@ process_address (int nop, rtx *before, rtx *after)
   *before = get_insns ();
   end_sequence ();
   return true;
+}
+
+/* Do address reloads until it is necessary.  Use process_address_1 as
+   a helper function.  Return true for any RTL changes.  */
+static bool
+process_address (int nop, rtx *before, rtx *after)
+{
+  bool res = false;
+
+  while (process_address_1 (nop, before, after))
+    res = true;
+  return res;
 }
 
 /* Emit insns to reload VALUE into a new register.  VALUE is an
@@ -3273,7 +3315,7 @@ curr_insn_transform (void)
 	change_p = true;
 	lra_update_dup (curr_id, i);
       }
-
+  
   if (change_p)
     /* If we've changed the instruction then any alternative that
        we chose previously may no longer be valid.  */

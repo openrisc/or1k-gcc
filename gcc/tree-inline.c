@@ -1485,6 +1485,11 @@ remap_gimple_stmt (gimple stmt, copy_body_data *id)
       /* Create a new deep copy of the statement.  */
       copy = gimple_copy (stmt);
 
+      /* Clear flags that need revisiting.  */
+      if (is_gimple_call (copy)
+	  && gimple_call_tail_p (copy))
+	gimple_call_set_tail (copy, false);
+
       /* Remap the region numbers for __builtin_eh_{pointer,filter},
 	 RESX and EH_DISPATCH.  */
       if (id->eh_map)
@@ -3119,7 +3124,8 @@ declare_return_variable (copy_body_data *id, tree return_slot, tree modify_dest,
 	{
 	  var = return_slot;
 	  gcc_assert (TREE_CODE (var) != SSA_NAME);
-	  TREE_ADDRESSABLE (var) |= TREE_ADDRESSABLE (result);
+	  if (TREE_ADDRESSABLE (result))
+	    mark_addressable (var);
 	}
       if ((TREE_CODE (TREE_TYPE (result)) == COMPLEX_TYPE
            || TREE_CODE (TREE_TYPE (result)) == VECTOR_TYPE)

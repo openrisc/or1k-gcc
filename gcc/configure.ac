@@ -3739,7 +3739,7 @@ foo:
        .align 4
        smac %g2, %g3, %g1
        umac %g2, %g3, %g1
-       cas [[%g2]], %g3, %g1],,
+       casa [[%g2]] 0xb, %g3, %g1],,
       [AC_DEFINE(HAVE_AS_LEON, 1,
                 [Define if your assembler supports LEON instructions.])])
     ;;
@@ -4819,6 +4819,21 @@ if test x"$gcc_cv_ld_as_needed" = xyes; then
 	AC_DEFINE_UNQUOTED(LD_NO_AS_NEEDED_OPTION, "$gcc_cv_ld_no_as_needed_option",
 [Define to the linker option to keep unused dependencies.])
 fi
+
+AC_MSG_CHECKING(linker mapfile support for clearing hardware capabilities)
+saved_LDFLAGS="$LDFLAGS"
+for clearcap_map in sol2-clearcapv2.map sol2-clearcap.map; do
+  LDFLAGS="$saved_LDFLAGS -Wl,-M,${srcdir}/config/$clearcap_map"
+  AC_LINK_IFELSE([int main(void) {return 0;}],
+    [gcc_cv_ld_clearcap=yes; break], [gcc_cv_ld_clearcap=no])
+done
+LDFLAGS="$saved_LDFLAGS"
+if test "x$gcc_cv_ld_clearcap" = xyes; then
+  AC_DEFINE([HAVE_LD_CLEARCAP], 1,
+[Define if the linker supports clearing hardware capabilities via mapfile.])
+  AC_CONFIG_LINKS([clearcap.map:${srcdir}/config/$clearcap_map])
+fi
+AC_MSG_RESULT($gcc_cv_ld_clearcap)
 
 case "$target:$tm_file" in
   powerpc64-*-freebsd* | powerpc64*-*-linux* | powerpc*-*-linux*rs6000/biarch64.h*)

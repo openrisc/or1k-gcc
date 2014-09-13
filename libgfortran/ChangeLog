@@ -1,3 +1,56 @@
+2014-07-16  Release Manager
+
+	* GCC 4.9.1 released.
+
+2014-07-06  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	Backport from trunk.
+	PR libgfortran/61640
+	* io/list_read.c (next_char_internal): Adjust the read length to
+	a single wide character. (eat_spaces): Add missing paren. 
+	* io/unix.c (mem_read4): Use the correct mem_alloc function for
+	wide character internal reads.
+
+2014-06-27  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	Backport from trunk.
+	PR libgfortran/61499
+	* io/list_read.c (eat_spaces): Use a 'for' loop instead of
+	'while' loop to skip the loop if there are no bytes left in the
+	string. Only seek if actual spaces can be skipped.
+
+2014-06-07  Jerry DeLisle  <jvdelisle@gcc.gnu>
+
+	Backport from trunk.
+	PR libfortran/61173
+	* io/list_read.c (eat_spaces): If the next character pointed to
+	is a space, don't seek, must be at the end.
+
+2014-05-26  Janne Blomqvist  <jb@gcc.gnu.org>
+
+	Backport from mainline
+	PR libfortran/61310
+	* intrinsics/ctime.c (strctime): Rename to gf_ctime, use snprintf
+	instead of strftime.
+	(fdate): Use gf_ctime.
+	(fdate_sub): Likewise.
+	(ctime): Likewise.
+	(ctime_sub): Likewise.
+
+2014-05-16  Janne Blomqvist  <jb@gcc.gnu.org>
+
+	Backport from trunk:
+	PR libfortran/61187
+	* io/unix.c (raw_close): Check if s->fd is -1.
+	(fd_to_stream): Check return value of fstat(), handle error.
+
+2014-05-10  Jerry DeLisle  <jvdelisle@gcc.gnu>
+
+	Backport from Trunk.
+	PR libfortran/61049
+	* io/list_read.c (list_formatted_read_scalar): Use eat_separator
+	and delete extraneous code.
+
 2014-04-22  Release Manager
 
 	* GCC 4.9.0 released.

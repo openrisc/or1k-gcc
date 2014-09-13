@@ -95,18 +95,6 @@ msp430_init_machine_status (void)
   return m;
 }
 
-#undef  TARGET_HANDLE_OPTION
-#define TARGET_HANDLE_OPTION msp430_handle_option
-
-bool
-msp430_handle_option (struct gcc_options *opts ATTRIBUTE_UNUSED,
-		      struct gcc_options *opts_set ATTRIBUTE_UNUSED,
-		      const struct cl_decoded_option *decoded ATTRIBUTE_UNUSED,
-		      location_t loc ATTRIBUTE_UNUSED)
-{
-  return true;
-}
-
 #undef  TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE		msp430_option_override
 
@@ -196,19 +184,14 @@ msp430_option_override (void)
 
   if (target_cpu)
     {
-      if (strcasecmp (target_cpu, "msp430x") == 0
-	  || strcasecmp (target_cpu, "msp430xv2") == 0
-	  || strcasecmp (target_cpu, "430x") == 0
-	  || strcasecmp (target_cpu, "430xv2") == 0)
+      if (strcasecmp (target_cpu, "msp430x") == 0)
 	msp430x = true;
-      else if (strcasecmp (target_cpu, "msp430") == 0
-	       || strcasecmp (target_cpu, "430") == 0)
+      else /* target_cpu == "msp430" - already handled by the front end.  */
 	msp430x = false;
-      else
-	error ("unrecognised argument of -mcpu: %s", target_cpu);
     }
-
-  if (target_mcu)
+  /* Note - the front end has already ensured at most
+     one of target_cpu and target_mcu will be set.  */
+  else if (target_mcu)
     {
       int i;
 
@@ -217,25 +200,12 @@ msp430_option_override (void)
 	 supports 430.  */
       msp430x = true;
 
-      /* For backwards compatibility we recognise two generic MCU
-	 430X names.  However we want to be able to generate special C
-	 preprocessor defines for them, which is why we set target_mcu
-	 to NULL.  */
-      if (strcasecmp (target_mcu, "msp430") == 0)
-	{
-	  msp430x = false;
-	  target_mcu = NULL;
-	}
-      else if (strcasecmp (target_mcu, "msp430x") == 0
-	       || strcasecmp (target_mcu, "msp430xv2") == 0)
-	target_mcu = NULL;
-      else
-	for (i = ARRAY_SIZE (msp430_mcu_names); i--;)
-	  if (strcasecmp (msp430_mcu_names[i], target_mcu) == 0)
-	    {
-	      msp430x = false;
-	      break;
-	    }
+      for (i = ARRAY_SIZE (msp430_mcu_names); i--;)
+	if (strcasecmp (msp430_mcu_names[i], target_mcu) == 0)
+	  {
+	    msp430x = false;
+	    break;
+	  }
       /* It is not an error if we do not match the MCU name.  There are
 	 hundreds of them.  */
     }
@@ -759,6 +729,97 @@ static enum machine_mode
 msp430_get_raw_result_mode (int regno ATTRIBUTE_UNUSED)
 {
   return Pmode;
+}
+
+#undef  TARGET_GIMPLIFY_VA_ARG_EXPR
+#define TARGET_GIMPLIFY_VA_ARG_EXPR msp430_gimplify_va_arg_expr
+
+#include "gimplify.h"
+#include "gimple-expr.h"
+
+static tree
+msp430_gimplify_va_arg_expr (tree valist, tree type, gimple_seq *pre_p,
+			  gimple_seq *post_p)
+{
+  tree addr, t, type_size, rounded_size, valist_tmp;
+  unsigned HOST_WIDE_INT align, boundary;
+  bool indirect;
+
+  indirect = pass_by_reference (NULL, TYPE_MODE (type), type, false);
+  if (indirect)
+    type = build_pointer_type (type);
+
+  align = PARM_BOUNDARY / BITS_PER_UNIT;
+  boundary = targetm.calls.function_arg_boundary (TYPE_MODE (type), type);
+
+  /* When we align parameter on stack for caller, if the parameter
+     alignment is beyond MAX_SUPPORTED_STACK_ALIGNMENT, it will be
+     aligned at MAX_SUPPORTED_STACK_ALIGNMENT.  We will match callee
+     here with caller.  */
+  if (boundary > MAX_SUPPORTED_STACK_ALIGNMENT)
+    boundary = MAX_SUPPORTED_STACK_ALIGNMENT;
+
+  boundary /= BITS_PER_UNIT;
+
+  /* Hoist the valist value into a temporary for the moment.  */
+  valist_tmp = get_initialized_tmp_var (valist, pre_p, NULL);
+
+  /* va_list pointer is aligned to PARM_BOUNDARY.  If argument actually
+     requires greater alignment, we must perform dynamic alignment.  */
+  if (boundary > align
+      && !integer_zerop (TYPE_SIZE (type)))
+    {
+      /* FIXME: This is where this function diverts from targhooks.c:
+	 std_gimplify_va_arg_expr().  It works, but I do not know why...  */
+      if (! POINTER_TYPE_P (type))
+	{
+	  t = build2 (MODIFY_EXPR, TREE_TYPE (valist), valist_tmp,
+		      fold_build_pointer_plus_hwi (valist_tmp, boundary - 1));
+	  gimplify_and_add (t, pre_p);
+
+	  t = build2 (MODIFY_EXPR, TREE_TYPE (valist), valist_tmp,
+		      fold_build2 (BIT_AND_EXPR, TREE_TYPE (valist),
+				   valist_tmp,
+				   build_int_cst (TREE_TYPE (valist), -boundary)));
+	  gimplify_and_add (t, pre_p);
+	}
+    }
+  else
+    boundary = align;
+
+  /* If the actual alignment is less than the alignment of the type,
+     adjust the type accordingly so that we don't assume strict alignment
+     when dereferencing the pointer.  */
+  boundary *= BITS_PER_UNIT;
+  if (boundary < TYPE_ALIGN (type))
+    {
+      type = build_variant_type_copy (type);
+      TYPE_ALIGN (type) = boundary;
+    }
+
+  /* Compute the rounded size of the type.  */
+  type_size = size_in_bytes (type);
+  rounded_size = round_up (type_size, align);
+
+  /* Reduce rounded_size so it's sharable with the postqueue.  */
+  gimplify_expr (&rounded_size, pre_p, post_p, is_gimple_val, fb_rvalue);
+
+  /* Get AP.  */
+  addr = valist_tmp;
+
+  /* Compute new value for AP.  */
+  t = fold_build_pointer_plus (valist_tmp, rounded_size);
+  t = build2 (MODIFY_EXPR, TREE_TYPE (valist), valist, t);
+  gimplify_and_add (t, pre_p);
+
+  addr = fold_convert (build_pointer_type (type), addr);
+
+  if (indirect)
+    addr = build_va_arg_indirect_ref (addr);
+
+  addr = build_va_arg_indirect_ref (addr);
+
+  return addr;
 }
 
 /* Addressing Modes */
@@ -1847,16 +1908,20 @@ static const struct
 
 /* Returns true if the current MCU is an F5xxx series.  */
 bool
-msp430_is_f5_mcu (void)
+msp430_use_f5_series_hwmult (void)
 {
-  if (target_mcu == NULL)
+  if (msp430_hwmult_type == F5SERIES)
+    return true;
+
+  if (target_mcu == NULL || msp430_hwmult_type != AUTO)
     return false;
+
   return strncasecmp (target_mcu, "msp430f5", 8) == 0;
 }
 
 /* Returns true id the current MCU has a second generation 32-bit hardware multiplier.  */
 static bool
-has_32bit_hw_mult (void)
+use_32bit_hwmult (void)
 {
   static const char * known_32bit_mult_mcus [] =
     {
@@ -1868,31 +1933,16 @@ has_32bit_hw_mult (void)
       "msp430f47177",     "msp430f47187",     "msp430f47197"
     };
   int i;
-  if (target_mcu == NULL)
+
+  if (msp430_hwmult_type == LARGE)
+    return true;
+
+  if (target_mcu == NULL || msp430_hwmult_type != AUTO)
     return false;
 
   for (i = ARRAY_SIZE (known_32bit_mult_mcus); i--;)
     if (strcasecmp (target_mcu, known_32bit_mult_mcus[i]) == 0)
       return true;
-
-  return false;
-}
-
-/* Returns true if hardware multiply is supported by the chosen MCU.  */
-bool
-msp430_hwmult_enabled (void)
-{
-  if (target_mcu == NULL)
-    return false;
-
-  if (!ENABLE_HWMULT)
-    return false;
-
-  if (msp430_is_interrupt_func ())
-    return false;
-
-  if (msp430_is_f5_mcu () || has_32bit_hw_mult ())
-    return true;
 
   return false;
 }
@@ -1913,20 +1963,20 @@ msp430_output_labelref (FILE *file, const char *name)
 
   /* If we have been given a specific MCU name then we may be
      able to make use of its hardware multiply capabilities.  */
-  if (msp430_hwmult_enabled ())
+  if (msp430_hwmult_type != NONE)
     {
       if (strcmp ("__mspabi_mpyi", name) == 0)
 	{
-	  if (msp430_is_f5_mcu ())
+	  if (msp430_use_f5_series_hwmult ())
 	    name = "__mulhi2_f5";
 	  else
 	    name = "__mulhi2";
 	}
       else if (strcmp ("__mspabi_mpyl", name) == 0)
 	{
-	  if (msp430_is_f5_mcu ())
+	  if (msp430_use_f5_series_hwmult ())
 	    name = "__mulsi2_f5";
-	  else if (has_32bit_hw_mult ())
+	  else if (use_32bit_hwmult ())
 	    name = "__mulsi2_hw32";
 	  else
 	    name = "__mulsi2";
@@ -2203,7 +2253,7 @@ msp430_print_operand (FILE * file, rtx op, int letter)
 	 because builtins are expanded before the frame layout is determined.  */
       fprintf (file, "%d",
 	       msp430_initial_elimination_offset (ARG_POINTER_REGNUM, STACK_POINTER_REGNUM)
-	        - 2);
+	       - (TARGET_LARGE ? 4 : 2));
       return;
 
     case 'J':
@@ -2226,8 +2276,32 @@ msp430_print_operand (FILE * file, rtx op, int letter)
       msp430_print_operand_addr (file, addr);
       break;
 
-    case CONST_INT:
     case CONST:
+      if (GET_CODE (XEXP (op, 0)) == ZERO_EXTRACT)
+	{
+	  op = XEXP (op, 0);
+	  switch (INTVAL (XEXP (op, 2)))
+	    {
+	    case 0:
+	      fprintf (file, "#lo (");
+	      msp430_print_operand_raw (file, XEXP (op, 0));
+	      fprintf (file, ")");
+	      break;
+	  
+	    case 16:
+	      fprintf (file, "#hi (");
+	      msp430_print_operand_raw (file, XEXP (op, 0));
+	      fprintf (file, ")");
+	      break;
+
+	    default:
+	      output_operand_lossage ("invalid zero extract");
+	      break;
+	    }
+	  break;
+	}
+      /* Fall through.  */
+    case CONST_INT:
     case SYMBOL_REF:
     case LABEL_REF:
       if (letter == 0)

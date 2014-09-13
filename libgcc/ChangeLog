@@ -1,3 +1,44 @@
+2014-07-16  Release Manager
+
+	* GCC 4.9.1 released.
+
+2014-05-27  Georg-Johann Lay  <avr@gjlay.de>
+
+	Backport from 2014-05-27 mainline r210322.
+
+	PR libgcc/61152
+	* config/arm/bpabi-lib.h (License): Add GCC Runtime Library Exception.
+
+2014-05-22  Nick Clifton  <nickc@redhat.com>
+
+	* config/msp430/t-msp430 (HOST_LIBGCC2_CFLAGS): Add
+	-mhwmult=none.
+
+2014-05-21  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	Backport from mainline
+	2014-05-21  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	PR libgcc/60166
+	* config/arm/sfp-machine.h (_FP_NANFRAC_H, _FP_NANFRAC_S)
+	(_FP_NANFRAC_D, _FP_NANSIGN_Q): Set the quiet bit.
+
+2014-05-15  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline
+	2014-05-08  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	PR libgcc/61097
+	* config/t-slibgcc-sld: Only build and install libgcc-unwind.map
+	if --enable-shared.
+
+2014-04-30  Bernd Edlinger  <bernd.edlinger@hotmail.de>
+
+	Work around for current cygwin32 build problems.
+	* config/i386/cygming-crtbegin.c (__register_frame_info,
+	__deregister_frame_info, _Jv_RegisterClasses): Compile weak default
+	functions only for 64-bit systems.
+
 2014-04-22  Release Manager
 
 	* GCC 4.9.0 released.

@@ -1,3 +1,228 @@
+2014-07-16  Release Manager
+
+	* GCC 4.9.1 released.
+
+2014-07-13  Jason Merrill  <jason@redhat.com>
+
+	PR c++/58636
+	* call.c (build_list_conv): Don't try to build a list of references.
+
+2014-07-10  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61661
+	* semantics.c (reduced_constant_expression_p): Handle CONSTRUCTOR.
+
+2014-07-01  Paul Pluzhnikov  <ppluzhnikov@google.com>
+
+	PR c++/58753
+	PR c++/58930
+	PR c++/58704
+
+	Backported from mainline
+	2014-05-20  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* typeck2.c (digest_nsdmi_init): New.
+	* parser.c (cp_parser_late_parse_one_default_arg): Use it.
+	* init.c (get_nsdmi): Likewise.
+	* cp-tree.h (digest_nsdmi_init): Declare.
+
+2014-06-30  Edward Smith-Rowland  <3dw4rd@verizon.net>
+
+	PR c++/58781
+	PR c++/60249
+	PR c++/59867
+	* parser.c (cp_parser_userdef_string_literal()): Take a tree
+	not a cp_token*. (cp_parser_string_literal(): Don't hack
+	the token stream!
+
+2014-06-30  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61647
+	* pt.c (type_dependent_expression_p): Check BASELINK_OPTYPE.
+
+	PR c++/61566
+	* mangle.c (decl_mangling_context): Look through a TEMPLATE_DECL.
+
+2014-06-30  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2014-06-25  Jakub Jelinek  <jakub@redhat.com>
+
+	* semantics.c (finish_omp_clauses): Make sure
+	OMP_CLAUSE_LINEAR_STEP has correct type.
+
+	2014-06-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* cp-gimplify.c (cxx_omp_finish_clause): Add a gimple_seq *
+	argument.
+	* cp-tree.h (cxx_omp_finish_clause): Adjust prototype.
+
+2014-06-30  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61539
+	* pt.c (unify_one_argument): Type/expression mismatch just causes
+	deduction failure.
+
+	DR 1030
+	PR c++/51253
+	PR c++/61382
+	* cp-tree.h (CALL_EXPR_LIST_INIT_P): New.
+	* call.c (struct z_candidate): Add flags field.
+	(add_candidate): Add flags parm.
+	(add_function_candidate, add_conv_candidate, build_builtin_candidate)
+	(add_template_candidate_real): Pass it.
+	(build_over_call): Set CALL_EXPR_LIST_INIT_P.
+	* tree.c (build_aggr_init_expr): Copy it.
+	* semantics.c (simplify_aggr_init_expr): Copy it.
+	* cp-gimplify.c (cp_gimplify_expr): Handle it.
+
+	PR c++/61488
+	* pt.c (check_valid_ptrmem_cst_expr): Fix for template context.
+
+	PR c++/61500
+	* tree.c (lvalue_kind): Handle MEMBER_REF and DOTSTAR_EXPR.
+
+2014-06-30  Igor Zamyatin  <igor.zamyatin@intel.com>
+
+	PR middle-end/57541
+	* cp-array-notation.c (expand_sec_reduce_builtin):
+	Check that bultin argument is correct.
+	* call.c (build_cxx_call): Check for 0 arguments in builtin call.
+
+2014-06-27  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61433
+	* error.c (dump_template_bindings): Don't tsubst in a clone.
+
+2014-06-27  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/61614
+	* semantics.c (finish_compound_literal): Revert r204228.
+
+2014-06-26  Adam Butcher  <adam@jessamine.co.uk>
+
+	PR c++/61537
+	* parser.c (cp_parser_elaborated_type_specifier): Only consider template
+	parameter lists outside of function parameter scope.
+
+2014-06-25  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61242
+	* call.c (build_aggr_conv): Ignore passed in flags.
+	(build_array_conv, build_complex_conv): Likewise.
+
+2014-06-24  Jakub Jelinek  <jakub@redhat.com>
+
+	* parser.c (cp_parser_omp_for_loop): For
+	#pragma omp parallel for simd move lastprivate clause from parallel
+	to for rather than simd.
+
+2014-06-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/59296
+	* call.c (add_function_candidate): Avoid special 'this' handling
+	if we have a ref-qualifier.
+
+	PR c++/61556
+	* call.c (build_over_call): Call build_this in template path.
+
+2014-06-19  Jason Merrill  <jason@redhat.com>
+
+	PR c++/59296
+	* call.c (add_function_candidate): Set LOOKUP_NO_RVAL_BIND
+	|LOOKUP_NO_TEMP_BIND for ref-qualifier handling.
+
+	PR c++/61507
+	* pt.c (resolve_overloaded_unification): Preserve
+	ARGUMENT_PACK_EXPLICIT_ARGS.
+
+2014-06-18  Jason Merrill  <jason@redhat.com>
+
+	PR c++/60605
+	* pt.c (check_default_tmpl_args): Check DECL_LOCAL_FUNCTION_P.
+
+2014-06-18  Siva Chandra Reddy  <sivachandra@google.com>
+
+        PR debug/57519
+        * class.c (handle_using_decl): Pass the correct scope to
+        cp_emit_debug_info_for_using.
+
+2014-06-09  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61343
+	* decl.c (check_initializer): Maybe clear
+	DECL_INITIALIZED_BY_CONSTANT_EXPRESSION_P.
+
+2014-06-04  Igor Zamyatin  <igor.zamyatin@intel.com>
+
+	PR c/58942
+	* c-c++-common/cilk-plus/AN/pr58942.c: Check for correct handling of
+	the case with a pointer.
+
+2014-06-02  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61134
+	* pt.c (pack_deducible_p): Handle canonicalization.
+
+2014-05-21  Igor Zamyatin  <igor.zamyatin@intel.com>
+
+	PR c/60189
+	* parser.c (cp_parser_postfix_expression): Move handling of cilk_sync
+	from here to...
+	(cp_parser_statement): ...here. Make sure only semicolon can go after
+	Cilk_sync.
+
+2014-05-13  Jason Merrill  <jason@redhat.com>
+
+	PR c++/61151
+	* lambda.c (is_this): Allow capture proxies too.
+
+	DR 5
+	PR c++/60019
+	* call.c (build_user_type_conversion_1): The copy-init temporary
+	is cv-unqualified.
+
+2014-05-07  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/61083
+	* pt.c (convert_nontype_argument): Protect all the error calls
+	with complain & tf_error.
+
+2014-05-06  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/60999
+	* pt.c (maybe_begin_member_template_processing): Use
+	uses_template_parms.
+
+2014-05-02  Jason Merrill  <jason@redhat.com>
+
+	PR c++/60992
+	* lambda.c (lambda_capture_field_type): Wrap anything dependent
+	other than 'this' or a VLA.
+	(is_this): New.
+	* pt.c (tsubst_copy) [VAR_DECL]: Also build a new VAR_DECL if
+	the operand was static or constant.
+
+2014-04-30  Jason Merrill  <jason@redhat.com>
+
+	PR c++/60980
+	* init.c (build_value_init): Don't try to call an array constructor.
+
+	PR c++/60951
+	* typeck2.c (massage_init_elt): Use maybe_constant_init.
+
+2014-04-24  Jakub Jelinek  <jakub@redhat.com>
+
+	* parser.c (cp_parser_omp_atomic): Allow seq_cst before
+	atomic-clause, allow comma in between atomic-clause and
+	seq_cst.
+
+2014-04-22  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/59073
+	* parser.c (cp_parser_omp_parallel): If cp_parser_omp_for
+	fails, don't set OM_PARALLEL_COMBINED and return NULL.
+
 2014-04-22  Release Manager
 
 	* GCC 4.9.0 released.
