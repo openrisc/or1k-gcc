@@ -1407,15 +1407,6 @@ or1k_expand_conditional_branch (rtx               *operands,
       emit_jump_insn (gen_rtx_SET (VOIDmode, pc_rtx, tmp));
       return;
       
-    case SFmode:
-      tmp = or1k_expand_compare (test_code, operands[1], operands[2]);
-      tmp = gen_rtx_IF_THEN_ELSE (VOIDmode,
-				  tmp,
-				  gen_rtx_LABEL_REF (VOIDmode, operands[3]),
-				  pc_rtx);
-      emit_jump_insn (gen_rtx_SET (VOIDmode, pc_rtx, tmp));
-      return;
-      
     default:
       abort ();
     }

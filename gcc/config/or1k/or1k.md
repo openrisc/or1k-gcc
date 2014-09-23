@@ -5,8 +5,6 @@
 
 ;; Contributed by Damjan Lampret <damjanl@bsemi.com> in 1999.
 ;; Major optimizations by Matjaz Breskvar <matjazb@bsemi.com> in 2005.
-;; Floating point additions by Jungsook Yang <jungsook.yang@uci.edu>
-;;                             Julius Baxter <julius@orsoc.se> in 2010
 ;; Updated for GCC 4.5 by Jeremy Bennett <jeremy.bennett@embecosm.com>
 ;; and Joern Rennecke <joern.rennecke@embecosm.com> in 2010
 
@@ -547,19 +545,6 @@
 ;;      DONE;
 ;;      })
 
-;; (define_expand "cmpsf"
-;;   [(set (reg:CC CC_REG)
-;; 	(compare:CC (match_operand:SF 0 "register_operand" "")
-;; 		    (match_operand:SF 1 "register_operand" "")))]
-;;   "TARGET_HARD_FLOAT"
-;;   {
-;;    if (GET_CODE (operands[0]) == MEM && GET_CODE (operands[1]) == MEM)
-;;       operands[0] = force_reg (SFmode, operands[0]);
-;;       or1k_compare_op0 = operands[0];
-;;       or1k_compare_op1 = operands[1];
-;;       DONE;
-;;       })
-
 (define_expand "cbranchsi4"
   [(match_operator 0 "comparison_operator"
     [(match_operand:SI 1 "register_operand")
@@ -701,63 +686,6 @@
   [(set_attr "type" "compare")
    (set_attr "length" "1")])
 
-;; Single precision floating point evaluation instructions
-(define_insn "*cmpsf_eq"
-  [(set (reg:CCEQ CC_REG)
-	(compare:CCEQ (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfeq.s\t%0,%1 # cmpsf_eq"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsf_ne"
-  [(set (reg:CCNE CC_REG)
-	(compare:CCNE (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfne.s\t%0,%1 # cmpsf_ne"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-
-(define_insn "*cmpsf_gt"
-  [(set (reg:CCGT CC_REG)
-	(compare:CCGT (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfgt.s\t%0,%1 # cmpsf_gt"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsf_ge"
-  [(set (reg:CCGE CC_REG)
-	(compare:CCGE (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfge.s\t%0,%1 # cmpsf_ge"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-
-(define_insn "*cmpsf_lt"
-  [(set (reg:CCLT CC_REG)
-	(compare:CCLT (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sflt.s\t%0,%1 # cmpsf_lt"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsf_le"
-  [(set (reg:CCLE CC_REG)
-	(compare:CCLE (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfle.s\t%0,%1 # cmpsf_le"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
 (define_insn "*bf"
   [(set (pc)
 	(if_then_else (match_operator 1 "comparison_operator"
@@ -793,31 +721,6 @@
    operands[4] = operand_subword (operands[0], 1, 0, DImode);
    operands[5] = operand_subword (operands[1], 1, 0, DImode);"
   [(set_attr "length" "2,2,2,3")])
-
-;; Moving double and single precision floating point values
-
-
-(define_insn "movdf"
-  [(set (match_operand:DF 0 "nonimmediate_operand" "=r, r, m, r")
-	(match_operand:DF 1 "general_operand"      " r, m, r, i"))]
-  ""
-  "*
-    return or1k_output_move_double (operands);
-  "
-  [(set_attr "length" "2,2,2,3")])
-
-
-(define_insn "movsf"
-  [(set (match_operand:SF 0 "nonimmediate_operand" "=r,r,m")
-        (match_operand:SF 1 "general_operand"  "r,m,r"))]
-  ""
-  "@
-   l.ori   \t%0,%1,0\t # movsf
-   l.lwz   \t%0,%1\t # movsf
-   l.sw    \t%0,%1\t # movsf"
-  [(set_attr "type" "move,load,store")
-   (set_attr "length" "1,1,1")])
-
 
 ;;
 ;; extendqisi2
@@ -1335,7 +1238,7 @@
   [(set (match_operand:DF 0 "register_operand" "=r")
         (plus:DF (match_operand:DF 1 "register_operand" "r")
                  (match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
+  "TARGET_HARD_FLOAT"
   "lf.add.d\t%0,%1,%2 # adddf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
@@ -1353,7 +1256,7 @@
   [(set (match_operand:DF 0 "register_operand" "=r")
         (minus:DF (match_operand:DF 1 "register_operand" "r")
 		  (match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
+  "TARGET_HARD_FLOAT"
   "lf.sub.d\t%0,%1,%2 # subdf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
@@ -1371,7 +1274,7 @@
   [(set (match_operand:DF 0 "register_operand" "=r")
         (mult:DF (match_operand:DF 1 "register_operand" "r")
                  (match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
+  "TARGET_HARD_FLOAT"
   "lf.mul.d\t%0,%1,%2 # muldf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
@@ -1389,30 +1292,10 @@
   [(set (match_operand:DF 0 "register_operand" "=r")
         (div:DF (match_operand:DF 1 "register_operand" "r")
 		(match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
+  "TARGET_HARD_FLOAT"
   "lf.div.d\t%0,%1,%2 # divdf3"
   [(set_attr "type"     "fp")
    (set_attr "length"   "1")])
-
-;; Conversion between fixed point and floating point.
-
-
-(define_insn "floatsisf2"
-  [(set (match_operand:SF 0 "register_operand" "=r")
-	(float:SF (match_operand:SI 1 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.itof.s\t%0, %1 # floatsisf2"
-  [(set_attr "type" "fp")
-   (set_attr "length" "1")])
-
-;; not working 
-(define_insn "fixunssfsi2"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(fix:SI (match_operand:SF 1 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.ftoi.s\t%0, %1 # fixunssfsi2"
-  [(set_attr "type" "fp")
-   (set_attr "length" "1")])
 
 ;; The insn to set GOT.
 ;; TODO: support for no-delay target
