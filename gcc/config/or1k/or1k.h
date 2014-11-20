@@ -444,6 +444,13 @@ enum reg_class
 #define CLASS_MAX_NREGS(CLASS, MODE)					\
   ((GET_MODE_SIZE (MODE) + UNITS_PER_WORD - 1) / UNITS_PER_WORD)
 
+/* -------------------------------------------------------------------------- */
+/* Symbol Flags  */
+
+/* Flag to mark a function decl symbol that requires a long call.  */
+#define SYMBOL_FLAG_LONG_CALL	(SYMBOL_FLAG_MACH_DEP << 0)
+#define SYMBOL_REF_LONG_CALL_P(X)					\
+  ((SYMBOL_REF_FLAGS (X) & SYMBOL_FLAG_LONG_CALL) != 0)
 
 /* -------------------------------------------------------------------------- */
 /* Stack layout; function entry, exit and calling.  */

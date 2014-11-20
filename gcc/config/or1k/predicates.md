@@ -61,17 +61,17 @@
   return 0;
 })
 
+
+;; match MEM operand with SYMBOL_REF as operand
 (define_predicate "sym_ref_mem_operand"
-  (match_code "mem")
-{
-  if (GET_CODE (op) == MEM)
-    {
-      rtx t1 = XEXP (op, 0);
-      if (GET_CODE (t1) == SYMBOL_REF)
-	return 1;
-    }
-  return 0;
-})
+  ( and (match_code "mem")
+        (match_code "symbol_ref" "0")) )
+
+;; additionally test for SYMBOL_REF not to be far (defined by long_call)
+(define_predicate "sym_ref_mem_operand_near"
+  ( and (match_operand 0 "sym_ref_mem_operand")
+        (not (match_test "SYMBOL_REF_LONG_CALL_P( XEXP(op, 0) )"))) )
+
 
 ;; True iff OP is a symbolic operand.
 

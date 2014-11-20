@@ -1176,12 +1176,20 @@
   ""
   "
 {
-  emit_call_insn (gen_call_internal (operands[0], operands[1]));
-  DONE;
+  rtx addr = XEXP (operands[0], 0);
+  if (SYMBOL_REF_LONG_CALL_P (addr))
+  {
+    XEXP (operands[0], 0) = force_reg (Pmode, addr);
+  }
+  else
+  {
+    emit_call_insn (gen_call_internal (operands[0], operands[1]));
+    DONE;
+  }
 }")
 
 (define_insn "call_internal"
-[(parallel [(call (match_operand:SI 0 "sym_ref_mem_operand" "")
+[(parallel [(call (match_operand:SI 0 "sym_ref_mem_operand_near" "")
                   (match_operand 1 "" "i"))
             (clobber (reg:SI 9))
             (use (reg:SI 16))])]

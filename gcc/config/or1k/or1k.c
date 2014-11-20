@@ -105,6 +105,23 @@ static struct
 /* ========================================================================== */
 /* Local (i.e. static) utility functions */
 
+
+/* Predicates to test for presence of "near" and "far"/"long_call"
+   attributes on the given TYPE.  */
+static bool
+or1k_near_type_p (const_tree type)
+{
+  return lookup_attribute ("near", TYPE_ATTRIBUTES (type)) != NULL;
+}
+
+static bool
+or1k_far_type_p (const_tree type)
+{
+  return (lookup_attribute ("long_call", TYPE_ATTRIBUTES (type)) != NULL
+	  || lookup_attribute ("far", TYPE_ATTRIBUTES (type)) != NULL);
+}
+
+
 /* -------------------------------------------------------------------------- */
 /*!Must the current function save a register?
 
@@ -2406,6 +2423,34 @@ or1k_frame_pointer_required (void)
   return crtl->calls_eh_return || cfun->calls_alloca;
 }
 
+/* Implement TARGET_ENCODE_SECTION_INFO.  */
+static void
+or1k_encode_section_info (tree decl, rtx rtl, int first)
+{
+  default_encode_section_info (decl, rtl, first);
+
+  if (TREE_CODE (decl) == FUNCTION_DECL)
+    {
+      rtx symbol = XEXP (rtl, 0);
+      tree type = TREE_TYPE (decl);
+
+      /* Encode whether the symbol is short or long.  */
+      if ((TARGET_LONG_CALLS && !or1k_near_type_p (type))
+	  || or1k_far_type_p (type))
+	SYMBOL_REF_FLAGS (symbol) |= SYMBOL_FLAG_LONG_CALL;
+    }
+}
+
+/* The value of TARGET_ATTRIBUTE_TABLE.  */
+static const struct attribute_spec or1k_attribute_table[] = {
+  /* { name, min_len, max_len, decl_req, type_req, fn_type_req, handler,
+       om_diagnostic } */
+  { "long_call",   0, 0, false, true,  true,  NULL, false },
+  { "far",     	   0, 0, false, true,  true,  NULL, false },
+  { "near",        0, 0, false, true,  true,  NULL, false },
+  { NULL,	   0, 0, false, false, false, NULL, false }
+};
+
 /* Functions to save and restore machine-specific function data.  */
 static struct machine_function *
 or1k_init_machine_status (void)
@@ -2428,6 +2473,12 @@ or1k_init_expanders (void)
 
 #undef  TARGET_FRAME_POINTER_REQUIRED
 #define TARGET_FRAME_POINTER_REQUIRED or1k_frame_pointer_required
+
+#undef  TARGET_ENCODE_SECTION_INFO
+#define TARGET_ENCODE_SECTION_INFO or1k_encode_section_info
+
+#undef  TARGET_ATTRIBUTE_TABLE
+#define TARGET_ATTRIBUTE_TABLE or1k_attribute_table
 
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;
