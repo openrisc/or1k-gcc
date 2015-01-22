@@ -1217,13 +1217,21 @@
   ""
   "
 {
-  emit_call_insn (gen_call_value_internal (operands[0], operands[1], operands[2]));
-  DONE;
+  rtx addr = XEXP (operands[1], 0);
+  if (SYMBOL_REF_LONG_CALL_P (addr))
+  {
+    XEXP (operands[1], 0) = force_reg (Pmode, addr);
+  }
+  else
+  {
+    emit_call_insn (gen_call_value_internal (operands[0], operands[1], operands[2]));
+    DONE;
+  }
 }")
 
 (define_insn "call_value_internal"
 [(parallel [(set (match_operand 0 "register_operand" "=r")
-                  (call (match_operand:SI 1 "sym_ref_mem_operand" "")
+                  (call (match_operand:SI 1 "sym_ref_mem_operand_near" "")
                         (match_operand 2 "" "i")))
             (clobber (reg:SI 9))
             (use (reg:SI 16))])]
