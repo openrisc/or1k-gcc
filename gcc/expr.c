@@ -6605,7 +6605,7 @@ store_field (rtx target, HOST_WIDE_INT bitsize, HOST_WIDE_INT bitpos,
 	{
 	  HOST_WIDE_INT size = int_size_in_bytes (TREE_TYPE (exp));
 	  rtx temp_target;
-	  if (mode == BLKmode)
+	  if (mode == BLKmode || mode == VOIDmode)
 	    mode = smallest_mode_for_size (size * BITS_PER_UNIT, MODE_INT);
 	  temp_target = gen_reg_rtx (mode);
 	  emit_group_store (temp_target, temp, TREE_TYPE (exp), size);
@@ -10667,7 +10667,7 @@ is_aligning_offset (const_tree offset, const_tree exp)
       || !tree_fits_uhwi_p (TREE_OPERAND (offset, 1))
       || compare_tree_int (TREE_OPERAND (offset, 1),
 			   BIGGEST_ALIGNMENT / BITS_PER_UNIT) <= 0
-      || !exact_log2 (tree_to_uhwi (TREE_OPERAND (offset, 1)) + 1) < 0)
+      || exact_log2 (tree_to_uhwi (TREE_OPERAND (offset, 1)) + 1) < 0)
     return 0;
 
   /* Look at the first operand of BIT_AND_EXPR and strip any conversion.

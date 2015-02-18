@@ -53,6 +53,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "df.h"
 #include "dce.h"
 #include "dbgcnt.h"
+#include "emit-rtl.h"
 
 #define FORWARDER_BLOCK_P(BB) ((BB)->flags & BB_FORWARDER_BLOCK)
 
@@ -882,7 +883,7 @@ merge_memattrs (rtx x, rtx y)
   if (GET_MODE (x) != GET_MODE (y))
     return;
 
-  if (code == MEM && MEM_ATTRS (x) != MEM_ATTRS (y))
+  if (code == MEM && !mem_attrs_eq_p (MEM_ATTRS (x), MEM_ATTRS (y)))
     {
       if (! MEM_ATTRS (x))
 	MEM_ATTRS (y) = 0;
@@ -1173,7 +1174,7 @@ old_insns_match_p (int mode ATTRIBUTE_UNUSED, rtx i1, rtx i2)
 		      && DECL_FUNCTION_CODE (SYMBOL_REF_DECL (symbol))
 			 >= BUILT_IN_ASAN_REPORT_LOAD1
 		      && DECL_FUNCTION_CODE (SYMBOL_REF_DECL (symbol))
-			 <= BUILT_IN_ASAN_REPORT_STORE16)
+			 <= BUILT_IN_ASAN_STOREN)
 		    return dir_none;
 		}
 	    }

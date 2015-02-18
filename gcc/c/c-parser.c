@@ -9764,7 +9764,10 @@ c_parser_omp_variable_list (c_parser *parser,
 
 		  c_parser_consume_token (parser);
 		  if (!c_parser_next_token_is (parser, CPP_COLON))
-		    low_bound = c_parser_expression (parser).value;
+		    {
+		      low_bound = c_parser_expression (parser).value;
+		      mark_exp_read (low_bound);
+		    }
 		  if (c_parser_next_token_is (parser, CPP_CLOSE_SQUARE))
 		    length = integer_one_node;
 		  else
@@ -9777,7 +9780,10 @@ c_parser_omp_variable_list (c_parser *parser,
 			  break;
 			}
 		      if (!c_parser_next_token_is (parser, CPP_CLOSE_SQUARE))
-			length = c_parser_expression (parser).value;
+			{
+			  length = c_parser_expression (parser).value;
+			  mark_exp_read (length);
+			}
 		    }
 		  /* Look for the closing `]'.  */
 		  if (!c_parser_require (parser, CPP_CLOSE_SQUARE,
@@ -14074,6 +14080,13 @@ c_parser_array_notation (location_t loc, c_parser *parser, tree initial_index,
   
   array_type = TREE_TYPE (array_value);
   gcc_assert (array_type);
+  if (TREE_CODE (array_type) != ARRAY_TYPE
+      && TREE_CODE (array_type) != POINTER_TYPE)
+    {
+      error_at (loc, "base of array section must be pointer or array type");
+      c_parser_skip_until_found (parser, CPP_CLOSE_SQUARE, NULL);
+      return error_mark_node;
+    }
   type = TREE_TYPE (array_type);
   token = c_parser_peek_token (parser);
    

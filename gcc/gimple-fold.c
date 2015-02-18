@@ -146,7 +146,8 @@ can_refer_decl_in_current_unit_p (tree decl, tree from_decl)
          The second is important when devirtualization happens during final
          compilation stage when making a new reference no longer makes callee
          to be compiled.  */
-      if (!node || !node->definition || node->global.inlined_to)
+      if (!node || !node->definition
+	  || DECL_EXTERNAL (decl) || node->global.inlined_to)
 	{
 	  gcc_checking_assert (!TREE_ASM_WRITTEN (decl));
 	  return false;
@@ -3104,8 +3105,8 @@ fold_ctor_reference (tree type, tree ctor, unsigned HOST_WIDE_INT offset,
      result.  */
   if (!AGGREGATE_TYPE_P (TREE_TYPE (ctor)) && !offset
       /* VIEW_CONVERT_EXPR is defined only for matching sizes.  */
-      && operand_equal_p (TYPE_SIZE (type),
-			  TYPE_SIZE (TREE_TYPE (ctor)), 0))
+      && !compare_tree_int (TYPE_SIZE (type), size)
+      && !compare_tree_int (TYPE_SIZE (TREE_TYPE (ctor)), size))
     {
       ret = canonicalize_constructor_val (unshare_expr (ctor), from_decl);
       ret = fold_unary (VIEW_CONVERT_EXPR, type, ret);

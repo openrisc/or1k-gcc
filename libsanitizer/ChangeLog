@@ -1,3 +1,31 @@
+2014-10-30  Release Manager
+
+	* GCC 4.9.2 released.
+
+2014-10-16  Yury Gribov  <y.gribov@samsung.com>
+
+	Backport from mainline
+	2014-05-14  Yury Gribov  <y.gribov@samsung.com>
+
+	PR sanitizer/61100
+
+	* Makefile.am (nodist_saninclude_HEADERS): Install
+	public headers.
+	* Makefile.in: Regenerate.
+
+2014-10-14  David S. Miller  <davem@davemloft.net>
+
+	* sanitizer_common/sanitizer_platform_limits_linux.cc (time_t):
+	Define at __kernel_time_t, as needed for sparc.
+	(struct __old_kernel_stat): Don't check if __sparc__ is defined.
+	* libsanitizer/sanitizer_common/sanitizer_platform_limits_posix.h
+	(__sanitizer): Define struct___old_kernel_stat_sz,
+	struct_kernel_stat_sz, and struct_kernel_stat64_sz for sparc.
+	(__sanitizer_ipc_perm): Adjust for sparc targets.
+	(__sanitizer_shmid_ds): Likewsie.
+	(__sanitizer_sigaction): Likewsie.
+	(IOC_SIZE): Likewsie.
+
 2014-07-16  Release Manager
 
 	* GCC 4.9.1 released.

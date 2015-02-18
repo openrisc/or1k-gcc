@@ -56,7 +56,7 @@ bessel_jn_r'rtype_kind` ('rtype` * const restrict ret, int n1, int n2, 'rtype_na
     {
       size_t size = n2 < n1 ? 0 : n2-n1+1; 
       GFC_DIMENSION_SET(ret->dim[0], 0, size-1, 1);
-      ret->base_addr = xmalloc (sizeof ('rtype_name`) * size);
+      ret->base_addr = xmallocarray (size, sizeof ('rtype_name`));
       ret->offset = 0;
     }
 
@@ -123,7 +123,7 @@ bessel_yn_r'rtype_kind` ('rtype` * const restrict ret, int n1, int n2,
     {
       size_t size = n2 < n1 ? 0 : n2-n1+1; 
       GFC_DIMENSION_SET(ret->dim[0], 0, size-1, 1);
-      ret->base_addr = xmalloc (sizeof ('rtype_name`) * size);
+      ret->base_addr = xmallocarray (size, sizeof ('rtype_name`));
       ret->offset = 0;
     }
 
@@ -163,7 +163,7 @@ bessel_yn_r'rtype_kind` ('rtype` * const restrict ret, int n1, int n2,
 
   x2rev = GFC_REAL_'rtype_kind`_LITERAL(2.)/x;
 
-  for (i = 2; i <= n1+n2; i++)
+  for (i = 2; i <= n2 - n1; i++)
     {
 #if defined('rtype_name`_INFINITY)
       if (unlikely (last2 == -'rtype_name`_INFINITY))

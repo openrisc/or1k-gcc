@@ -846,6 +846,19 @@ proc check_effective_target_fpic { } {
     return 0
 }
 
+# Return 1 if -shared is supported, as in no warnings or errors
+# emitted, 0 otherwise.
+
+proc check_effective_target_shared { } {
+    # Note that M68K has a multilib that supports -fpic but not
+    # -fPIC, so we need to check both.  We test with a program that
+    # requires GOT references.
+    return [check_no_compiler_messages shared executable {
+	extern int foo (void); extern int bar;
+	int baz (void) { return foo () + bar; }
+    } "-shared -fpic"]
+}
+
 # Return 1 if -pie, -fpie and -fPIE are supported, 0 otherwise.
 
 proc check_effective_target_pie { } {
@@ -2565,13 +2578,16 @@ proc check_effective_target_arm_v8_neon_ok_nocache { } {
     if { [check_effective_target_arm32] } {
 	foreach flags {"" "-mfloat-abi=softfp" "-mfpu=neon-fp-armv8" "-mfpu=neon-fp-armv8 -mfloat-abi=softfp"} {
 	    if { [check_no_compiler_messages_nocache arm_v8_neon_ok object {
+		#if __ARM_ARCH < 8
+		#error not armv8 or later
+		#endif
 		#include "arm_neon.h"
 		void
 		foo ()
 		{
 	          __asm__ volatile ("vrintn.f32 q0, q0");
 		}
-	    } "$flags"] } {
+	    } "$flags -march=armv8-a"] } {
 		set et_arm_v8_neon_flags $flags
 		return 1
 	    }
@@ -2748,6 +2764,7 @@ proc check_effective_target_arm_thumb1_ok { } {
 	#if !defined(__arm__) || !defined(__thumb__) || defined(__thumb2__)
 	#error FOO
 	#endif
+	int foo (int i) { return i; }
     } "-mthumb"]
 }
 
@@ -2759,6 +2776,7 @@ proc check_effective_target_arm_thumb2_ok { } {
 	#if !defined(__thumb2__)
 	#error FOO
 	#endif
+	int foo (int i) { return i; }
     } "-mthumb"]
 }
 
