@@ -1,3 +1,20 @@
+2014-10-30  Release Manager
+
+	* GCC 4.9.2 released.
+
+2014-07-28  Ulrich Weigand  <uweigand@de.ibm.com>
+
+	PR libobjc/61920
+	* encoding.c (rs6000_special_adjust_field_align_p): Use definition
+	that matches the 4.9 branch ABI.
+
+2014-07-27  Alan Modra  <amodra@gmail.com>
+	    Matthias Klose  <doko@ubuntu.com>
+
+	PR libobjc/61920
+
+	* encoding.c: Define rs6000_special_adjust_field_align_p.
+
 2014-07-16  Release Manager
 
 	* GCC 4.9.1 released.

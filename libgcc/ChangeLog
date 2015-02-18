@@ -1,3 +1,43 @@
+2014-10-30  Release Manager
+
+	* GCC 4.9.2 released.
+
+2014-10-26  John David Anglin  <danglin@gcc.gnu.org>
+
+	* config/pa/linux-unwind.h (pa32_read_access_ok): New function.
+	(pa32_fallback_frame_state): Use pa32_read_access_ok to check if
+	memory read accesses are ok.
+
+2014-10-22  Georg-Johann Lay  <avr@gjlay.de>
+
+	PR target/63223
+	* config/avr/lib1funcs.S (__do_global_dtors): Reverse execution
+	order to first...last.
+
+2014-09-18  Joseph Myers  <joseph@codesourcery.com>
+
+	* config/i386/sfp-machine.h (FP_TRAPPING_EXCEPTIONS): Treat clear
+	bits not set bits as indicating trapping exceptions.
+
+2014-09-11  Georg-Johann Lay  <avr@gjlay.de>
+
+	Backport from 2014-09-11 trunk r215152.
+
+	PR target/63223
+	* config/avr/libgcc.S (__tablejump2__): Rewrite to use RAMPZ, ELPM
+	and R24 as needed.  Make work for all devices and .text locations.
+	(__do_global_ctors, __do_global_dtors): Use word addresses.
+	(__tablejump__, __tablejump_elpm__): Remove functions.
+	* t-avr (LIB1ASMFUNCS): Remove _tablejump, _tablejump_elpm.
+	Add _tablejump2.
+	(XICALL, XIJMP): New macros.
+
+2014-08-04  Rohit  <rohitarulraj@freescale.com>
+
+	PR target/60102
+	* config/rs6000/linux-unwind.h (ppc_fallback_frame_state): Update
+	based on change in SPE high register numbers and 3 HTM registers.
+
 2014-07-16  Release Manager
 
 	* GCC 4.9.1 released.

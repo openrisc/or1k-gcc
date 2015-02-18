@@ -3920,10 +3920,6 @@ loc_equivalence_callback (rtx loc, const_rtx, void *data)
 /* The current iteration number of this LRA pass.  */
 int lra_constraint_iter;
 
-/* The current iteration number of this LRA pass after the last spill
-   pass.  */
-int lra_constraint_iter_after_spill;
-
 /* True if we substituted equiv which needs checking register
    allocation correctness because the equivalent value contains
    allocatable hard registers or when we restore multi-register
@@ -4069,11 +4065,6 @@ lra_constraints (bool first_p)
   if (lra_dump_file != NULL)
     fprintf (lra_dump_file, "\n********** Local #%d: **********\n\n",
 	     lra_constraint_iter);
-  lra_constraint_iter_after_spill++;
-  if (lra_constraint_iter_after_spill > LRA_MAX_CONSTRAINT_ITERATION_NUMBER)
-    internal_error
-      ("Maximum number of LRA constraint passes is achieved (%d)\n",
-       LRA_MAX_CONSTRAINT_ITERATION_NUMBER);
   changed_p = false;
   lra_risky_transformations_p = false;
   new_insn_uid_start = get_max_uid ();
@@ -5752,6 +5743,20 @@ remove_inheritance_pseudos (bitmap remove_pseudos)
 			SUBREG_REG (SET_SRC (set)) = SET_SRC (prev_set);
 		      else
 			SET_SRC (set) = SET_SRC (prev_set);
+		      /* As we are finishing with processing the insn
+			 here, check the destination too as it might
+			 inheritance pseudo for another pseudo.  */
+		      if (bitmap_bit_p (remove_pseudos, dregno)
+			  && bitmap_bit_p (&lra_inheritance_pseudos, dregno)
+			  && (restore_regno
+			      = lra_reg_info[dregno].restore_regno) >= 0)
+			{
+			  if (GET_CODE (SET_DEST (set)) == SUBREG)
+			    SUBREG_REG (SET_DEST (set))
+			      = regno_reg_rtx[restore_regno];
+			  else
+			    SET_DEST (set) = regno_reg_rtx[restore_regno];
+			}
 		      lra_push_insn_and_update_insn_regno_info (curr_insn);
 		      lra_set_used_insn_alternative_by_uid
 			(INSN_UID (curr_insn), -1);

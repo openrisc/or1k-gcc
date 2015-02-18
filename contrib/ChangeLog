@@ -1,3 +1,16 @@
+2014-10-30  Release Manager
+
+	* GCC 4.9.2 released.
+
+2014-09-18  Joel Sherrill <joel.sherrill@oarcorp.com>
+
+	* config-list.mk (LIST): Add v850-rtems.
+
+2014-09-18  Sebastian Huber  <sebastian.huber@embedded-brains.de>
+
+	* config-list.mk (LIST): Add arm-rtems.
+	Add nios2-rtems.  Remove extra option from powerpc-rtems.
+
 2014-07-16  Release Manager
 
 	* GCC 4.9.1 released.

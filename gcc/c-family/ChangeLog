@@ -1,3 +1,42 @@
+2014-10-30  Release Manager
+
+	* GCC 4.9.2 released.
+
+2014-10-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/63495
+	* c-common.c (min_align_of_type): Don't decrease alignment
+	through BIGGEST_FIELD_ALIGNMENT or ADJUST_FIELD_ALIGN if
+	TYPE_USER_ALIGN is set.
+
+2014-10-08  Edward Smith-Rowland  <3dw4rd@verizon.net>
+
+	Implement SD-6: SG10 Feature Test Recommendations
+	* c-cppbuiltin.c (c_cpp_builtins()): Define language feature
+	macros and the __has_header macro.
+
+2014-08-12  Igor Zamyatin  <igor.zamyatin@intel.com>
+
+	PR other/61962
+	* array-notation-common.c (find_rank): Added handling for other
+	types of references.
+
+2014-08-01  Igor Zamyatin  <igor.zamyatin@intel.com>
+
+	PR middle-end/61455
+	* array-notation-common.c (extract_array_notation_exprs): Handling
+	of DECL_EXPR added.
+
+2014-07-17  Richard Biener  <rguenther@suse.de>
+
+	Backport from mainline
+	2014-07-09  Richard Biener  <rguenther@suse.de>
+
+	PR c-family/61741
+	* c-gimplify.c (c_gimplify_expr): Gimplify self-modify expressions
+	using unsigned arithmetic if overflow does not wrap instead of
+	if overflow is undefined.
+
 2014-07-16  Release Manager
 
 	* GCC 4.9.1 released.
