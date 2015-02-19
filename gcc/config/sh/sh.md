@@ -868,9 +868,9 @@
 
 (define_insn "*cmp_div0s_0"
   [(set (reg:SI T_REG)
-	(eq:SI (lshiftrt:SI (match_operand:SI 0 "arith_reg_operand")
+	(eq:SI (lshiftrt:SI (match_operand:SI 0 "arith_reg_operand" "%r")
 			    (const_int 31))
-	       (ge:SI (match_operand:SI 1 "arith_reg_operand")
+	       (ge:SI (match_operand:SI 1 "arith_reg_operand" "r")
 		      (const_int 0))))]
   "TARGET_SH1"
   "div0s	%0,%1"
@@ -4563,6 +4563,12 @@ label:
 {
   if (TARGET_SHMEDIA)
     {
+       if (CONST_INT_P (operands[2]) && INTVAL (operands[2]) < 0)
+	{
+	  operands[2] = GEN_INT (-INTVAL (operands[2]));
+	  emit_insn (gen_ashrsi3_media (operands[0], operands[1], operands[2]));
+	  DONE;
+	}
       emit_insn (gen_ashlsi3_media (operands[0], operands[1], operands[2]));
       DONE;
     }
@@ -4803,6 +4809,12 @@ label:
 {
   if (TARGET_SHMEDIA)
     {
+       if (CONST_INT_P (operands[2]) && INTVAL (operands[2]) < 0)
+	{
+	  operands[2] = GEN_INT (-INTVAL (operands[2]));
+	  emit_insn (gen_ashrdi3_media (operands[0], operands[1], operands[2]));
+	  DONE;
+	}
       emit_insn (gen_ashldi3_media (operands[0], operands[1], operands[2]));
       DONE;
     }
@@ -4896,6 +4908,12 @@ label:
 {
   if (TARGET_SHMEDIA)
     {
+      if (CONST_INT_P (operands[2]) && INTVAL (operands[2]) < 0)
+	{
+	  operands[2] = GEN_INT (-INTVAL (operands[2]));
+	  emit_insn (gen_ashlsi3_media (operands[0], operands[1], operands[2]));
+	  DONE;
+	}
       emit_insn (gen_ashrsi3_media (operands[0], operands[1], operands[2]));
       DONE;
     }
@@ -4995,6 +5013,12 @@ label:
 {
   if (TARGET_SHMEDIA)
     {
+      if (CONST_INT_P (operands[2]) && INTVAL (operands[2]) < 0)
+	{
+	  operands[2] = GEN_INT (-INTVAL (operands[2]));
+	  emit_insn (gen_ashldi3_media (operands[0], operands[1], operands[2]));
+	  DONE;
+	}
       emit_insn (gen_ashrdi3_media (operands[0], operands[1], operands[2]));
       DONE;
     }
@@ -5069,6 +5093,12 @@ label:
 {
   if (TARGET_SHMEDIA)
     {
+      if (CONST_INT_P (operands[2]) && INTVAL (operands[2]) < 0)
+	{
+	  operands[2] = GEN_INT (-INTVAL (operands[2]));
+	  emit_insn (gen_ashlsi3_media (operands[0], operands[1], operands[2]));
+	  DONE;
+	}
       emit_insn (gen_lshrsi3_media (operands[0], operands[1], operands[2]));
       DONE;
     }
@@ -5263,6 +5293,12 @@ label:
 {
   if (TARGET_SHMEDIA)
     {
+      if (CONST_INT_P (operands[2]) && INTVAL (operands[2]) < 0)
+	{
+	  operands[2] = GEN_INT (-INTVAL (operands[2]));
+	  emit_insn (gen_ashldi3_media (operands[0], operands[1], operands[2]));
+	  DONE;
+	}
       emit_insn (gen_lshrdi3_media (operands[0], operands[1], operands[2]));
       DONE;
     }

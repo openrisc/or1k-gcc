@@ -1505,7 +1505,8 @@
   ""
   "
    l.lwa   \t%6,%2    # cmpxchg: load
-   l.and   \t%1,%6,%5 # cmpxchg: mask
+   l.and   \t%1,%6,%5 # cmpxchg: mask old
+   l.and   \t%4,%4,%5 # cmpxchg: mask set
    l.sfeq  \t%1,%3    # cmpxchg: cmp
    l.bnf   \t1f       # cmpxchg: not expected
     l.ori  \t%0,r0,0  # cmpxchg: result = 0

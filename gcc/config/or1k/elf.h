@@ -1,7 +1,7 @@
-/* Definitions for rtems targeting an OpenRisc OR1K using COFF
+/* Definitions for OpenRISC OR1K using ELF
    ??? this is for OR1K, but the rest of the above seems bogus.
-   Copyright (C) 1996, 1997, 2005 Free Software Foundation, Inc.
-   Contributed by Joel Sherrill (joel@OARcorp.com).
+   Copyright (C) 1996, 1997, 2005, 2014 Free Software Foundation, Inc.
+   Contributed by Joel Sherrill (joel.sherrill@OARcorp.com).
 
 This file is part of GNU CC.
 

@@ -1233,6 +1233,13 @@ add_or_update_dep_1 (dep_t new_dep, bool resolved_p,
       switch (ask_dependency_caches (new_dep))
 	{
 	case DEP_PRESENT:
+	  dep_t present_dep;
+	  sd_iterator_def sd_it;
+      
+	  present_dep = sd_find_dep_between_no_cache (DEP_PRO (new_dep),
+						      DEP_CON (new_dep),
+						      resolved_p, &sd_it);
+	  DEP_MULTIPLE (present_dep) = 1;
 	  return DEP_PRESENT;
 
 	case DEP_CHANGED:
@@ -2750,7 +2757,8 @@ sched_analyze_2 (struct deps_desc *deps, rtx x, rtx insn)
 	   Consider for instance a volatile asm that changes the fpu rounding
 	   mode.  An insn should not be moved across this even if it only uses
 	   pseudo-regs because it might give an incorrectly rounded result.  */
-	if (code != ASM_OPERANDS || MEM_VOLATILE_P (x))
+	if ((code != ASM_OPERANDS || MEM_VOLATILE_P (x))
+	    && !DEBUG_INSN_P (insn))
 	  reg_pending_barrier = TRUE_BARRIER;
 
 	/* For all ASM_OPERANDS, we must traverse the vector of input operands.

@@ -1,3 +1,31 @@
+2014-10-30  Release Manager
+
+	* GCC 4.9.2 released.
+
+2014-10-27  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc-interface/decl.c (gnat_to_gnu_entity) <E_Array_Type>: Remove
+	superfluous computation for the max size.
+	<E_Array_Subtype>: Likewise.  Make sure that the max size calculation
+	does not overflow at compile time.
+
+2014-10-13  Eric Botcazou  <ebotcazou@adacore.com>
+            Alan Modra  <amodra@gmail.com>
+
+	PR ada/63225
+	* uintp.adb (Vector_To_Uint): Move from here to...
+	* uintp.ads (UI_Vector): Make public.
+	(Vector_To_Uint): ...here.
+
+2014-08-12  Joel Sherrill <joel.sherrill@oarcorp.com>
+
+	* socket.c: For RTEMS, use correct prototype of gethostbyname_r().
+	* gsocket.h Add include of <unistd.h> on RTEMS.
+
+2014-08-11  Joel Sherrill <joel.sherrill@oarcorp.com>
+
+	* s-osinte-rtems.adb: Correct formatting of line in license block.
+
 2014-07-16  Release Manager
 
 	* GCC 4.9.1 released.

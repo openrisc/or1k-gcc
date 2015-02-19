@@ -135,6 +135,16 @@ gfc_omp_predetermined_sharing (tree decl)
   if (GFC_DECL_RESULT (decl) && ! DECL_HAS_VALUE_EXPR_P (decl))
     return OMP_CLAUSE_DEFAULT_SHARED;
 
+  /* These are either array or derived parameters, or vtables.
+     In the former cases, the OpenMP standard doesn't consider them to be
+     variables at all (they can't be redefined), but they can nevertheless appear
+     in parallel/task regions and for default(none) purposes treat them as shared.
+     For vtables likely the same handling is desirable.  */
+  if (TREE_CODE (decl) == VAR_DECL
+      && TREE_READONLY (decl)
+      && TREE_STATIC (decl))
+    return OMP_CLAUSE_DEFAULT_SHARED;
+
   return OMP_CLAUSE_DEFAULT_UNSPECIFIED;
 }
 
@@ -1022,6 +1032,7 @@ gfc_omp_finish_clause (tree c, gimple_seq *pre_p)
 	  && !GFC_DECL_CRAY_POINTEE (decl)
 	  && !GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (TREE_TYPE (decl))))
 	return;
+      tree orig_decl = decl;
       c4 = build_omp_clause (OMP_CLAUSE_LOCATION (c), OMP_CLAUSE_MAP);
       OMP_CLAUSE_MAP_KIND (c4) = OMP_CLAUSE_MAP_POINTER;
       OMP_CLAUSE_DECL (c4) = decl;
@@ -1029,6 +1040,17 @@ gfc_omp_finish_clause (tree c, gimple_seq *pre_p)
       decl = build_fold_indirect_ref (decl);
       OMP_CLAUSE_DECL (c) = decl;
       OMP_CLAUSE_SIZE (c) = NULL_TREE;
+      if (TREE_CODE (TREE_TYPE (orig_decl)) == REFERENCE_TYPE
+	  && (GFC_DECL_GET_SCALAR_POINTER (orig_decl)
+	      || GFC_DECL_GET_SCALAR_ALLOCATABLE (orig_decl)))
+	{
+	  c3 = build_omp_clause (OMP_CLAUSE_LOCATION (c), OMP_CLAUSE_MAP);
+	  OMP_CLAUSE_MAP_KIND (c3) = OMP_CLAUSE_MAP_POINTER;
+	  OMP_CLAUSE_DECL (c3) = unshare_expr (decl);
+	  OMP_CLAUSE_SIZE (c3) = size_int (0);
+	  decl = build_fold_indirect_ref (decl);
+	  OMP_CLAUSE_DECL (c) = decl;
+	}
     }
   if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl)))
     {
@@ -1884,14 +1906,32 @@ gfc_trans_omp_clauses (stmtblock_t *block, gfc_omp_clauses *clauses,
 		TREE_ADDRESSABLE (decl) = 1;
 	      if (n->expr == NULL || n->expr->ref->u.ar.type == AR_FULL)
 		{
-		  if (POINTER_TYPE_P (TREE_TYPE (decl)))
+		  if (POINTER_TYPE_P (TREE_TYPE (decl))
+		      && (gfc_omp_privatize_by_reference (decl)
+			  || GFC_DECL_GET_SCALAR_POINTER (decl)
+			  || GFC_DECL_GET_SCALAR_ALLOCATABLE (decl)
+			  || GFC_DECL_CRAY_POINTEE (decl)
+			  || GFC_DESCRIPTOR_TYPE_P
+					(TREE_TYPE (TREE_TYPE (decl)))))
 		    {
+		      tree orig_decl = decl;
 		      node4 = build_omp_clause (input_location,
 						OMP_CLAUSE_MAP);
 		      OMP_CLAUSE_MAP_KIND (node4) = OMP_CLAUSE_MAP_POINTER;
 		      OMP_CLAUSE_DECL (node4) = decl;
 		      OMP_CLAUSE_SIZE (node4) = size_int (0);
 		      decl = build_fold_indirect_ref (decl);
+		      if (TREE_CODE (TREE_TYPE (orig_decl)) == REFERENCE_TYPE
+			  && (GFC_DECL_GET_SCALAR_POINTER (orig_decl)
+			      || GFC_DECL_GET_SCALAR_ALLOCATABLE (orig_decl)))
+			{
+			  node3 = build_omp_clause (input_location,
+						    OMP_CLAUSE_MAP);
+			  OMP_CLAUSE_MAP_KIND (node3) = OMP_CLAUSE_MAP_POINTER;
+			  OMP_CLAUSE_DECL (node3) = decl;
+			  OMP_CLAUSE_SIZE (node3) = size_int (0);
+			  decl = build_fold_indirect_ref (decl);
+			}
 		    }
 		  if (GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (decl)))
 		    {

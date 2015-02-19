@@ -1,3 +1,7 @@
+2015-01-17  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.md (cmpxchg_mask): Mask set register.
+
 2014-08-13  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
 
 	* config/or1k/or1k.h (ASM_PREFERRED_EH_DATA_FORMAT): Define.

@@ -1,3 +1,34 @@
+2014-10-30  Release Manager
+
+	* GCC 4.9.2 released.
+
+2014-09-25  Thomas Schwinge  <thomas@codesourcery.com>
+
+	PR c++/63249
+	* c-parser.c (c_parser_omp_variable_list): Call mark_exp_read
+	on low_bound and length.
+
+2014-09-03  Marek Polacek  <polacek@redhat.com>
+
+	PR c/62294
+	* c-typeck.c (convert_arguments): Get location of a parameter.  Change
+	error and warning calls to error_at and warning_at.  Pass location of
+	a parameter to it.
+	(convert_for_assignment): Add parameter to WARN_FOR_ASSIGNMENT and
+	WARN_FOR_QUALIFIERS.  Pass expr_loc to those.
+
+2014-08-22  Igor Zamyatin  <igor.zamyatin@intel.com>
+
+	PR other/62008
+	* c-parser.c (c_parser_array_notation): Check for correct
+	type of an array added.
+
+2014-08-01  Igor Zamyatin  <igor.zamyatin@intel.com>
+
+	PR middle-end/61455
+	* c-array-notation.c (expand_array_notations): Handling
+	of DECL_EXPR added.
+
 2014-07-16  Release Manager
 
 	* GCC 4.9.1 released.

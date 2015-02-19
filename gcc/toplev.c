@@ -1052,16 +1052,19 @@ output_stack_usage (void)
 
   if (warn_stack_usage >= 0)
     {
+      const location_t loc = DECL_SOURCE_LOCATION (current_function_decl);
+
       if (stack_usage_kind == DYNAMIC)
-	warning (OPT_Wstack_usage_, "stack usage might be unbounded");
+	warning_at (loc, OPT_Wstack_usage_, "stack usage might be unbounded");
       else if (stack_usage > warn_stack_usage)
 	{
 	  if (stack_usage_kind == DYNAMIC_BOUNDED)
-	    warning (OPT_Wstack_usage_, "stack usage might be %wd bytes",
-		     stack_usage);
+	    warning_at (loc,
+			OPT_Wstack_usage_, "stack usage might be %wd bytes",
+			stack_usage);
 	  else
-	    warning (OPT_Wstack_usage_, "stack usage is %wd bytes",
-		     stack_usage);
+	    warning_at (loc, OPT_Wstack_usage_, "stack usage is %wd bytes",
+			stack_usage);
 	}
     }
 }
@@ -1552,9 +1555,18 @@ process_options (void)
     warn_stack_protect = 0;
 
   /* Address Sanitizer needs porting to each target architecture.  */
+
   if ((flag_sanitize & SANITIZE_ADDRESS)
-      && (targetm.asan_shadow_offset == NULL
-	  || !FRAME_GROWS_DOWNWARD))
+      && !FRAME_GROWS_DOWNWARD)
+    {
+      warning (0,
+	       "-fsanitize=address and -fsanitize=kernel-address "
+	       "are not supported for this target");
+      flag_sanitize &= ~SANITIZE_ADDRESS;
+    }
+
+  if ((flag_sanitize & SANITIZE_USER_ADDRESS)
+      && targetm.asan_shadow_offset == NULL)
     {
       warning (0, "-fsanitize=address not supported for this target");
       flag_sanitize &= ~SANITIZE_ADDRESS;

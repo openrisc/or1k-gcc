@@ -454,7 +454,7 @@ get_internal_unit (st_parameter_dt *dtp)
     {
       iunit->rank = GFC_DESCRIPTOR_RANK (dtp->internal_unit_desc);
       iunit->ls = (array_loop_spec *)
-	xmalloc (iunit->rank * sizeof (array_loop_spec));
+	xmallocarray (iunit->rank, sizeof (array_loop_spec));
       dtp->internal_unit_len *=
 	init_loop_spec (dtp->internal_unit_desc, iunit->ls, &start_record);
 
@@ -580,6 +580,7 @@ init_units (void)
       u->flags.position = POSITION_ASIS;
       u->flags.sign = SIGN_SUPPRESS;
       u->flags.decimal = DECIMAL_POINT;
+      u->flags.delim = DELIM_UNSPECIFIED;
       u->flags.encoding = ENCODING_DEFAULT;
       u->flags.async = ASYNC_NO;
       u->flags.round = ROUND_UNSPECIFIED;

@@ -432,7 +432,7 @@ nds32*)
 nios2-*-*)
 	cpu_type=nios2
 	extra_options="${extra_options} g.opt"
-	;;	
+	;;
 or1k-*-*)
         cpu_type=or1k
         ;;
@@ -797,7 +797,13 @@ case ${target} in
   ;;
 *-*-rtems*)
   case ${enable_threads} in
-    yes) thread_file='rtems' ;;
+    "" | yes | rtems) thread_file='rtems' ;;
+    posix) thread_file='posix' ;;
+    no) ;;
+    *)
+      echo 'Unknown thread configuration for RTEMS'
+      exit 1
+      ;;
   esac
   tmake_file="${tmake_file} t-rtems"
   extra_options="${extra_options} rtems.opt"
@@ -1135,8 +1141,7 @@ cris-*-elf | cris-*-none)
 	;;
 crisv32-*-linux* | cris-*-linux*)
 	tm_file="dbxelf.h elfos.h ${tm_file} gnu-user.h linux.h glibc-stdint.h cris/linux.h"
-	# We need to avoid using t-linux, so override default tmake_file
-	tmake_file="cris/t-cris cris/t-linux t-slibgcc t-linux"
+	tmake_file="${tmake_file} cris/t-cris cris/t-linux"
 	extra_options="${extra_options} cris/linux.opt"
 	case $target in
 	  cris-*-*)
@@ -2162,6 +2167,10 @@ nios2-*-*)
 		tm_file="${tm_file} newlib-stdint.h nios2/elf.h"
 		extra_options="${extra_options} nios2/elf.opt"
 		;;
+	nios2-*-rtems*)
+		tm_file="${tm_file} newlib-stdint.h nios2/rtems.h rtems.h"
+		tmake_file="${tmake_file} t-rtems nios2/t-rtems"
+		;;
         esac
 	;;
 or1k-*-elf*)
@@ -2174,6 +2183,10 @@ or1k-*-linux-*)
        tm_file="${tm_file} dbxelf.h elfos.h or1k/elf.h gnu-user.h linux.h or1k/linux-gas.h or1k/linux-elf.h uclibc-stdint.h"
        tmake_file="or1k/t-or1k or1k/t-linux ${tmake_file}"
        tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
+       ;;
+or1k*-*-rtems*)
+       tm_file="${tm_file} newlib-stdint.h or1k/rtems.h rtems.h"
+       extra_parts="crti.o crtbegin.o crtend.o crtn.o"
        ;;
 or1knd-*-elf*)
        tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h ${cpu_type}/elf.h"
@@ -3559,20 +3572,17 @@ case "${target}" in
 			;;
 		esac
 
-		case "$with_fpu" in
-		"" \
-		| vfp | vfp3 | vfpv3 \
-		| vfpv3-fp16 | vfpv3-d16 | vfpv3-d16-fp16 | vfpv3xd \
-		| vfpv3xd-fp16 | neon | neon-fp16 | vfpv4 | vfpv4-d16 \
-		| fpv4-sp-d16 | neon-vfpv4 | fp-arm-v8 | neon-fp-armv8 \
-                | crypto-neon-fp-armv8)
-			# OK
-			;;
-		*)
-			echo "Unknown fpu used in --with-fpu=$with_fpu" 2>&1
-			exit 1
-			;;
-		esac
+		# see if it matches any of the entries in arm-fpus.def
+		if [ x"$with_fpu" = x ] \
+		    || grep "^ARM_FPU(\"$with_fpu\"," \
+			    ${srcdir}/config/arm/arm-fpus.def \
+			    > /dev/null; then
+		  # OK
+		  true
+		else
+		  echo "Unknown fpu used in --with-fpu=$with_fpu" 1>&2
+		  exit 1
+		fi
 
 		case "$with_abi" in
 		"" \

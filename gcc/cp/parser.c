@@ -6306,7 +6306,7 @@ cp_parser_array_notation (location_t loc, cp_parser *parser, tree *init_index,
   parser->colon_corrects_to_scope_p = saved_colon_corrects;
 
   if (*init_index == error_mark_node || length_index == error_mark_node
-      || stride == error_mark_node)
+      || stride == error_mark_node || array_type == error_mark_node)
     {
       if (cp_lexer_peek_token (parser->lexer)->type == CPP_CLOSE_SQUARE)
 	cp_lexer_consume_token (parser->lexer);
@@ -24982,8 +24982,6 @@ cp_parser_commit_to_topmost_tentative_parse (cp_parser* parser)
 static void
 cp_parser_abort_tentative_parse (cp_parser* parser)
 {
-  gcc_assert (parser->context->status != CP_PARSER_STATUS_KIND_COMMITTED
-	      || errorcount > 0);
   cp_parser_simulate_error (parser);
   /* Now, pretend that we want to see if the construct was
      successfully parsed.  */
