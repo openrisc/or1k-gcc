@@ -28,6 +28,21 @@
   (ior (match_operand 0 "register_operand")
        (match_operand 0 "const0_operand")))
 
+(define_predicate "reg_or_s16_operand"
+  (ior (match_operand 0 "register_operand")
+       (and (match_code "const_int")
+	    (match_test "satisfies_constraint_I (op)"))))
+
+(define_predicate "reg_or_u16_operand"
+  (ior (match_operand 0 "register_operand")
+       (and (match_code "const_int")
+	    (match_test "satisfies_constraint_K (op)"))))
+
+(define_predicate "shift_operand"
+  (ior (match_operand 0 "register_operand")
+       (and (match_code "const_int")
+	    (match_test "satisfies_constraint_L (op)"))))
+
 (define_predicate "input_operand"
   (match_code "subreg,reg,const_int,mem,const")
 {

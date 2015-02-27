@@ -128,7 +128,7 @@
 (define_insn "frame_alloc_fp"
   [(set (reg:SI SP_REG)
 	(plus:SI (reg:SI SP_REG)
-		 (match_operand:SI 0 "nonmemory_operand" "r,I")))
+		 (match_operand:SI 0 "reg_or_s16_operand" "r,I")))
    (clobber (mem:QI (plus:SI (reg:SI FP_REG)
 			     (unspec:SI [(const_int FP_REG)] UNSPEC_FRAME))))]
   ""
@@ -150,7 +150,7 @@
 (define_insn "frame_dealloc_sp"
   [(set (reg:SI SP_REG)
 	(plus:SI (reg:SI SP_REG)
-		 (match_operand:SI 0 "nonmemory_operand" "r,I")))
+		 (match_operand:SI 0 "reg_or_s16_operand" "r,I")))
    (clobber (mem:QI (plus:SI (reg:SI SP_REG)
 			     (unspec:SI [(const_int SP_REG)] UNSPEC_FRAME))))]
   ""
@@ -427,8 +427,8 @@
   [(set (pc)
 	(if_then_else
 	  (match_operator 0 "ordered_comparison_operator"
-	    [(match_operand:SI 1 "register_operand")
-	     (match_operand:SI 2 "nonmemory_operand")])
+	    [(match_operand:SI 1 "reg_or_0_operand")
+	     (match_operand:SI 2 "reg_or_s16_operand")])
 	  (label_ref (match_operand 3 ""))
 	  (pc)))]
    ""
@@ -505,8 +505,8 @@
 (define_expand "cstoresi4"
   [(set (match_operand:SI 0 "register_operand")
 	(match_operator:SI 1 "ordered_comparison_operator"
-	  [(match_operand:SI 2 "register_operand")
-	   (match_operand:SI 3 "nonmemory_operand")]))]
+	  [(match_operand:SI 2 "reg_or_0_operand")
+	   (match_operand:SI 3 "reg_or_s16_operand")]))]
   "TARGET_CMOV"
 {
   or1k_expand_compare (operands + 1);
@@ -564,12 +564,12 @@
 (define_insn "*comparesi"
   [(set (reg:BI SR_F_REG)
 	(match_operator:BI 2 "ordered_comparison_operator"
-	  [(match_operand:SI 0 "register_operand"  "r,r")
-	   (match_operand:SI 1 "nonmemory_operand" "I,r")]))]
+	  [(match_operand:SI 0 "reg_or_0_operand"  "rO,rO")
+	   (match_operand:SI 1 "reg_or_s16_operand" "I,r")]))]
   ""
   "@
-   l.sf%C2i\t%0,%1
-   l.sf%C2\t%0,%1"
+   l.sf%C2i\t%r0,%1
+   l.sf%C2\t%r0,%1"
   [(set_attr "type" "compare")])
 
 (define_insn "*comparesf"
@@ -768,7 +768,7 @@
 (define_insn "ashlsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
         (ashift:SI (match_operand:SI 1 "register_operand" "r,r")
-                   (match_operand:SI 2 "nonmemory_operand" "r,L")))]
+                   (match_operand:SI 2 "shift_operand"    "r,L")))]
   ""
   "@
    l.sll   \t%0,%1,%2 # ashlsi3
@@ -779,7 +779,7 @@
 (define_insn "ashrsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
         (ashiftrt:SI (match_operand:SI 1 "register_operand" "r,r")
-                   (match_operand:SI 2 "nonmemory_operand" "r,L")))]
+                     (match_operand:SI 2 "shift_operand"    "r,L")))]
   ""
   "@
    l.sra   \t%0,%1,%2 # ashrsi3
@@ -790,7 +790,7 @@
 (define_insn "lshrsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
         (lshiftrt:SI (match_operand:SI 1 "register_operand" "r,r")
-                   (match_operand:SI 2 "nonmemory_operand" "r,L")))]
+                     (match_operand:SI 2 "shift_operand"    "r,L")))]
   ""
   "@
    l.srl   \t%0,%1,%2 # lshrsi3
@@ -801,7 +801,7 @@
 (define_insn "rotrsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
         (rotatert:SI (match_operand:SI 1 "register_operand" "r,r")
-                   (match_operand:SI 2 "nonmemory_operand" "r,L")))]
+		     (match_operand:SI 2 "shift_operand"    "r,L")))]
   "TARGET_ROR"
   "@
    l.ror   \t%0,%1,%2 # rotrsi3
@@ -816,7 +816,7 @@
 (define_insn "andsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(and:SI (match_operand:SI 1 "register_operand" "%r,r")
-		(match_operand:SI 2 "nonmemory_operand" "r,K")))]
+		(match_operand:SI 2 "reg_or_u16_operand" "r,K")))]
   ""
   "@
    l.and   \t%0,%1,%2 # andsi3
@@ -827,7 +827,7 @@
 (define_insn "iorsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(ior:SI (match_operand:SI 1 "register_operand" "%r,r")
-		(match_operand:SI 2 "nonmemory_operand" "r,K")))]
+		(match_operand:SI 2 "reg_or_u16_operand" "r,K")))]
   ""
   "@
    l.or    \t%0,%1,%2 # iorsi3
@@ -838,7 +838,7 @@
 (define_insn "xorsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(xor:SI (match_operand:SI 1 "register_operand" "%r,r")
-		(match_operand:SI 2 "nonmemory_operand" "r,I")))]
+		(match_operand:SI 2 "reg_or_s16_operand" "r,I")))]
   ""
   "@
    l.xor   \t%0,%1,%2 # xorsi3
@@ -877,7 +877,7 @@
 (define_insn "addsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(plus:SI (match_operand:SI 1 "register_operand" "%r,r")
-		 (match_operand:SI 2 "nonmemory_operand" "r,I")))]
+		 (match_operand:SI 2 "reg_or_s16_operand" "r,I")))]
   ""
   "@
    l.add   \t%0,%1,%2 # addsi3
@@ -886,26 +886,25 @@
    (set_attr "length" "1,1")])
 
 (define_insn "subsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
-	(minus:SI (match_operand:SI 1 "register_operand" "r,r")
-		  (match_operand:SI 2 "nonmemory_operand" "r,I")))]
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(minus:SI (match_operand:SI 1 "register_operand" "r")
+		  (match_operand:SI 2 "register_operand" "r")))]
   ""
-  "@
-   l.sub   \t%0,%1,%2 # subsi3
-   l.addi  \t%0,%1,%n2 # subsi3"
-  [(set_attr "type" "add,add")]
-)
+  "l.sub\t%0,%1,%2"
+  [(set_attr "type" "add")])
 
 ;;
 ;; mul and div
 ;;
 
 (define_insn "mulsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-        (mult:SI (match_operand:SI 1 "register_operand" "r")
-                 (match_operand:SI 2 "register_operand" "r")))]
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+        (mult:SI (match_operand:SI 1 "register_operand"   "%r,r")
+                 (match_operand:SI 2 "reg_or_s16_operand" " r,I")))]
   "TARGET_HARD_MUL"
-  "l.mul   \t%0,%1,%2 # mulsi3"
+  "@
+   l.mul\t%0,%1,%2
+   l.muli\t%0,%1,%2"
   [(set_attr "type" "mul")
    (set_attr "length" "1")])
 
