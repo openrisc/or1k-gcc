@@ -477,8 +477,8 @@
    (set (match_operand:SI 0 "register_operand" "")
 	(if_then_else:SI
 	  (ne (reg:BI SR_F_REG) (const_int 0))
-	  (match_operand:SI 2 "register_operand" "")
-	  (match_operand:SI 3 "register_operand" "")))]
+	  (match_operand:SI 2 "reg_or_0_operand" "")
+	  (match_operand:SI 3 "reg_or_0_operand" "")))]
   "TARGET_CMOV"
 {
   PUT_MODE (operands[1], BImode);
@@ -488,19 +488,74 @@
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(if_then_else:SI
 	  (ne (reg:BI SR_F_REG) (const_int 0))
-	  (match_operand:SI 1 "register_operand" "r")
-	  (match_operand:SI 2 "register_operand" "r")))]
+	  (match_operand:SI 1 "reg_or_0_operand" "rO")
+	  (match_operand:SI 2 "reg_or_0_operand" "rO")))]
   "TARGET_CMOV"
-  "l.cmov\t%0,%1,%2")
+  "l.cmov\t%0,%r1,%r2")
 
 (define_insn "*cmovsi_nf"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(if_then_else:SI
 	  (eq (reg:BI SR_F_REG) (const_int 0))
-	  (match_operand:SI 1 "register_operand" "r")
-	  (match_operand:SI 2 "register_operand" "r")))]
+	  (match_operand:SI 1 "reg_or_0_operand" "rO")
+	  (match_operand:SI 2 "reg_or_0_operand" "rO")))]
   "TARGET_CMOV"
-  "l.cmov\t%0,%2,%1")
+  "l.cmov\t%0,%r2,%r1")
+
+(define_expand "cstoresi4"
+  [(set (match_operand:SI 0 "register_operand")
+	(match_operator:SI 1 "ordered_comparison_operator"
+	  [(match_operand:SI 2 "register_operand")
+	   (match_operand:SI 3 "nonmemory_operand")]))]
+  "TARGET_CMOV"
+{
+  or1k_expand_compare (operands + 1);
+  PUT_MODE (operands[1], SImode);
+  emit_insn (gen_rtx_SET (operands[0], operands[1]));
+  DONE;
+})
+
+;; ??? See cbranchsf4.
+(define_expand "cstoresf4"
+  [(set (match_operand:SI 0 "register_operand")
+	(match_operator:SI 1 "ordered_comparison_operator"
+	  [(match_operand:SF 2 "register_operand")
+	   (match_operand:SF 3 "register_operand")]))]
+   "TARGET_CMOV && TARGET_HARD_FLOAT"
+{
+  if (!ordered_comparison_operator (operands[1], VOIDmode))
+    FAIL;
+  or1k_expand_compare (operands + 1);
+  PUT_MODE (operands[1], SImode);
+  emit_insn (gen_rtx_SET (operands[0], operands[1]));
+  DONE;
+})
+
+(define_insn_and_split "*scc_f"
+  [(set (match_operand 0 "register_operand" "=r")
+	(ne:SI (reg:BI SR_F_REG) (const_int 0)))]
+  "TARGET_CMOV"
+  "#"
+  "&& 1"
+  [(set (match_dup 0) (const_int 1))
+   (set (match_dup 0)
+	(if_then_else:SI (ne (reg:BI SR_F_REG) (const_int 0))
+	  (match_dup 0)
+	  (const_int 0)))]
+  "")
+
+(define_insn_and_split "*scc_nf"
+  [(set (match_operand 0 "register_operand" "=r")
+	(eq:SI (reg:BI SR_F_REG) (const_int 0)))]
+  "TARGET_CMOV"
+  "#"
+  "&& 1"
+  [(set (match_dup 0) (const_int 1))
+   (set (match_dup 0)
+	(if_then_else:SI (ne (reg:BI SR_F_REG) (const_int 0))
+	  (const_int 0)
+	  (match_dup 0)))]
+  "")
 
 ;;
 ;; Setting SR[F] from comparision

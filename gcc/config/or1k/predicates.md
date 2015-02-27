@@ -18,6 +18,16 @@
 ;; along with GCC; see the file COPYING3.  If not see
 ;; <http://www.gnu.org/licenses/>.
 
+;; Return 1 if OP is the zero constant for MODE.
+(define_predicate "const0_operand"
+  (and (match_code "const_int,const_double,const_vector")
+       (match_test "op == CONST0_RTX (mode)")))
+
+;; Returns true if OP is either the constant zero or a register.
+(define_predicate "reg_or_0_operand"
+  (ior (match_operand 0 "register_operand")
+       (match_operand 0 "const0_operand")))
+
 (define_predicate "input_operand"
   (match_code "subreg,reg,const_int,mem,const")
 {

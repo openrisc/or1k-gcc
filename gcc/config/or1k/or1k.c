@@ -463,6 +463,97 @@ or1k_expand_fetch_op_qihi (rtx oldval, rtx mem, rtx operand, rtx newval,
   emit_move_insn (newval, gen_lowpart (GET_MODE (newval), shifted_newval));
 }
 
+/* Implement the TARGET_PRINT_OPERAND_PUNCT_VALID_P hook.  */
+
+static bool
+or1k_print_operand_punct_valid_p (unsigned char code)
+{
+  return code == '(';
+}
+
+/* Implement the TARGET_PRINT_OPERAND hook.  */
+
+static void
+or1k_print_operand (FILE *stream, rtx x, int code)
+{
+  switch (code)
+    {
+    case 'r':
+      if (REG_P (x))
+	fputs (reg_names[REGNO (x)], stream);
+      else if (x == CONST0_RTX (GET_MODE (x)))
+	fputs ("r0", stream);
+      else
+	output_operand_lossage ("invalid %%r value");
+      break;
+
+    case 'H':
+      if (REG_P (x))
+	fputs (reg_names[REGNO (x) + 1], stream);
+      else
+	output_operand_lossage ("invalid %%H value");
+      break;
+
+    case 'C':
+      switch (GET_CODE (x))
+	{
+        case EQ:
+	  fputs ("eq", stream);
+	  break;
+	case NE:
+	  fputs ("ne", stream);
+	  break;
+	case GT:
+	  fputs ("gts", stream);
+	  break;
+        case GE:
+	  fputs ("ges", stream);
+	  break;
+	case LT:
+	  fputs ("lts", stream);
+	  break;
+	case LE:
+	  fputs ("les", stream);
+	  break;
+	case GTU:
+	  fputs ("gtu", stream);
+	  break;
+	case GEU:
+	  fputs ("geu", stream);
+	  break;
+	case LTU:
+	  fputs ("ltu", stream);
+	  break;
+	case LEU:
+	  fputs ("leu", stream);
+	  break;
+	default:
+	  output_operand_lossage ("invalid %%C value");
+	}
+      break;
+
+    case '(':
+      if (TARGET_DELAY_ON && dbr_sequence_length ())
+	fprintf (stream, "\t# delay slot filled");
+      else if (!TARGET_DELAY_OFF)
+	fprintf (stream, "\n\tl.nop\t\t\t# nop delay slot");
+      break;
+
+    case 0:
+    case 'S': /* ??? calls */
+      if (REG_P (x))
+	fputs (reg_names[REGNO (x)], stream);
+      else if (MEM_P (x))
+	output_address (GET_MODE(x), XEXP (x, 0));
+      else
+	output_addr_const (stream, x);
+      break;
+
+    default:
+      output_operand_lossage ("invalid %%xn code");
+    }
+}
+
 static void
 or1k_print_operand_address (FILE *stream, machine_mode mode, rtx addr)
 {
@@ -2043,6 +2134,12 @@ or1k_function_arg_advance (cumulative_args_t cum, enum machine_mode mode,
 
 #undef TARGET_FUNCTION_ARG_ADVANCE
 #define TARGET_FUNCTION_ARG_ADVANCE or1k_function_arg_advance
+
+#undef TARGET_PRINT_OPERAND_PUNCT_VALID_P
+#define TARGET_PRINT_OPERAND_PUNCT_VALID_P or1k_print_operand_punct_valid_p
+
+#undef TARGET_PRINT_OPERAND
+#define TARGET_PRINT_OPERAND or1k_print_operand
 
 #undef TARGET_PRINT_OPERAND_ADDRESS
 #define TARGET_PRINT_OPERAND_ADDRESS or1k_print_operand_address
