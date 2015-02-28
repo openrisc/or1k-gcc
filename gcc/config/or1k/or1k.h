@@ -334,9 +334,6 @@ Boston, MA 02111-1307, USA.  */
 /* Base register for access to local variables of the function.  */
 #define HARD_FRAME_POINTER_REGNUM 2
 
-/* Link register. */
-#define LINK_REGNUM 9
-
 /* Register in which static-chain is passed to a function.  */
 
 #define STATIC_CHAIN_REGNUM 11
@@ -659,10 +656,8 @@ enum reg_class
 
 /* EXIT_IGNORE_STACK should be nonzero if, when returning from a function, the
    stack pointer does not matter.  The value is tested only in functions that
-   have frame pointers.  No definition is equivalent to always zero.
-
-   The default suffices for OR1K. */
-#define EXIT_IGNORE_STACK 0
+   have frame pointers.  */
+#define EXIT_IGNORE_STACK 1
 
 /* A C expression whose value is RTL representing the location of the
    incoming return address at the beginning of any function, before the

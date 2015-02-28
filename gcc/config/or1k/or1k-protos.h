@@ -30,6 +30,7 @@ extern void        or1k_output_opcode (FILE *);
 extern void        or1k_init_expanders (void);
 extern void        or1k_expand_prologue (void);
 extern void        or1k_expand_epilogue (void);
+extern bool        or1k_direct_return (void);
 extern bool        or1k_expand_move (enum machine_mode mode, rtx operands[]);
 extern const char *or1k_output_move_double (rtx *operands);
 extern void        or1k_expand_compare(rtx *operands);
@@ -48,8 +49,7 @@ extern void  or1k_expand_fetch_op_qihi (rtx oldval, rtx mem, rtx operand,
 extern int or1k_struct_alignment (tree);
 extern int or1k_data_alignment (tree, int);
 
-extern int or1k_initial_elimination_offset (int, int);
-extern bool or1k_save_reg_p_cached (int regno);
+extern HOST_WIDE_INT or1k_initial_elimination_offset (unsigned, unsigned);
 extern void or1k_print_jump_restore (rtx jump_address);
 extern rtx or1k_eh_return_handler_rtx (void);
 extern rtx or1k_return_addr_rtx (int, rtx);

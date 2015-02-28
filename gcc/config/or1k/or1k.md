@@ -28,10 +28,10 @@
 (define_constants [
   (SP_REG 1)
   (FP_REG 2) ; hard frame pointer
+  (LINK_REGNUM 9)
   (SR_F_REG 34)
 
   ;; unspec values
-  (UNSPEC_FRAME         0)
   (UNSPEC_GOT           1)
   (UNSPEC_GOTOFFHI      2)
   (UNSPEC_GOTOFFLO      3)
@@ -127,45 +127,41 @@
   DONE;
 })
 
-(define_insn "frame_alloc_fp"
-  [(set (reg:SI SP_REG)
-	(plus:SI (reg:SI SP_REG)
-		 (match_operand:SI 0 "reg_or_s16_operand" "r,I")))
-   (clobber (mem:QI (plus:SI (reg:SI FP_REG)
-			     (unspec:SI [(const_int FP_REG)] UNSPEC_FRAME))))]
+(define_insn "frame_alloc"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	(plus:SI (match_operand:SI 1 "register_operand" "r,r")
+		 (match_operand:SI 2 "reg_or_s16_operand" "r,I")))
+   (clobber (mem:BLK (match_scratch:SI 3 "=X,X")))]
   ""
   "@
-   l.add\tr1,r1,%0
-   l.addi\tr1,r1,%0"
+   l.add\t%0,%1,%2
+   l.addi\t%0,%1,%2"
   [(set_attr "type" "add")])
 
-(define_insn "frame_dealloc_fp"
-  [(set (reg:SI SP_REG) (reg:SI FP_REG))
-   (clobber (mem:QI (plus:SI (reg:SI FP_REG)
-			     (unspec:SI [(const_int FP_REG)] UNSPEC_FRAME))))]
-  ""
-  "l.ori\tr1,r2,0"
-  [(set_attr "type" "logic")])
+(define_expand "return"
+  [(parallel [(return)
+	      (use (reg:SI LINK_REGNUM))])]
+  "or1k_direct_return ()"
+  "")
 
-(define_insn "frame_dealloc_sp"
-  [(set (reg:SI SP_REG)
-	(plus:SI (reg:SI SP_REG)
-		 (match_operand:SI 0 "reg_or_s16_operand" "r,I")))
-   (clobber (mem:QI (plus:SI (reg:SI SP_REG)
-			     (unspec:SI [(const_int SP_REG)] UNSPEC_FRAME))))]
-  ""
-  "@
-   l.add\tr1,r1,%0
-   l.addi\tr1,r1,%0"
-  [(set_attr "type" "add")])
-
-(define_insn "return_internal"
+(define_insn "*return"
   [(return)
    (use (match_operand 0 "pmode_register_operand" ""))]
   ""
   "l.jr\t%0%("
   [(set_attr "type" "jump")])
 
+(define_expand "simple_return"
+  [(parallel [(simple_return)
+	      (use (reg:SI LINK_REGNUM))])]
+  "")
+
+(define_insn "*simple_return"
+  [(simple_return)
+   (use (match_operand 0 "pmode_register_operand" ""))]
+  ""
+  "l.jr\t%0%("
+  [(set_attr "type" "jump")])
 
 
 ;;

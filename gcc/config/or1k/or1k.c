@@ -64,6 +64,8 @@
 #include "dwarf2.h"
 #include "ansidecl.h"
 #include "builtins.h"
+#include "sbitmap.h"
+#include "tm-constrs.h"
 
 /* ========================================================================== */
 /* Local macros                                                               */
@@ -91,249 +93,121 @@
 /* Static variables (i.e. global to this file only.                           */
 
 
-/*!Stack layout we use for pushing and poping saved registers */
+/* Stack layout we use for the function, as documented in
+   the Architecture Manual's ABI section:
+
+   Incoming arguments
+                      <- AP, HFP
+   Saved LR           \           \
+   Saved HFP          | save_size |
+   Other saved regs   /           |
+                      <- FP       | total_size
+   Local Stack frame              |
+   Outgoing arguments             /
+                      <- SP
+
+   Note that there is also (by default) 128 bytes of "red zone"
+   which can be used by leaf functions.  In that case, save_size
+   may be non-zero while total_size is zero, and the registers
+   will be saved below SP.
+*/
+
 static struct
 {
-  bool save_lr_p;
-  int lr_save_offset;
-  bool save_fp_p;
-  int fp_save_offset;
-  int gpr_size;
-  int gpr_offset;
-  int total_size;
-  int vars_size;
-  int args_size;
-  int gpr_frame;
-  int late_frame;
-  HOST_WIDE_INT mask;
-}  frame_info;
+  HOST_WIDE_INT total_size;
+  int save_size;
+  unsigned int save_mask;
+} frame_info;
 
+/* Return true if REGNO must be saved for the current function.  */
 
-/* ========================================================================== */
-/* Local (i.e. static) utility functions */
-
-/* -------------------------------------------------------------------------- */
-/*!Must the current function save a register?
-
-   @param[in] regno  The register to consider.
-
-   @return  Non-zero (TRUE) if current function must save "regno", zero
-            (FALSE) otherwise.                                                */
-/* -------------------------------------------------------------------------- */
 static bool
-or1k_save_reg_p (int regno)
+or1k_save_reg_p (unsigned int regno)
 {
-  /* No need to save the faked cc0 register.  */
-  if (regno == OR1K_FLAGS_REG)
-    return false;
-
   /* Check call-saved registers.  */
-  if (df_regs_ever_live_p(regno) && !call_used_regs[regno])
+  if (!call_used_regs[regno] && df_regs_ever_live_p (regno))
     return true;
 
-  /* We need to save the old frame pointer before setting up a new
-     one.  */
-  if (regno == HARD_FRAME_POINTER_REGNUM && frame_pointer_needed)
-    return true;
-
-  /* Save the stack pointer for DWARF2 for now.
-   * AFAIK, DWARF should be able to unwind using only the current stack
-   * register and the CFA offset, but I never got that to work. */
-  if (regno == STACK_POINTER_REGNUM && !frame_pointer_needed)
-    return true;
-
-  /* We need to save the incoming return address if it is ever clobbered
-     within the function.  */
-  if (regno == LINK_REGNUM
-      && (df_regs_ever_live_p(regno) || crtl->uses_pic_offset_table
-          || cfun->machine->force_lr_save))
-    return true;
-
-  if(crtl->calls_eh_return)
+  switch (regno)
     {
-      unsigned int i;
-      for (i = 0; EH_RETURN_DATA_REGNO (i) != INVALID_REGNUM; i++)
-        {
-          if ((unsigned int)regno == EH_RETURN_DATA_REGNO (i))
-            return true;
-        }
+    case HARD_FRAME_POINTER_REGNUM:
+      return frame_pointer_needed;
+
+    case LINK_REGNUM:
+      if (!crtl->is_leaf
+	  || cfun->machine->force_lr_save
+	  || df_regs_ever_live_p (regno))
+	return true;
+      /* FALLTHRU -- setting up PIC requires LR clobber.  */
+
+    case PIC_OFFSET_TABLE_REGNUM:
+      return crtl->uses_pic_offset_table;
+
+    case 25: case 27: case 29: case 31:
+      /* See EH_RETURN_DATA_REGNO.  */
+      return crtl->calls_eh_return;
+
+    default:
+      return false;
     }
-
-  return false;
-
-}	/* or1k_save_reg_p () */
-
-bool
-or1k_save_reg_p_cached (int regno)
-{
-  return (frame_info.mask & ((HOST_WIDE_INT) 1 << regno)) != 0;
 }
 
-/* N.B. contrary to the ISA documentation, the stack includes the outgoing
-   arguments.  */
-/* -------------------------------------------------------------------------- */
-/*!Compute full frame size and layout.
+/* Compute the stack layout for the current function, filling in
+   FRAME_INFO.  Return the total size of the stack frame.  */
 
-   Store information in "frame_info".
-
-   @param[in] size  The size of the function's local variables.
-
-   @return  Total size of stack frame.                                        */
-/* -------------------------------------------------------------------------- */
 static HOST_WIDE_INT
-or1k_compute_frame_size (HOST_WIDE_INT size)
+or1k_compute_frame_size ()
 {
-  HOST_WIDE_INT args_size;
-  HOST_WIDE_INT vars_size;
-  HOST_WIDE_INT stack_offset;
-  HOST_WIDE_INT save_size;
-  bool interrupt_p = false;
-  int regno;
+  HOST_WIDE_INT vars_size, args_size, total_size;
+  unsigned int save_mask = 0;
+  int save_size = 0;
 
+  for (int regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+    if (or1k_save_reg_p (regno))
+      {
+	save_size += UNITS_PER_WORD;
+	save_mask |= 1U << regno;
+      }
+
+  vars_size = get_frame_size ();
+  vars_size = OR1K_ALIGN (vars_size, UNITS_PER_WORD);
   args_size = crtl->outgoing_args_size;
-  vars_size = OR1K_ALIGN (size, 4);
-
-  frame_info.args_size = args_size;
-  frame_info.vars_size = vars_size;
-  frame_info.gpr_frame = interrupt_p ? or1k_redzone : 0;
-
-  /* If the function has local variables, we're committed to
-     allocating it anyway.  Otherwise reclaim it here.  */
-  /* FIXME: Verify this.  Got if from the MIPS port.  */
-  if (vars_size == 0 && crtl->is_leaf)
-    args_size = 0;
-
-  stack_offset = 0;
-
-  /* Save link register right at the bottom.  */
-  if (or1k_save_reg_p (LINK_REGNUM))
+  total_size = vars_size + save_size + args_size;
+  if (crtl->is_leaf && !cfun->calls_alloca)
     {
-      stack_offset = stack_offset - UNITS_PER_WORD;
-      frame_info.lr_save_offset = stack_offset;
-      frame_info.save_lr_p = true;
+      if (total_size > or1k_redzone)
+	total_size -= or1k_redzone;
+      else
+	total_size = 0;
     }
-  else
-    frame_info.save_lr_p = false;
+  frame_info.total_size = total_size;
+  frame_info.save_size = save_size;
+  frame_info.save_mask = save_mask;
 
-  /* HACK: In PIC mode we need to save the PIC reg and the link reg in
-     in case the function is doing references through the got or plt,
-     but this information is not necessarily available when the initial
-     elimination offset is calculated, so we always reserve the space even
-     if it is not used... */
-  if (!frame_info.save_lr_p && flag_pic)
-    stack_offset = stack_offset - UNITS_PER_WORD;
+  return total_size;
+}
 
-  /* Save frame pointer right after possible link register.  */
-  if (frame_pointer_needed)
-    {
-      stack_offset = stack_offset - UNITS_PER_WORD;
-      frame_info.fp_save_offset = stack_offset;
-      frame_info.save_fp_p = true;
-    }
-  else
-    frame_info.save_fp_p = false;
+/* Eliminate AP and FP by returning the displacement to HFP or SP.  */
 
-  frame_info.gpr_size = 0;
-  frame_info.mask = 0;
-
-  for (regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
-    {
-      if (regno == LINK_REGNUM
-	  || (frame_pointer_needed && regno == HARD_FRAME_POINTER_REGNUM))
-	/* These have already been saved if so needed.  */
-	continue;
-
-      if (or1k_save_reg_p (regno))
-	{
-	  frame_info.gpr_size += UNITS_PER_WORD;
-	  frame_info.mask |= ((HOST_WIDE_INT) 1 << regno);
-	}
-    }
-
-  if (!or1k_save_reg_p (PIC_OFFSET_TABLE_REGNUM)
-      && (crtl->uses_pic_offset_table || (flag_pic && frame_info.save_lr_p)))
-    {
-      frame_info.gpr_size += UNITS_PER_WORD;
-      frame_info.mask |= ((HOST_WIDE_INT) 1 << PIC_OFFSET_TABLE_REGNUM);
-    }
-  else if (flag_pic && !or1k_save_reg_p (PIC_OFFSET_TABLE_REGNUM))
-    frame_info.gpr_size += UNITS_PER_WORD;
-
-  save_size = (frame_info.gpr_size 
-	       + (frame_info.save_fp_p ? UNITS_PER_WORD : 0)
-	       + (frame_info.save_lr_p || flag_pic ? UNITS_PER_WORD : 0));
-  frame_info.total_size = save_size + vars_size + args_size;
-  gcc_assert (PROLOGUE_TMP != STATIC_CHAIN_REGNUM);
-  if (frame_info.total_size > 32767 && interrupt_p)
-    {
-      int n_extra
-	= (!!(~frame_info.mask && 1 << PROLOGUE_TMP)
-	   + !!(~frame_info.mask & 1 << EPILOGUE_TMP)) * UNITS_PER_WORD;
-
-      save_size += n_extra;
-      frame_info.gpr_size += n_extra;
-      frame_info.total_size += n_extra;
-      frame_info.mask |= (1 << PROLOGUE_TMP) | (1 << EPILOGUE_TMP);
-    }
-
-  stack_offset -= frame_info.gpr_size;
-  frame_info.gpr_offset = stack_offset;
-  frame_info.late_frame = frame_info.total_size;
-
-  if (save_size > or1k_redzone
-      || (frame_info.gpr_frame
-	  && (frame_info.gpr_frame + frame_info.late_frame <= 32767)))
-    {
-      if (frame_info.gpr_frame + frame_info.late_frame <= 32767)
-	save_size = frame_info.total_size;
-      frame_info.gpr_frame += save_size;
-      frame_info.lr_save_offset += save_size;
-      frame_info.fp_save_offset += save_size;
-      frame_info.gpr_offset += save_size;
-      frame_info.late_frame -= save_size;
-      /* FIXME: check in TARGET_OVERRIDE_OPTIONS for invalid or1k_redzone.  */
-      gcc_assert (frame_info.gpr_frame <= 32767);
-      gcc_assert ((frame_info.gpr_frame & 3) == 0);
-    }
-
-  return frame_info.total_size;
-
-}	/* or1k_compute_frame_size () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Emit a frame related insn.
-
-   Same as emit_insn, but sets RTX_FRAME_RELATED_P to one. Getting this right
-   will matter for DWARF 2 output, if prologues are handled via the "prologue"
-   pattern rather than target hooks.
-
-   @param[in] insn  The insn to emit.
-
-   @return  The RTX for the emitted insn.                                     */
-/* -------------------------------------------------------------------------- */
-static rtx
-emit_frame_insn (rtx insn)
+HOST_WIDE_INT
+or1k_initial_elimination_offset (unsigned int from, unsigned int to)
 {
-  insn = emit_insn (insn);
-  RTX_FRAME_RELATED_P (insn) = 1;
-  return (insn);
+  HOST_WIDE_INT offset = 0;
+  or1k_compute_frame_size ();
 
-}	/* emit_frame_insn () */
+  /* For FP, move up (negative) to the top of the frame.  */
+  if (from == FRAME_POINTER_REGNUM)
+    offset = -frame_info.save_size;
+  else
+    gcc_assert (from == ARG_POINTER_REGNUM);
 
+  /* For SP, move down (positive) to the bottom of the frame.  */
+  if (to == STACK_POINTER_REGNUM)
+    offset += frame_info.total_size;
+  else
+    gcc_assert (to == HARD_FRAME_POINTER_REGNUM);
 
-/* -------------------------------------------------------------------------- */
-/* Generate a RTX for the indexed memory address based on stack_pointer_rtx
-   and a displacement
-
-   @param[in] disp  The displacement
-
-   @return  The RTX for the generated address.                                */
-/* -------------------------------------------------------------------------- */
-static rtx
-stack_disp_mem (HOST_WIDE_INT disp)
-{
-  return gen_frame_mem (Pmode, plus_constant (Pmode, stack_pointer_rtx, disp));
+  return offset;
 }
 
 void
@@ -1080,181 +954,298 @@ or1k_trampoline_code_size (void)
 /* ========================================================================== */
 /* Functions to support the Machine Description                               */
 
+/* Create a mem in the "frame" alias set at BASE+OFF.  */
+static rtx
+stack_disp_mem (rtx base, HOST_WIDE_INT off)
+{
+  rtx x = plus_constant (Pmode, base, off);
+  return gen_frame_mem (word_mode, x);
+}
 
-/* -------------------------------------------------------------------------- */
-/*!Expand a prologue pattern.
+/* Save a register for the prologue, marking it for unwind info.  */
+static void
+prologue_save_reg (unsigned regno, rtx base, HOST_WIDE_INT off)
+{
+  rtx mem = stack_disp_mem (base, off);
+  rtx reg = gen_rtx_REG (word_mode, regno);
+  rtx insn = emit_insn (gen_rtx_SET (mem, reg));
+  RTX_FRAME_RELATED_P (insn) = 1;
+}
 
-   Called after register allocation to add any instructions needed for the
-   prologue.  Using a prologue insn is favored compared to putting all of the
-   instructions in output_function_prologue(), since it allows the scheduler
-   to intermix instructions with the saves of the caller saved registers.  In
-   some cases, it might be necessary to emit a barrier instruction as the last
-   insn to prevent such scheduling.                                           */
-/* -------------------------------------------------------------------------- */
+/* Save all required registers for the prologue.
+   The stores happen in decending order below BASE+OFF.  */
+static void
+prologue_save_registers (unsigned int mask, rtx base, HOST_WIDE_INT off)
+{
+  /* The ABI specifies LR and FP saved immediately below the
+     hard frame pointer.  We might as well use the same layout
+     even when not using a frame pointer.  */
+  if ((mask >> LINK_REGNUM) & 1)
+    {
+      off -= UNITS_PER_WORD;
+      prologue_save_reg (LINK_REGNUM, base, off);
+    }
+  if ((mask >> HARD_FRAME_POINTER_REGNUM) & 1)
+    {
+      off -= UNITS_PER_WORD;
+      prologue_save_reg (HARD_FRAME_POINTER_REGNUM, base, off);
+    }
+
+  for (int regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+    {
+      if (regno == LINK_REGNUM || regno == HARD_FRAME_POINTER_REGNUM)
+	continue;
+      if ((mask >> regno) & 1)
+	{
+	  off -= UNITS_PER_WORD;
+	  prologue_save_reg (regno, base, off);
+	}
+    }
+}
+
+/* True if the entire local stack frame is in the redzone.  */
+static inline bool
+or1k_frame_in_redzone (void)
+{
+  return frame_info.total_size <= or1k_redzone;
+}
+
+/* True if the entire register save area is in the redzone.  */
+static inline bool
+or1k_regs_in_redzone (void)
+{
+  return frame_info.save_size <= or1k_redzone;
+}
+
+/* Adjust the stack by +SIZE.  If MAYBE_FP_PROTECT, then we are allocating
+   the bulk of the stack frame and we might need to clobber the local frame.
+   If CFA_P, then emit unwind info for the adjustment.  Return the insn
+   that makes the adjustment.  */
+static rtx
+pro_epi_adjust_stack (HOST_WIDE_INT size, bool fp_protect, bool cfa_p)
+{
+  rtx size_rtx, x, insn;
+
+  if (size == 0)
+    return NULL_RTX;
+
+  x = size_rtx = GEN_INT (size);
+  if (!satisfies_constraint_I (x))
+    {
+      rtx r = gen_rtx_REG (Pmode, PROLOGUE_TMP);
+      emit_move_insn (r, x);
+      x = r;
+    }
+
+  if (fp_protect)
+    x = gen_frame_alloc (stack_pointer_rtx, stack_pointer_rtx, x);
+  else
+    x = gen_add2_insn (stack_pointer_rtx, x);
+  insn = emit_insn (x);
+  if (cfa_p)
+    {
+      rtx t = gen_rtx_PLUS (Pmode, stack_pointer_rtx, size_rtx);
+      t = gen_rtx_SET (stack_pointer_rtx, t);
+      REG_NOTES (insn) = alloc_reg_note (REG_CFA_ADJUST_CFA, t, NULL);
+      RTX_FRAME_RELATED_P (insn) = 1;
+    }
+  return insn;
+}
+
+/* Return true if we can return directly from the function.  */
+bool
+or1k_direct_return (void)
+{
+  return frame_info.total_size == 0 && frame_info.save_mask == 0;
+}
+
+/* Expand code to construct the local stack frame.  */
 void
 or1k_expand_prologue (void)
 {
-  int total_size = or1k_compute_frame_size (get_frame_size ());
+  HOST_WIDE_INT total_size = frame_info.total_size;
+  unsigned int save_mask = frame_info.save_mask;
   rtx insn;
 
-  if (!total_size)
-    /* No frame needed.  */
+  if (total_size == 0 && save_mask == 0)
     return;
 
-  gcc_assert (!frame_info.save_lr_p || !frame_info.save_fp_p
-	      || frame_info.lr_save_offset != frame_info.fp_save_offset);
-
-  if (frame_info.gpr_frame)
-    emit_frame_insn (gen_add2_insn (stack_pointer_rtx,
-				    GEN_INT (-frame_info.gpr_frame)));
-  if (frame_info.save_fp_p)
+  if (or1k_regs_in_redzone ())
     {
-      emit_frame_insn (gen_rtx_SET (stack_disp_mem (frame_info.fp_save_offset),
-				    hard_frame_pointer_rtx));
+      /* When the register save area is in the redzone, we can
+	 save the registers before allocating any stack space.
+	 This avoids a dependency on the stack register subtraction.  */
+      prologue_save_registers (save_mask, stack_pointer_rtx, 0);
+      save_mask = 0;
 
-      emit_frame_insn
-	(gen_add3_insn (hard_frame_pointer_rtx, stack_pointer_rtx, const0_rtx));
-    }
-  if (frame_info.save_lr_p)
-    {
-      emit_frame_insn
-	(gen_rtx_SET (stack_disp_mem (frame_info.lr_save_offset),
-		      gen_rtx_REG (Pmode, LINK_REGNUM)));
-    }
-  if (frame_info.gpr_size)
-    {
-      int offset = 0;
-      int regno;
-
-      for (regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+      /* When a frame pointer is needed, we've not yet adjusted
+	 the stack pointer, so it's a straght copy.  */
+      if (frame_pointer_needed)
 	{
-	  if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
-	    continue;
+	  insn = emit_move_insn (hard_frame_pointer_rtx, stack_pointer_rtx);
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	}
+    }
+  else if (frame_pointer_needed || save_mask != 0)
+    {
+      /* When the register save area exceeds the redzone, we must
+	 allcate stack before saving.  In this first step, allocate
+	 no more than we can use as a memory offset.  */
+      HOST_WIDE_INT step = MIN (32760, total_size);
+      pro_epi_adjust_stack (-step, step == total_size, true);
+      prologue_save_registers (save_mask, stack_pointer_rtx, step);
 
-	  /* Check that the offsets aren't stepping on lr/fp slots */
-	  gcc_assert (!frame_info.save_lr_p
-		      || ((frame_info.gpr_offset + offset)
-			  != frame_info.lr_save_offset));
-	  gcc_assert (!frame_info.save_fp_p
-		      || ((frame_info.gpr_offset + offset)
-			  != frame_info.fp_save_offset));
+      /* When a frame pointer is needed, we must add back what we
+	 just subtracted from the stack pointer.  */
+      if (frame_pointer_needed)
+	{
+	  insn = emit_insn (gen_add3_insn (hard_frame_pointer_rtx,
+					   stack_pointer_rtx,
+					   GEN_INT (step)));
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	}
+      total_size -= step;
+    }
 
-	  emit_frame_insn
-	    (gen_rtx_SET (stack_disp_mem (frame_info.gpr_offset + offset),
-			  gen_rtx_REG (Pmode, regno)));
-	  offset = offset + UNITS_PER_WORD;
+  /* Allocate the balance of the stack frame.  */
+  pro_epi_adjust_stack (-total_size, frame_pointer_needed,
+			!frame_pointer_needed);
+
+  /* Build PIC register, if needed.  */
+  if (crtl->uses_pic_offset_table)
+    emit_insn (gen_set_got (pic_offset_table_rtx));
+}
+
+/* Load a register for the epilogue.  Add the unwind info to *DWARF.  */
+static rtx
+epilogue_load_reg (unsigned regno, rtx base, HOST_WIDE_INT off, rtx *dwarf)
+{
+  rtx mem = stack_disp_mem (base, off);
+  rtx reg = gen_rtx_REG (word_mode, regno);
+  rtx insn = emit_insn (gen_rtx_SET (reg, mem));
+  if (dwarf)
+    *dwarf = alloc_reg_note (REG_CFA_RESTORE, reg, *dwarf);
+  return insn;
+}
+
+/* Load all required registers for the epilogue.  The loads happen in
+   decending order below BASE+OFF.  Add the unwind info to *DWARF.  */
+static rtx
+epilogue_load_registers (unsigned int mask, rtx base, HOST_WIDE_INT off,
+			 rtx *dwarf)
+{
+  /* Since OFF will always be aligned, -1 is safe for "unused".  */
+  HOST_WIDE_INT fp = -1;
+
+  if ((mask >> LINK_REGNUM) & 1)
+    {
+      off -= UNITS_PER_WORD;
+      /* Note that eh_return sets the LR -- do not overwrite it.  */
+      if (!crtl->calls_eh_return)
+	epilogue_load_reg (LINK_REGNUM, base, off, dwarf);
+    }
+  if ((mask >> HARD_FRAME_POINTER_REGNUM) & 1)
+    {
+      off -= UNITS_PER_WORD;
+      /* If we're using the frame pointer to do the restores,
+	 then restore it last.  */
+      if (base == hard_frame_pointer_rtx)
+	fp = off;
+      else
+	epilogue_load_reg (HARD_FRAME_POINTER_REGNUM, base, off, dwarf);
+    }
+
+  for (int regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+    {
+      if (regno == LINK_REGNUM || regno == HARD_FRAME_POINTER_REGNUM)
+	continue;
+      if ((mask >> regno) & 1)
+	{
+	  off -= UNITS_PER_WORD;
+	  epilogue_load_reg (regno, base, off, dwarf);
 	}
     }
 
-  /* Update the stack pointer to reflect frame size.  */
-  total_size = frame_info.late_frame;
-  insn = gen_add2_insn (stack_pointer_rtx, GEN_INT (-total_size));
-  if (total_size > 32768)
-    {
-      rtx note = insn;
-      rtx value_rtx = gen_rtx_REG (Pmode, PROLOGUE_TMP);
+  if (fp != -1)
+    return epilogue_load_reg (HARD_FRAME_POINTER_REGNUM, base, fp, dwarf);
+  else
+    return NULL_RTX;
+}
 
-      or1k_emit_set_const32 (value_rtx, GEN_INT (-total_size));
-      if (frame_info.save_fp_p)
-	insn = gen_frame_alloc_fp (value_rtx);
-      else
-	insn = gen_add2_insn (stack_pointer_rtx, value_rtx);
-      insn = emit_frame_insn (insn);
-      add_reg_note (insn, REG_FRAME_RELATED_EXPR, note);
-    }
-  else if (total_size)
-    {
-      if (frame_info.save_fp_p)
-	emit_frame_insn (gen_frame_alloc_fp (GEN_INT (-total_size)));
-      else
-	emit_frame_insn (insn);
-    }
-  /* Emit got pointer acquiring if there are any got references or
-     this function has calls */
-  if (crtl->uses_pic_offset_table || (flag_pic && frame_info.save_lr_p))
-    {
-      SET_REGNO (pic_offset_table_rtx, PIC_OFFSET_TABLE_REGNUM);
-      emit_insn (gen_set_got (pic_offset_table_rtx));
-    }
-
-}	/* or1k_expand_prologue () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Expand an epilogue pattern.
-
-   Called after register allocation to add any instructions needed for the
-   epilogue.  Using an epilogue insn is favored compared to putting all of the
-   instructions in output_function_epilogue(), since it allows the scheduler
-   to intermix instructions with the restores of the caller saved registers.
-   In some cases, it might be necessary to emit a barrier instruction as the
-   first insn to prevent such scheduling.                                     */
-/* -------------------------------------------------------------------------- */
+/* Expand code to deconstruct the local stack frame.  */
 void
 or1k_expand_epilogue (void)
 {
-  int total_size = or1k_compute_frame_size (get_frame_size ());
+  HOST_WIDE_INT total_size = frame_info.total_size;
+  unsigned int save_mask = frame_info.save_mask;
+  rtx insn, dwarf = NULL_RTX, x;
+  bool regs_in_redzone = or1k_regs_in_redzone ();
 
-  if (frame_info.save_fp_p)
+  if (frame_pointer_needed)
     {
-      emit_insn (gen_frame_dealloc_fp ());
-      emit_insn
-	(gen_rtx_SET (hard_frame_pointer_rtx,
-		      stack_disp_mem (frame_info.fp_save_offset)));
+      /* Deallocate (most of) the local stack frame.  */
+      if (total_size != 0)
+	{
+	  /* When the save registers are in the redzone, we can deallocate
+	     all of the stack now.  Otherwise, deallocate all but the saved
+	     registers.  In either case, this can be done via a simple
+	     addition from the HFP.  Be careful to block local frame accesses
+	     from crossing this boundary.  */
+	  if (regs_in_redzone)
+	    total_size = 0;
+	  else
+	    total_size = frame_info.save_size;
+	  emit_insn (gen_frame_alloc (stack_pointer_rtx,
+				      hard_frame_pointer_rtx,
+				      GEN_INT (-total_size)));
+	}
+
+      insn = epilogue_load_registers (save_mask, hard_frame_pointer_rtx,
+				      0, &dwarf);
+
+      /* Since we just restored the frame pointer, we must
+	 switch the CFA back to being based on the stack pointer.  */
+      x = plus_constant (Pmode, stack_pointer_rtx, total_size);
+      dwarf = alloc_reg_note (REG_CFA_DEF_CFA, x, dwarf);
+      REG_NOTES (insn) = dwarf;
+      RTX_FRAME_RELATED_P (insn) = 1;
+      dwarf = NULL_RTX;
     }
   else
     {
-      rtx value_rtx;
-
-      total_size = frame_info.late_frame;
-      if (total_size > 32767)
+      if (regs_in_redzone)
 	{
-	  value_rtx = gen_rtx_REG (Pmode, EPILOGUE_TMP);
-	  or1k_emit_set_const32 (value_rtx, GEN_INT (total_size));
+	  pro_epi_adjust_stack (total_size, false, true);
+	  total_size = 0;
 	}
-      else if (frame_info.late_frame)
-	value_rtx = GEN_INT (total_size);
-      if (total_size)
-	emit_insn (gen_frame_dealloc_sp (value_rtx));
-    }
-
-  /* eh_return sets the LR, do not overwrite it */
-  if (frame_info.save_lr_p && !crtl->calls_eh_return)
-    {
-      emit_insn
-        (gen_rtx_SET (gen_rtx_REG (Pmode, LINK_REGNUM),
-                      stack_disp_mem (frame_info.lr_save_offset)));
-    }
-
-  if (frame_info.gpr_size)
-    {
-      int offset = 0;
-      int regno;
-
-      for (regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+      else if (total_size >= 32768)
 	{
-	  if (!(frame_info.mask & ((HOST_WIDE_INT) 1 << regno)))
-	    continue;
-
-	  if (regno != FIRST_PSEUDO_REGISTER)
-	    emit_insn
-	      (gen_rtx_SET (gen_rtx_REG (Pmode, regno),
-			    stack_disp_mem (frame_info.gpr_offset + offset)));
-	  offset = offset + UNITS_PER_WORD;
+	  HOST_WIDE_INT save_size = frame_info.save_size;
+	  pro_epi_adjust_stack (total_size - save_size, false, true);
+	  total_size = save_size;
 	}
+
+      epilogue_load_registers (save_mask, stack_pointer_rtx,
+			       total_size, &dwarf);
     }
 
+  /* Finish stack frame deallocation.  This will only be needed if
+     the register save area is not in the redzone.  */
+  if (total_size != 0)
+    {
+      insn = pro_epi_adjust_stack (total_size, false, false);
+      dwarf = alloc_reg_note (REG_CFA_DEF_CFA, stack_pointer_rtx, dwarf);
+      REG_NOTES (insn) = dwarf;
+      RTX_FRAME_RELATED_P (insn) = 1;
+    }
+
+  /* Move up to the stack frame of an exception handler.  */
   if (crtl->calls_eh_return)
     emit_insn (gen_add2_insn (stack_pointer_rtx, EH_RETURN_STACKADJ_RTX));
 
-  if (frame_info.gpr_frame)
-    emit_insn (gen_add2_insn (stack_pointer_rtx,
-			      GEN_INT (frame_info.gpr_frame)));
-  emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, 9)));
-
-}	/* or1k_expand_epilogue () */
-
-
+  /* Jump!  */
+  emit_jump_insn (gen_return ());
+}
 
 /* -------------------------------------------------------------------------- */
 /*!Generate assembler code for a movdi/movdf pattern
@@ -1592,16 +1583,6 @@ or1k_pass_by_reference (cumulative_args_t  cum ATTRIBUTE_UNUSED,
   return (type && (AGGREGATE_TYPE_P (type) || int_size_in_bytes (type) > 8));
 
 }	/* or1k_pass_by_reference () */
-
-
-int
-or1k_initial_elimination_offset(int from, int to)
-{
-  or1k_compute_frame_size (get_frame_size ());
-  return ((from == FRAME_POINTER_REGNUM
-	   ? frame_info.gpr_offset : frame_info.gpr_frame)
-	  + (to == STACK_POINTER_REGNUM ? frame_info.late_frame : 0));
-}
 
 
 /* -------------------------------------------------------------------------- */
