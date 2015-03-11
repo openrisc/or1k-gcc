@@ -221,21 +221,21 @@ Boston, MA 02111-1307, USA.  */
   0, 1, 1, 0, 0, 0, 0, 0, \
   1, 0, 0, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1 }
+
 /* 1 for registers not available across function calls.
    These must include the FIXED_REGISTERS and also any
    registers that can be used without being saved.
    The latter must include the registers where values are returned
    and the register where structure-value addresses are passed.
    Aside from that, you can include as many other registers as you like.  */
+/* ??? This is a horrible ABI.  There are no adjacent call-saved registers,
+   which means that pseudos larger than one word will always be spilled.  */
 #define CALL_USED_REGISTERS { \
   1, 1, 0, 1, 1, 1, 1, 1, \
   1, 1, 1, 1, 1, 1, 0, 1, \
   1, 1, 0, 1, 0, 1, 0, 1, \
-  0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1}
-
-/* stack pointer: must be FIXED and CALL_USED */
-/* hard frame pointer: must be call saved.  */
-/* soft frame pointer / arg pointer: must be FIXED and CALL_USED */
+  0, 1, 0, 1, 0, 1, 0, 1, \
+  1, 1, 1 }
 
 /* Return number of consecutive hard regs needed starting at reg REGNO
    to hold something of mode MODE.
@@ -339,7 +339,6 @@ Boston, MA 02111-1307, USA.  */
 #define STATIC_CHAIN_REGNUM 11
 
 #define PROLOGUE_TMP 13
-#define EPILOGUE_TMP 3
 
 /* Register in which address to store a structure value
    is passed to a function.  */
@@ -372,6 +371,7 @@ Boston, MA 02111-1307, USA.  */
 enum reg_class 
 { 
   NO_REGS,
+  SIBCALL_REGS,
   GENERAL_REGS,
   FLAG_REGS,
   ALL_REGS,
@@ -384,6 +384,7 @@ enum reg_class
 #define REG_CLASS_NAMES							\
 {									\
   "NO_REGS",								\
+  "SIBCALL_REGS",							\
   "GENERAL_REGS",   							\
   "FLAG_REGS",								\
   "ALL_REGS"								\
@@ -403,24 +404,28 @@ enum reg_class
    initializer for the type `HARD_REG_SET' which is defined in
    `hard-reg-set.h'.
 
-   For the OR1K we have the minimal set. GENERAL_REGS is all except r0, which
-   it permanently zero. */
+   SIBCALL_REGS must be call-clobbered, and not used as a temporary in the
+   epilogue.  This excludes R9 (LINK), R11 (STATIC_CHAIN),
+   and R13 (PROLOGUE_TMP).  */
+
+#define SIBCALL_REGS_MASK	0xaaaa95f8
 #define REG_CLASS_CONTENTS						\
   {									\
     { 0x00000000, 0x00000000 },		/* NO_REGS */			\
+    { SIBCALL_REGS_MASK, 0x00000000 },	/* SIBCALL_REGS */		\
     { 0xffffffff, 0x00000003 },		/* GENERAL_REGS */		\
     { 0x00000000, 0x00000004 },		/* FLAG_REGS */			\
     { 0xffffffff, 0x00000007 }		/* ALL_REGS */			\
   }
 
 /* The same information, inverted:
-
    Return the class number of the smallest class containing reg number REGNO.
    This could be a conditional expression or could index an array.  */
 
-#define REGNO_REG_CLASS(R)			\
-  ((R) <= OR1K_LAST_INT_REG ? GENERAL_REGS	\
-   : (R) < FIRST_PSEUDO_REGISTER ? FLAG_REGS	\
+#define REGNO_REG_CLASS(R)					\
+  ((R) <= 31 && ((SIBCALL_REGS_MASK >> (R)) & 1) ? SIBCALL_REGS	\
+   : (R) <= OR1K_LAST_INT_REG ? GENERAL_REGS			\
+   : (R) < FIRST_PSEUDO_REGISTER ? FLAG_REGS			\
    : ALL_REGS)
 
 /* The class value for index registers, and the one for base regs.  */

@@ -75,17 +75,8 @@
   return 0;
 })
 
-(define_predicate "sym_ref_mem_operand"
-  (match_code "mem")
-{
-  if (GET_CODE (op) == MEM)
-    {
-      rtx t1 = XEXP (op, 0);
-      if (GET_CODE (t1) == SYMBOL_REF)
-	return 1;
-    }
-  return 0;
-})
+(define_predicate "call_insn_operand"
+  (match_code "reg,subreg,symbol_ref"))
 
 ;; True iff OP is a symbolic operand.
 

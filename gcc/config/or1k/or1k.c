@@ -345,6 +345,15 @@ or1k_print_operand_punct_valid_p (unsigned char code)
   return code == '(';
 }
 
+static void
+output_addr_reloc (FILE *stream, rtx x, const char *reloc)
+{
+  fputs (reloc, stream);
+  fputc ('(', stream);
+  output_addr_const (stream, x);
+  fputc (')', stream);
+}
+
 /* Prettify the assembly.  Indicate an instruction is filling a delay slot
    by indenting it one space.  */
 
@@ -430,8 +439,14 @@ or1k_print_operand (FILE *stream, rtx x, int code)
 	fprintf (stream, "\n\t l.nop");
       break;
 
+    case 'P':
+      if (!flag_pic || SYMBOL_REF_LOCAL_P (x))
+	output_addr_const (stream, x);
+      else
+	output_addr_reloc (stream, x, "plt");
+      break;
+
     case 0:
-    case 'S': /* ??? calls */
       if (REG_P (x))
 	fputs (reg_names[REGNO (x)], stream);
       else if (MEM_P (x))
@@ -915,6 +930,34 @@ or1k_trampoline_code_size (void)
 /* ========================================================================== */
 /* Functions to support the Machine Description                               */
 
+void
+or1k_expand_call (rtx retval, rtx fnaddr, rtx callarg1)
+{
+  rtx call, use = NULL;
+
+  /* Calls via the PLT require the PIC register.  */
+  if (flag_pic
+      && GET_CODE (XEXP (fnaddr, 0)) == SYMBOL_REF
+      && !SYMBOL_REF_LOCAL_P (XEXP (fnaddr, 0)))
+    {
+      crtl->uses_pic_offset_table = 1;
+      use_reg (&use, pic_offset_table_rtx);
+    }
+
+  if (!call_insn_operand (XEXP (fnaddr, 0), Pmode))
+    {
+      fnaddr = copy_to_mode_reg (Pmode, XEXP (fnaddr, 0));
+      fnaddr = gen_rtx_MEM (SImode, fnaddr);
+    }
+
+  call = gen_rtx_CALL (VOIDmode, fnaddr, callarg1);
+  if (retval)
+    call = gen_rtx_SET (retval, call);
+  call = emit_call_insn (call);
+
+  CALL_INSN_FUNCTION_USAGE (call) = use;
+}
+
 /* Create a mem in the "frame" alias set at BASE+OFF.  */
 static rtx
 stack_disp_mem (rtx base, HOST_WIDE_INT off)
@@ -1199,13 +1242,18 @@ or1k_expand_epilogue (void)
       REG_NOTES (insn) = dwarf;
       RTX_FRAME_RELATED_P (insn) = 1;
     }
+  else if (dwarf)
+    {
+      insn = get_last_insn ();
+      REG_NOTES (insn) = dwarf;
+      RTX_FRAME_RELATED_P (insn) = 1;
+    }
 
   /* Move up to the stack frame of an exception handler.  */
   if (crtl->calls_eh_return)
     emit_insn (gen_add2_insn (stack_pointer_rtx, EH_RETURN_STACKADJ_RTX));
 
-  /* Jump!  */
-  emit_jump_insn (gen_return ());
+  /* Return instruction emitted in gen_epilogue.  */
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1481,35 +1529,26 @@ or1k_function_value (const_tree  ret_type,
 }	/* or1k_function_value () */
 
 
-/* -------------------------------------------------------------------------- */
-/*!Check if a function is suitable for tail call optimization.
+/* Check if a function is suitable for tail call optimization,
+   implementing the TARGET_FUNCTION_OK_FOR_SIBCALL target hook.  */
 
-   True if it is OK to do sibling call optimization for the specified call
-   expression "exp". "decl" will be the called function, or NULL if this is an
-   indirect call.
-
-   It is not uncommon for limitations of calling conventions to prevent tail
-   calls to functions outside the current unit of translation, or during PIC
-   compilation. The hook is used to enforce these restrictions, as the sibcall
-   md pattern can not fail, or fall over to a “normal” call. The criteria for
-   successful sibling call optimization may vary greatly between different
-   architectures.
-
-   For the OR1K, we currently don't allow sibcalls.
-
-   @param[in] decl  The function for which we may optimize
-   @param[in] exp   The call expression which is candidate for optimization.
-
-   @return  Non-zero (TRUE) if sibcall optimization is permitted, zero (FALSE)
-            otherwise.                                                        */
-/* -------------------------------------------------------------------------- */
 static bool
-or1k_function_ok_for_sibcall (tree  decl ATTRIBUTE_UNUSED,
-			      tree  exp ATTRIBUTE_UNUSED)
+or1k_function_ok_for_sibcall (tree decl, tree exp ATTRIBUTE_UNUSED)
 {
-  return 0;
-}	/* or1k_function_ok_for_sibcall () */
+  /* We can sibcall optimize any indirect function.  */
+  if (decl == NULL)
+    return true;
 
+  /* We can sibcall to any direct function if not PIC.  */
+  if (!flag_pic)
+    return true;
+
+  /* If the call may go through the PLT, we need r16 live.  */
+  if (!targetm.binds_local_p (decl))
+    return false;
+
+  return true;
+}
 
 /* -------------------------------------------------------------------------- */
 /*!Should an argument be passed by reference.

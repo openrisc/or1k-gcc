@@ -98,13 +98,7 @@
    ; mult = fetch_nand: invert
    (mult "l.xori\t%3,%3,0xffff")])
 
-;; Called after register allocation to add any instructions needed for the
-;; prologue.  Using a prologue insn is favored compared to putting all of the
-;; instructions in output_function_prologue(), since it allows the scheduler
-;; to intermix instructions with the saves of the caller saved registers.  In
-;; some cases, it might be necessary to emit a barrier instruction as the last
-;; insn to prevent such scheduling.
-
+;; Save registers and allocate the stack frame.
 (define_expand "prologue"
   [(use (const_int 1))]
   ""
@@ -113,17 +107,24 @@
   DONE;
 })
 
-;; Called after register allocation to add any instructions needed for the
-;; epilogue.  Using an epilogue insn is favored compared to putting all of the
-;; instructions in output_function_epilogue(), since it allows the scheduler
-;; to intermix instructions with the restores of the caller saved registers.
-;; In some cases, it might be necessary to emit a barrier instruction as the
-;; first insn to prevent such scheduling.
+;; Restore registers, deallocate the stack frame, and return.
 (define_expand "epilogue"
-  [(use (const_int 2))]
+  [(const_int 0)]
   ""
 {
   or1k_expand_epilogue ();
+  emit_jump_insn (gen_return ());
+  DONE;
+})
+
+;; Similar, but omit the return so that a subsequent "sibcall"
+;; pattern can be emitted.
+(define_expand "sibcall_epilogue"
+  [(const_int 0)]
+  ""
+{
+  or1k_expand_epilogue ();
+  emit_insn (gen_rtx_USE (VOIDmode, gen_rtx_REG (Pmode, LINK_REGNUM)));
   DONE;
 })
 
@@ -900,116 +901,6 @@
   "l.jr\t%0%("
   [(set_attr "type" "jump")])
 
-;;
-;; calls
-;;
-
-;; call
-
-(define_expand "call"
-  [(parallel [(call (match_operand:SI 0 "sym_ref_mem_operand" "")
-		    (match_operand 1 "" "i"))
-            (clobber (reg:SI 9))
-            (use (reg:SI 16))])]
-  ""
-{
-  emit_call_insn (gen_call_internal (operands[0], operands[1]));
-  DONE;
-})
-
-(define_insn "call_internal"
-  [(parallel [(call (match_operand:SI 0 "sym_ref_mem_operand" "")
-		    (match_operand 1 "" "i"))
-	      (clobber (reg:SI 9))
-	      (use (reg:SI 16))])]
-  ""
-{
-  if (flag_pic)
-    {
-      crtl->uses_pic_offset_table = 1;
-      return "l.jal\tplt(%S0)%(";
-    }
-  return "l.jal\t%S0%(";
-}
-  [(set_attr "type" "jump")])
-
-;; call value
-
-(define_expand "call_value"
-  [(parallel [(set (match_operand 0 "register_operand" "=r")
-		   (call (match_operand:SI 1 "sym_ref_mem_operand" "")
-			 (match_operand 2 "" "i")))
-            (clobber (reg:SI 9))
-            (use (reg:SI 16))])]
-  ""
-{
-  emit_call_insn (gen_call_value_internal (operands[0], operands[1], operands[2]));
-  DONE;
-})
-
-(define_insn "call_value_internal"
-  [(parallel [(set (match_operand 0 "register_operand" "=r")
-		   (call (match_operand:SI 1 "sym_ref_mem_operand" "")
-			 (match_operand 2 "" "i")))
-	      (clobber (reg:SI 9))
-	      (use (reg:SI 16))])]
-  ""
-{
-  if (flag_pic)
-    {
-      crtl->uses_pic_offset_table = 1;
-      return "l.jal\tplt(%S1)%(";
-    }
-  return "l.jal\t%S1%(";
-}
-  [(set_attr "type" "jump")])
-
-;; indirect call value 
-
-(define_expand "call_value_indirect"
-  [(parallel [(set (match_operand 0 "register_operand" "=r")
-                   (call (mem:SI (match_operand:SI 1 "register_operand" "r"))
-                         (match_operand 2 "" "i")))
-            (clobber (reg:SI 9))
-            (use (reg:SI 16))])]
-  ""
-{
-  emit_call_insn (gen_call_value_indirect_internal (operands[0], operands[1], operands[2]));
-  DONE;
-})
-
-(define_insn "call_value_indirect_internal"
-  [(parallel [(set (match_operand 0 "register_operand" "=r")
-                   (call (mem:SI (match_operand:SI 1 "register_operand" "r"))
-                         (match_operand 2 "" "i")))
-            (clobber (reg:SI 9))
-            (use (reg:SI 16))])]
-  ""
-  "l.jalr\t%1%("
-  [(set_attr "type" "jump")])
-
-;; indirect call
-
-(define_expand "call_indirect"
-  [(parallel [(call (mem:SI (match_operand:SI 0 "register_operand" "r"))
-		    (match_operand 1 "" "i"))
-            (clobber (reg:SI 9))
-            (use (reg:SI 16))])]
-  ""
-{
-  emit_call_insn (gen_call_indirect_internal (operands[0], operands[1]));
-  DONE;
-})
-
-(define_insn "call_indirect_internal"
-  [(parallel [(call (mem:SI (match_operand:SI 0 "register_operand" "r"))
-		    (match_operand 1 "" "i"))
-	      (clobber (reg:SI 9))
-            (use (reg:SI 16))])]
-  ""
-  "l.jalr\t%0%("
-  [(set_attr "type" "jump")])
-
 ;; table jump
 
 (define_expand "tablejump"
@@ -1301,6 +1192,92 @@
    l.bnf   \t1b       # fetch_<op_name>: done
     l.nop"
   [(set_attr "length" "10")])
+
+;;
+;; CALLS
+;; Leave these to last, as the modeless operand for call_value
+;; interferes with normal patterns.
+;;
+
+(define_expand "call"
+  [(call (match_operand 0)
+	 (match_operand 1))
+   (use (match_operand 2))]
+  ""
+{
+  or1k_expand_call (NULL, operands[0], operands[1]);
+  DONE;
+})
+
+(define_expand "sibcall"
+  [(call (match_operand 0)
+	 (match_operand 1))
+   (use (match_operand 2))]
+  ""
+{
+  or1k_expand_call (NULL, operands[0], operands[1]);
+  DONE;
+})
+
+(define_expand "call_value"
+  [(set (match_operand 0)
+	(call (match_operand:SI 1)
+	      (match_operand 2)))
+   (use (match_operand 3))]
+  ""
+{
+  or1k_expand_call (operands[0], operands[1], operands[2]);
+  DONE;
+})
+
+(define_expand "sibcall_value"
+  [(set (match_operand 0)
+	(call (match_operand:SI 1)
+	      (match_operand 2)))
+   (use (match_operand 3))]
+  ""
+{
+  or1k_expand_call (operands[0], operands[1], operands[2]);
+  DONE;
+})
+
+(define_insn "*call"
+  [(call (mem:SI (match_operand:SI 0 "call_insn_operand" "r,s"))
+                 (match_operand 1))]
+  "!SIBLING_CALL_P (insn)"
+  "@
+   l.jalr\t%0%(
+   l.jal\t%P0%("
+  [(set_attr "type" "jump")])
+
+(define_insn "*sibcall"
+  [(call (mem:SI (match_operand:SI 0 "call_insn_operand" "c,s"))
+                 (match_operand 1))]
+  "SIBLING_CALL_P (insn)"
+  "@
+   l.jr\t%0%(
+   l.j\t%P0%("
+  [(set_attr "type" "jump")])
+
+(define_insn "*call_value"
+  [(set (match_operand 0)
+	(call (mem:SI (match_operand:SI 1 "call_insn_operand" "r,s"))
+	      (match_operand 2)))]
+  "!SIBLING_CALL_P (insn)"
+  "@
+   l.jalr\t%1%(
+   l.jal\t%P1%("
+  [(set_attr "type" "jump")])
+
+(define_insn "*sibcall_value"
+  [(set (match_operand 0)
+	(call (mem:SI (match_operand:SI 1 "call_insn_operand" "c,s"))
+	      (match_operand 2)))]
+  "SIBLING_CALL_P (insn)"
+  "@
+   l.jr\t%1%(
+   l.j\t%P1%("
+  [(set_attr "type" "jump")])
 
 ;; Local variables:
 ;; mode:emacs-lisp

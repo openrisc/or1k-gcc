@@ -18,6 +18,9 @@
 ;; along with GCC; see the file COPYING3.  If not see
 ;; <http://www.gnu.org/licenses/>.
 
+(define_register_constraint "c" "SIBCALL_REGS"
+  "Registers which can hold a siling call address")
+
 (define_constraint "I"
   ""
   (and (match_code "const_int")
