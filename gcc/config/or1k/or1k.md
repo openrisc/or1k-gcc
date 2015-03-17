@@ -30,6 +30,7 @@
   (FP_REG 2) ; hard frame pointer
   (LINK_REGNUM 9)
   (SR_F_REG 34)
+  (SR_CY_REG 35)
 ])
 
 (define_c_enum "unspec" [
@@ -89,6 +90,7 @@
 (define_insn_reservation "mul_unit" 16 (eq_attr "type" "mul") "or1k_alu*16")
 
 (define_mode_iterator I12 [QI HI])
+(define_mode_attr sz [(QI "b") (HI "h") (SI "w")])
 
 ;; Save registers and allocate the stack frame.
 (define_expand "prologue"
@@ -124,7 +126,8 @@
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(plus:SI (match_operand:SI 1 "register_operand" "r,r")
 		 (match_operand:SI 2 "reg_or_s16_operand" "r,I")))
-   (clobber (mem:BLK (match_scratch:SI 3 "=X,X")))]
+   (clobber (mem:BLK (match_scratch:SI 3 "=X,X")))
+   (clobber (reg:BI SR_CY_REG))]
   ""
   "@
    l.add\t%0,%1,%2
@@ -156,96 +159,52 @@
   "l.jr\t%0%("
   [(set_attr "type" "jump")])
 
-
 ;;
-;; movQI
+;; movQI/movHI
 ;;
 
-(define_expand "movqi"
-  [(set (match_operand:QI 0 "general_operand" "")
-	(match_operand:QI 1 "general_operand" ""))]
+(define_expand "mov<mode>"
+  [(set (match_operand:I12 0 "general_operand" "")
+	(match_operand:I12 1 "general_operand" ""))]
   ""
-  "
-      if (can_create_pseudo_p())
-        {
-          if (GET_CODE (operands[1]) == CONST_INT)
-	    {
-	      rtx reg = gen_reg_rtx (SImode);
+{
+  if (can_create_pseudo_p() && optimize > 0)
+    {
+      if (CONST_INT_P (operands[1]))
+	{
+	  rtx reg = gen_reg_rtx (SImode);
 
-	      emit_insn (gen_movsi (reg, operands[1]));
-	      operands[1] = gen_lowpart (QImode, reg);
-	    }
-	  if (GET_CODE (operands[1]) == MEM && optimize > 0)
-	    {
-	      rtx reg = gen_reg_rtx (SImode);
+	  emit_insn (gen_movsi (reg, operands[1]));
+	  operands[1] = gen_lowpart (<MODE>mode, reg);
+	}
+      else if (MEM_P (operands[1]))
+	{
+	  rtx reg = gen_reg_rtx (SImode);
 
-	      emit_insn (gen_rtx_SET (reg,
-				      gen_rtx_ZERO_EXTEND (SImode,
-						           operands[1])));
+	  emit_insn (gen_zero_extend<mode>si2 (reg, operands[1]));
+	  operands[1] = gen_lowpart (<MODE>mode, reg);
+	}
+    }
+  if (MEM_P (operands[0]) && operands[1] != const0_rtx)
+    operands[1] = force_reg (<MODE>mode, operands[1]);
+})
 
-	      operands[1] = gen_lowpart (QImode, reg);
-	    }
-          if (GET_CODE (operands[0]) != REG)
-	    operands[1] = force_reg (QImode, operands[1]);
-        }
-")
-
-(define_insn "*movqi_internal"
-  [(set (match_operand:QI 0 "nonimmediate_operand" "=m,r,r,r,r")
-	(match_operand:QI 1 "general_operand"       "r,r,I,K,m"))]
-  ""
+(define_insn "*mov<mode>"
+  [(set (match_operand:I12 0 "nonimmediate_operand" "=m,r,r,r,r")
+	(match_operand:I12 1 "general_operand"      "rO,r,K,I,m"))]
+  "register_operand (operands[0], <MODE>mode)
+   || reg_or_0_operand (operands[1], <MODE>mode)"
   "@
-   l.sb\t%0,%1
+   l.s<sz>\t%0,%r1
    l.ori\t%0,%1,0
-   l.addi\t%0,r0,%1
    l.ori\t%0,r0,%1
-   l.lbz\t%0,%1"
-  [(set_attr "type" "store,add,add,logic,load")])
-
+   l.xori\t%0,r0,%1
+   l.l<sz>z\t%0,%1"
+  [(set_attr "type" "store,logic,logic,logic,load")])
 
 ;;
-;; movHI
+;; movSI
 ;;
-
-(define_expand "movhi"
-  [(set (match_operand:HI 0 "general_operand" "")
-	(match_operand:HI 1 "general_operand" ""))]
-  ""
-  "
-      if (can_create_pseudo_p())
-        {
-          if (GET_CODE (operands[1]) == CONST_INT)
-	    {
-	      rtx reg = gen_reg_rtx (SImode);
-
-	      emit_insn (gen_movsi (reg, operands[1]));
-	      operands[1] = gen_lowpart (HImode, reg);
-	    }
-	  else if (GET_CODE (operands[1]) == MEM && optimize > 0)
-	    {
-	      rtx reg = gen_reg_rtx (SImode);
-
-	      emit_insn (gen_rtx_SET (reg,
-				      gen_rtx_ZERO_EXTEND (SImode,
-					   	           operands[1])));
-	      operands[1] = gen_lowpart (HImode, reg);
-	    }
-          if (GET_CODE (operands[0]) != REG)
-	    operands[1] = force_reg (HImode, operands[1]);
-        }
-")
-
-(define_insn "*movhi_internal"
-  [(set (match_operand:HI 0 "nonimmediate_operand" "=m,r,r,r,r")
-	(match_operand:HI 1 "general_operand"       "r,r,I,K,m"))]
-  ""
-  "@
-   l.sh\t%0,%1
-   l.ori\t%0,%1,0
-   l.addi\t%0,r0,%1
-   l.ori\t%0,r0,%1
-   l.lhz\t%0,%1"
-  [(set_attr "type" "store,add,add,logic,load")])
 
 (define_expand "movsi"
   [(set (match_operand:SI 0 "general_operand" "")
@@ -255,24 +214,19 @@
   if (or1k_expand_move (SImode, operands)) DONE;
 })
 
-;;
-;; movSI
-;;
-
 (define_insn "*movsi_insn"
-  [(set (match_operand:SI 0 "nonimmediate_operand" "=r,r,r,r,r,m")
-        (match_operand:SI 1 "input_operand"       "I,K,M,r,m,r"))]
-  "(register_operand (operands[0], SImode)
-   || (register_operand (operands[1], SImode))
-   || (operands[1] == const0_rtx))"
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=m,r,r,r,r,r")
+        (match_operand:SI 1 "input_operand"        "rO,M,K,I,r,m"))]
+  "register_operand (operands[0], SImode)
+   || reg_or_0_operand (operands[1], SImode)"
   "@
-   l.addi\t%0,r0,%1
-   l.ori\t%0,r0,%1
+   l.sw\t%0,%r1
    l.movhi\t%0,hi(%1)
+   l.ori\t%0,r0,%1
+   l.xori\t%0,r0,%1
    l.ori\t%0,%1,0
-   l.lwz\t%0,%1
-   l.sw\t%0,%1"
-  [(set_attr "type" "add,load,store,add,logic,move")])
+   l.lwz\t%0,%1"
+  [(set_attr "type" "store,move,logic,logic,logic,load")])
 
 (define_insn "movsi_lo_sum"
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -619,7 +573,7 @@
    l.ori\t%0,%1,0
    l.lwz\t%0,%1
    l.sw\t%0,%1"
-  [(set_attr "type" "move,load,store")])
+  [(set_attr "type" "logic,load,store")])
 
 
 ;;
@@ -845,7 +799,8 @@
 
 (define_insn "negsi2"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(neg:SI (match_operand:SI 1 "register_operand" "r")))]
+	(neg:SI (match_operand:SI 1 "register_operand" "r")))
+   (clobber (reg:BI SR_CY_REG))]
   ""
   "l.sub\t%0,r0,%1"
   [(set_attr "type" "add")])
@@ -853,7 +808,8 @@
 (define_insn "addsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(plus:SI (match_operand:SI 1 "register_operand" "%r,r")
-		 (match_operand:SI 2 "reg_or_s16_operand" "r,I")))]
+		 (match_operand:SI 2 "reg_or_s16_operand" "r,I")))
+   (clobber (reg:BI SR_CY_REG))]
   ""
   "@
    l.add\t%0,%1,%2
@@ -863,7 +819,8 @@
 (define_insn "subsi3"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(minus:SI (match_operand:SI 1 "register_operand" "r")
-		  (match_operand:SI 2 "register_operand" "r")))]
+		  (match_operand:SI 2 "register_operand" "r")))
+   (clobber (reg:BI SR_CY_REG))]
   ""
   "l.sub\t%0,%1,%2"
   [(set_attr "type" "add")])
@@ -893,7 +850,8 @@
 (define_insn "udivsi3"
   [(set (match_operand:SI 0 "register_operand" "=r")
         (udiv:SI (match_operand:SI 1 "register_operand" "r")
-                 (match_operand:SI 2 "register_operand" "r")))]
+                 (match_operand:SI 2 "register_operand" "r")))
+   (clobber (reg:BI SR_CY_REG))]
   "TARGET_HARD_DIV"
   "l.divu\t%0,%1,%2"
   [(set_attr "type" "mul")])
@@ -1041,7 +999,8 @@
 (define_insn "set_got"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(unspec:SI [(const_int 0)] UNSPEC_SET_GOT))
-   (clobber (reg:SI 9))]
+   (clobber (reg:SI 9))
+   (clobber (reg:BI SR_CY_REG))]
   ""
 {
   if (TARGET_DELAY_ON)

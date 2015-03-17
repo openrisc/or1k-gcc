@@ -163,7 +163,7 @@ or1k_compute_frame_size ()
   unsigned int save_mask = 0;
   int save_size = 0;
 
-  for (int regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+  for (unsigned int regno = 1; regno <= OR1K_LAST_HGR_REGNUM; regno++)
     if (or1k_save_reg_p (regno))
       {
 	save_size += UNITS_PER_WORD;
@@ -824,21 +824,17 @@ or1k_print_operand_address (FILE *stream, machine_mode mode, rtx addr)
    @return  Non-zero (TRUE) if this register can be used as a base register,
             zero (FALSE) otherwise.                                           */
 /* -------------------------------------------------------------------------- */
-static bool
-or1k_regnum_ok_for_base_p (HOST_WIDE_INT  num,
-			   bool           strict)
+
+bool
+or1k_regnum_ok_for_base_p (unsigned num, bool strict)
 {
   if (strict)
-    {
-      return (num < FIRST_PSEUDO_REGISTER)
-	? (num > 0) && (num <= OR1K_LAST_INT_REG)
-	: (reg_renumber[num] > 0) && (reg_renumber[num] <= OR1K_LAST_INT_REG);
-    }
+    return (num < FIRST_PSEUDO_REGISTER
+	    ? IN_RANGE (num, 0, OR1K_LAST_HGR_REGNUM)
+	    : IN_RANGE (reg_renumber[num], 0, OR1K_LAST_HGR_REGNUM));
   else
-    {
-      return (num <= OR1K_LAST_INT_REG) || (num >= FIRST_PSEUDO_REGISTER);
-    }
-}	/* or1k_regnum_ok_for_base_p () */
+    return num <= OR1K_LAST_SGR_REGNUM || num >= FIRST_PSEUDO_REGISTER;
+}
 
 int
 or1k_legitimate_pic_operand_p (rtx x)
@@ -1133,57 +1129,6 @@ or1k_emit_move (rtx dest, rtx src)
 	  : emit_move_insn_1 (dest, src));
 
 }	/* or1k_emit_move () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Emit an instruction of the form (set TARGET (CODE OP0 OP1)).
-
-   @param[in] code    The code for the operation.
-   @param[in] target  Destination for the set operation.
-   @param[in] op0     First operand.
-   @param[in] op1     Second operand.                                         */
-/* -------------------------------------------------------------------------- */
-static void
-or1k_emit_binary (enum rtx_code  code,
-		  rtx            target,
-		  rtx            op0,
-		  rtx            op1)
-{
-  emit_insn (gen_rtx_SET (target,
-			  gen_rtx_fmt_ee (code, GET_MODE (target), op0, op1)));
-
-}	/* or1k_emit_binary () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Compute the result of an operation into a new register.
-
-   Compute ("code" "op0" "op1") and store the result in a new register of mode
-   "mode".
-
-   @param[in] mode  Mode of the result
-   @parma[in] code  RTX for the operation to perform
-   @param[in] op0   RTX for the first operand
-   @param[in] op1   RTX for the second operand
-   
-   @return  The RTX for the new register.                                     */
-/* -------------------------------------------------------------------------- */
-static rtx
-or1k_force_binary (enum machine_mode  mode,
-		   enum rtx_code      code,
-		   rtx                op0,
-		   rtx                op1)
-{
-  rtx  reg;
-
-  reg = gen_reg_rtx (mode);
-  or1k_emit_binary (code, reg, op0, op1);
-
-  return reg;
-
-}	/* or1k_force_binary () */
-
-
 /* ========================================================================== */
 /* Global support functions                                                   */
 
@@ -1288,7 +1233,7 @@ prologue_save_registers (unsigned int mask, rtx base, HOST_WIDE_INT off)
       prologue_save_reg (HARD_FRAME_POINTER_REGNUM, base, off);
     }
 
-  for (int regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+  for (unsigned regno = 1; regno <= OR1K_LAST_HGR_REGNUM; regno++)
     {
       if (regno == LINK_REGNUM || regno == HARD_FRAME_POINTER_REGNUM)
 	continue;
@@ -1452,7 +1397,7 @@ epilogue_load_registers (unsigned int mask, rtx base, HOST_WIDE_INT off,
 	epilogue_load_reg (HARD_FRAME_POINTER_REGNUM, base, off, dwarf);
     }
 
-  for (int regno = 0; regno <= OR1K_LAST_ACTUAL_REG; regno++)
+  for (unsigned int regno = 1; regno <= OR1K_LAST_HGR_REGNUM; regno++)
     {
       if (regno == LINK_REGNUM || regno == HARD_FRAME_POINTER_REGNUM)
 	continue;
@@ -2153,7 +2098,7 @@ or1k_trampoline_init (rtx   m_tramp,
 
   /* Get pointers in registers to the beginning and end of the code block.  */
   addr     = force_reg (Pmode, XEXP (m_tramp, 0));
-  end_addr = or1k_force_binary (Pmode, PLUS, addr, GEN_INT (end_addr_offset));
+  end_addr = force_reg (Pmode, plus_constant (Pmode, addr, end_addr_offset));
 
   /* Build up the code in TRAMPOLINE.
 

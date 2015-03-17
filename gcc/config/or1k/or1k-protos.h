@@ -22,6 +22,7 @@ along with GCC; see the file COPYING3.  If not see
 #define GCC_OR1K_PROTOS_H
 
 /* The following are for general support. */
+extern bool        or1k_regnum_ok_for_base_p (unsigned, bool);
 extern int         or1k_trampoline_code_size (void);
 extern void        or1k_output_opcode (FILE *);
 

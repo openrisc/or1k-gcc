@@ -178,18 +178,37 @@ Boston, MA 02111-1307, USA.  */
    
 /* Standard register usage.  */
 
+/* Register to use for pushing function arguments.  */
+#define STACK_POINTER_REGNUM		1
+
+/* Base register for access to local variables of the function.  */
+#define HARD_FRAME_POINTER_REGNUM	2
+
+/* TLS thread pointer register */
+#define THREAD_PTR_REGNUM		10
+
+/* Register in which static-chain is passed to a function.  */
+#define STATIC_CHAIN_REGNUM		11
+
+/* Register which may be clobbered while setting up the prologue.  */
+#define PROLOGUE_TMP			13
+
+/* Position Independent Code.  */
+#define PIC_OFFSET_TABLE_REGNUM		16
+
+/* Fake registers for the incoming argument pointer and soft frame pointer.  */
+#define ARG_POINTER_REGNUM		32
+#define FRAME_POINTER_REGNUM 		33
+
 /* Number of actual hardware registers.
    The hardware registers are assigned numbers for the compiler
    from 0 to just below FIRST_PSEUDO_REGISTER.
    All registers that the compiler knows about must be given numbers,
    even those that are not normally considered general registers.  */
 
-#define OR1K_LAST_ACTUAL_REG       31
-#define ARG_POINTER_REGNUM     (OR1K_LAST_ACTUAL_REG + 1)
-#define FRAME_POINTER_REGNUM   (ARG_POINTER_REGNUM + 1)
-#define OR1K_LAST_INT_REG      FRAME_POINTER_REGNUM
-#define OR1K_FLAGS_REG         (OR1K_LAST_INT_REG + 1)
-#define FIRST_PSEUDO_REGISTER  (OR1K_FLAGS_REG + 1)
+#define OR1K_LAST_HGR_REGNUM	31
+#define OR1K_LAST_SGR_REGNUM	FRAME_POINTER_REGNUM
+#define FIRST_PSEUDO_REGISTER	(SR_CY_REG + 1)
 
 /* 1 for registers that have pervasive standard uses
    and are not available for the register allocator.
@@ -200,7 +219,8 @@ Boston, MA 02111-1307, USA.  */
   1, 1, 0, 0, 0, 0, 0, 0, \
   0, 1, 1, 0, 0, 0, 0, 0, \
   1, 0, 0, 0, 0, 0, 0, 0, \
-  0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1 }
+  0, 0, 0, 0, 0, 0, 0, 0, \
+  1, 1, 1, 1 }
 
 /* 1 for registers not available across function calls.
    These must include the FIXED_REGISTERS and also any
@@ -215,7 +235,7 @@ Boston, MA 02111-1307, USA.  */
   1, 1, 1, 1, 1, 1, 0, 1, \
   1, 1, 0, 1, 0, 1, 0, 1, \
   0, 1, 0, 1, 0, 1, 0, 1, \
-  1, 1, 1 }
+  1, 1, 1, 1 }
 
 /* Return number of consecutive hard regs needed starting at reg REGNO
    to hold something of mode MODE.
@@ -305,21 +325,6 @@ Boston, MA 02111-1307, USA.  */
 		  This seems ad-hoc. Probably we need some experiments. */
 #define BRANCH_COST(speed_p, predictable_p)  4
 
-/* Specify the registers used for certain standard purposes.
-   The values of these macros are register numbers.  */
-
-/* Register to use for pushing function arguments.  */
-#define STACK_POINTER_REGNUM 1
-
-/* Base register for access to local variables of the function.  */
-#define HARD_FRAME_POINTER_REGNUM 2
-
-/* Register in which static-chain is passed to a function.  */
-
-#define STATIC_CHAIN_REGNUM 11
-
-#define PROLOGUE_TMP 13
-
 /* Register in which address to store a structure value
    is passed to a function.  */
 /*#define STRUCT_VALUE_REGNUM 0*/
@@ -394,8 +399,8 @@ enum reg_class
     { 0x00000000, 0x00000000 },		/* NO_REGS */			\
     { SIBCALL_REGS_MASK, 0x00000000 },	/* SIBCALL_REGS */		\
     { 0xffffffff, 0x00000003 },		/* GENERAL_REGS */		\
-    { 0x00000000, 0x00000004 },		/* FLAG_REGS */			\
-    { 0xffffffff, 0x00000007 }		/* ALL_REGS */			\
+    { 0x00000000, 0x0000000c },		/* FLAG_REGS */			\
+    { 0xffffffff, 0x0000000f }		/* ALL_REGS */			\
   }
 
 /* The same information, inverted:
@@ -404,7 +409,7 @@ enum reg_class
 
 #define REGNO_REG_CLASS(R)					\
   ((R) <= 31 && ((SIBCALL_REGS_MASK >> (R)) & 1) ? SIBCALL_REGS	\
-   : (R) <= OR1K_LAST_INT_REG ? GENERAL_REGS			\
+   : (R) <= OR1K_LAST_SGR_REGNUM ? GENERAL_REGS			\
    : (R) < FIRST_PSEUDO_REGISTER ? FLAG_REGS			\
    : ALL_REGS)
 
@@ -495,13 +500,6 @@ enum reg_class
 /* Return register */
 #define GP_ARG_RETURN  11 
 #define GP_ARG_RETURNH 12 
-
-/* TLS thread pointer register */
-#define THREAD_PTR_REGNUM 10
-
-/* Position Independent Code.  */
-
-#define PIC_OFFSET_TABLE_REGNUM 16
 
 /* A C expression that is nonzero if X is a legitimate immediate
    operand on the target machine when generating position independent code.
@@ -673,33 +671,11 @@ enum reg_class
    || GET_CODE (X) == HIGH)        
 
 /* A C expression which is nonzero if register number num is suitable for use
-   as a base register in operand addresses. Like TARGET_LEGITIMATE_ADDRESS_P,
-   this macro should also define a strict and a non-strict variant. Both
-   variants behave the same for hard register; for pseudos, the strict variant
-   will pass only those that have been allocated to a valid hard registers,
-   while the non-strict variant will pass all pseudos.
-
-   Compiler source files that want to use the strict variant of this and other
-   macros define the macro REG_OK_STRICT. You should use an #ifdef
-   REG_OK_STRICT conditional to define the strict variant in that case and the
-   non-strict variant otherwise.
-
-   JPB 29-Aug-10: This has been conflated with the old REG_OK_FOR_BASE_P
-                  function, which is no longer part of GCC.
-
-                  I'm not sure this is right. r0 can be a base register, just
-                  it can't get set by the user. */
+   as a base register in operand addresses.  */
 #ifdef REG_OK_STRICT
-#define REGNO_OK_FOR_BASE_P(num)					     \
-  (   ((0 < (num))             && ((num)             <= OR1K_LAST_INT_REG))  \
-   || ((0 < reg_renumber[num]) && (reg_renumber[num] <= OR1K_LAST_INT_REG)))
-
+#define REGNO_OK_FOR_BASE_P(num) or1k_regnum_ok_for_base_p ((num), true)
 #else
-/* Accept an int register or a pseudo reg.
-
-   JPB 1-Sep-10: Should this allow r0, if the strict version does not? */
-#define REGNO_OK_FOR_BASE_P(num) ((num) <= OR1K_LAST_INT_REG ||		\
-				  (num) >= FIRST_PSEUDO_REGISTER)
+#define REGNO_OK_FOR_BASE_P(num) or1k_regnum_ok_for_base_p ((num), false)
 #endif
 
 /* OR1K doesn't have any indexed addressing. */
@@ -785,7 +761,7 @@ enum reg_class
    "r8",   "r9", "r10", "r11", "r12", "r13", "r14", "r15",		\
    "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",		\
    "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31",		\
-   "argp", "frame", "F"}
+   "argp", "frame", "F", "CY" }
 
 
 /* -------------------------------------------------------------------------- */
