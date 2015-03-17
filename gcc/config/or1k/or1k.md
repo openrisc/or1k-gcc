@@ -1020,18 +1020,33 @@
   [(set_attr "type" "fp")])
 
 ;; The insn to set GOT.
-;; TODO: support for no-delay target
 (define_insn "set_got"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(unspec:SI [(const_int 0)] UNSPEC_SET_GOT))
-   (clobber (reg:SI 9))
-   (clobber (reg:SI 16))]
+   (clobber (reg:SI 9))]
   ""
-  "l.jal    \t8
- \tl.movhi  \tr16,gotpchi(_GLOBAL_OFFSET_TABLE_-4)
- \tl.ori    \tr16,r16,gotpclo(_GLOBAL_OFFSET_TABLE_+0)
- \tl.add    \tr16,r16,r9"
-  [(set_attr "length" "4")])
+{
+  if (TARGET_DELAY_ON)
+    return ("l.jal\t8\;"
+	    " l.movhi\t%0,gotpchi(_GLOBAL_OFFSET_TABLE_-4)\;"
+	    "l.ori\t%0,%0,gotpclo(_GLOBAL_OFFSET_TABLE_+0)\;"
+	    "l.add\t%0,%0,r9");
+  else if (TARGET_DELAY_OFF)
+    return ("l.jal\t4\;"
+	    "l.movhi\t%0,gotpchi(_GLOBAL_OFFSET_TABLE_)\;"
+	    "l.ori\t%0,%0,gotpclo(_GLOBAL_OFFSET_TABLE_+4)\;"
+	    "l.add\t%0,%0,r9");
+  else
+    return ("l.jal\t8\;"
+	    " l.nop\;"
+	    "l.movhi\t%0,gotpchi(_GLOBAL_OFFSET_TABLE_)\;"
+	    "l.ori\t%0,%0,gotpclo(_GLOBAL_OFFSET_TABLE_+4)\;"
+	    "l.add\t%0,%0,r9");
+}
+  [(set (attr "length")
+	(if_then_else (ne (symbol_ref "TARGET_DELAY_COMPAT") (const_int 0))
+	  (const_int 5)
+	  (const_int 4)))])
 
 (define_expand "atomic_compare_and_swap<mode>"
   [(match_operand:SI 0 "register_operand")   ;; bool output
