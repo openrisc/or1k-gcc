@@ -23,6 +23,7 @@ along with GCC; see the file COPYING3.  If not see
 
 /* The following are for general support. */
 extern int         or1k_trampoline_code_size (void);
+extern void        or1k_output_opcode (FILE *);
 
 /* The following are only needed when handling the machine definition. */
 #ifdef RTX_CODE

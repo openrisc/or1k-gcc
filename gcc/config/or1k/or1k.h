@@ -895,6 +895,9 @@ enum reg_class
 
 #define SUPPORTS_WEAK 1
 
+/* Prettify the assembly.  */
+#define ASM_OUTPUT_OPCODE(FILE, PTR)  or1k_output_opcode(FILE)
+
 /* This is how to output the definition of a user-level label named NAME,
    such as the label on a static function or variable NAME.  */
 #define ASM_OUTPUT_LABEL(FILE,NAME)					\

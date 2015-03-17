@@ -471,8 +471,22 @@ or1k_print_operand_punct_valid_p (unsigned char code)
   return code == '(';
 }
 
-/* Implement the TARGET_PRINT_OPERAND hook.  */
+/* Prettify the assembly.  Indicate an instruction is filling a delay slot
+   by indenting it one space.  */
 
+static bool or1k_indent_opcode;
+
+void
+or1k_output_opcode (FILE *stream)
+{
+  if (or1k_indent_opcode)
+    {
+      putc (' ', stream);
+      or1k_indent_opcode = false;
+    }
+}
+
+/* Implement the TARGET_PRINT_OPERAND hook.  */
 static void
 or1k_print_operand (FILE *stream, rtx x, int code)
 {
@@ -533,10 +547,13 @@ or1k_print_operand (FILE *stream, rtx x, int code)
       break;
 
     case '(':
+      /* Output a 'nop' if there is nothing for the delay slot.  Or remember
+	 to add a space at the beginning of the next insn to indicate that
+	 it is filling the delay slot.  */
       if (TARGET_DELAY_ON && dbr_sequence_length ())
-	fprintf (stream, "\t# delay slot filled");
+	or1k_indent_opcode = true;
       else if (!TARGET_DELAY_OFF)
-	fprintf (stream, "\n\tl.nop\t\t\t# nop delay slot");
+	fprintf (stream, "\n\t l.nop");
       break;
 
     case 0:
