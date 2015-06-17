@@ -1,6 +1,20 @@
+2015-06-17  Matthias Seidel  <github@mseidel.net>
+
+	* testsuite/gcc.target/or1k/or1k.exp
+	* testsuite/gcc.target/long-calls-1.c
+	* testsuite/gcc.target/long-calls-2.c
+	Added basic testsuite for or1k target testing the long-call
+	attributes and target
+
 2015-01-17  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
 
 	* config/or1k/or1k.md (cmpxchg_mask): Mask set register.
+
+2014-11-20  Matthias Seidel  <github@mseidel.net>
+
+	* config/or1k/or1k.c, or1k.h, or1k.md, or1k.opt, predicates.md:
+	Added attributes far/long_call/near as well as -mlong-calls target
+	working similarly to other archs
 
 2014-08-13  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
 
