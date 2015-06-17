@@ -3,6 +3,8 @@
 	* testsuite/gcc.target/or1k/or1k.exp
 	* testsuite/gcc.target/long-calls-1.c
 	* testsuite/gcc.target/long-calls-2.c
+	* testsuite/gcc.target/long-calls-3.c
+	* testsuite/gcc.target/long-calls-4.c
 	Added basic testsuite for or1k target testing the long-call
 	attributes and target
 
