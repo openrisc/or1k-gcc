@@ -1,4 +1,4 @@
-/* Check that long calls to different sections are not optimized to "l.jal".  */
+/* Check that long calls are not optimized to "l.jal" */
 /* { dg-do compile { target or1k-*-* } } */
 /* { dg-options "-O2 -mlong-calls" } */
 

@@ -16,7 +16,7 @@
 
 # GCC testsuite that uses the `dg.exp' driver.
 
-# Exit immediately if this isn't an ARM target.
+# Exit immediately if this isn't an OR1k target.
 if ![istarget or1k*-*-*] then {
   return
 }

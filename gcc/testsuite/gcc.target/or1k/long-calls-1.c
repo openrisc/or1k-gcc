@@ -1,4 +1,4 @@
-/* Check that long calls to different sections are not optimized to "l.jal" */
+/* Check that long calls are not optimized to "l.jal" */
 /* { dg-do compile { target or1k-*-* } } */
 /* { dg-options "-O2" } */
 /* This test expects that short calls are the default.  */
@@ -24,9 +24,9 @@
   const char *CALL_ATTRS call_##ID (void) { return ID () + 1; }
 
 #define DO_TESTS_SECTION(ID, TEST, TARGET_ATTRS)				\
-  TEST (ID##1, TARGET_ATTRS, )							\
+  TEST (ID##1, TARGET_ATTRS, )	/* ignore section tests
   TEST (ID##2, TARGET_ATTRS section (".test.a"), section (".test.b"))		\
-  TEST (ID##3, TARGET_ATTRS section (".test.c"), section (".test.c"))
+  TEST (ID##3, TARGET_ATTRS section (".test.c"), section (".test.c"))*/
 
 #define DO_TESTS_CALL_ATTR(ID, TEST, TARGET_ATTRS)				\
   DO_TESTS_SECTION (ID##none, TEST, TARGET_ATTRS)				\
