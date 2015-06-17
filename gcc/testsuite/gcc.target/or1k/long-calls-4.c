@@ -1,4 +1,4 @@
-/* Check that long value calls are not optimized to "l.jal" */
+/* Check that long void calls are not optimized to "l.jal" */
 /* { dg-do compile { target or1k-*-* } } */
 /* { dg-options "-O2 -mlong-calls" } */
 
@@ -9,16 +9,16 @@
 #define attr_near __attribute__((near))
 
 #define REMOTE_CALL(ID, TARGET_ATTRS)				\
-  const char *TARGET_ATTRS ID (void);						\
-  const char *call_##ID (void) { return ID () + 1; }
+  void TARGET_ATTRS ID (void);						\
+  void call_##ID (void) { ID (); }
 
 #define EXTERN_CALL(ID, TARGET_ATTRS)				\
-  const char *TARGET_ATTRS attr_noinline ID (void) { return #ID; }		\
-  const char *call_##ID (void) { return ID () + 1; }
+  void TARGET_ATTRS attr_noinline ID (void) { __asm__ __volatile__ ("l.nop"); }		\
+  void call_##ID (void) { ID (); }
 
 #define STATIC_CALL(ID, TARGET_ATTRS)				\
-  static const char *TARGET_ATTRS attr_noinline ID (void) { return #ID; }	\
-  const char *call_##ID (void) { return ID () + 1; }
+  static void TARGET_ATTRS attr_noinline ID (void) { __asm__ __volatile__ ("l.nop"); }	\
+  void call_##ID (void) { ID (); }
 
 
 #define DO_TESTS_CALL_ATTR(ID, TEST, TARGET_ATTRS)				\

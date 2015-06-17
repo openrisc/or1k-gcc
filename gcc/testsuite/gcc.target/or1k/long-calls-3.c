@@ -1,6 +1,8 @@
-/* Check that long value calls are not optimized to "l.jal" */
+/* Check that long void calls are not optimized to "l.jal" */
 /* { dg-do compile { target or1k-*-* } } */
-/* { dg-options "-O2 -mlong-calls" } */
+/* { dg-options "-O2" } */
+/* This test expects that short calls are the default.  */
+/* { dg-skip-if "-mlong-calls in use" { "*-*-*" } { "-mlong-calls" } { "" } } */
 
 #define attr_weak __attribute__((weak))
 #define attr_noinline __attribute__((noinline))
@@ -9,17 +11,16 @@
 #define attr_near __attribute__((near))
 
 #define REMOTE_CALL(ID, TARGET_ATTRS)				\
-  const char *TARGET_ATTRS ID (void);						\
-  const char *call_##ID (void) { return ID () + 1; }
+  void TARGET_ATTRS ID (void);						\
+  void call_##ID (void) { ID (); }
 
 #define EXTERN_CALL(ID, TARGET_ATTRS)				\
-  const char *TARGET_ATTRS attr_noinline ID (void) { return #ID; }		\
-  const char *call_##ID (void) { return ID () + 1; }
+  void TARGET_ATTRS attr_noinline ID (void) { __asm__ __volatile__ ("l.nop"); }		\
+  void call_##ID (void) { ID (); }
 
 #define STATIC_CALL(ID, TARGET_ATTRS)				\
-  static const char *TARGET_ATTRS attr_noinline ID (void) { return #ID; }	\
-  const char *call_##ID (void) { return ID () + 1; }
-
+  static void TARGET_ATTRS attr_noinline ID (void) { __asm__ __volatile__ ("l.nop"); }	\
+  void call_##ID (void) { ID (); }
 
 #define DO_TESTS_CALL_ATTR(ID, TEST, TARGET_ATTRS)				\
   TEST (ID##none, TARGET_ATTRS)				\
@@ -34,7 +35,7 @@ DO_TESTS_CALL_ATTR (static_, STATIC_CALL,)
 
 
 /* Calls to functions should honor the call type attribute,
- * with "long" being the default.
+ * with "short" being the default.
  * 
  * TODO:
  * TCL doesn't allow back references in look ahead patterns needed for
@@ -44,22 +45,22 @@ DO_TESTS_CALL_ATTR (static_, STATIC_CALL,)
  * Instead the test currently only checks for the absence of corresponding l.jal
  */
 
-/* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+remote_none" } } */
+/* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+remote_none" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+remote_long" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+remote_far" } } */
 /* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+remote_near" } } */
 
-/* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+strong_none" } } */
+/* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+strong_none" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+strong_long" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+strong_far" } } */
 /* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+strong_near" } } */
 
-/* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+weak_none" } } */
+/* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+weak_none" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+weak_long" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+weak_far" } } */
 /* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+weak_near" } } */
 
-/* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+static_none" } } */
+/* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+static_none" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+static_long" } } */
 /* { dg-final { scan-assembler-not "\[\\t \]+l\\.jal\[\\t \]+static_far" } } */
 /* { dg-final { scan-assembler "\[\\t \]+l\\.jal\[\\t \]+static_near" } } */
