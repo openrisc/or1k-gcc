@@ -1,6 +1,5 @@
 // PR c++/61566
 // { dg-do compile { target c++11 } }
-// { dg-options "-fabi-version=0" }
 
 struct function
 {
@@ -21,5 +20,5 @@ void bar ()
   c.foo (1);
 }
 
-// { dg-final { scan-assembler "_ZN8functionC1IZN1CIiE3fooIiEEvT_S_Ed_UlvE_EET_" } }
+// { dg-final { scan-assembler "_ZN8functionC1IZN1CIiE3fooIiEEvT_S_Ed_UlvE_EES4_" } }
 // { dg-final { scan-assembler-not "_ZZN1CIiE3fooIiEEvT_8functionEd_NKUlvE_clEv" } }

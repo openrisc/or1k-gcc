@@ -1,5 +1,5 @@
 /* Internal functions.
-   Copyright (C) 2011-2014 Free Software Foundation, Inc.
+   Copyright (C) 2011-2015 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -20,12 +20,7 @@ along with GCC; see the file COPYING3.  If not see
 #ifndef GCC_INTERNAL_FN_H
 #define GCC_INTERNAL_FN_H
 
-enum internal_fn {
-#define DEF_INTERNAL_FN(CODE, FLAGS, FNSPEC) IFN_##CODE,
-#include "internal-fn.def"
-#undef DEF_INTERNAL_FN
-  IFN_LAST
-};
+#include "coretypes.h"
 
 /* Initialize internal function tables.  */
 
@@ -62,6 +57,6 @@ internal_fn_fnspec (enum internal_fn fn)
   return internal_fn_fnspec_array[(int) fn];
 }
 
-extern void expand_internal_call (gimple);
+extern void expand_internal_call (gcall *);
 
 #endif

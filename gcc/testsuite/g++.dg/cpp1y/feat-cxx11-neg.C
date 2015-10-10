@@ -1,7 +1,6 @@
 // { dg-do compile { target c++11_only } }
-// { dg-options "-pedantic-errors" }
 
-// These *are* defined in C++14 onwards.
+// C++14 features:
 
 #ifndef __cpp_binary_literals
 #  error "__cpp_binary_literals" // { dg-error "error" }
@@ -23,6 +22,10 @@
 #  error "__cpp_return_type_deduction" // { dg-error "error" }
 #endif
 
+#ifndef __cpp_aggregate_nsdmi
+#  error "__cpp_aggregate_nsdmi" // { dg-error "error" }
+#endif
+
 #ifndef __cpp_variable_templates
 #  error "__cpp_variable_templates" // { dg-error "error" }
 #endif
@@ -31,10 +34,23 @@
 #  error "__cpp_digit_separators" // { dg-error "error" }
 #endif
 
-#ifndef __cpp_attribute_deprecated
-#  error "__cpp_attribute_deprecated" // { dg-error "error" }
+#ifndef __cpp_sized_deallocation
+#  error "__cpp_sized_deallocation" // { dg-error "error" }
 #endif
+
+//  Array TS features:
 
 #ifndef __cpp_runtime_arrays
 #  error "__cpp_runtime_arrays" // { dg-error "error" }
 #endif
+
+//  C++14 attributes:
+
+//  Attribute [[deprecated]] is allowed in C++11 as an extension (with pedwarn).
+//#ifdef __has_cpp_attribute
+//#  if __has_cpp_attribute(deprecated) == 201309
+//#    error "__has_cpp_attribute(deprecated)" // {  }
+//#  endif
+//#else
+//#  error "__has_cpp_attribute"
+//#endif

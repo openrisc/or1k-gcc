@@ -1,5 +1,5 @@
 /* Definitions for 64-bit PowerPC running FreeBSD using the ELF format
-   Copyright (C) 2012-2014 Free Software Foundation, Inc.
+   Copyright (C) 2012-2015 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -362,7 +362,8 @@ extern int dot_symbols;
 /* The default value isn't sufficient in 64-bit mode.  */
 #define STACK_CHECK_PROTECT (TARGET_64BIT ? 16 * 1024 : 12 * 1024)
 
-#define DBX_REGISTER_NUMBER(REGNO) rs6000_dbx_register_number (REGNO)
+/* Use standard DWARF numbering for DWARF debugging information.  */
+#define RS6000_USE_DWARF_NUMBERING
 
 /* PowerPC64 Linux word-aligns FP doubles when -malign-power is given.  */
 #undef  ADJUST_FIELD_ALIGN

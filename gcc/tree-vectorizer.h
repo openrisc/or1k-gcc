@@ -1,5 +1,5 @@
 /* Vectorizer
-   Copyright (C) 2003-2014 Free Software Foundation, Inc.
+   Copyright (C) 2003-2015 Free Software Foundation, Inc.
    Contributed by Dorit Naishlos <dorit@il.ibm.com>
 
 This file is part of GCC.
@@ -332,7 +332,7 @@ typedef struct _loop_vec_info {
   vec<gimple> reduction_chains;
 
   /* Hash table used to choose the best peeling option.  */
-  hash_table <peel_info_hasher> peeling_htab;
+  hash_table<peel_info_hasher> *peeling_htab;
 
   /* Cost data used by the target cost model.  */
   void *target_cost_data;
@@ -602,8 +602,10 @@ typedef struct _stmt_vec_info {
      of this stmt.  */
   vec<dr_p> same_align_refs;
 
-  /* Selected SIMD clone's function decl.  */
-  tree simd_clone_fndecl;
+  /* Selected SIMD clone's function info.  First vector element
+     is SIMD clone's function decl, followed by a pair of trees (base + step)
+     for linear arguments (pair of NULLs for other arguments).  */
+  vec<tree> simd_clone_info;
 
   /* Classify the def of this stmt.  */
   enum vect_def_type def_type;
@@ -677,7 +679,7 @@ typedef struct _stmt_vec_info {
 #define STMT_VINFO_RELATED_STMT(S)         (S)->related_stmt
 #define STMT_VINFO_PATTERN_DEF_SEQ(S)      (S)->pattern_def_seq
 #define STMT_VINFO_SAME_ALIGN_REFS(S)      (S)->same_align_refs
-#define STMT_VINFO_SIMD_CLONE_FNDECL(S)	   (S)->simd_clone_fndecl
+#define STMT_VINFO_SIMD_CLONE_INFO(S)	   (S)->simd_clone_info
 #define STMT_VINFO_DEF_TYPE(S)             (S)->def_type
 #define STMT_VINFO_GROUP_FIRST_ELEMENT(S)  (S)->first_element
 #define STMT_VINFO_GROUP_NEXT_ELEMENT(S)   (S)->next_element
@@ -958,7 +960,7 @@ known_alignment_for_access_p (struct data_reference *data_ref_info)
 static inline bool
 unlimited_cost_model (loop_p loop)
 {
-  if (loop != NULL && loop->force_vect
+  if (loop != NULL && loop->force_vectorize
       && flag_simd_cost_model != VECT_COST_MODEL_DEFAULT)
     return flag_simd_cost_model == VECT_COST_MODEL_UNLIMITED;
   return (flag_vect_cost_model == VECT_COST_MODEL_UNLIMITED);
@@ -1004,7 +1006,7 @@ extern bool supportable_narrowing_operation (enum tree_code, tree, tree,
 extern stmt_vec_info new_stmt_vec_info (gimple stmt, loop_vec_info,
                                         bb_vec_info);
 extern void free_stmt_vec_info (gimple stmt);
-extern tree vectorizable_function (gimple, tree, tree);
+extern tree vectorizable_function (gcall *, tree, tree);
 extern void vect_model_simple_cost (stmt_vec_info, int, enum vect_def_type *,
                                     stmt_vector_for_cost *,
 				    stmt_vector_for_cost *);
@@ -1040,7 +1042,8 @@ extern void vect_get_store_cost (struct data_reference *, int,
 extern bool vect_supportable_shift (enum tree_code, tree);
 extern void vect_get_vec_defs (tree, tree, gimple, vec<tree> *,
 			       vec<tree> *, slp_tree, int);
-extern tree vect_gen_perm_mask (tree, unsigned char *);
+extern tree vect_gen_perm_mask_any (tree, const unsigned char *);
+extern tree vect_gen_perm_mask_checked (tree, const unsigned char *);
 
 /* In tree-vect-data-refs.c.  */
 extern bool vect_can_force_dr_alignment_p (const_tree, unsigned int);
@@ -1098,10 +1101,12 @@ extern bool vectorizable_reduction (gimple, gimple_stmt_iterator *, gimple *,
 extern bool vectorizable_induction (gimple, gimple_stmt_iterator *, gimple *);
 extern tree get_initial_def_for_reduction (gimple, tree, tree *);
 extern int vect_min_worthwhile_factor (enum tree_code);
-extern int vect_get_known_peeling_cost (loop_vec_info, int, int *, int,
+extern int vect_get_known_peeling_cost (loop_vec_info, int, int *,
+					stmt_vector_for_cost *,
 					stmt_vector_for_cost *,
 					stmt_vector_for_cost *);
-extern int vect_get_single_scalar_iteration_cost (loop_vec_info);
+extern int vect_get_single_scalar_iteration_cost (loop_vec_info,
+						  stmt_vector_for_cost *);
 
 /* In tree-vect-slp.c.  */
 extern void vect_free_slp_instance (slp_instance);
@@ -1125,7 +1130,7 @@ extern void vect_slp_transform_bb (basic_block);
    Additional pattern recognition functions can (and will) be added
    in the future.  */
 typedef gimple (* vect_recog_func_ptr) (vec<gimple> *, tree *, tree *);
-#define NUM_PATTERNS 11
+#define NUM_PATTERNS 12
 void vect_pattern_recog (loop_vec_info, bb_vec_info);
 
 /* In tree-vectorizer.c.  */

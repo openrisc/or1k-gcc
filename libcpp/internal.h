@@ -1,5 +1,5 @@
 /* Part of CPP library.
-   Copyright (C) 1997-2014 Free Software Foundation, Inc.
+   Copyright (C) 1997-2015 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -421,6 +421,11 @@ struct cpp_reader
      macro invocation.  */
   source_location invocation_location;
 
+  /* This is the node representing the macro being expanded at
+     top-level.  The value of this data member is valid iff
+     in_macro_expansion_p() returns TRUE.  */
+  cpp_hashnode *top_most_macro_node;
+
   /* Nonzero if we are about to expand a macro.  Note that if we are
      really expanding a macro, the function macro_of_context returns
      the macro being expanded and this flag is set to false.  Client
@@ -616,7 +621,8 @@ extern bool _cpp_create_definition (cpp_reader *, cpp_hashnode *);
 extern void _cpp_pop_context (cpp_reader *);
 extern void _cpp_push_text_context (cpp_reader *, cpp_hashnode *,
 				    const unsigned char *, size_t);
-extern bool _cpp_save_parameter (cpp_reader *, cpp_macro *, cpp_hashnode *);
+extern bool _cpp_save_parameter (cpp_reader *, cpp_macro *, cpp_hashnode *,
+				 cpp_hashnode *);
 extern bool _cpp_arguments_ok (cpp_reader *, cpp_macro *, const cpp_hashnode *,
 			       unsigned int);
 extern const unsigned char *_cpp_builtin_macro_text (cpp_reader *,
@@ -665,6 +671,7 @@ extern bool _cpp_skip_block_comment (cpp_reader *);
 extern cpp_token *_cpp_temp_token (cpp_reader *);
 extern const cpp_token *_cpp_lex_token (cpp_reader *);
 extern cpp_token *_cpp_lex_direct (cpp_reader *);
+extern unsigned char *_cpp_spell_ident_ucns (unsigned char *, cpp_hashnode *);
 extern int _cpp_equiv_tokens (const cpp_token *, const cpp_token *);
 extern void _cpp_init_tokenrun (tokenrun *, unsigned int);
 extern cpp_hashnode *_cpp_lex_identifier (cpp_reader *, const char *);
@@ -701,7 +708,7 @@ extern void _cpp_preprocess_dir_only (cpp_reader *,
 				      const struct _cpp_dir_only_callbacks *);
 
 /* In traditional.c.  */
-extern bool _cpp_scan_out_logical_line (cpp_reader *, cpp_macro *);
+extern bool _cpp_scan_out_logical_line (cpp_reader *, cpp_macro *, bool);
 extern bool _cpp_read_logical_line_trad (cpp_reader *);
 extern void _cpp_overlay_buffer (cpp_reader *pfile, const unsigned char *,
 				 size_t);

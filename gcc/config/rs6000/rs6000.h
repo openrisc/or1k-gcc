@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler, for IBM RS/6000.
-   Copyright (C) 1992-2014 Free Software Foundation, Inc.
+   Copyright (C) 1992-2015 Free Software Foundation, Inc.
    Contributed by Richard Kenner (kenner@vlsi1.ultra.nyu.edu)
 
    This file is part of GCC.
@@ -733,7 +733,7 @@ extern unsigned char rs6000_recip_bits[];
 
 #define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)	\
   if (GET_MODE_CLASS (MODE) == MODE_INT		\
-      && GET_MODE_SIZE (MODE) < UNITS_PER_WORD) \
+      && GET_MODE_SIZE (MODE) < (TARGET_32BIT ? 4 : 8)) \
     (MODE) = TARGET_32BIT ? SImode : DImode;
 
 /* Define this if most significant bit is lowest numbered
@@ -820,14 +820,6 @@ extern unsigned char rs6000_recip_bits[];
    words.  */
 #define LONG_DOUBLE_TYPE_SIZE rs6000_long_double_type_size
 
-/* Define this to set long double type size to use in libgcc2.c, which can
-   not depend on target_flags.  */
-#ifdef __LONG_DOUBLE_128__
-#define LIBGCC2_LONG_DOUBLE_TYPE_SIZE 128
-#else
-#define LIBGCC2_LONG_DOUBLE_TYPE_SIZE 64
-#endif
-
 /* Work around rs6000_long_double_type_size dependency in ada/targtyps.c.  */
 #define WIDEST_HARDWARE_FP_SIZE 64
 
@@ -899,7 +891,8 @@ enum data_align { align_abi, align_opt, align_both };
    || (((MODE) == SFmode || (MODE) == DFmode || (MODE) == TFmode	\
 	|| (MODE) == SDmode || (MODE) == DDmode || (MODE) == TDmode)	\
        && (ALIGN) < 32)							\
-   || (VECTOR_MODE_P ((MODE)) && (((int)(ALIGN)) < VECTOR_ALIGN (MODE))))
+   || (!TARGET_EFFICIENT_UNALIGNED_VSX                                  \
+       && (VECTOR_MODE_P ((MODE)) && (((int)(ALIGN)) < VECTOR_ALIGN (MODE)))))
 
 
 /* Standard register usage.  */
@@ -955,31 +948,22 @@ enum data_align { align_abi, align_opt, align_both };
   ((r) >= 1200 ? ((r) - 1200 + (DWARF_FRAME_REGISTERS - 32)) : (r))
 
 /* Use standard DWARF numbering for DWARF debugging information.  */
-#define DBX_REGISTER_NUMBER(REGNO) rs6000_dbx_register_number (REGNO)
+#define DBX_REGISTER_NUMBER(REGNO) rs6000_dbx_register_number ((REGNO), 0)
 
 /* Use gcc hard register numbering for eh_frame.  */
-#define DWARF_FRAME_REGNUM(REGNO) \
-  (SPE_HIGH_REGNO_P (REGNO) ? ((REGNO) - FIRST_SPE_HIGH_REGNO + 1200) : (REGNO))
+#define DWARF_FRAME_REGNUM(REGNO) (REGNO)
 
 /* Map register numbers held in the call frame info that gcc has
    collected using DWARF_FRAME_REGNUM to those that should be output in
-   .debug_frame and .eh_frame.  We continue to use gcc hard reg numbers
-   for .eh_frame, but use the numbers mandated by the various ABIs for
-   .debug_frame.  rs6000_emit_prologue has translated any combination of
-   CR2, CR3, CR4 saves to a save of CR2.  The actual code emitted saves
-   the whole of CR, so we map CR2_REGNO to the DWARF reg for CR.  */
-#define DWARF2_FRAME_REG_OUT(REGNO, FOR_EH)	\
-  ((FOR_EH) ? (REGNO)				\
-   : (REGNO) == CR2_REGNO ? 64			\
-   : DBX_REGISTER_NUMBER (REGNO))
+   .debug_frame and .eh_frame.  */
+#define DWARF2_FRAME_REG_OUT(REGNO, FOR_EH) \
+  rs6000_dbx_register_number ((REGNO), (FOR_EH)? 2 : 1)
 
 /* 1 for registers that have pervasive standard uses
    and are not available for the register allocator.
 
    On RS/6000, r1 is used for the stack.  On Darwin, r2 is available
    as a local register; for all other OS's r2 is the TOC pointer.
-
-   cr5 is not supposed to be used.
 
    On System V implementations, r13 is fixed and not available for use.  */
 
@@ -988,7 +972,7 @@ enum data_align { align_abi, align_opt, align_both };
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
-   0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1,	   \
+   0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,	   \
    /* AltiVec registers.  */			   \
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
@@ -1058,7 +1042,8 @@ enum data_align { align_abi, align_opt, align_both };
 	fp13 - fp2	(not saved; incoming fp arg registers)
 	fp1		(not saved; return value)
 	fp31 - fp14	(saved; order given to save least number)
-	cr7, cr6	(not saved or special)
+	cr7, cr5	(not saved or special)
+	cr6		(not saved, but used for vector operations)
 	cr1		(not saved, but used for FP operations)
 	cr0		(not saved, but used for arithmetic operations)
 	cr4, cr3, cr2	(saved)
@@ -1071,7 +1056,7 @@ enum data_align { align_abi, align_opt, align_both };
 	r12		(not saved; if used for DImode or DFmode would use r13)
 	ctr		(not saved; when we have the choice ctr is better)
 	lr		(saved)
-	cr5, r1, r2, ap, ca (fixed)
+	r1, r2, ap, ca	(fixed)
 	v0 - v1		(not saved or used for anything)
 	v13 - v3	(not saved; incoming vector arg registers)
 	v2		(not saved; incoming vector arg reg; return value)
@@ -1109,14 +1094,14 @@ enum data_align { align_abi, align_opt, align_both };
    33,								\
    63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51,		\
    50, 49, 48, 47, 46,						\
-   75, 74, 69, 68, 72, 71, 70,					\
+   75, 73, 74, 69, 68, 72, 71, 70,				\
    MAYBE_R2_AVAILABLE						\
    9, 10, 8, 7, 6, 5, 4,					\
    3, EARLY_R12 11, 0,						\
    31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19,		\
    18, 17, 16, 15, 14, 13, LATE_R12				\
    66, 65,							\
-   73, 1, MAYBE_R2_FIXED 67, 76,				\
+   1, MAYBE_R2_FIXED 67, 76,					\
    /* AltiVec registers.  */					\
    77, 78,							\
    90, 89, 88, 87, 86, 85, 84, 83, 82, 81, 80,			\
@@ -1187,9 +1172,11 @@ enum data_align { align_abi, align_opt, align_both };
    && ((MODE) == VOIDmode || ALTIVEC_OR_VSX_VECTOR_MODE (MODE))		\
    && FP_REGNO_P (REGNO)						\
    ? V2DFmode								\
-   : ((MODE) == TFmode && FP_REGNO_P (REGNO))				\
+   : TARGET_E500_DOUBLE && ((MODE) == VOIDmode || (MODE) == DFmode)	\
    ? DFmode								\
-   : ((MODE) == TDmode && FP_REGNO_P (REGNO))				\
+   : !TARGET_E500_DOUBLE && (MODE) == TFmode && FP_REGNO_P (REGNO)	\
+   ? DFmode								\
+   : !TARGET_E500_DOUBLE && (MODE) == TDmode && FP_REGNO_P (REGNO)	\
    ? DImode								\
    : choose_hard_reg_mode ((REGNO), (NREGS), false))
 
@@ -2080,7 +2067,7 @@ do {									     \
    After generation of rtl, the compiler makes no further distinction
    between pointers and any other objects of this machine mode.  */
 extern unsigned rs6000_pmode;
-#define Pmode ((enum machine_mode)rs6000_pmode)
+#define Pmode ((machine_mode)rs6000_pmode)
 
 /* Supply definition of STACK_SIZE_MODE for allocate_dynamic_stack_space.  */
 #define STACK_SIZE_MODE (TARGET_32BIT ? SImode : DImode)
@@ -2587,9 +2574,8 @@ extern int frame_pointer_needed;
 /* Miscellaneous information.  */
 #define RS6000_BTC_SPR		0x01000000	/* function references SPRs.  */
 #define RS6000_BTC_VOID		0x02000000	/* function has no return value.  */
-#define RS6000_BTC_OVERLOADED	0x04000000	/* function is overloaded.  */
-#define RS6000_BTC_32BIT	0x08000000	/* function references SPRs.  */
-#define RS6000_BTC_64BIT	0x10000000	/* function references SPRs.  */
+#define RS6000_BTC_CR		0x04000000	/* function references a CR.  */
+#define RS6000_BTC_OVERLOADED	0x08000000	/* function is overloaded.  */
 #define RS6000_BTC_MISC_MASK	0x1f000000	/* Mask of the misc info.  */
 
 /* Convenience macros to document the instruction type.  */
@@ -2787,3 +2773,4 @@ enum rs6000_builtin_type_index
 extern GTY(()) tree rs6000_builtin_types[RS6000_BTI_MAX];
 extern GTY(()) tree rs6000_builtin_decls[RS6000_BUILTIN_COUNT];
 
+#define TARGET_SUPPORTS_WIDE_INT 1
