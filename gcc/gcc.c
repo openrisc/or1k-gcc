@@ -729,7 +729,7 @@ proper position among the other output files.  */
 #ifndef LINK_SSP_SPEC
 #ifdef TARGET_LIBC_PROVIDES_SSP
 #define LINK_SSP_SPEC "%{fstack-protector|fstack-protector-all" \
-		       "|fstack-protector-strong|fstack-protector-explicit:}"
+		       "|fstack-protector-strong|fstack-protector-explicit:-lssp_nonshared}"
 #else
 #define LINK_SSP_SPEC "%{fstack-protector|fstack-protector-all" \
 		       "|fstack-protector-strong|fstack-protector-explicit" \

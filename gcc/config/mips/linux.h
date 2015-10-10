@@ -31,6 +31,13 @@ along with GCC; see the file COPYING3.  If not see
 #undef UCLIBC_DYNAMIC_LINKER32
 #define UCLIBC_DYNAMIC_LINKER32 \
   "%{mnan=2008:/lib/ld-uClibc-mipsn8.so.0;:/lib/ld-uClibc.so.0}"
+
+#if TARGET_ENDIAN_DEFAULT == 0 /* LE */
+#define MUSL_DYNAMIC_LINKER_E "%{EB:;:el}"
+#else
+#define MUSL_DYNAMIC_LINKER_E "%{EL:el}"
+#endif
+#define MUSL_DYNAMIC_LINKER "/lib/ld-musl-mips" MUSL_DYNAMIC_LINKER_E "%{msoft-float:-sf}.so.1"
 #undef UCLIBC_DYNAMIC_LINKER64
 #define UCLIBC_DYNAMIC_LINKER64 \
   "%{mnan=2008:/lib/ld64-uClibc-mipsn8.so.0;:/lib/ld64-uClibc.so.0}"
