@@ -65,6 +65,7 @@ Boston, MA 02111-1307, USA.  */
 #define DRIVER_SELF_SPECS ""
 
 #define GLIBC_DYNAMIC_LINKER "/lib/ld.so.1"
+#define MUSL_DYNAMIC_LINKER "/lib/ld-musl-or1k.so.1"
 
 /* Define a set of Linux builtins. This is copied from linux.h. We can't
    include the whole file for now, because that causes configure to require ld
