@@ -1204,8 +1204,15 @@ check_dummy_characteristics (gfc_symbol *s1, gfc_symbol *s2,
 	  return false;
 	}
 
+      if (s1->as->corank != s2->as->corank)
+	{
+	  snprintf (errmsg, err_len, "Corank mismatch in argument '%s' (%i/%i)",
+		    s1->name, s1->as->corank, s2->as->corank);
+	  return false;
+	}
+
       if (s1->as->type == AS_EXPLICIT)
-	for (i = 0; i < s1->as->rank + s1->as->corank; i++)
+	for (i = 0; i < s1->as->rank + MAX (0, s1->as->corank-1); i++)
 	  {
 	    shape1 = gfc_subtract (gfc_copy_expr (s1->as->upper[i]),
 				  gfc_copy_expr (s1->as->lower[i]));
@@ -1219,8 +1226,12 @@ check_dummy_characteristics (gfc_symbol *s1, gfc_symbol *s2,
 	      case -1:
 	      case  1:
 	      case -3:
-		snprintf (errmsg, err_len, "Shape mismatch in dimension %i of "
-			  "argument '%s'", i + 1, s1->name);
+		if (i < s1->as->rank)
+		  snprintf (errmsg, err_len, "Shape mismatch in dimension %i of"
+			    " argument '%s'", i + 1, s1->name);
+		else
+		  snprintf (errmsg, err_len, "Shape mismatch in codimension %i "
+			    "of argument '%s'", i - s1->as->rank + 1, s1->name);
 		return false;
 
 	      case -2:
@@ -3675,6 +3686,8 @@ gfc_extend_expr (gfc_expr *e)
   gfc_user_op *uop;
   gfc_intrinsic_op i;
   const char *gname;
+  gfc_typebound_proc* tbo;
+  gfc_expr* tb_base;
 
   sym = NULL;
 
@@ -3691,6 +3704,48 @@ gfc_extend_expr (gfc_expr *e)
 
   i = fold_unary_intrinsic (e->value.op.op);
 
+  /* See if we find a matching type-bound operator.  */
+  if (i == INTRINSIC_USER)
+    tbo = matching_typebound_op (&tb_base, actual,
+				  i, e->value.op.uop->name, &gname);
+  else
+    switch (i)
+      {
+#define CHECK_OS_COMPARISON(comp) \
+  case INTRINSIC_##comp: \
+  case INTRINSIC_##comp##_OS: \
+    tbo = matching_typebound_op (&tb_base, actual, \
+				 INTRINSIC_##comp, NULL, &gname); \
+    if (!tbo) \
+      tbo = matching_typebound_op (&tb_base, actual, \
+				   INTRINSIC_##comp##_OS, NULL, &gname); \
+    break;
+	CHECK_OS_COMPARISON(EQ)
+	CHECK_OS_COMPARISON(NE)
+	CHECK_OS_COMPARISON(GT)
+	CHECK_OS_COMPARISON(GE)
+	CHECK_OS_COMPARISON(LT)
+	CHECK_OS_COMPARISON(LE)
+#undef CHECK_OS_COMPARISON
+
+	default:
+	  tbo = matching_typebound_op (&tb_base, actual, i, NULL, &gname);
+	  break;
+      }
+
+  /* If there is a matching typebound-operator, replace the expression with
+      a call to it and succeed.  */
+  if (tbo)
+    {
+      gcc_assert (tb_base);
+      build_compcall_for_operator (e, actual, tb_base, tbo, gname);
+
+      if (!gfc_resolve_expr (e))
+	return MATCH_ERROR;
+      else
+	return MATCH_YES;
+    }
+ 
   if (i == INTRINSIC_USER)
     {
       for (ns = gfc_current_ns; ns; ns = ns->parent)
@@ -3741,58 +3796,9 @@ gfc_extend_expr (gfc_expr *e)
 
   if (sym == NULL)
     {
-      gfc_typebound_proc* tbo;
-      gfc_expr* tb_base;
-
-      /* See if we find a matching type-bound operator.  */
-      if (i == INTRINSIC_USER)
-	tbo = matching_typebound_op (&tb_base, actual,
-				     i, e->value.op.uop->name, &gname);
-      else
-	switch (i)
-	  {
-#define CHECK_OS_COMPARISON(comp) \
-  case INTRINSIC_##comp: \
-  case INTRINSIC_##comp##_OS: \
-    tbo = matching_typebound_op (&tb_base, actual, \
-				 INTRINSIC_##comp, NULL, &gname); \
-    if (!tbo) \
-      tbo = matching_typebound_op (&tb_base, actual, \
-				   INTRINSIC_##comp##_OS, NULL, &gname); \
-    break;
-	    CHECK_OS_COMPARISON(EQ)
-	    CHECK_OS_COMPARISON(NE)
-	    CHECK_OS_COMPARISON(GT)
-	    CHECK_OS_COMPARISON(GE)
-	    CHECK_OS_COMPARISON(LT)
-	    CHECK_OS_COMPARISON(LE)
-#undef CHECK_OS_COMPARISON
-
-	    default:
-	      tbo = matching_typebound_op (&tb_base, actual, i, NULL, &gname);
-	      break;
-	  }
-
-      /* If there is a matching typebound-operator, replace the expression with
-	 a call to it and succeed.  */
-      if (tbo)
-	{
-	  bool result;
-
-	  gcc_assert (tb_base);
-	  build_compcall_for_operator (e, actual, tb_base, tbo, gname);
-
-	  result = gfc_resolve_expr (e);
-	  if (!result)
-	    return MATCH_ERROR;
-
-	  return MATCH_YES;
-	}
-
       /* Don't use gfc_free_actual_arglist().  */
       free (actual->next);
       free (actual);
-
       return MATCH_NO;
     }
 

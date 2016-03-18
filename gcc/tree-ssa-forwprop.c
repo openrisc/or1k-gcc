@@ -1534,7 +1534,8 @@ simplify_builtin_call (gimple_stmt_iterator *gsi_p, tree callee2)
 	  use_operand_p use_p;
 
 	  if (!tree_fits_shwi_p (val2)
-	      || !tree_fits_uhwi_p (len2))
+	      || !tree_fits_uhwi_p (len2)
+	      || compare_tree_int (len2, 1024) == 1)
 	    break;
 	  if (is_gimple_call (stmt1))
 	    {
@@ -1600,7 +1601,8 @@ simplify_builtin_call (gimple_stmt_iterator *gsi_p, tree callee2)
 	     is not constant, or is bigger than memcpy length, bail out.  */
 	  if (diff == NULL
 	      || !tree_fits_uhwi_p (diff)
-	      || tree_int_cst_lt (len1, diff))
+	      || tree_int_cst_lt (len1, diff)
+	      || compare_tree_int (diff, 1024) == 1)
 	    break;
 
 	  /* Use maximum of difference plus memset length and memcpy length
@@ -3034,16 +3036,12 @@ combine_conversions (gimple_stmt_iterator *gsi)
 	 (for integers).  Avoid this if the final type is a pointer since
 	 then we sometimes need the middle conversion.  Likewise if the
 	 final type has a precision not equal to the size of its mode.  */
-      if (((inter_int && inside_int)
-	   || (inter_float && inside_float)
-	   || (inter_vec && inside_vec))
+      if (((inter_int && inside_int) || (inter_float && inside_float))
+	  && (final_int || final_float)
 	  && inter_prec >= inside_prec
-	  && (inter_float || inter_vec
-	      || inter_unsignedp == inside_unsignedp)
+	  && (inter_float || inter_unsignedp == inside_unsignedp)
 	  && ! (final_prec != GET_MODE_PRECISION (TYPE_MODE (type))
-		&& TYPE_MODE (type) == TYPE_MODE (inter_type))
-	  && ! final_ptr
-	  && (! final_vec || inter_prec == inside_prec))
+		&& TYPE_MODE (type) == TYPE_MODE (inter_type)))
 	{
 	  gimple_assign_set_rhs1 (stmt, defop0);
 	  update_stmt (stmt);
@@ -3178,7 +3176,9 @@ simplify_vce (gimple_stmt_iterator *gsi)
 	  && (INTEGRAL_TYPE_P (TREE_TYPE (def_op))
 	      || POINTER_TYPE_P (TREE_TYPE (def_op)))
 	  && (TYPE_PRECISION (TREE_TYPE (op))
-	      == TYPE_PRECISION (TREE_TYPE (def_op))))
+	      == TYPE_PRECISION (TREE_TYPE (def_op)))
+	  && (TYPE_SIZE (TREE_TYPE (op))
+	      == TYPE_SIZE (TREE_TYPE (def_op))))
 	{
 	  TREE_OPERAND (gimple_assign_rhs1 (stmt), 0) = def_op;
 	  update_stmt (stmt);

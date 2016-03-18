@@ -4434,6 +4434,12 @@ rtx_moveable_p (rtx *loc, enum op_type type)
     case CLOBBER:
       return rtx_moveable_p (&SET_DEST (x), OP_OUT);
 
+    case UNSPEC_VOLATILE:
+      /* It is a bad idea to consider insns with with such rtl
+	 as moveable ones.  The insn scheduler also considers them as barrier
+	 for a reason.  */
+      return false;
+
     default:
       break;
     }
@@ -5347,7 +5353,18 @@ ira (FILE *f)
 	      ira_allocno_iterator ai;
 
 	      FOR_EACH_ALLOCNO (a, ai)
-		ALLOCNO_REGNO (a) = REGNO (ALLOCNO_EMIT_DATA (a)->reg);
+		{
+		  int old_regno = ALLOCNO_REGNO (a);
+		  int new_regno = REGNO (ALLOCNO_EMIT_DATA (a)->reg);
+
+		  ALLOCNO_REGNO (a) = new_regno;
+
+		  if (old_regno != new_regno)
+		    setup_reg_classes (new_regno, reg_preferred_class (old_regno),
+		                       reg_alternate_class (old_regno),
+		                       reg_allocno_class (old_regno));
+		}
+
 	    }
 	  else
 	    {

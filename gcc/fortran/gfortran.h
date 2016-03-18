@@ -2815,6 +2815,7 @@ bool verify_bind_c_derived_type (gfc_symbol *);
 bool verify_com_block_vars_c_interop (gfc_common_head *);
 gfc_symtree *generate_isocbinding_symbol (const char *, iso_c_binding_symbol,
 					  const char *, gfc_symtree *, bool);
+void gfc_save_symbol_data (gfc_symbol *);
 int gfc_get_sym_tree (const char *, gfc_namespace *, gfc_symtree **, bool);
 int gfc_get_ha_symbol (const char *, gfc_symbol **);
 int gfc_get_ha_sym_tree (const char *, gfc_symtree **);
@@ -3173,6 +3174,7 @@ bool gfc_is_class_scalar_expr (gfc_expr *);
 bool gfc_is_class_container_ref (gfc_expr *e);
 gfc_expr *gfc_class_initializer (gfc_typespec *, gfc_expr *);
 unsigned int gfc_hash_value (gfc_symbol *);
+gfc_expr *gfc_get_len_component (gfc_expr *e);
 bool gfc_build_class_symbol (gfc_typespec *, symbol_attribute *,
 			     gfc_array_spec **);
 gfc_symbol *gfc_find_derived_vtab (gfc_symbol *);

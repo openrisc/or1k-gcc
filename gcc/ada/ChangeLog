@@ -1,3 +1,46 @@
+2015-06-26  Release Manager
+
+	* GCC 4.9.3 released.
+
+2015-03-16  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc-interface/utils2.c (gnat_invariant_expr): Return null if the type
+	of the expression ends up being composite.
+
+2015-02-08  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc-interface/decl.c (is_cplusplus_method): Use Is_Primitive flag to
+	detect primitive operations of tagged and untagged types.
+
+2015-01-05  Eric Botcazou  <ebotcazou@adacore.com>
+
+	PR ada/64492
+	* gcc-interface/Makefile.in (../stamp-tools): Reinstate dropped code.
+
+2014-11-24  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc-interface/trans.c (push_range_check_info): Replace early test
+	with assertion.
+	(Raise_Error_to_gnu): Do not call push_range_check_info if the loop
+	stack is empty.
+	* gcc-interface/utils.c (convert_to_fat_pointer): Fix formatting.
+	* gcc-interface/utils2.c (gnat_invariant_expr): Deal with padded types
+	and revert latest change.
+
+2014-11-22  Eric Botcazou  <ebotcazou@adacore.com>
+
+	Backport from mainline
+	2014-11-20  Vincent Celier  <celier@adacore.com>
+
+	PR ada/47500
+	* back_end.adb (Scan_Back_End_Switches): Skip switch -G and
+	its argument.
+
+2014-11-11  Simon Wright  <simon@pushface.org>
+
+	PR ada/42978
+	* mlib-utl.adb (ar): Output the options passed to ranlib.
+
 2014-10-30  Release Manager
 
 	* GCC 4.9.2 released.

@@ -123,7 +123,7 @@
 ;; type "binary" insns have two input operands (1,2) and one output (0)
 
 (define_attr "type"
-  "move,unary,binary,shift,nullshift,compare,load,store,uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,fpload,fpstore,fpalu,fpcc,fpmulsgl,fpmuldbl,fpdivsgl,fpdivdbl,fpsqrtsgl,fpsqrtdbl,multi,milli,sh_func_adrs,parallel_branch,fpstore_load,store_fpload"
+  "move,unary,binary,shift,nullshift,compare,load,store,uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,fpload,fpstore,fpalu,fpcc,fpmulsgl,fpmuldbl,fpdivsgl,fpdivdbl,fpsqrtsgl,fpsqrtdbl,multi,milli,sh_func_adrs,parallel_branch,fpstore_load,store_fpload,trap"
   (const_string "binary"))
 
 (define_attr "pa_combine_type"
@@ -166,7 +166,7 @@
 ;; For conditional branches. Frame related instructions are not allowed
 ;; because they confuse the unwind support.
 (define_attr "in_branch_delay" "false,true"
-  (if_then_else (and (eq_attr "type" "!uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,multi,milli,sh_func_adrs,parallel_branch")
+  (if_then_else (and (eq_attr "type" "!uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,multi,milli,sh_func_adrs,parallel_branch,trap")
 		     (eq_attr "length" "4")
 		     (not (match_test "RTX_FRAME_RELATED_P (insn)")))
 		(const_string "true")
@@ -175,7 +175,7 @@
 ;; Disallow instructions which use the FPU since they will tie up the FPU
 ;; even if the instruction is nullified.
 (define_attr "in_nullified_branch_delay" "false,true"
-  (if_then_else (and (eq_attr "type" "!uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,multi,milli,sh_func_adrs,fpcc,fpalu,fpmulsgl,fpmuldbl,fpdivsgl,fpdivdbl,fpsqrtsgl,fpsqrtdbl,parallel_branch")
+  (if_then_else (and (eq_attr "type" "!uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,multi,milli,sh_func_adrs,fpcc,fpalu,fpmulsgl,fpmuldbl,fpdivsgl,fpdivdbl,fpsqrtsgl,fpsqrtdbl,parallel_branch,trap")
 		     (eq_attr "length" "4")
 		     (not (match_test "RTX_FRAME_RELATED_P (insn)")))
 		(const_string "true")
@@ -184,7 +184,7 @@
 ;; For calls and millicode calls.  Allow unconditional branches in the
 ;; delay slot.
 (define_attr "in_call_delay" "false,true"
-  (cond [(and (eq_attr "type" "!uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,multi,milli,sh_func_adrs,parallel_branch")
+  (cond [(and (eq_attr "type" "!uncond_branch,branch,cbranch,fbranch,call,sibcall,dyncall,multi,milli,sh_func_adrs,parallel_branch,trap")
 	      (eq_attr "length" "4")
 	      (not (match_test "RTX_FRAME_RELATED_P (insn)")))
 	   (const_string "true")
@@ -2677,6 +2677,29 @@
    && TARGET_64BIT
    && flag_pic"
   "addil LT'%G2,%1"
+  [(set_attr "type" "binary")
+   (set_attr "length" "4")])
+
+(define_insn ""
+ [(set (match_operand:SI 0 "register_operand" "=r")
+       (lo_sum:SI (match_operand:SI 1 "register_operand" "r")
+		  (unspec:SI [(match_operand 2 "" "")] UNSPEC_DLTIND14R)))]
+  "symbolic_operand (operands[2], Pmode)
+   && ! function_label_operand (operands[2], Pmode)
+   && flag_pic"
+  "ldo RT'%G2(%1),%0"
+  [(set_attr "type" "binary")
+   (set_attr "length" "4")])
+
+(define_insn ""
+ [(set (match_operand:DI 0 "register_operand" "=r")
+       (lo_sum:DI (match_operand:DI 1 "register_operand" "r")
+		  (unspec:DI [(match_operand 2 "" "")] UNSPEC_DLTIND14R)))]
+  "symbolic_operand (operands[2], Pmode)
+   && ! function_label_operand (operands[2], Pmode)
+   && TARGET_64BIT
+   && flag_pic"
+  "ldo RT'%G2(%1),%0"
   [(set_attr "type" "binary")
    (set_attr "length" "4")])
 
@@ -5330,6 +5353,15 @@
   {subio|subi,tsv} %1,%2,%0"
   [(set_attr "type" "binary,binary")
    (set_attr "length" "4,4")])
+
+;; Trap instructions.
+
+(define_insn "trap"
+  [(trap_if (const_int 1) (const_int 0))]
+  ""
+  "{addit|addi,tc},<> 1,%%r0,%%r0"
+  [(set_attr "type" "trap")
+   (set_attr "length" "4")])
 
 ;; Clobbering a "register_operand" instead of a match_scratch
 ;; in operand3 of millicode calls avoids spilling %r1 and
@@ -8926,14 +8958,14 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
 ;; strength reduction is used.  It is actually created when the instruction
 ;; combination phase combines the special loop test.  Since this insn
 ;; is both a jump insn and has an output, it must deal with its own
-;; reloads, hence the `m' constraints.  The `!' constraints direct reload
+;; reloads, hence the `Q' constraints.  The `!' constraints direct reload
 ;; to not choose the register alternatives in the event a reload is needed.
 (define_insn "decrement_and_branch_until_zero"
   [(set (pc)
 	(if_then_else
 	  (match_operator 2 "comparison_operator"
 	   [(plus:SI
-	      (match_operand:SI 0 "reg_before_reload_operand" "+!r,!*f,*m")
+	      (match_operand:SI 0 "reg_before_reload_operand" "+!r,!*f,*Q")
 	      (match_operand:SI 1 "int5_operand" "L,L,L"))
 	    (const_int 0)])
 	  (label_ref (match_operand 3 "" ""))
@@ -9022,7 +9054,7 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
 	   [(match_operand:SI 1 "register_operand" "r,r,r,r") (const_int 0)])
 	  (label_ref (match_operand 3 "" ""))
 	  (pc)))
-   (set (match_operand:SI 0 "reg_before_reload_operand" "=!r,!*f,*m,!*q")
+   (set (match_operand:SI 0 "reg_before_reload_operand" "=!r,!*f,*Q,!*q")
 	(match_dup 1))]
   ""
 "* return pa_output_movb (operands, insn, which_alternative, 0); "
@@ -9094,7 +9126,7 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
 	   [(match_operand:SI 1 "register_operand" "r,r,r,r") (const_int 0)])
 	  (pc)
 	  (label_ref (match_operand 3 "" ""))))
-   (set (match_operand:SI 0 "reg_before_reload_operand" "=!r,!*f,*m,!*q")
+   (set (match_operand:SI 0 "reg_before_reload_operand" "=!r,!*f,*Q,!*q")
 	(match_dup 1))]
   ""
 "* return pa_output_movb (operands, insn, which_alternative, 1); "

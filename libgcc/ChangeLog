@@ -1,3 +1,87 @@
+2015-06-26  Release Manager
+
+	* GCC 4.9.3 released.
+
+2015-02-26  Matthew Fortune  <matthew.fortune@imgtec.com>
+
+	Backported from mainline r213870
+
+	* config/mips/mips16.S: Do not build for soft-float.
+
+2015-02-17  Sandra Loosemore  <sandra@codesourcery.com>
+
+	Backported from mainline
+	2015-02-17  Sandra Loosemore  <sandra@codesourcery.com>
+
+	* config/arm/bpabi.S (test_div_by_zero): Make label names
+	consistent between thumb2 and arm mode cases.  Separate the
+	signed comparison on the high word of the numerator from the
+	unsigned comparison on the low word.
+	* config/arm/bpabi-v6m.S (test_div_by_zero): Similarly separate
+	signed comparison.
+
+2015-02-01  H.J. Lu  <hongjiu.lu@intel.com>
+
+	Backported from mainline
+	2015-01-24  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* config/i386/cpuinfo.c (processor_subtypes): Add
+	INTEL_COREI7_BROADWELL.
+	(get_intel_cpu): Support new Silvermont, Haswell and Broadwell
+	model numbers.
+
+2015-01-31  John David Anglin  <danglin@gcc.gnu.org>
+
+	* config/pa/linux-atomic.c (__kernel_cmpxchg2): Change declaration of
+	oldval and newval to const void *.  Fix typo.
+	(FETCH_AND_OP_2): Use __atomic_load_n to load value.
+	(FETCH_AND_OP_WORD): Likewise.
+	(OP_AND_FETCH_WORD): Likewise.
+	(COMPARE_AND_SWAP_2): Likewise.
+	(__sync_val_compare_and_swap_4): Likewise.
+	(__sync_lock_test_and_set_4): Likewise.
+	(SYNC_LOCK_RELEASE_2): Likewise.
+	Remove support for long long atomic operations.
+
+2015-01-20  Chung-Lin Tang  <cltang@codesourcery.com>
+
+	Backport from mainline
+	* config/nios2/linux-unwind.h (nios2_fallback_frame_state):
+	Update rt_sigframe format and address for current Nios II
+	Linux conventions.
+
+2014-12-09  John David Anglin  <danglin@gcc.gnu.org>
+
+	Backport from mainline
+	2014-11-24  John David Anglin  <danglin@gcc.gnu.org>
+
+	* config/pa/linux-atomic.c (ABORT_INSTRUCTION): Use __builtin_trap()
+	instead.
+
+	2014-11-21  Guy Martin  <gmsoft@tuxicoman.be>
+	            John David Anglin  <danglin@gcc.gnu.org>
+
+	* config/pa/linux-atomic.c (__kernel_cmpxchg2): New.
+	(FETCH_AND_OP_2): New.  Use for subword and double word operations.
+	(OP_AND_FETCH_2): Likewise.
+	(COMPARE_AND_SWAP_2): Likewise.
+	(SYNC_LOCK_TEST_AND_SET_2): Likewise.
+	(SYNC_LOCK_RELEASE_2): Likewise.
+	(SUBWORD_SYNC_OP): Remove.
+	(SUBWORD_VAL_CAS): Likewise.
+	(SUBWORD_BOOL_CAS): Likewise.
+	(FETCH_AND_OP_WORD): Update.
+	Consistently use signed types.
+
+2014-12-09  Oleg Endo  <olegendo@gcc.gnu.org>
+
+	Backport from mainline
+	2014-11-30  Oleg Endo  <olegendo@gcc.gnu.org>
+
+	PR target/55351
+	* config/sh/lib1funcs.S: Check value of __SHMEDIA__ instead of checking
+	whether it's defined.
+
 2014-10-30  Release Manager
 
 	* GCC 4.9.2 released.

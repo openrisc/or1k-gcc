@@ -4930,7 +4930,7 @@ equate_decl_number_to_die (tree decl, dw_die_ref decl_die)
 
 /* Return how many bits covers PIECE EXPR_LIST.  */
 
-static int
+static HOST_WIDE_INT
 decl_piece_bitsize (rtx piece)
 {
   int ret = (int) GET_MODE (piece);
@@ -4958,7 +4958,7 @@ decl_piece_varloc_ptr (rtx piece)
 static rtx
 decl_piece_node (rtx loc_note, HOST_WIDE_INT bitsize, rtx next)
 {
-  if (bitsize <= (int) MAX_MACHINE_MODE)
+  if (bitsize > 0 && bitsize <= (int) MAX_MACHINE_MODE)
     return alloc_EXPR_LIST (bitsize, loc_note, next);
   else
     return alloc_EXPR_LIST (0, gen_rtx_CONCAT (VOIDmode,
@@ -4997,7 +4997,7 @@ adjust_piece_list (rtx *dest, rtx *src, rtx *inner,
 		   HOST_WIDE_INT bitpos, HOST_WIDE_INT piece_bitpos,
 		   HOST_WIDE_INT bitsize, rtx loc_note)
 {
-  int diff;
+  HOST_WIDE_INT diff;
   bool copy = inner != NULL;
 
   if (copy)
@@ -5137,7 +5137,7 @@ add_var_loc_to_decl (tree decl, rtx loc_note, const char *label)
     {
       struct var_loc_node *last = temp->last, *unused = NULL;
       rtx *piece_loc = NULL, last_loc_note;
-      int piece_bitpos = 0;
+      HOST_WIDE_INT piece_bitpos = 0;
       if (last->next)
 	{
 	  last = last->next;
@@ -5148,7 +5148,7 @@ add_var_loc_to_decl (tree decl, rtx loc_note, const char *label)
 	  piece_loc = &last->loc;
 	  do
 	    {
-	      int cur_bitsize = decl_piece_bitsize (*piece_loc);
+	      HOST_WIDE_INT cur_bitsize = decl_piece_bitsize (*piece_loc);
 	      if (piece_bitpos + cur_bitsize > bitpos)
 		break;
 	      piece_bitpos += cur_bitsize;
@@ -13573,7 +13573,7 @@ static dw_loc_descr_ref
 dw_sra_loc_expr (tree decl, rtx loc)
 {
   rtx p;
-  unsigned int padsize = 0;
+  unsigned HOST_WIDE_INT padsize = 0;
   dw_loc_descr_ref descr, *descr_tail;
   unsigned HOST_WIDE_INT decl_size;
   rtx varloc;
@@ -13589,11 +13589,11 @@ dw_sra_loc_expr (tree decl, rtx loc)
 
   for (p = loc; p; p = XEXP (p, 1))
     {
-      unsigned int bitsize = decl_piece_bitsize (p);
+      unsigned HOST_WIDE_INT bitsize = decl_piece_bitsize (p);
       rtx loc_note = *decl_piece_varloc_ptr (p);
       dw_loc_descr_ref cur_descr;
       dw_loc_descr_ref *tail, last = NULL;
-      unsigned int opsize = 0;
+      unsigned HOST_WIDE_INT opsize = 0;
 
       if (loc_note == NULL_RTX
 	  || NOTE_VAR_LOCATION_LOC (loc_note) == NULL_RTX)
@@ -19196,6 +19196,9 @@ gen_producer_string (void)
       case OPT__sysroot_:
       case OPT_nostdinc:
       case OPT_nostdinc__:
+      case OPT_fpreprocessed:
+      case OPT_fltrans_output_list_:
+      case OPT_fresolution_:
 	/* Ignore these.  */
 	continue;
       default:
@@ -20094,6 +20097,28 @@ is_naming_typedef_decl (const_tree decl)
 	  && TYPE_NAME (TREE_TYPE (decl)) == decl
 	  && (TYPE_STUB_DECL (TREE_TYPE (decl))
 	      != TYPE_NAME (TREE_TYPE (decl))));
+}
+
+/* Looks up the DIE for a context.  */
+
+static inline dw_die_ref
+lookup_context_die (tree context)
+{
+  if (context)
+    {
+      /* Find die that represents this context.  */
+      if (TYPE_P (context))
+	{
+	  context = TYPE_MAIN_VARIANT (context);
+	  dw_die_ref ctx = lookup_type_die (context);
+	  if (!ctx)
+	    return NULL;
+	  return strip_naming_typedef (context, ctx);
+	}
+      else
+	return lookup_decl_die (context);
+    }
+  return comp_unit_die ();
 }
 
 /* Returns the DIE for a context.  */
@@ -23405,8 +23430,25 @@ resolve_addr (dw_die_ref die)
 		&& DECL_EXTERNAL (tdecl)
 		&& DECL_ABSTRACT_ORIGIN (tdecl) == NULL_TREE)
 	      {
-		force_decl_die (tdecl);
-		tdie = lookup_decl_die (tdecl);
+		dw_die_ref cdie;
+		if (!in_lto_p)
+		  {
+		    force_decl_die (tdecl);
+		    tdie = lookup_decl_die (tdecl);
+		  }
+		else if ((cdie = lookup_context_die (DECL_CONTEXT (tdecl))))
+		  {
+		    /* Creating a full DIE for tdecl is overly expensive and
+		       at this point even wrong when in the LTO phase
+		       as it can end up generating new type DIEs we didn't
+		       output and thus optimize_external_refs will crash.  */
+		    tdie = new_die (DW_TAG_subprogram, cdie, NULL_TREE);
+		    add_AT_flag (tdie, DW_AT_external, 1);
+		    add_AT_flag (tdie, DW_AT_declaration, 1);
+		    add_linkage_attr (tdie, tdecl);
+		    add_name_and_src_coords_attributes (tdie, tdecl);
+		    equate_decl_number_to_die (tdecl, tdie);
+		  }
 	      }
 	    if (tdie)
 	      {
@@ -23984,8 +24026,13 @@ dwarf2out_finish (const char *filename)
   gen_remaining_tmpl_value_param_die_attribute ();
 
   /* Add the name for the main input file now.  We delayed this from
-     dwarf2out_init to avoid complications with PCH.  */
-  add_name_attribute (comp_unit_die (), remap_debug_filename (filename));
+     dwarf2out_init to avoid complications with PCH.
+     For LTO produced units use a fixed artificial name to avoid
+     leaking tempfile names into the dwarf.  */
+  if (!in_lto_p)
+    add_name_attribute (comp_unit_die (), remap_debug_filename (filename));
+  else
+    add_name_attribute (comp_unit_die (), "<artificial>");
   if (!IS_ABSOLUTE_PATH (filename) || targetm.force_at_comp_dir)
     add_comp_dir_attribute (comp_unit_die ());
   else if (get_AT (comp_unit_die (), DW_AT_comp_dir) == NULL)

@@ -3085,7 +3085,7 @@ convert_arguments (location_t loc, vec<location_t> arg_loc, tree typelist,
 	  else
 	    error_at (loc, "too many arguments to function %qE", function);
 	  inform_declaration (fundecl);
-	  return parmnum;
+	  return error_args ? -1 : (int) parmnum;
 	}
 
       if (selector && argnum > 2)
@@ -6249,7 +6249,8 @@ store_init_value (location_t init_loc, tree decl, tree init, tree origtype)
     warning (OPT_Wtraditional, "traditional C rejects automatic "
 	     "aggregate initialization");
 
-  DECL_INITIAL (decl) = value;
+  if (value != error_mark_node || TREE_CODE (decl) != FUNCTION_DECL)
+    DECL_INITIAL (decl) = value;
 
   /* ANSI wants warnings about out-of-range constant initializers.  */
   STRIP_TYPE_NOPS (value);

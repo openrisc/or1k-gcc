@@ -7941,6 +7941,11 @@ fold_unary_loc (location_t loc, enum tree_code code, tree type, tree op0)
 	return fold_convert_loc (loc, type, op0);
       return NULL_TREE;
 
+    case NON_LVALUE_EXPR:
+      if (!maybe_lvalue_p (op0))
+	return fold_convert_loc (loc, type, op0);
+      return NULL_TREE;
+
     CASE_CONVERT:
     case FLOAT_EXPR:
     case FIX_TRUNC_EXPR:
@@ -8006,16 +8011,12 @@ fold_unary_loc (location_t loc, enum tree_code code, tree type, tree op0)
 	     (for integers).  Avoid this if the final type is a pointer since
 	     then we sometimes need the middle conversion.  Likewise if the
 	     final type has a precision not equal to the size of its mode.  */
-	  if (((inter_int && inside_int)
-	       || (inter_float && inside_float)
-	       || (inter_vec && inside_vec))
+	  if (((inter_int && inside_int) || (inter_float && inside_float))
+	      && (final_int || final_float)
 	      && inter_prec >= inside_prec
-	      && (inter_float || inter_vec
-		  || inter_unsignedp == inside_unsignedp)
+	      && (inter_float || inter_unsignedp == inside_unsignedp)
 	      && ! (final_prec != GET_MODE_PRECISION (TYPE_MODE (type))
-		    && TYPE_MODE (type) == TYPE_MODE (inter_type))
-	      && ! final_ptr
-	      && (! final_vec || inter_prec == inside_prec))
+		    && TYPE_MODE (type) == TYPE_MODE (inter_type)))
 	    return fold_build1_loc (loc, code, type, TREE_OPERAND (op0, 0));
 
 	  /* If we have a sign-extension of a zero-extended value, we can
@@ -8204,7 +8205,7 @@ fold_unary_loc (location_t loc, enum tree_code code, tree type, tree op0)
 	    }
 	}
 
-      tem = fold_convert_const (code, type, op0);
+      tem = fold_convert_const (code, type, arg0);
       return tem ? tem : NULL_TREE;
 
     case ADDR_SPACE_CONVERT_EXPR:
@@ -8324,9 +8325,14 @@ fold_unary_loc (location_t loc, enum tree_code code, tree type, tree op0)
 		    && integer_onep (TREE_OPERAND (arg0, 1)))
 		   || (TREE_CODE (arg0) == PLUS_EXPR
 		       && integer_all_onesp (TREE_OPERAND (arg0, 1)))))
-	return fold_build1_loc (loc, NEGATE_EXPR, type,
-			    fold_convert_loc (loc, type,
-					      TREE_OPERAND (arg0, 0)));
+	{
+	  /* Perform the negation in ARG0's type and only then convert
+	     to TYPE as to avoid introducing undefined behavior.  */
+	  tree t = fold_build1_loc (loc, NEGATE_EXPR,
+				    TREE_TYPE (TREE_OPERAND (arg0, 0)),
+				    TREE_OPERAND (arg0, 0));
+	  return fold_convert_loc (loc, type, t);
+	}
       /* Convert ~(X ^ Y) to ~X ^ Y or X ^ ~Y if ~X or ~Y simplify.  */
       else if (TREE_CODE (arg0) == BIT_XOR_EXPR
 	       && (tem = fold_unary_loc (loc, BIT_NOT_EXPR, type,
@@ -9024,7 +9030,8 @@ fold_comparison (location_t loc, enum tree_code code, tree type,
       /* If the constant operation overflowed this can be
 	 simplified as a comparison against INT_MAX/INT_MIN.  */
       if (TREE_CODE (lhs) == INTEGER_CST
-	  && TREE_OVERFLOW (lhs))
+	  && TREE_OVERFLOW (lhs)
+	  && !TYPE_OVERFLOW_WRAPS (TREE_TYPE (arg0)))
 	{
 	  int const1_sgn = tree_int_cst_sgn (const1);
 	  enum tree_code code2 = code;
@@ -10810,8 +10817,8 @@ fold_binary_loc (location_t loc,
 
 	      /* Don't introduce overflows through reassociation.  */
 	      if (!any_overflows
-		  && ((lit0 && TREE_OVERFLOW (lit0))
-		      || (minus_lit0 && TREE_OVERFLOW (minus_lit0))))
+		  && ((lit0 && TREE_OVERFLOW_P (lit0))
+		      || (minus_lit0 && TREE_OVERFLOW_P (minus_lit0))))
 		return NULL_TREE;
 
 	      if (minus_lit0)
@@ -13295,7 +13302,7 @@ fold_binary_loc (location_t loc,
 	  tree itype = TREE_TYPE (arg00);
 	  if (TREE_INT_CST_HIGH (arg01) == 0
 	      && TREE_INT_CST_LOW (arg01)
-		 == (unsigned HOST_WIDE_INT) (TYPE_PRECISION (itype) - 1))
+		 == (unsigned HOST_WIDE_INT) (element_precision (itype) - 1))
 	    {
 	      if (TYPE_UNSIGNED (itype))
 		{

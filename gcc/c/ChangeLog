@@ -1,3 +1,51 @@
+2015-06-26  Release Manager
+
+	* GCC 4.9.3 released.
+
+2015-06-03  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-03-19  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-decl.c (c_decl_attributes): Also add "omp declare target"
+	attribute for DECL_EXTERNAL VAR_DECLs.
+
+2015-02-27  Marek Polacek  <polacek@redhat.com>
+
+	Backported from mainline
+	2015-02-27  Marek Polacek  <polacek@redhat.com>
+
+	PR c/65228
+	* c-decl.c (start_decl): Return NULL_TREE if decl is an error node.
+
+2015-02-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/64824
+	* c-parser.c (c_parser_binary_expression): Fix OpenMP stack[sp].prec
+	check in the POP macro.
+
+	Backported from mainline
+	2015-02-04  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/64824
+	PR c/64868
+	* c-parser.c (c_parser_omp_atomic): Handle RDIV_EXPR.
+
+2015-02-01  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-01-27  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/64766
+	* c-typeck.c (store_init_value): Don't overwrite DECL_INITIAL
+	of FUNCTION_DECLs with error_mark_node.
+
+	2015-01-26  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/64778
+	* c-typeck.c (convert_arguments): Return -1 if there are
+	error_args, even if we've diagnosed too many arguments.
+
 2014-10-30  Release Manager
 
 	* GCC 4.9.2 released.

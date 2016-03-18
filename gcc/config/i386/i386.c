@@ -2934,6 +2934,17 @@ ix86_parse_stringop_strategy_string (char *strategy_str, bool is_memset)
           return;
         }
 
+      if ((stringop_alg) i == rep_prefix_8_byte
+	  && !TARGET_64BIT)
+	{
+	  /* rep; movq isn't available in 32-bit code.  */
+	  error ("stringop strategy name %s specified for option %s "
+		 "not supported for 32-bit code",
+                 alg_name,
+                 is_memset ? "-mmemset_strategy=" : "-mmemcpy_strategy=");
+	  return;
+	}
+
       input_ranges[n].max = maxs;
       input_ranges[n].alg = (stringop_alg) i;
       if (!strcmp (align, "align"))
@@ -5006,6 +5017,10 @@ ix86_in_large_data_p (tree exp)
   if (TREE_CODE (exp) == FUNCTION_DECL)
     return false;
 
+  /* Automatic variables are never large data.  */
+  if (TREE_CODE (exp) == VAR_DECL && !is_global_var (exp))
+    return false;
+
   if (TREE_CODE (exp) == VAR_DECL && DECL_SECTION_NAME (exp))
     {
       const char *section = TREE_STRING_POINTER (DECL_SECTION_NAME (exp));
@@ -5036,8 +5051,7 @@ ATTRIBUTE_UNUSED static section *
 x86_64_elf_select_section (tree decl, int reloc,
 			   unsigned HOST_WIDE_INT align)
 {
-  if ((ix86_cmodel == CM_MEDIUM || ix86_cmodel == CM_MEDIUM_PIC)
-      && ix86_in_large_data_p (decl))
+  if (ix86_in_large_data_p (decl))
     {
       const char *sname = NULL;
       unsigned int flags = SECTION_WRITE;
@@ -5123,8 +5137,7 @@ x86_64_elf_section_type_flags (tree decl, const char *name, int reloc)
 static void ATTRIBUTE_UNUSED
 x86_64_elf_unique_section (tree decl, int reloc)
 {
-  if ((ix86_cmodel == CM_MEDIUM || ix86_cmodel == CM_MEDIUM_PIC)
-      && ix86_in_large_data_p (decl))
+  if (ix86_in_large_data_p (decl))
     {
       const char *prefix = NULL;
       /* We only need to use .gnu.linkonce if we don't have COMDAT groups.  */
@@ -5193,7 +5206,7 @@ x86_elf_aligned_common (FILE *file,
 {
   if ((ix86_cmodel == CM_MEDIUM || ix86_cmodel == CM_MEDIUM_PIC)
       && size > (unsigned int)ix86_section_threshold)
-    fputs (".largecomm\t", file);
+    fputs ("\t.largecomm\t", file);
   else
     fputs (COMMON_ASM_OP, file);
   assemble_name (file, name);
@@ -5892,6 +5905,7 @@ bool
 ix86_function_arg_regno_p (int regno)
 {
   int i;
+  enum calling_abi call_abi;
   const int *parm_regs;
 
   if (!TARGET_64BIT)
@@ -5914,16 +5928,18 @@ ix86_function_arg_regno_p (int regno)
   /* TODO: The function should depend on current function ABI but
      builtins.c would need updating then. Therefore we use the
      default ABI.  */
+  call_abi = ix86_cfun_abi ();
 
   /* RAX is used as hidden argument to va_arg functions.  */
-  if (ix86_abi == SYSV_ABI && regno == AX_REG)
+  if (call_abi == SYSV_ABI && regno == AX_REG)
     return true;
 
-  if (ix86_abi == MS_ABI)
+  if (call_abi == MS_ABI)
     parm_regs = x86_64_ms_abi_int_parameter_registers;
   else
     parm_regs = x86_64_int_parameter_registers;
-  for (i = 0; i < (ix86_abi == MS_ABI
+
+  for (i = 0; i < (call_abi == MS_ABI
 		   ? X86_64_MS_REGPARM_MAX : X86_64_REGPARM_MAX); i++)
     if (regno == parm_regs[i])
       return true;
@@ -5972,7 +5988,18 @@ ix86_function_type_abi (const_tree fntype)
       if (abi == SYSV_ABI)
 	{
 	  if (lookup_attribute ("ms_abi", TYPE_ATTRIBUTES (fntype)))
-	    abi = MS_ABI;
+	    {
+	      if (TARGET_X32)
+		{
+		  static bool warned = false;
+		  if (!warned)
+		    {
+		      error ("X32 does not support ms_abi attribute");
+		      warned = true;
+		    }
+		}
+	      abi = MS_ABI;
+	    }
 	}
       else if (lookup_attribute ("sysv_abi", TYPE_ATTRIBUTES (fntype)))
 	abi = SYSV_ABI;
@@ -7756,7 +7783,7 @@ ix86_function_value_regno_p (const unsigned int regno)
       return true;
     case DI_REG:
     case SI_REG:
-      return TARGET_64BIT && ix86_abi != MS_ABI;
+      return TARGET_64BIT && ix86_cfun_abi () != MS_ABI;
 
       /* Complex values are returned in %st(0)/%st(1) pair.  */
     case ST0_REG:
@@ -7764,7 +7791,7 @@ ix86_function_value_regno_p (const unsigned int regno)
       /* TODO: The function should depend on current function ABI but
        builtins.c would need updating then. Therefore we use the
        default ABI.  */
-      if (TARGET_64BIT && ix86_abi == MS_ABI)
+      if (TARGET_64BIT && ix86_cfun_abi () == MS_ABI)
 	return false;
       return TARGET_FLOAT_RETURNS_IN_80387;
 
@@ -11063,6 +11090,10 @@ ix86_expand_prologue (void)
 	      if (sp_is_cfa_reg)
 		m->fs.cfa_offset += UNITS_PER_WORD;
 	      RTX_FRAME_RELATED_P (insn) = 1;
+	      add_reg_note (insn, REG_FRAME_RELATED_EXPR,
+			    gen_rtx_SET (VOIDmode, stack_pointer_rtx,
+					 plus_constant (Pmode, stack_pointer_rtx,
+							-UNITS_PER_WORD)));
 	    }
 	}
 
@@ -11076,6 +11107,10 @@ ix86_expand_prologue (void)
 	      if (sp_is_cfa_reg)
 		m->fs.cfa_offset += UNITS_PER_WORD;
 	      RTX_FRAME_RELATED_P (insn) = 1;
+	      add_reg_note (insn, REG_FRAME_RELATED_EXPR,
+			    gen_rtx_SET (VOIDmode, stack_pointer_rtx,
+					 plus_constant (Pmode, stack_pointer_rtx,
+							-UNITS_PER_WORD)));
 	    }
 	}
 
@@ -14503,7 +14538,7 @@ put_condition_code (enum rtx_code code, enum machine_mode mode, bool reverse,
       if (mode == CCmode)
 	suffix = "b";
       else if (mode == CCCmode)
-	suffix = "c";
+	suffix = fp ? "b" : "c";
       else
 	gcc_unreachable ();
       break;
@@ -14526,9 +14561,9 @@ put_condition_code (enum rtx_code code, enum machine_mode mode, bool reverse,
       break;
     case GEU:
       if (mode == CCmode)
-	suffix = fp ? "nb" : "ae";
+	suffix = "nb";
       else if (mode == CCCmode)
-	suffix = "nc";
+	suffix = fp ? "nb" : "nc";
       else
 	gcc_unreachable ();
       break;
@@ -22237,7 +22272,7 @@ ix86_split_long_move (rtx operands[])
 	 Do an lea to the last part and use only one colliding move.  */
       else if (collisions > 1)
 	{
-	  rtx base;
+	  rtx base, addr, tls_base = NULL_RTX;
 
 	  collisions = 1;
 
@@ -22248,10 +22283,50 @@ ix86_split_long_move (rtx operands[])
 	  if (GET_MODE (base) != Pmode)
 	    base = gen_rtx_REG (Pmode, REGNO (base));
 
-	  emit_insn (gen_rtx_SET (VOIDmode, base, XEXP (part[1][0], 0)));
+	  addr = XEXP (part[1][0], 0);
+	  if (TARGET_TLS_DIRECT_SEG_REFS)
+	    {
+	      struct ix86_address parts;
+	      int ok = ix86_decompose_address (addr, &parts);
+	      gcc_assert (ok);
+	      if (parts.seg == DEFAULT_TLS_SEG_REG)
+		{
+		  /* It is not valid to use %gs: or %fs: in
+		     lea though, so we need to remove it from the
+		     address used for lea and add it to each individual
+		     memory loads instead.  */
+		  addr = copy_rtx (addr);
+		  rtx *x = &addr;
+		  while (GET_CODE (*x) == PLUS)
+		    {
+		      for (i = 0; i < 2; i++)
+			{
+			  rtx u = XEXP (*x, i);
+			  if (GET_CODE (u) == ZERO_EXTEND)
+			    u = XEXP (u, 0);
+			  if (GET_CODE (u) == UNSPEC
+			      && XINT (u, 1) == UNSPEC_TP)
+			    {
+			      tls_base = XEXP (*x, i);
+			      *x = XEXP (*x, 1 - i);
+			      break;
+			    }
+			}
+		      if (tls_base)
+			break;
+		      x = &XEXP (*x, 0);
+		    }
+		  gcc_assert (tls_base);
+		}
+	    }
+	  emit_insn (gen_rtx_SET (VOIDmode, base, addr));
+	  if (tls_base)
+	    base = gen_rtx_PLUS (GET_MODE (base), base, tls_base);
 	  part[1][0] = replace_equiv_address (part[1][0], base);
 	  for (i = 1; i < nparts; i++)
 	    {
+	      if (tls_base)
+		base = copy_rtx (base);
 	      tmp = plus_constant (Pmode, base, UNITS_PER_WORD * i);
 	      part[1][i] = replace_equiv_address (part[1][i], tmp);
 	    }
@@ -22757,12 +22832,19 @@ counter_mode (rtx count_exp)
 static rtx
 ix86_copy_addr_to_reg (rtx addr)
 {
+  rtx reg;
   if (GET_MODE (addr) == Pmode || GET_MODE (addr) == VOIDmode)
-    return copy_addr_to_reg (addr);
+    {
+      reg = copy_addr_to_reg (addr);
+      REG_POINTER (reg) = 1;
+      return reg;
+    }
   else
     {
       gcc_assert (GET_MODE (addr) == DImode && Pmode == SImode);
-      return gen_rtx_SUBREG (SImode, copy_to_mode_reg (DImode, addr), 0);
+      reg = copy_to_mode_reg (DImode, addr);
+      REG_POINTER (reg) = 1;
+      return gen_rtx_SUBREG (SImode, reg, 0);
     }
 }
 
@@ -23653,6 +23735,8 @@ expand_set_or_movmem_prologue_epilogue_by_misaligned_moves (rtx destmem, rtx src
       *destptr = expand_simple_binop (GET_MODE (*destptr), PLUS, *destptr,
 				      GEN_INT (prolog_size),
 				      NULL_RTX, 1, OPTAB_DIRECT);
+      if (REG_P (*destptr) && REG_P (saveddest) && REG_POINTER (saveddest))
+	REG_POINTER (*destptr) = 1;
       *destptr = expand_simple_binop (GET_MODE (*destptr), AND, *destptr,
 				      GEN_INT (-desired_align),
 				      *destptr, 1, OPTAB_DIRECT);
@@ -23662,8 +23746,8 @@ expand_set_or_movmem_prologue_epilogue_by_misaligned_moves (rtx destmem, rtx src
 				       saveddest, 1, OPTAB_DIRECT);
       /* Adjust srcptr and count.  */
       if (!issetmem)
-	*srcptr = expand_simple_binop (GET_MODE (*srcptr), MINUS, *srcptr, saveddest,
-					*srcptr, 1, OPTAB_DIRECT);
+	*srcptr = expand_simple_binop (GET_MODE (*srcptr), MINUS, *srcptr,
+				       saveddest, *srcptr, 1, OPTAB_DIRECT);
       *count = expand_simple_binop (GET_MODE (*count), PLUS, *count,
 				    saveddest, *count, 1, OPTAB_DIRECT);
       /* We copied at most size + prolog_size.  */
@@ -23890,7 +23974,8 @@ decide_alg (HOST_WIDE_INT count, HOST_WIDE_INT expected_size,
 		      *noalign = alg_noalign;
 		      return alg;
 		    }
-		  break;
+		  else if (!any_alg_usable_p)
+		    break;
 		}
 	      else if (alg_usable_p (candidate, memset))
 		{
@@ -23928,9 +24013,10 @@ decide_alg (HOST_WIDE_INT count, HOST_WIDE_INT expected_size,
       alg = decide_alg (count, max / 2, min_size, max_size, memset,
 			zero_memset, dynamic_check, noalign);
       gcc_assert (*dynamic_check == -1);
-      gcc_assert (alg != libcall);
       if (TARGET_INLINE_STRINGOPS_DYNAMICALLY)
 	*dynamic_check = max;
+      else
+	gcc_assert (alg != libcall);
       return alg;
     }
   return (alg_usable_p (algs->unknown_size, memset)
@@ -32344,7 +32430,8 @@ fold_builtin_cpu (tree fndecl, tree *args)
     M_AMDFAM15H_BDVER3,
     M_AMDFAM15H_BDVER4,
     M_INTEL_COREI7_IVYBRIDGE,
-    M_INTEL_COREI7_HASWELL
+    M_INTEL_COREI7_HASWELL,
+    M_INTEL_COREI7_BROADWELL
   };
 
   static struct _arch_names_table
@@ -32365,6 +32452,7 @@ fold_builtin_cpu (tree fndecl, tree *args)
       {"sandybridge", M_INTEL_COREI7_SANDYBRIDGE},
       {"ivybridge", M_INTEL_COREI7_IVYBRIDGE},
       {"haswell", M_INTEL_COREI7_HASWELL},
+      {"broadwell", M_INTEL_COREI7_BROADWELL},
       {"bonnell", M_INTEL_BONNELL},
       {"silvermont", M_INTEL_SILVERMONT},
       {"amdfam10h", M_AMDFAM10H},
@@ -32720,6 +32808,15 @@ safe_vector_operand (rtx x, enum machine_mode mode)
 {
   if (x == const0_rtx)
     x = CONST0_RTX (mode);
+  return x;
+}
+
+/* Fixup modeless constants to fit required mode.  */
+static rtx
+fixup_modeless_constant (rtx x, machine_mode mode)
+{
+  if (GET_MODE (x) == VOIDmode)
+    x = convert_to_mode (mode, x, 1);
   return x;
 }
 
@@ -34083,6 +34180,8 @@ ix86_expand_args_builtin (const struct builtin_description *d,
 	  if (memory_operand (op, mode))
 	    num_memory++;
 
+	  op = fixup_modeless_constant (op, mode);
+
 	  if (GET_MODE (op) == mode || GET_MODE (op) == VOIDmode)
 	    {
 	      if (optimize || !match || num_memory > 1)
@@ -34450,6 +34549,8 @@ ix86_expand_round_builtin (const struct builtin_description *d,
 	  if (VECTOR_MODE_P (mode))
 	    op = safe_vector_operand (op, mode);
 
+	  op = fixup_modeless_constant (op, mode);
+
 	  if (GET_MODE (op) == mode || GET_MODE (op) == VOIDmode)
 	    {
 	      if (optimize || !match)
@@ -34795,6 +34896,8 @@ ix86_expand_special_args_builtin (const struct builtin_description *d,
 	      /* This must be register.  */
 	      if (VECTOR_MODE_P (mode))
 		op = safe_vector_operand (op, mode);
+
+	      op = fixup_modeless_constant (op, mode);
 
 	      if (GET_MODE (op) == mode || GET_MODE (op) == VOIDmode)
 		op = copy_to_mode_reg (mode, op);
@@ -35822,6 +35925,9 @@ addcarryx:
 	op1 = copy_to_mode_reg (Pmode, op1);
       if (!insn_data[icode].operand[3].predicate (op2, mode2))
 	op2 = copy_to_mode_reg (mode2, op2);
+
+      op3 = fixup_modeless_constant (op3, mode3);
+
       if (GET_MODE (op3) == mode3 || GET_MODE (op3) == VOIDmode)
 	{
 	  if (!insn_data[icode].operand[4].predicate (op3, mode3))
@@ -35963,6 +36069,8 @@ addcarryx:
       if (!insn_data[icode].operand[0].predicate (op0, Pmode))
 	op0 = copy_to_mode_reg (Pmode, op0);
 
+      op1 = fixup_modeless_constant (op1, mode1);
+
       if (GET_MODE (op1) == mode1 || GET_MODE (op1) == VOIDmode)
 	{
 	  if (!insn_data[icode].operand[1].predicate (op1, mode1))
@@ -36008,6 +36116,8 @@ addcarryx:
       mode1 = insn_data[icode].operand[1].mode;
       mode3 = insn_data[icode].operand[3].mode;
       mode4 = insn_data[icode].operand[4].mode;
+
+      op0 = fixup_modeless_constant (op0, mode0);
 
       if (GET_MODE (op0) == mode0
 	  || (GET_MODE (op0) == VOIDmode && op0 != constm1_rtx))
@@ -41076,9 +41186,7 @@ ix86_encode_section_info (tree decl, rtx rtl, int first)
 {
   default_encode_section_info (decl, rtl, first);
 
-  if (TREE_CODE (decl) == VAR_DECL
-      && (TREE_STATIC (decl) || DECL_EXTERNAL (decl))
-      && ix86_in_large_data_p (decl))
+  if (ix86_in_large_data_p (decl))
     SYMBOL_REF_FLAGS (XEXP (rtl, 0)) |= SYMBOL_FLAG_FAR_ADDR;
 }
 

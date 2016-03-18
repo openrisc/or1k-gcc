@@ -1629,6 +1629,9 @@ force_paren_expr (tree expr)
 	  tree type = unlowered_expr_type (expr);
 	  bool rval = !!(kind & clk_rvalueref);
 	  type = cp_build_reference_type (type, rval);
+	  /* This inhibits warnings in, eg, cxx_mark_addressable
+	     (c++/60955).  */
+	  warning_sentinel s (extra_warnings);
 	  expr = build_static_cast (type, expr, tf_error);
 	  if (expr != error_mark_node)
 	    REF_PARENTHESIZED_P (expr) = true;
@@ -3800,6 +3803,14 @@ finish_bases (tree type, bool direct)
 tree
 finish_offsetof (tree expr)
 {
+  /* If we're processing a template, we can't finish the semantics yet.
+     Otherwise we can fold the entire expression now.  */
+  if (processing_template_decl)
+    {
+      expr = build1 (OFFSETOF_EXPR, size_type_node, expr);
+      return expr;
+    }
+
   if (TREE_CODE (expr) == PSEUDO_DTOR_EXPR)
     {
       error ("cannot apply %<offsetof%> to destructor %<~%T%>",

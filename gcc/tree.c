@@ -1120,7 +1120,7 @@ int_cst_hash_hash (const void *x)
   const_tree const t = (const_tree) x;
 
   return (TREE_INT_CST_HIGH (t) ^ TREE_INT_CST_LOW (t)
-	  ^ htab_hash_pointer (TREE_TYPE (t)));
+	  ^ TYPE_UID (TREE_TYPE (t)));
 }
 
 /* Return nonzero if the value represented by *X (an INTEGER_CST tree node)
@@ -6215,8 +6215,11 @@ build_qualified_type (tree type, int type_quals)
       else if (TYPE_CANONICAL (type) != type)
 	/* Build the underlying canonical type, since it is different
 	   from TYPE. */
-	TYPE_CANONICAL (t) = build_qualified_type (TYPE_CANONICAL (type),
-						   type_quals);
+	{
+	  tree c = build_qualified_type (TYPE_CANONICAL (type),
+					 type_quals);
+	  TYPE_CANONICAL (t) = TYPE_CANONICAL (c);
+	}
       else
 	/* T is its own canonical type. */
 	TYPE_CANONICAL (t) = t;

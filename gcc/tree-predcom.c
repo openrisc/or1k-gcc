@@ -1391,8 +1391,8 @@ ref_at_iteration (data_reference_p dr, int iter, gimple_seq *stmts)
     off = size_binop (PLUS_EXPR, off,
 		      size_binop (MULT_EXPR, DR_STEP (dr), ssize_int (iter)));
   tree addr = fold_build_pointer_plus (DR_BASE_ADDRESS (dr), off);
-  addr = force_gimple_operand_1 (addr, stmts, is_gimple_mem_ref_addr,
-				 NULL_TREE);
+  addr = force_gimple_operand_1 (unshare_expr (addr), stmts,
+				 is_gimple_mem_ref_addr, NULL_TREE);
   tree alias_ptr = fold_convert (reference_alias_ptr_type (DR_REF (dr)), coff);
   /* While data-ref analysis punts on bit offsets it still handles
      bitfield accesses at byte boundaries.  Cope with that.  Note that
@@ -1715,9 +1715,8 @@ execute_pred_commoning_chain (struct loop *loop, chain_p chain,
   if (chain->combined)
     {
       /* For combined chains, just remove the statements that are used to
-	 compute the values of the expression (except for the root one).  */
-      for (i = 1; chain->refs.iterate (i, &a); i++)
-	remove_stmt (a->stmt);
+	 compute the values of the expression (except for the root one).
+	 We delay this until after all chains are processed.  */
     }
   else
     {
@@ -1746,8 +1745,20 @@ determine_unroll_factor (vec<chain_p> chains)
 
   FOR_EACH_VEC_ELT (chains, i, chain)
     {
-      if (chain->type == CT_INVARIANT || chain->combined)
+      if (chain->type == CT_INVARIANT)
 	continue;
+
+      if (chain->combined)
+	{
+	  /* For combined chains, we can't handle unrolling if we replace
+	     looparound PHIs.  */
+	  dref a;
+	  unsigned j;
+	  for (j = 1; chain->refs.iterate (j, &a); j++)
+	    if (gimple_code (a->stmt) == GIMPLE_PHI)
+	      return 1;
+	  continue;
+	}
 
       /* The best unroll factor for this chain is equal to the number of
 	 temporary variables that we create for it.  */
@@ -1779,6 +1790,21 @@ execute_pred_commoning (struct loop *loop, vec<chain_p> chains,
 	execute_load_motion (loop, chain, tmp_vars);
       else
 	execute_pred_commoning_chain (loop, chain, tmp_vars);
+    }
+
+  FOR_EACH_VEC_ELT (chains, i, chain)
+    {
+      if (chain->type == CT_INVARIANT)
+	;
+      else if (chain->combined)
+	{
+	  /* For combined chains, just remove the statements that are used to
+	     compute the values of the expression (except for the root one).  */
+	  dref a;
+	  unsigned j;
+	  for (j = 1; chain->refs.iterate (j, &a); j++)
+	    remove_stmt (a->stmt);
+	}
     }
 
   update_ssa (TODO_update_ssa_only_virtuals);

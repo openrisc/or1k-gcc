@@ -1,3 +1,190 @@
+2015-06-26  Release Manager
+
+	* GCC 4.9.3 released.
+
+2015-06-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* gfortranspec.c: Update displayed copyright years.
+
+2015-06-03  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-03-30  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/65597
+	* trans-openmp.c (gfc_trans_omp_do): For !simple simd with explicit
+	linear clause for the iterator set OMP_CLAUSE_LINEAR_NO_COPYIN.
+	For implcitly added !simple OMP_CLAUSE_LINEAR set it too.  Use step 1
+	instead of the original step on the new iterator - count.
+
+2015-04-14  Mikael Morin  <mikael@gcc.gnu.org>
+
+	PR fortran/56674
+	PR fortran/58813
+	PR fortran/59016
+	PR fortran/59024
+	* symbol.c (save_symbol_data, gfc_save_symbol_data): Rename the
+	former to the latter and make it non-static.  Update callers.
+	* gfortran.h (gfc_save_symbol_data): New prototype.
+	* decl.c (gfc_match_decl_type_spec): Call 'gfc_save_symbol_data'
+	before modifying symbols 'sym' and 'dt_sym'.
+
+2015-03-23  Andre Vehreschild  <vehre@gmx.de>
+	    Janus Weil  <janus@gcc.gnu.org>
+
+	Backported from mainline
+	PR fortran/60255
+	Initial patch version: Janus Weil
+	* class.c (gfc_get_len_component): New.
+	(gfc_build_class_symbol): Add _len component to unlimited
+	polymorphic entities.
+	(find_intrinsic_vtab): Removed emitting of error message.
+	* gfortran.h: Added prototype for gfc_get_len_component.
+	* simplify.c (gfc_simplify_len): Use _len component where
+	available.
+	* trans-expr.c (gfc_class_len_get): New.
+	(gfc_conv_intrinsic_to_class): Add handling for deferred
+	character arrays.
+	(gfc_conv_structure): Treat _len component correctly.
+	(gfc_conv_expr): Prevent bind_c handling when not required.
+	(gfc_trans_pointer_assignment): Propagate _len component.
+	* trans-stmt.c (class_has_len_component): New.
+	(trans_associate_var): _len component treatement for associate
+	context.
+	(gfc_trans_allocate): Same as for trans_associate_var()
+	* trans.h: Add prototype for gfc_class_len_get.
+
+2015-03-21  Mikael Morin  <mikael@gcc.gnu.org>
+
+	PR fortran/61138
+	* trans-expr.c (gfc_trans_pointer_assignment): Clear DESCRIPTOR_ONLY
+	field before reusing LSE.
+
+2015-03-19  Paul Thomas  <pault@gcc.gnu.org>
+
+	Backport from mainline
+	PR fortran/59198
+	* trans-types.c (gfc_get_derived_type): If an abstract derived
+	type with procedure pointer components has no other type of
+	component, return the backend_decl. Otherwise build the
+	components if any of the non-procedure pointer components have
+	no backend_decl.
+
+2015-03-12  Mikael Morin  <mikael@gcc.gnu.org>
+
+	PR fortran/60898
+	* resolve.c (resolve_symbol): Check that the symbol found by
+	name lookup really is the current symbol being resolved.
+
+2015-03-10  Paul Thomas  <pault@gcc.gnu.org>
+
+	Backported from mainline
+	PR fortran/65024
+	* trans-expr.c (gfc_conv_component_ref): If the component
+	backend declaration is missing and the derived type symbol is
+	available in the reference, call gfc_build_derived_type.
+
+2015-02-13  Mikael Morin  <mikael@gcc.gnu.org>
+
+	PR fortran/63744
+	* module.c (check_for_ambiguous): Change argument type
+	from gfc_symbol to gfc_symtree.  Check local (symtree) name
+	instead of original (symbol) name.
+	(read_module): Update caller.
+
+2015-02-12  Paul Thomas  <pault@gcc.gnu.org>
+
+	Backported from mainline
+	2015-02-12  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/64932
+	* trans-stmt.c (gfc_trans_deallocate): If a component array
+	expression is not a descriptor type and it is a derived type
+	that has allocatable components and is not finalizable, then
+	deallocate the allocatable components.
+
+2015-02-03  Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	* intrinsic.texi (CO_ASSOCIATED): c_prt_1 should be c_ptr_1.
+
+2015-01-27  Paul Thomas  <pault@gcc.gnu.org>
+
+	Backport from mainline
+	PR fortran/62044
+	* resolve.c (resolve_allocate_expr): If the default initializer
+	is NULL, keep the original MOLD expression so that the correct
+	typespec is available.
+
+2015-01-27  Tobias Burnus  <burnus@net-b.de>
+
+	PR fortran/64771
+	* interface.c (check_dummy_characteristics): Fix coarray handling.
+
+2015-01-26  Janus Weil  <janus@gcc.gnu.org>
+
+	Backport from mainline
+	PR fortran/64230
+	* class.c (finalize_component): New argument 'sub_ns'. Insert code to
+	check if 'expr' is associated.
+	(generate_finalization_wrapper): Rename 'ptr' symbols to 'ptr1' and
+	'ptr2'. Pass 'sub_ns' to finalize_component.
+
+2015-01-24  Thomas Koenig  <tkoenig@netcologne.de>
+
+	Backport from trunk
+	PR fortran/57023
+	* dependency.c (callback_dummy_intent_not_int):  New function.
+	(dummy_intent_not_in):  New function.
+	(gfc_full_array_ref_p):  Use dummy_intent_not_in.
+
+2015-01-24  Janus Weil  <janus@gcc.gnu.org>
+
+	Backport from mainline
+	PR fortran/60922
+	* class.c (finalize_component): Apply the check for 'fini_coarray' only
+	to coarray components.
+
+2015-01-14  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-01-13  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/64528
+	* trans-decl.c (create_function_arglist): Don't set TREE_READONLY
+	on dummy args with VALUE attribute.
+
+2015-01-12  Janus Weil  <janus@gcc.gnu.org>
+
+	Backport from mainline
+	PR fortran/63733
+	* interface.c (gfc_extend_expr): Look for type-bound operators before
+	non-typebound ones.
+
+2015-01-08  Thomas Koenig  <tkoenig@gcc.gnu.org>
+
+	Backport from trunk
+	PR fortran/56867
+	* trans-array.c (gfc_conv_resolve_dependencies):  Also check
+	dependencies when there may be substrings of character arrays.
+
+2014-12-23  Janus Weil  <janus@gcc.gnu.org>
+
+	Backport from mainline
+	PR fortran/64244
+	* resolve.c (resolve_typebound_call): New argument to pass out the
+	non-overridable attribute of the specific procedure.
+	(resolve_typebound_subroutine): Get overridable flag from
+	resolve_typebound_call.
+
+2014-11-28  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2014-11-24  Jakub Jelinek  <jakub@redhat.com>
+
+	PR fortran/63938
+	* trans-openmp.c (gfc_trans_omp_atomic): Make sure lhsaddr is
+	simple enough for goa_lhs_expr_p.
+
 2014-10-30  Release Manager
 
 	* GCC 4.9.2 released.

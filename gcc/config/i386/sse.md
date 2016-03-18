@@ -4385,7 +4385,7 @@
 (define_expand "vec_unpacks_hi_v8sf"
   [(set (match_dup 2)
 	(vec_select:V4SF
-	  (match_operand:V8SF 1 "nonimmediate_operand")
+	  (match_operand:V8SF 1 "register_operand")
 	  (parallel [(const_int 4) (const_int 5)
 		     (const_int 6) (const_int 7)])))
    (set (match_operand:V4DF 0 "register_operand")
@@ -4397,7 +4397,7 @@
 (define_expand "vec_unpacks_hi_v16sf"
   [(set (match_dup 2)
 	(vec_select:V8SF
-	  (match_operand:V16SF 1 "nonimmediate_operand")
+	  (match_operand:V16SF 1 "register_operand")
 	  (parallel [(const_int 8) (const_int 9)
 		     (const_int 10) (const_int 11)
 		     (const_int 12) (const_int 13)
@@ -5890,7 +5890,8 @@
   "TARGET_AVX512F
    && (INTVAL (operands[2]) == (INTVAL (operands[3]) - 1)
        && INTVAL (operands[3]) == (INTVAL (operands[4]) - 1)
-       && INTVAL (operands[4]) == (INTVAL (operands[5]) - 1))"
+       && INTVAL (operands[4]) == (INTVAL (operands[5]) - 1))
+   && rtx_equal_p (operands[6], operands[0])"
 {
   operands[2] = GEN_INT ((INTVAL (operands[2])) >> 2);
   return "vextract<shuffletype>32x4\t{%2, %1, %0%{%7%}|%0%{%7%}, %1, %2}";
@@ -5985,8 +5986,9 @@
 	      (const_int 2) (const_int 3)]))
 	  (match_operand:<ssehalfvecmode> 2 "memory_operand" "0")
 	  (match_operand:QI 3 "register_operand" "Yk")))]
-  "TARGET_AVX512F"
-"vextract<shuffletype>64x4\t{$0x0, %1, %0%{%3%}|%0%{%3%}, %1, 0x0}"
+  "TARGET_AVX512F
+   && rtx_equal_p (operands[2], operands[0])"
+  "vextract<shuffletype>64x4\t{$0x0, %1, %0%{%3%}|%0%{%3%}, %1, 0x0}"
   [(set_attr "type" "sselog")
    (set_attr "prefix_extra" "1")
    (set_attr "length_immediate" "1")
@@ -6025,7 +6027,8 @@
 	      (const_int 6) (const_int 7)]))
 	  (match_operand:<ssehalfvecmode> 2 "memory_operand" "0")
 	  (match_operand:QI 3 "register_operand" "Yk")))]
-  "TARGET_AVX512F"
+  "TARGET_AVX512F
+   && rtx_equal_p (operands[2], operands[0])"
   "vextract<shuffletype>64x4\t{$0x1, %1, %0%{%3%}|%0%{%3%}, %1, 0x1}"
   [(set_attr "type" "sselog")
    (set_attr "prefix_extra" "1")
@@ -10303,7 +10306,7 @@
    movss\t{%2, %0|%0, %2}
    movss\t{%2, %0|%0, %2}
    vmovss\t{%2, %1, %0|%0, %1, %2}"
-  [(set_attr "isa" "sse2,*,noavx,noavx,avx")
+  [(set_attr "isa" "sse2,sse2,noavx,noavx,avx")
    (set_attr "type" "ssemov")
    (set_attr "prefix" "maybe_vex,maybe_vex,orig,orig,vex")
    (set_attr "mode" "TI,TI,V4SF,SF,SF")])
@@ -10834,10 +10837,12 @@
    (set_attr "atom_sse_attr" "fence")
    (set_attr "memory" "unknown")])
 
-
+;; As per AMD and Intel ISA manuals, the first operand is extensions
+;; and it goes to %ecx. The second operand received is hints and it goes
+;; to %eax.
 (define_insn "sse3_mwait"
-  [(unspec_volatile [(match_operand:SI 0 "register_operand" "a")
-		     (match_operand:SI 1 "register_operand" "c")]
+  [(unspec_volatile [(match_operand:SI 0 "register_operand" "c")
+		     (match_operand:SI 1 "register_operand" "a")]
 		    UNSPECV_MWAIT)]
   "TARGET_SSE3"
 ;; 64bit version is "mwait %rax,%rcx". But only lower 32bits are used.

@@ -261,6 +261,50 @@ typedef struct ext_cand
 
 static int max_insn_uid;
 
+/* Update or remove REG_EQUAL or REG_EQUIV notes for INSN.  */
+
+static bool
+update_reg_equal_equiv_notes (rtx insn, enum machine_mode new_mode,
+			      enum machine_mode old_mode, enum rtx_code code)
+{
+  rtx *loc = &REG_NOTES (insn);
+  while (*loc)
+    {
+      enum reg_note kind = REG_NOTE_KIND (*loc);
+      if (kind == REG_EQUAL || kind == REG_EQUIV)
+	{
+	  rtx orig_src = XEXP (*loc, 0);
+	  /* Update equivalency constants.  Recall that RTL constants are
+	     sign-extended.  */
+	  if (GET_CODE (orig_src) == CONST_INT
+	      && HOST_BITS_PER_WIDE_INT >= GET_MODE_BITSIZE (new_mode))
+	    {
+	      if (INTVAL (orig_src) >= 0 || code == SIGN_EXTEND)
+		/* Nothing needed.  */;
+	      else
+		{
+		  /* Zero-extend the negative constant by masking out the
+		     bits outside the source mode.  */
+		  rtx new_const_int
+		    = gen_int_mode (INTVAL (orig_src)
+				    & GET_MODE_MASK (old_mode),
+				    new_mode);
+		  if (!validate_change (insn, &XEXP (*loc, 0),
+					new_const_int, true))
+		    return false;
+		}
+	      loc = &XEXP (*loc, 1);
+	    }
+	  /* Drop all other notes, they assume a wrong mode.  */
+	  else if (!validate_change (insn, loc, XEXP (*loc, 1), true))
+	    return false;
+	}
+      else
+	loc = &XEXP (*loc, 1);
+    }
+  return true;
+}
+
 /* Given a insn (CURR_INSN), an extension candidate for removal (CAND)
    and a pointer to the SET rtx (ORIG_SET) that needs to be modified,
    this code modifies the SET rtx to a new SET rtx that extends the
@@ -282,6 +326,7 @@ static bool
 combine_set_extension (ext_cand *cand, rtx curr_insn, rtx *orig_set)
 {
   rtx orig_src = SET_SRC (*orig_set);
+  enum machine_mode orig_mode = GET_MODE (SET_DEST (*orig_set));
   rtx new_set;
   rtx cand_pat = PATTERN (cand->insn);
 
@@ -318,9 +363,8 @@ combine_set_extension (ext_cand *cand, rtx curr_insn, rtx *orig_set)
 	{
 	  /* Zero-extend the negative constant by masking out the bits outside
 	     the source mode.  */
-	  enum machine_mode src_mode = GET_MODE (SET_DEST (*orig_set));
 	  rtx new_const_int
-	    = gen_int_mode (INTVAL (orig_src) & GET_MODE_MASK (src_mode),
+	    = gen_int_mode (INTVAL (orig_src) & GET_MODE_MASK (orig_mode),
 			    GET_MODE (new_reg));
 	  new_set = gen_rtx_SET (VOIDmode, new_reg, new_const_int);
 	}
@@ -359,7 +403,9 @@ combine_set_extension (ext_cand *cand, rtx curr_insn, rtx *orig_set)
 
   /* This change is a part of a group of changes.  Hence,
      validate_change will not try to commit the change.  */
-  if (validate_change (curr_insn, orig_set, new_set, true))
+  if (validate_change (curr_insn, orig_set, new_set, true)
+      && update_reg_equal_equiv_notes (curr_insn, cand->mode, orig_mode,
+				       cand->code))
     {
       if (dump_file)
         {
@@ -409,7 +455,9 @@ transform_ifelse (ext_cand *cand, rtx def_insn)
   ifexpr = gen_rtx_IF_THEN_ELSE (cand->mode, cond, map_srcreg, map_srcreg2);
   new_set = gen_rtx_SET (VOIDmode, map_dstreg, ifexpr);
 
-  if (validate_change (def_insn, &PATTERN (def_insn), new_set, true))
+  if (validate_change (def_insn, &PATTERN (def_insn), new_set, true)
+      && update_reg_equal_equiv_notes (def_insn, cand->mode, GET_MODE (dstreg),
+				       cand->code))
     {
       if (dump_file)
         {
@@ -719,6 +767,17 @@ combine_reaching_defs (ext_cand *cand, const_rtx set_pat, ext_state *state)
        != REGNO (get_extended_src_reg (SET_SRC (PATTERN (cand->insn)))));
   if (copy_needed)
     {
+      /* Considering transformation of
+	 (set (reg1) (expression))
+	 ...
+	 (set (reg2) (any_extend (reg1)))
+
+	 into
+
+	 (set (reg2) (any_extend (expression)))
+	 (set (reg1) (reg2))
+	 ...  */
+
       /* In theory we could handle more than one reaching def, it
 	 just makes the code to update the insn stream more complex.  */
       if (state->defs_list.length () != 1)
@@ -732,18 +791,6 @@ combine_reaching_defs (ext_cand *cand, const_rtx set_pat, ext_state *state)
 	 here and the code to emit copies would need auditing.  Until
 	 we see a need, this is the safe thing to do.  */
       if (state->modified[INSN_UID (cand->insn)].kind != EXT_MODIFIED_NONE)
-	return false;
-
-      /* Transformation of
-	 (set (reg1) (expression))
-	 (set (reg2) (any_extend (reg1)))
-	 into
-	 (set (reg2) (any_extend (expression)))
-	 (set (reg1) (reg2))
-	 is only valid for scalar integral modes, as it relies on the low
-	 subreg of reg1 to have the value of (expression), which is not true
-	 e.g. for vector modes.  */
-      if (!SCALAR_INT_MODE_P (GET_MODE (SET_DEST (PATTERN (cand->insn)))))
 	return false;
 
       /* There's only one reaching def.  */
@@ -954,6 +1001,7 @@ add_removable_extension (const_rtx expr, rtx insn,
 	 different extension.  FIXME: this obviously can be improved.  */
       for (def = defs; def; def = def->next)
 	if ((idx = def_map[INSN_UID (DF_REF_INSN (def->ref))])
+	    && idx != -1U
 	    && (cand = &(*insn_list)[idx - 1])
 	    && cand->code != code)
 	  {
@@ -964,6 +1012,57 @@ add_removable_extension (const_rtx expr, rtx insn,
 	        fprintf (dump_file, " because of other extension\n");
 	      }
 	    return;
+	  }
+	/* For vector mode extensions, ensure that all uses of the
+	   XEXP (src, 0) register are the same extension (both code
+	   and to which mode), as unlike integral extensions lowpart
+	   subreg of the sign/zero extended register are not equal
+	   to the original register, so we have to change all uses or
+	   none.  */
+	else if (VECTOR_MODE_P (GET_MODE (XEXP (src, 0))))
+	  {
+	    if (idx == 0)
+	      {
+		struct df_link *ref_chain, *ref_link;
+
+		ref_chain = DF_REF_CHAIN (def->ref);
+		for (ref_link = ref_chain; ref_link; ref_link = ref_link->next)
+		  {
+		    if (ref_link->ref == NULL
+			|| DF_REF_INSN_INFO (ref_link->ref) == NULL)
+		      {
+			idx = -1U;
+			break;
+		      }
+		    rtx use_insn = DF_REF_INSN (ref_link->ref);
+		    const_rtx use_set;
+		    if (use_insn == insn || DEBUG_INSN_P (use_insn))
+		      continue;
+		    if (!(use_set = single_set (use_insn))
+			|| !REG_P (SET_DEST (use_set))
+			|| GET_MODE (SET_DEST (use_set)) != GET_MODE (dest)
+			|| GET_CODE (SET_SRC (use_set)) != code
+			|| !rtx_equal_p (XEXP (SET_SRC (use_set), 0),
+					 XEXP (src, 0)))
+		      {
+			idx = -1U;
+			break;
+		      }
+		  }
+		if (idx == -1U)
+		  def_map[INSN_UID (DF_REF_INSN (def->ref))] = idx;
+	      }
+	    if (idx == -1U)
+	      {
+		if (dump_file)
+		  {
+		    fprintf (dump_file, "Cannot eliminate extension:\n");
+		    print_rtl_single (dump_file, insn);
+		    fprintf (dump_file,
+			     " because some vector uses aren't extension\n");
+		  }
+		return;
+	      }
 	  }
 
       /* Then add the candidate to the list and insert the reaching definitions

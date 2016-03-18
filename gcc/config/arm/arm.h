@@ -74,8 +74,8 @@ extern char arm_arch_name[];
 	builtin_define_with_int_value (				\
 	  "__ARM_SIZEOF_MINIMAL_ENUM",				\
 	  flag_short_enums ? 1 : 4);				\
-	builtin_define_with_int_value (				\
-	  "__ARM_SIZEOF_WCHAR_T", WCHAR_TYPE_SIZE);		\
+	builtin_define_type_sizeof ("__ARM_SIZEOF_WCHAR_T",	\
+				    wchar_type_node);		\
 	if (TARGET_ARM_ARCH_PROFILE)				\
 	  builtin_define_with_int_value (			\
 	    "__ARM_ARCH_PROFILE", TARGET_ARM_ARCH_PROFILE);	\
@@ -2138,9 +2138,10 @@ extern int making_const_table;
    ? reverse_condition_maybe_unordered (code) \
    : reverse_condition (code))
 
-/* The arm5 clz instruction returns 32.  */
-#define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE)  ((VALUE) = 32, 1)
-#define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE)  ((VALUE) = 32, 1)
+#define CLZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
+  ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE))
+#define CTZ_DEFINED_VALUE_AT_ZERO(MODE, VALUE) \
+  ((VALUE) = GET_MODE_UNIT_BITSIZE (MODE))
 
 #define CC_STATUS_INIT \
   do { cfun->machine->thumb1_cc_insn = NULL_RTX; } while (0)

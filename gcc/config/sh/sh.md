@@ -651,32 +651,6 @@
   "tst	#255,%0"
   [(set_attr "type" "mt_group")])
 
-;; This pattern might be risky because it also tests the upper bits and not
-;; only the subreg.  However, it seems that combine will get to this only
-;; when testing sign/zero extended values.  In this case the extended upper
-;; bits do not matter.
-(define_insn "*tst<mode>_t_zero"
-  [(set (reg:SI T_REG)
-	(eq:SI
-	  (subreg:QIHI
-	    (and:SI (match_operand:SI 0 "arith_reg_operand" "%r")
-		    (match_operand:SI 1 "arith_reg_operand" "r")) <lowpart_le>)
-	  (const_int 0)))]
-  "TARGET_SH1 && TARGET_LITTLE_ENDIAN"
-  "tst	%0,%1"
-  [(set_attr "type" "mt_group")])
-
-(define_insn "*tst<mode>_t_zero"
-  [(set (reg:SI T_REG)
-	(eq:SI
-	  (subreg:QIHI
-	    (and:SI (match_operand:SI 0 "arith_reg_operand" "%r")
-		    (match_operand:SI 1 "arith_reg_operand" "r")) <lowpart_be>)
-	  (const_int 0)))]
-  "TARGET_SH1 && TARGET_BIG_ENDIAN"
-  "tst	%0,%1"
-  [(set_attr "type" "mt_group")])
-
 ;; Extract LSB, negate and store in T bit.
 (define_insn "tstsi_t_and_not"
   [(set (reg:SI T_REG)
@@ -1543,78 +1517,6 @@
 	(if_then_else:SI (match_dup 4) (match_dup 1) (match_dup 2)))]
 {
   replace_rtx (operands[4], operands[0], operands[1]);
-})
-
-(define_peephole2
-  [(set (match_operand 0 "any_register_operand" "")
-	(match_operand 1 "any_register_operand" ""))
-   (set (match_operand 2 "any_register_operand" "") (match_operand 3 "" ""))
-   (set (match_operand 4 "" "") (match_operand 5 "" ""))]
-  "(HARD_REGNO_NREGS (REGNO (operands[0]), GET_MODE (operands[2]))
-    <= HARD_REGNO_NREGS (REGNO (operands[0]), GET_MODE (operands[0])))
-   && peep2_reg_dead_p (3, operands[0]) && peep2_reg_dead_p (3, operands[2])
-   && ! FIND_REG_INC_NOTE (peep2_next_insn (2), operands[0])
-   && ! FIND_REG_INC_NOTE (peep2_next_insn (2), operands[2])
-   && ! reg_overlap_mentioned_p (operands[0], operands[3])
-   && ! reg_overlap_mentioned_p (operands[2], operands[0])
-   && ! reg_overlap_mentioned_p (operands[0], operands[1])
-   && (REGNO_REG_CLASS (REGNO (operands[0]))
-       == REGNO_REG_CLASS (REGNO (operands[2])))
-   && (REGNO_REG_CLASS (REGNO (operands[1]))
-       == REGNO_REG_CLASS (REGNO (operands[0])))"
-  [(set (match_dup 0) (match_dup 3))
-   (set (match_dup 4) (match_dup 5))]
-{
-  rtx set1, set2, insn2;
-  rtx replacements[4];
-
-  /* We want to replace occurrences of operands[0] with operands[1] and
-     operands[2] with operands[0] in operands[4]/operands[5].
-     Doing just two replace_rtx calls naively would result in the second
-     replacement undoing all that the first did if operands[1] and operands[2]
-     are identical, so we must do this simultaneously.  */
-  replacements[0] = operands[0];
-  replacements[1] = operands[1];
-  replacements[2] = operands[2];
-  replacements[3] = operands[0];
-  if (!replace_n_hard_rtx (operands[5], replacements, 2, 0)
-      || !replace_n_hard_rtx (operands[4], replacements, 2, 0)
-      || !replace_n_hard_rtx (operands[2], replacements, 2, 0))
-    FAIL;
-
-  operands[5] = replace_n_hard_rtx (operands[5], replacements, 2, 1);
-  replace_n_hard_rtx (operands[4], replacements, 2, 1);
-  operands[2] = replace_n_hard_rtx (operands[2], replacements, 2, 1);
-  /* The operands array is aliased to recog_data.operand, which gets
-     clobbered by extract_insn, so finish with it now.  */
-  set1 = gen_rtx_SET (VOIDmode, operands[2], operands[3]);
-  set2 = gen_rtx_SET (VOIDmode, operands[4], operands[5]);
-  /* ??? The last insn might be a jump insn, but the generic peephole2 code
-     always uses emit_insn.  */
-  /* Check that we don't violate matching constraints or earlyclobbers.  */
-  extract_insn (emit_insn (set1));
-  if (! constrain_operands (1))
-    goto failure;
-  insn2 = emit (set2);
-  if (GET_CODE (insn2) == BARRIER)
-    goto failure;
-  extract_insn (insn2);
-  if (! constrain_operands (1))
-    {
-      rtx tmp;
-    failure:
-      tmp = replacements[0];
-      replacements[0] = replacements[1];
-      replacements[1] = tmp;
-      tmp = replacements[2];
-      replacements[2] = replacements[3];
-      replacements[3] = tmp;
-      replace_n_hard_rtx (SET_DEST (set1), replacements, 2, 1);
-      replace_n_hard_rtx (SET_DEST (set2), replacements, 2, 1);
-      replace_n_hard_rtx (SET_SRC (set2), replacements, 2, 1);
-      FAIL;
-    }
-  DONE;
 })
 
 ;; The register allocator is rather clumsy in handling multi-way conditional
@@ -5847,7 +5749,7 @@ label:
 (define_insn "swapbsi2"
   [(set (match_operand:SI 0 "arith_reg_dest" "=r")
 	(ior:SI (and:SI (match_operand:SI 1 "arith_reg_operand" "r")
-			(const_int 4294901760))
+			(const_int -65536)) ;; 0xFFFF0000
 		(ior:SI (and:SI (ashift:SI (match_dup 1) (const_int 8))
 				(const_int 65280))
 			(and:SI (ashiftrt:SI (match_dup 1) (const_int 8))
@@ -5915,7 +5817,7 @@ label:
 (define_peephole2
   [(set (match_operand:SI 0 "arith_reg_dest" "")
 	(ior:SI (and:SI (match_operand:SI 1 "arith_reg_operand" "")
-			(const_int 4294901760))
+			(const_int -65536)) ;; 0xFFFF0000
 		(ior:SI (and:SI (ashift:SI (match_dup 1) (const_int 8))
 				(const_int 65280))
 			(and:SI (ashiftrt:SI (match_dup 1) (const_int 8))
@@ -5925,7 +5827,7 @@ label:
   "TARGET_SH1 && peep2_reg_dead_p (2, operands[0])"
   [(set (match_dup 2)
 	(ior:SI (and:SI (match_operand:SI 1 "arith_reg_operand" "")
-			(const_int 4294901760))
+			(const_int -65536)) ;; 0xFFFF0000
 		(ior:SI (and:SI (ashift:SI (match_dup 1) (const_int 8))
 				(const_int 65280))
 			(and:SI (ashiftrt:SI (match_dup 1) (const_int 8))
@@ -6331,10 +6233,9 @@ label:
 })
 
 (define_expand "extendqihi2"
-  [(set (match_operand:HI 0 "arith_reg_dest" "")
-	(sign_extend:HI (match_operand:QI 1 "arith_reg_operand" "")))]
-  ""
-  "")
+  [(set (match_operand:HI 0 "arith_reg_dest")
+	(sign_extend:HI (match_operand:QI 1 "arith_reg_operand")))]
+  "TARGET_SH1")
 
 (define_insn "*extendqihi2_compact_reg"
   [(set (match_operand:HI 0 "arith_reg_dest" "=r")
@@ -10237,9 +10138,24 @@ label:
   ""
 {
   rtx mem;
+  bool stack_chk_guard_p = false;
 
   operands[2] = !can_create_pseudo_p () ? operands[0] : gen_reg_rtx (Pmode);
   operands[3] = !can_create_pseudo_p () ? operands[0] : gen_reg_rtx (Pmode);
+
+  if (!TARGET_SHMEDIA
+      && flag_stack_protect
+      && GET_CODE (operands[1]) == CONST
+      && GET_CODE (XEXP (operands[1], 0)) == UNSPEC
+      && GET_CODE (XVECEXP (XEXP (operands[1], 0), 0, 0)) == SYMBOL_REF
+      && strcmp (XSTR (XVECEXP (XEXP (operands[1], 0), 0, 0), 0),
+		 "__stack_chk_guard") == 0)
+    stack_chk_guard_p = true;
+
+  /* Use R0 to avoid long R0 liveness which stack-protector tends to
+     produce.  */
+  if (stack_chk_guard_p && ! reload_in_progress && ! reload_completed)
+    operands[2] = gen_rtx_REG (Pmode, R0_REG);
 
   if (TARGET_SHMEDIA)
     {
@@ -10268,13 +10184,7 @@ label:
      insn to avoid combining (set A (plus rX r12)) and (set op0 (mem A))
      when rX is a GOT address for the guard symbol.  Ugly but doesn't
      matter because this is a rare situation.  */
-  if (!TARGET_SHMEDIA
-      && flag_stack_protect
-      && GET_CODE (operands[1]) == CONST
-      && GET_CODE (XEXP (operands[1], 0)) == UNSPEC
-      && GET_CODE (XVECEXP (XEXP (operands[1], 0), 0, 0)) == SYMBOL_REF
-      && strcmp (XSTR (XVECEXP (XEXP (operands[1], 0), 0, 0), 0),
-		 "__stack_chk_guard") == 0)
+  if (stack_chk_guard_p)
     emit_insn (gen_chk_guard_add (operands[3], operands[2]));
   else
     emit_move_insn (operands[3], gen_rtx_PLUS (Pmode, operands[2],

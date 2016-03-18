@@ -1,3 +1,354 @@
+2015-06-26  Release Manager
+
+	* GCC 4.9.3 released.
+
+2015-06-16  Ramana Radhakrishnan  <ramana.radhakrishnan@arm.com>
+
+	PR target/66200
+	* configure.host (host_cpu): Add aarch64 case.
+	* config/cpu/aarch64/atomic_word.h: New file.
+
+2015-06-10  Jonathan Wakely  <jwakely@redhat.com>
+
+	Backport from mainline
+	2015-01-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/64650
+	* include/experimental/optional (bad_optional_access): Add default
+	constructor.
+	* testsuite/experimental/optional/requirements.cc: Test for default
+	constructor.
+
+2015-06-08  Jonathan Wakely  <jwakely@redhat.com>
+
+	Backported from mainline
+	2015-06-01  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/lib/libstdc++.exp (libstdc++_init): Unset LANGUAGE
+	environment variable.
+
+	PR libstdc++/66354
+	* include/bits/stl_algobase.h (__fill_a): Check length before calling
+	memset.
+
+	PR libstdc++/66327
+	* include/bits/stl_algobase.h (__equal<true>::equal): Do not call
+	memcmp for empty ranges.
+	(__lexicographical_compare<true>::__lc): Likewise.
+
+	Backport from mainline
+	2015-04-13  Jonathan Wakely  <jwakely@redhat.com>
+
+	* doc/xml/manual/evolution.xml: Document changes since 4.5 release.
+	* doc/html/*: Regenerate.
+
+2015-06-05  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/66359
+	Backport from mainline
+	2014-11-13  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/63775
+	* include/bits/regex_compiler.h (_Compiler<>::_M_expression_term,
+	_BracketMatcher<>::_M_make_range): Throw regex_erorr on invalid range
+	like [z-a]. Change _M_expression_term interface.
+	* include/bits/regex_compiler.tcc (
+	_Compiler<>::_M_insert_bracket_matcher,
+	_Compiler<>::_M_expression_term): Rewrite bracket expression parsing.
+	* testsuite/28_regex/algorithms/regex_match/cstring_bracket_01.cc:
+	Add testcases and move file out of extended.
+
+2015-06-04  Renlin Li  <renlin.li@arm.com>
+
+	Backported from mainline
+	2015-06-02  Renlin Li  <renlin.li@arm.com>
+
+	* testsuite/27_io/fpos/14775.cc: Add _GLIBCXX_HAVE_LIMIT_FSIZE check.
+
+2015-05-28  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/65352
+	* include/profile/array (array::data): Use __array_traits::_S_ptr.
+	* include/debug/array (array::data): Likewise.
+	* include/std/array (__array_traits::_S_ptr): New function.
+	(array::data): Use _S_ptr to avoid creating invalid reference.
+	* testsuite/23_containers/array/tuple_interface/get_neg.cc: Adjust
+	dg-error line numbers.
+	* testsuite/23_containers/array/tuple_interface/tuple_element_neg.cc:
+	likewise.
+
+	Backport from mainline
+	2015-01-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/64658
+	* include/std/atomic (atomic_init): Define.
+	* testsuite/29_atomics/atomic/64658.cc: New.
+
+	Backport from mainline
+	2014-12-22  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/37522
+	* include/bits/basic_string.h (stod, stof, stoi, stol, stold, stoll,
+	stoul, stoull, to_string): Only use _GLIBCXX_HAVE_BROKEN_VSWPRINTF
+	to guard definition of to_wstring.
+
+2015-05-22  David Edelsohn  <dje.gcc@gmail.com>
+
+	Backport from mainline
+	2015-05-21  David Edelsohn  <dje.gcc@gmail.com>
+
+	PR target/66224
+	* config/cpu/powerpc/atomic_word.h (_GLIBCXX_READ_MEM_BARRIER):
+	Don't use isync. Use lwsync if available.
+
+2015-05-07  Renlin Li  <renlin.li@arm.com>
+
+	Backported from mainline
+	2015-04-22  Renlin Li  <renlin.li@arm.com>
+
+	* testsuite/lib/dg-options.exp (dg-require-thread-fence): New.
+	* testsuite/lib/libstdc++.exp (check_v3_target_thread_fence): New.
+	* testsuite/29_atomics/atomic_flag/clear/1.cc: Use it.
+	* testsuite/29_atomics/atomic_flag/test_and_set/explicit.cc: Likewise.
+	* testsuite/29_atomics/atomic_flag/test_and_set/implicit.cc: Likewise.
+
+2015-04-11  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/30_threads/shared_lock/cons/5.cc: Remove
+	dg-require-gthreads-timed.
+	* testsuite/30_threads/shared_lock/cons/6.cc: Likewise.
+	* testsuite/30_threads/shared_lock/locking/3.cc: Likewise.
+	* testsuite/30_threads/shared_lock/locking/4.cc: Likewise.
+
+	Backport from mainline
+	2015-04-10  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/std/shared_mutex (shared_timed_mutex): Add comments to
+	explain the logic in the non-pthread_rwlock_t version.
+	(_Mutex): Remove redundant type.
+	(_M_n_readers): Rename to _S_max_readers.
+	(_M_write_entered, _M_readers): New convenience functions.
+	(lock, lock_shared, try_lock_shared, unlock_shared): Use convenience
+	functions. Use predicates with condition variables. Simplify bitwise
+	operations.
+	(try_lock_for, try_shared_lock_for): Convert duration to time_point
+	and call try_lock_until or try_shared_lock_until respectively.
+	(try_lock_until, try_shared_lock_until): Wait on the condition
+	variables until the specified time passes.
+	(unlock): Add Debug Mode assertion.
+	(unlock_shared): Add Debug Mode assertion.
+	* testsuite/30_threads/shared_timed_mutex/try_lock/3.cc: New.
+
+	Backport from mainline
+	2015-03-27  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/65499
+	* include/std/chrono: Add using-directive for literals to std::chrono.
+	* testsuite/20_util/duration/literals/65499.cc: New.
+
+	Backport from mainline
+	2015-03-26  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/58038
+	* include/std/thread (this_thread::sleep_for): Check for negative
+	durations.
+	(this_thread::sleep_until): Check for times in the past.
+	* testsuite/30_threads/this_thread/58038.cc: New.
+	* testsuite/30_threads/this_thread/60421.cc: New.
+
+2015-03-25  Jonathan Wakely  <jwakely@redhat.com>
+
+	Backport from mainline
+	2015-03-02  Jonathan Wakely  <jwakely@redhat.com>
+	PR libstdc++/65279
+	* include/std/scoped_allocator (__inner_type_impl,
+	scoped_allocator_adaptor): Add defaulted copy assignment and move
+	assignment operators.
+	* testsuite/20_util/scoped_allocator/65279.cc: New.
+
+2015-03-25  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR libstdc++/65543
+	* include/std/istream (operator>>(basic_istream<>&&, _Tp&): Revert
+	thinko in r150387.
+	* include/std/ostream (operator<<(basic_ostream<>&&, const _Tp&):
+	Likewise.
+	* testsuite/27_io/rvalue_streams-2.cc: New.
+
+2015-02-03  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64680
+	Backported from mainline
+	2015-01-22  Tim Shen  <timshen@google.com>
+
+	* include/bits/regex.h (basic_regex<>::basic_regex,
+	basic_regex<>::operator=, basic_regex<>::imbue): Conform to the
+	standard interface.
+	* testsuite/28_regex/basic_regex/assign/char/cstring.cc: New testcase.
+
+2015-02-03  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64649
+	Backported from mainline
+	2015-01-22  Tim Shen  <timshen@google.com>
+
+	* include/bits/regex.tcc (regex_traits<>::lookup_collatename,
+	regex_traits<>::lookup_classname): Correctly narrow input chars.
+	* testsuite/28_regex/traits/wchar_t/user_defined.cc: New testcase.
+
+2015-01-19  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64649
+	Backported from mainline
+	2015-01-19  Tim Shen  <timshen@google.com>
+
+	* include/bits/regex.tcc (regex_traits<>::lookup_collatename,
+	regex_traits<>::lookup_classname): Support forward iterators.
+	* testsuite/28_regex/traits/char/lookup_classname.cc: New testcases.
+	* testsuite/28_regex/traits/char/lookup_collatename.cc: New testcase.
+
+2015-01-19  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64584
+	PR libstdc++/64585
+	* include/bits/regex.h (basic_regex<>::basic_regex,
+	basic_regex<>::assign, basic_regex<>::imbue,
+	basic_regex<>::swap, basic_regex<>::mark_count): Drop NFA after
+	imbuing basic_regex; Make assign() transactional against exception.
+	* testsuite/28_regex/basic_regex/assign/char/string.cc: New testcase.
+	* testsuite/28_regex/basic_regex/imbue/string.cc: New testcase.
+
+2015-01-18  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/64646
+	* include/bits/stl_algo.h (__is_permutation): Also test for reaching
+	end of the second range.
+	* testsuite/25_algorithms/is_permutation/64646.cc: New.
+
+2015-01-09  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/64476
+	* include/bits/stl_uninitialized.h (uninitialized_copy): Fix
+	is_assignable arguments.
+	* testsuite/20_util/specialized_algorithms/uninitialized_copy/64476.cc:
+	New.
+
+2015-01-09  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/60966
+	* include/std/future (packaged_task::operator()): Increment the
+	reference count on the shared state until the function returns.
+
+2015-01-09  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64239
+	Backported form mainline
+	2015-01-09  Tim Shen  <timshen@google.com>
+
+	* include/bits/regex.h (match_results<>::swap): Use std::swap
+	instead of swap.
+	* include/bits/regex_compiler.tcc (_Compiler<>::_M_quantifier):
+	Likewise.
+	* testsuite/28_regex/match_results/swap.cc: New testcase.
+
+2014-12-17  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64302
+	PR libstdc++/64303
+	Backported form mainline
+	2014-12-17  Tim Shen  <timshen@google.com>
+
+	* include/bits/regex.h (match_results::cbegin, match_results::cend,
+	regex_token_iterator::regex_token_iterator,
+	regex_token_iterator::_M_normalize_result): Fix match_results cbegin
+	and cend and regex_token_iterator::_M_result invariant.
+	* include/bits/regex.tcc: Fix regex_token_iterator::_M_result invariant.
+	* testsuite/28_regex/iterators/regex_token_iterator/64303.cc: Testcase.
+
+2014-12-13  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64239
+	* include/bits/regex.h (match_results<>::match_results,
+	match_results<>::operator=, match_results<>::position,
+	match_results<>::swap): Fix ctor/assign/swap.
+	* include/bits/regex.tcc: (__regex_algo_impl<>,
+	regex_iterator<>::operator++): Set match_results::_M_begin as
+	"start position".
+	* testsuite/28_regex/iterators/regex_iterator/char/
+	string_position_01.cc: Test cases.
+
+2014-12-09  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/64203
+	* include/std/shared_mutex: Fix preprocessor conditions.
+	* testsuite/experimental/feat-cxx14.cc: Check conditions.
+
+2014-12-06  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/63840
+	* include/std/functional (function::function(const function&)): Set
+	_M_manager after operations that might throw.
+	* include/tr1/functional (function::function(const function&),
+	function::function(_Functor, _Useless)): Likewise.
+	* testsuite/20_util/function/63840.cc: New.
+	* testsuite/tr1/3_function_objects/function/63840.cc: New.
+
+	PR libstdc++/61947
+	* include/std/tuple (_Head_base): Use allocator_arg_t parameters to
+	disambiguate unary constructors.
+	(_Tuple_impl): Pass allocator_arg_t arguments.
+	* testsuite/20_util/tuple/61947.cc: New.
+	* testsuite/20_util/uses_allocator/cons_neg.cc: Adjust dg-error line.
+
+2014-12-06  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/64140
+	Backport form mainline
+	2014-12-04  Tim Shen  <timshen@google.com>
+
+	* include/bits/regex.tcc (regex_iterator<>::operator++): Update
+	prefix.matched after modifying prefix.first.
+	* testsuite/28_regex/iterators/regex_iterator/char/64140.cc: New
+	testcase.
+
+2014-12-02  Matthias Klose  <doko@ubuntu.com>
+
+	PR libstdc++/64103
+	Backport from mainline
+	2014-11-03  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	* include/parallel/algo.h: Do not use default arguments in function
+	template redeclarations (definitions).
+
+	2014-11-04  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/parallel/numeric.h: Do not use default arguments in function
+	template redeclarations (definitions).
+
+2014-11-28  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/63497
+	* include/bits/regex_executor.tcc (_Executor::_M_dfs,
+	_Executor::_M_word_boundary): Avoid dereferecing _M_current at _M_end
+	or other invalid position.
+
+2014-11-13  Thomas Preud'homme  <thomas.preudhomme@arm.com>
+
+	Backport from mainline
+	2014-09-10  Tony Wang  <tony.wang@arm.com>
+
+	PR target/56846
+	* libsupc++/eh_personality.cc (PERSONALITY_FUNCTION):
+	Return with CONTINUE_UNWINDING when the state pattern
+	contains: _US_VIRTUAL_UNWIND_FRAME | _US_FORCE_UNWIND
+
+2014-10-30  David Edelsohn  <dje.gcc@gmail.com>
+
+	Backported from mainline.
+	2014-10-30  David Edelsohn  <dje.gcc@gmail.com>
+
+	* configure.host (aix4.3+, 5+): Do not use -G in link command.
+
 2014-10-30  Release Manager
 
 	* GCC 4.9.2 released.

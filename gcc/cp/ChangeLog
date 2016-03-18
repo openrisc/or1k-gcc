@@ -1,3 +1,157 @@
+2015-06-26  Release Manager
+
+	* GCC 4.9.3 released.
+
+2015-06-24  Jason Merrill  <jason@redhat.com>
+
+	PR c++/66501
+	* init.c (vec_copy_assign_is_trivial): New.
+	(build_vec_init): Use it.
+
+2015-06-23  Jason Merrill  <jason@redhat.com>
+
+	PR c++/65879
+	* tree.c (no_linkage_check): Skip the 'this' pointer.
+
+2015-06-03  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-03-19  Jakub Jelinek  <jakub@redhat.com>
+
+	* decl2.c (cplus_decl_attributes): Also add "omp declare target"
+	attribute for DECL_EXTERNAL VAR_DECLs.
+
+2015-04-29  Thomas Schwinge  <thomas@codesourcery.com>
+
+	Backport from trunk r222564:
+
+	2015-04-29  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* pt.c (tsubst_expr) <OMP_TARGET_UPDATE>: Use
+	OMP_TARGET_UPDATE_CLAUSES instead of OMP_CLAUSES.
+
+2015-04-23  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/65727
+	* lambda.c (maybe_resolve_dummy): Handle null return.
+
+2015-04-23  Jason Merrill  <jason@redhat.com>
+
+	PR c++/65695
+	* cvt.c (cp_fold_convert): Avoid wrapping PTRMEM_CST in NOP_EXPR.
+
+	PR c++/65721
+	* name-lookup.c (do_class_using_decl): Complain about specifying
+	the current class even if there are dependent bases.
+
+2015-04-23  David Krauss  <david_work@me.com>
+
+	PR c++/59766
+	* decl.c (grokdeclarator): Do not flag friends with deduced return.
+
+2015-03-26  Mikhail Maltsev  <maltsevm@gmail.com>
+
+	PR c++/65154
+	* init.c (build_vec_init): Fix initializing aggregates
+	with empty init list.
+
+2015-03-04  Jason Merrill  <jason@redhat.com>
+
+	PR c++/65209
+	PR c++/65309
+	* decl2.c (constrain_visibility_for_template): Handle reference
+	arguments.
+
+2015-02-25  Jason Merrill  <jason@redhat.com>
+
+	PR c++/62255
+	* pt.c (instantiate_decl): Handle recursive instantiation of
+	static data member.
+
+	* decl.c (begin_destructor_body): Condition clobber on
+	-flifetime-dse.
+
+2015-02-13  Jason Merrill  <jason@redhat.com>
+
+	PR c++/62017
+	* decl.c (begin_destructor_body): Only clobber the as-base part of
+	*this.
+
+2015-02-11  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-02-04  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/64824
+	PR c/64868
+	* parser.c (cp_parser_omp_atomic): Handle RDIV_EXPR.
+
+2015-02-04  Ville Voutilainen  <ville.voutilainen@gmail.com>
+
+	PR c++/64901
+	* decl.c (duplicate_decls): Also duplicate DECL_FINAL_P and
+	DECL_OVERRIDE_P.
+
+2015-01-29  Jason Merrill  <jason@redhat.com>
+
+	PR c++/64521
+	* repo.c (repo_emit_p): It's OK for a clone to be extern at this
+	point.
+
+2015-01-13  Jason Merrill  <jason@redhat.com>
+
+	PR c++/64514
+	* pt.c (coerce_template_parameter_pack): Return NULL for a
+	zero-length fixed parameter pack with a pack expansion arg.
+
+2015-01-07  Jason Merrill  <jason@redhat.com>
+
+	PR c++/64487
+	* semantics.c (finish_offsetof): Handle templates here.
+	* parser.c (cp_parser_builtin_offsetof): Not here.
+
+	PR c++/64352
+	* pt.c (tsubst_copy_and_build): Pass complain to mark_used.
+
+	PR c++/64251
+	* decl2.c (mark_used): Don't mark if in_template_function.
+
+	PR c++/64297
+	* typeck.c (apply_memfn_quals): Correct wrong TYPE_CANONICAL.
+
+	PR c++/64029
+	* decl.c (grok_reference_init): Complete array type.
+
+	PR c++/63657
+	PR c++/38958
+	* call.c (set_up_extended_ref_temp): Set TREE_USED on the reference
+	if the temporary has a non-trivial destructor.
+	* decl.c (poplevel): Don't look through references.
+
+	PR c++/63658
+	* pt.c (convert_nontype_argument): Call convert_from_reference.
+	(check_instantiated_arg): Don't be confused by reference refs.
+	(unify): Look through reference refs on the arg, too.
+	* mangle.c (write_template_arg): Look through reference refs.
+
+2014-12-19  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/60955
+	* pt.c (struct warning_sentinel): Move it...
+	* cp-tree.h: ... here.
+	* semantics.c (force_paren_expr): Use it.
+
+2014-11-21  Jason Merrill  <jason@redhat.com>
+
+	PR c++/63849
+	* mangle.c (decl_mangling_context): Use template_type_parameter_p.
+
+2014-11-11  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/63265
+	* pt.c (tsubst_copy_and_build, case COND_EXPR): Maybe fold to
+	constant the condition.
+
 2014-10-30  Release Manager
 
 	* GCC 4.9.2 released.

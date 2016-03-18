@@ -1177,7 +1177,7 @@ case "${host}" in
   *-mingw*)
     host_makefile_frag="config/mh-mingw"
     ;;
-  alpha*-*-linux*)
+  alpha*-linux*)
     host_makefile_frag="config/mh-alpha-linux"
     ;;
   hppa*-hp-hpux10*)
@@ -1658,6 +1658,9 @@ if test "x$with_isl" != "xno" &&
     ISL_CHECK_VERSION(0,11)
     if test "${gcc_cv_isl}" = no ; then
       ISL_CHECK_VERSION(0,12)
+      if test "${gcc_cv_isl}" = no ; then
+        ISL_CHECK_VERSION(0,14)
+      fi
     fi
   fi
   dnl Only execute fail-action, if ISL has been requested.

@@ -1,3 +1,49 @@
+2015-06-26  Release Manager
+
+	* GCC 4.9.3 released.
+
+2015-03-06  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* g++.dg/other/dump-ada-spec-3.C: Remove include and adjust.
+
+2015-03-06  Eric Botcazou  <ebotcazou@adacore.com>
+            Jonathan Wakely  <jwakely.gcc@gmail.com>
+
+	* c-ada-spec.c (dump_ada_double_name): Fix pasto.
+
+2015-03-05  Eric Botcazou  <ebotcazou@adacore.com>
+
+	PR ada/65319
+	* c-ada-spec.c (print_destructor): Remove obsolete code.
+
+2015-02-11  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-02-04  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/64824
+	PR c/64868
+	* c-omp.c (c_finish_omp_atomic): Use TRUNC_DIV_EXPR
+	instead of RDIV_EXPR.  Use build_binary_op instead of
+	build2_loc.
+
+2015-02-11  Richard Biener  <rguenther@suse.de>
+
+	Backport from mainline
+	2014-07-24  Marek Polacek  <polacek@redhat.com>
+
+	PR c/57653
+	* c-opts.c (c_finish_options): If -imacros is in effect, return.
+
+2015-01-20  Marek Polacek  <polacek@redhat.com>
+
+	Backport from mainline
+	2014-06-23  Marek Polacek  <polacek@redhat.com>
+
+	PR c/61553
+	* c-common.c (get_atomic_generic_size): Don't segfault if the
+	type doesn't have a size.
+
 2014-10-30  Release Manager
 
 	* GCC 4.9.2 released.

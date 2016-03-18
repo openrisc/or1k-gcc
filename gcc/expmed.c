@@ -463,7 +463,7 @@ strict_volatile_bitfield_p (rtx op0, unsigned HOST_WIDE_INT bitsize,
   /* Check for cases where the C++ memory model applies.  */
   if (bitregion_end != 0
       && (bitnum - bitnum % modesize < bitregion_start
-	  || bitnum - bitnum % modesize + modesize > bitregion_end))
+	  || bitnum - bitnum % modesize + modesize - 1 > bitregion_end))
     return false;
 
   return true;
@@ -3320,6 +3320,9 @@ expand_widening_mult (enum machine_mode mode, rtx op0, rtx op1, rtx target,
       int max_cost;
       enum mult_variant variant;
       struct algorithm algorithm;
+
+      if (coeff == 0)
+	return CONST0_RTX (mode);
 
       /* Special case powers of two.  */
       if (EXACT_POWER_OF_2_OR_ZERO_P (coeff))
