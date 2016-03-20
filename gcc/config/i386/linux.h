@@ -21,3 +21,4 @@ along with GCC; see the file COPYING3.  If not see
 
 #define GNU_USER_LINK_EMULATION "elf_i386"
 #define GLIBC_DYNAMIC_LINKER "/lib/ld-linux.so.2"
+#define MUSL_DYNAMIC_LINKER "/lib/ld-musl-i386.so.1"

@@ -31,6 +31,13 @@ along with GCC; see the file COPYING3.  If not see
 #undef UCLIBC_DYNAMIC_LINKER32
 #define UCLIBC_DYNAMIC_LINKER32 \
   "%{mnan=2008:/lib/ld-uClibc-mipsn8.so.0;:/lib/ld-uClibc.so.0}"
+
+#undef MUSL_DYNAMIC_LINKER32
+#define MUSL_DYNAMIC_LINKER32 "/lib/ld-musl-mips%{EL:el}%{msoft-float:-sf}.so.1"
+#undef MUSL_DYNAMIC_LINKER64
+#define MUSL_DYNAMIC_LINKER64 "/lib/ld-musl-mips64%{EL:el}%{msoft-float:-sf}.so.1"
+#define MUSL_DYNAMIC_LINKERN32 "/lib/ld-musl-mipsn32%{EL:el}%{msoft-float:-sf}.so.1"
+
 #undef UCLIBC_DYNAMIC_LINKER64
 #define UCLIBC_DYNAMIC_LINKER64 \
   "%{mnan=2008:/lib/ld64-uClibc-mipsn8.so.0;:/lib/ld64-uClibc.so.0}"
@@ -40,4 +47,4 @@ along with GCC; see the file COPYING3.  If not see
 #define BIONIC_DYNAMIC_LINKERN32 "/system/bin/linker32"
 #define GNU_USER_DYNAMIC_LINKERN32 \
   CHOOSE_DYNAMIC_LINKER (GLIBC_DYNAMIC_LINKERN32, UCLIBC_DYNAMIC_LINKERN32, \
-                         BIONIC_DYNAMIC_LINKERN32)
+                         BIONIC_DYNAMIC_LINKERN32, MUSL_DYNAMIC_LINKERN32)
