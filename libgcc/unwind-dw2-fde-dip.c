@@ -46,6 +46,10 @@
 #include "unwind-compat.h"
 #include "gthr.h"
 
+#if !defined(inhibit_libc) && defined(HAVE_LD_EH_FRAME_HDR) && defined(TARGET_DL_ITERATE_PHDR)
+# define USE_PT_GNU_EH_FRAME
+#endif
+
 #if !defined(inhibit_libc) && defined(HAVE_LD_EH_FRAME_HDR) \
     && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ > 2) \
 	|| (__GLIBC__ == 2 && __GLIBC_MINOR__ == 2 && defined(DT_CONFIG)))

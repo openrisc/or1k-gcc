@@ -537,6 +537,9 @@ ENDIAN_SELECT(" -mbig", " -mlittle", DEFAULT_ASM_ENDIAN)
 #ifndef CC1_SECURE_PLT_DEFAULT_SPEC
 #define CC1_SECURE_PLT_DEFAULT_SPEC ""
 #endif
+#ifndef LINK_SECURE_PLT_DEFAULT_SPEC
+#define LINK_SECURE_PLT_DEFAULT_SPEC ""
+#endif
 
 /* Pass -G xxx to the compiler.  */
 #undef CC1_SPEC
@@ -574,7 +577,8 @@ ENDIAN_SELECT(" -mbig", " -mlittle", DEFAULT_ASM_ENDIAN)
 %{R*} \
 %(link_shlib) \
 %{!T*: %(link_start) } \
-%(link_os)"
+%(link_os)" \
+"%{!mbss-plt: %{!msecure-plt: %(link_secure_plt_default)}}"
 
 /* Shared libraries are not default.  */
 #define LINK_SHLIB_SPEC "\
@@ -759,15 +763,18 @@ ENDIAN_SELECT(" -mbig", " -mlittle", DEFAULT_ASM_ENDIAN)
 
 #define GLIBC_DYNAMIC_LINKER "/lib/ld.so.1"
 #define UCLIBC_DYNAMIC_LINKER "/lib/ld-uClibc.so.0"
+#define MUSL_DYNAMIC_LINKER "/lib/ld-musl-powerpc.so.1"
 #if DEFAULT_LIBC == LIBC_UCLIBC
-#define CHOOSE_DYNAMIC_LINKER(G, U) "%{mglibc:" G ";:" U "}"
+#define CHOOSE_DYNAMIC_LINKER(G, U, M) "%{mglibc:" G ";:%{mmusl:" M ";:" U "}}"
+#elif DEFAULT_LIBC == LIBC_MUSL
+#define CHOOSE_DYNAMIC_LINKER(G, U, M) "%{mglibc:" G ";:%{muclibc:" U ";:" M "}}"
 #elif !defined (DEFAULT_LIBC) || DEFAULT_LIBC == LIBC_GLIBC
-#define CHOOSE_DYNAMIC_LINKER(G, U) "%{muclibc:" U ";:" G "}"
+#define CHOOSE_DYNAMIC_LINKER(G, U, M) "%{muclibc:" U ";:%{mmusl:" M ";:" G "}}"
 #else
 #error "Unsupported DEFAULT_LIBC"
 #endif
 #define GNU_USER_DYNAMIC_LINKER \
-  CHOOSE_DYNAMIC_LINKER (GLIBC_DYNAMIC_LINKER, UCLIBC_DYNAMIC_LINKER)
+  CHOOSE_DYNAMIC_LINKER (GLIBC_DYNAMIC_LINKER, UCLIBC_DYNAMIC_LINKER, MUSL_DYNAMIC_LINKER)
 
 #define LINK_OS_LINUX_SPEC "-m elf32ppclinux %{!shared: %{!static: \
   %{rdynamic:-export-dynamic} \
@@ -889,6 +896,7 @@ ncrtn.o%s"
   { "link_os_openbsd",		LINK_OS_OPENBSD_SPEC },			\
   { "link_os_default",		LINK_OS_DEFAULT_SPEC },			\
   { "cc1_secure_plt_default",	CC1_SECURE_PLT_DEFAULT_SPEC },		\
+  { "link_secure_plt_default",	LINK_SECURE_PLT_DEFAULT_SPEC },		\
   { "cpp_os_ads",		CPP_OS_ADS_SPEC },			\
   { "cpp_os_yellowknife",	CPP_OS_YELLOWKNIFE_SPEC },		\
   { "cpp_os_mvme",		CPP_OS_MVME_SPEC },			\

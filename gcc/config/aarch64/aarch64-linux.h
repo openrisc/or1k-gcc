@@ -29,6 +29,8 @@
 #undef  CC1_SPEC
 #define CC1_SPEC GNU_USER_TARGET_CC1_SPEC ASAN_CC1_SPEC
 
+#define MUSL_DYNAMIC_LINKER "/lib/ld-musl-aarch64.so.1"
+
 #define CPP_SPEC "%{pthread:-D_REENTRANT}"
 
 #define LINUX_TARGET_LINK_SPEC  "%{h*}		\
