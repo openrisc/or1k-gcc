@@ -632,6 +632,7 @@ proc check_profiling_available { test_what } {
 	     || [istarget nds32*-*-elf]
 	     || [istarget nios2-*-elf]
 	     || [istarget nvptx-*-*]
+	     || [istarget or1k-*-elf]
 	     || [istarget powerpc-*-eabi*]
 	     || [istarget powerpc-*-elf]
 	     || [istarget rx-*-*]	

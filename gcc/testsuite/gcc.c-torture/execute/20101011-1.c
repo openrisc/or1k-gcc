@@ -53,6 +53,12 @@
   /* Epiphany does not have hardware division, and the software implementation
      has truly undefined behavior for division by 0.  */
 # define DO_TEST 0
+#elif defined (__or1k__)
+  /* There is no strict behavior requirement for integer divide by zero
+     on OpenRISC 1000. The bare metal implementation ignores it, so we
+     will disable this test for now.
+  */
+# define DO_TEST 0
 #elif defined (__m68k__) && !defined(__linux__)
   /* Attempting to trap division-by-zero in this way isn't likely to work on 
      bare-metal m68k systems.  */

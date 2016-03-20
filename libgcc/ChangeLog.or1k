@@ -1,0 +1,61 @@
+2014-08-13  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.S: make internal calls to __udivsi3 hidden.
+
+2014-05-07  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.S: Use delay/no-delay compatibility macros.
+	* config/or1k/lib2funcs.c: Remove.
+	* config/or1k/t-or1k: Set LIB1ASMSRC and LIB1ASMFUNCS. 
+	Remove LIB2ADD define.
+
+2013-07-17  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/sfp-machine.h (_FP_QNANNEGATEDP): Define to 0.
+
+2013-07-10  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/crti.S: Rename __init/__fini to _init/_fini
+
+2013-02-13  Christian Svensson  <blue@cmd.nu>
+
+	* config.host: If we are targeting or1k*-linux or or1k*-uclibc do not
+	build crtn.o or crti.o. Do not include linux unwinder for other
+	targets (e.g. or1k*-elf) 
+
+2013-02-01  Christian Svensson  <blue@cmd.nu>
+
+	* config/or1k/t-crtstuff: updated file.
+	- Set CRTSTUFF_T_CFLAGS_S as well. (*-*-elf needs this)
+
+2013-01-24  Christian Svensson  <blue@cmd.nu>
+
+	* config/or1k/linux-unwind.h: new file
+	- support signal handling in DWARF2 unwinding
+	* config.host: include or1k/linux-unwind.h
+
+2012-12-29  Christian Svensson  <blue@cmd.nu>
+
+	* config/or1k/t-crtstuff: New file.
+	- Use -fno-dwarf2-cfi-asm on crtstuff to leave eh_frame empty.
+	* config.host: Include or1k/t-crtstuff
+
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
+	* config.host: add or1knd target
+	* config/or1k/or1k-asm.h: new file
+	- contains macros for making delay slot optional
+	* config/or1k/t-or1k: use C versions of divmod and mulsi3 for now
+	until asm versions are updated to use optional delay slot
+	* config/or1k/lib2funcs.c: new file; defines __mulsi3
+	* config/or1k/crti.S: include or1k-asm.h
+	* config/or1k/crtn.S: include or1k-asm.h; make delay slot optional
+
+2012-03-03  Peter Gavin  <pgavin@gmail.com>
+
+	* configure: regenerated
+
+2012-02-18  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.S: moved from gcc/config/or1k/or1k.S
+	* config/or1k/t-or1k: compile or1k.S
