@@ -3692,6 +3692,45 @@ rs6000_option_override_internal (bool global_init_p)
       && optimize >= 3)
     rs6000_isa_flags |= OPTION_MASK_P8_FUSION_SIGN;
 
+  /* Set -mallow-movmisalign to explicitly on if we have full ISA 2.07
+     support. If we only have ISA 2.06 support, and the user did not specify
+     the switch, leave it set to -1 so the movmisalign patterns are enabled,
+     but we don't enable the full vectorization support  */
+  if (TARGET_ALLOW_MOVMISALIGN == -1 && TARGET_P8_VECTOR && TARGET_DIRECT_MOVE)
+    TARGET_ALLOW_MOVMISALIGN = 1;
+
+  else if (TARGET_ALLOW_MOVMISALIGN && !TARGET_VSX)
+    {
+      if (TARGET_ALLOW_MOVMISALIGN > 0)
+	error ("-mallow-movmisalign requires -mvsx");
+
+      TARGET_ALLOW_MOVMISALIGN = 0;
+    }
+
+  /* Determine when unaligned vector accesses are permitted, and when
+     they are preferred over masked Altivec loads.  Note that if
+     TARGET_ALLOW_MOVMISALIGN has been disabled by the user, then
+     TARGET_EFFICIENT_UNALIGNED_VSX must be as well.  The converse is
+     not true.  */
+  if (TARGET_EFFICIENT_UNALIGNED_VSX)
+    {
+      if (!TARGET_VSX)
+	{
+	  if (rs6000_isa_flags_explicit & OPTION_MASK_EFFICIENT_UNALIGNED_VSX)
+	    error ("-mefficient-unaligned-vsx requires -mvsx");
+
+	  rs6000_isa_flags &= ~OPTION_MASK_EFFICIENT_UNALIGNED_VSX;
+	}
+
+      else if (!TARGET_ALLOW_MOVMISALIGN)
+	{
+	  if (rs6000_isa_flags_explicit & OPTION_MASK_EFFICIENT_UNALIGNED_VSX)
+	    error ("-mefficient-unaligned-vsx requires -mallow-movmisalign");
+
+	  rs6000_isa_flags &= ~OPTION_MASK_EFFICIENT_UNALIGNED_VSX;
+	}
+    }
+
   if (TARGET_DEBUG_REG || TARGET_DEBUG_TARGET)
     rs6000_print_isa_options (stderr, 0, "after defaults", rs6000_isa_flags);
 
@@ -4250,22 +4289,6 @@ rs6000_option_override_internal (bool global_init_p)
 	    rs6000_recip_control |= mask;
 	}
     }
-
-  /* Determine when unaligned vector accesses are permitted, and when
-     they are preferred over masked Altivec loads.  Note that if
-     TARGET_ALLOW_MOVMISALIGN has been disabled by the user, then
-     TARGET_EFFICIENT_UNALIGNED_VSX must be as well.  The converse is
-     not true.  */
-  if (TARGET_EFFICIENT_UNALIGNED_VSX == -1) {
-    if (TARGET_VSX && rs6000_cpu == PROCESSOR_POWER8
-	&& TARGET_ALLOW_MOVMISALIGN != 0)
-      TARGET_EFFICIENT_UNALIGNED_VSX = 1;
-    else
-      TARGET_EFFICIENT_UNALIGNED_VSX = 0;
-  }
-
-  if (TARGET_ALLOW_MOVMISALIGN == -1 && rs6000_cpu == PROCESSOR_POWER8)
-    TARGET_ALLOW_MOVMISALIGN = 1;
 
   /* Set the builtin mask of the various options used that could affect which
      builtins were used.  In the past we used target_flags, but we've run out
@@ -17678,8 +17701,21 @@ rs6000_secondary_reload_gpr (rtx reg, rtx mem, rtx scratch, bool store_p)
 
   if (GET_CODE (addr) == PRE_MODIFY)
     {
+      gcc_assert (REG_P (XEXP (addr, 0))
+		  && GET_CODE (XEXP (addr, 1)) == PLUS
+		  && XEXP (XEXP (addr, 1), 0) == XEXP (addr, 0));
       scratch_or_premodify = XEXP (addr, 0);
-      gcc_assert (REG_P (scratch_or_premodify));
+      if (!HARD_REGISTER_P (scratch_or_premodify))
+	/* If we have a pseudo here then reload will have arranged
+	   to have it replaced, but only in the original insn.
+	   Use the replacement here too.  */
+	scratch_or_premodify = find_replacement (&XEXP (addr, 0));
+
+      /* RTL emitted by rs6000_secondary_reload_gpr uses RTL
+	 expressions from the original insn, without unsharing them.
+	 Any RTL that points into the original insn will of course
+	 have register replacements applied.  That is why we don't
+	 need to look for replacements under the PLUS.  */
       addr = XEXP (addr, 1);
     }
   gcc_assert (GET_CODE (addr) == PLUS || GET_CODE (addr) == LO_SUM);
@@ -20537,12 +20573,15 @@ rs6000_pre_atomic_barrier (rtx mem, enum memmodel model)
     case MEMMODEL_RELAXED:
     case MEMMODEL_CONSUME:
     case MEMMODEL_ACQUIRE:
+    case MEMMODEL_SYNC_ACQUIRE:
       break;
     case MEMMODEL_RELEASE:
+    case MEMMODEL_SYNC_RELEASE:
     case MEMMODEL_ACQ_REL:
       emit_insn (gen_lwsync ());
       break;
     case MEMMODEL_SEQ_CST:
+    case MEMMODEL_SYNC_SEQ_CST:
       emit_insn (gen_hwsync ());
       break;
     default:
@@ -20559,10 +20598,13 @@ rs6000_post_atomic_barrier (enum memmodel model)
     case MEMMODEL_RELAXED:
     case MEMMODEL_CONSUME:
     case MEMMODEL_RELEASE:
+    case MEMMODEL_SYNC_RELEASE:
       break;
     case MEMMODEL_ACQUIRE:
+    case MEMMODEL_SYNC_ACQUIRE:
     case MEMMODEL_ACQ_REL:
     case MEMMODEL_SEQ_CST:
+    case MEMMODEL_SYNC_SEQ_CST:
       emit_insn (gen_isync ());
       break;
     default:
@@ -20662,8 +20704,8 @@ rs6000_expand_atomic_compare_and_swap (rtx operands[])
   oldval = operands[3];
   newval = operands[4];
   is_weak = (INTVAL (operands[5]) != 0);
-  mod_s = (enum memmodel) INTVAL (operands[6]);
-  mod_f = (enum memmodel) INTVAL (operands[7]);
+  mod_s = memmodel_from_int (INTVAL (operands[6]));
+  mod_f = memmodel_from_int (INTVAL (operands[7]));
   orig_mode = mode = GET_MODE (mem);
 
   mask = shift = NULL_RTX;
@@ -20751,12 +20793,12 @@ rs6000_expand_atomic_compare_and_swap (rtx operands[])
       emit_unlikely_jump (x, label1);
     }
 
-  if (mod_f != MEMMODEL_RELAXED)
+  if (!is_mm_relaxed (mod_f))
     emit_label (XEXP (label2, 0));
 
   rs6000_post_atomic_barrier (mod_s);
 
-  if (mod_f == MEMMODEL_RELAXED)
+  if (is_mm_relaxed (mod_f))
     emit_label (XEXP (label2, 0));
 
   if (shift)
@@ -22311,6 +22353,7 @@ rs6000_function_ok_for_sibcall (tree decl, tree exp)
       || ((DEFAULT_ABI == ABI_AIX || DEFAULT_ABI == ABI_ELFv2)
 	  && decl
 	  && !DECL_EXTERNAL (decl)
+	  && !DECL_WEAK (decl)
 	  && (*targetm.binds_local_p) (decl))
       || (DEFAULT_ABI == ABI_V4
 	  && (!TARGET_SECURE_PLT
@@ -30220,13 +30263,15 @@ rs6000_declare_alias (struct symtab_node *n, void *d)
           if (dollar_inside) {
 	      if (data->function_descriptor)
                 fprintf(data->file, "\t.rename .%s,\".%s\"\n", buffer, name);
-	      else
-                fprintf(data->file, "\t.rename %s,\"%s\"\n", buffer, name);
+	      fprintf(data->file, "\t.rename %s,\"%s\"\n", buffer, name);
 	    }
 	  if (data->function_descriptor)
-	    fputs ("\t.globl .", data->file);
-	  else
-	    fputs ("\t.globl ", data->file);
+	    {
+	      fputs ("\t.globl .", data->file);
+	      RS6000_OUTPUT_BASENAME (data->file, buffer);
+	      putc ('\n', data->file);
+	    }
+	  fputs ("\t.globl ", data->file);
 	  RS6000_OUTPUT_BASENAME (data->file, buffer);
 	  putc ('\n', data->file);
 	}
@@ -30240,14 +30285,16 @@ rs6000_declare_alias (struct symtab_node *n, void *d)
       if (dollar_inside)
 	{
 	  if (data->function_descriptor)
-            fprintf(data->file, "\t.rename %s,\"%s\"\n", buffer, name);
-	  else
             fprintf(data->file, "\t.rename .%s,\".%s\"\n", buffer, name);
+	  fprintf(data->file, "\t.rename %s,\"%s\"\n", buffer, name);
 	}
       if (data->function_descriptor)
-	fputs ("\t.lglobl .", data->file);
-      else
-	fputs ("\t.lglobl ", data->file);
+	{
+	  fputs ("\t.lglobl .", data->file);
+	  RS6000_OUTPUT_BASENAME (data->file, buffer);
+	  putc ('\n', data->file);
+	}
+      fputs ("\t.lglobl ", data->file);
       RS6000_OUTPUT_BASENAME (data->file, buffer);
       putc ('\n', data->file);
     }
@@ -32274,6 +32321,8 @@ static struct rs6000_opt_mask const rs6000_opt_masks[] =
   { "crypto",			OPTION_MASK_CRYPTO,		false, true  },
   { "direct-move",		OPTION_MASK_DIRECT_MOVE,	false, true  },
   { "dlmzb",			OPTION_MASK_DLMZB,		false, true  },
+  { "efficient-unaligned-vsx",	OPTION_MASK_EFFICIENT_UNALIGNED_VSX,
+								false, true  },
   { "fprnd",			OPTION_MASK_FPRND,		false, true  },
   { "hard-dfp",			OPTION_MASK_DFP,		false, true  },
   { "htm",			OPTION_MASK_HTM,		false, true  },

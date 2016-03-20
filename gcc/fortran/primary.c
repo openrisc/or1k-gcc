@@ -748,7 +748,7 @@ cleanup:
 /* Match a substring reference.  */
 
 static match
-match_substring (gfc_charlen *cl, int init, gfc_ref **result)
+match_substring (gfc_charlen *cl, int init, gfc_ref **result, bool deferred)
 {
   gfc_expr *start, *end;
   locus old_loc;
@@ -800,7 +800,7 @@ match_substring (gfc_charlen *cl, int init, gfc_ref **result)
     }
 
   /* Optimize away the (:) reference.  */
-  if (start == NULL && end == NULL)
+  if (start == NULL && end == NULL && !deferred)
     ref = NULL;
   else
     {
@@ -1098,7 +1098,7 @@ got_delim:
   if (ret != -1)
     gfc_internal_error ("match_string_constant(): Delimiter not found");
 
-  if (match_substring (NULL, 0, &e->ref) != MATCH_NO)
+  if (match_substring (NULL, 0, &e->ref, false) != MATCH_NO)
     e->expr_type = EXPR_SUBSTRING;
 
   *result = e;
@@ -1201,6 +1201,9 @@ match_sym_complex_part (gfc_expr **result)
       gfc_error ("Expected PARAMETER symbol in complex constant at %C");
       return MATCH_ERROR;
     }
+
+  if (!sym->value)
+    goto error;
 
   if (!gfc_numeric_ts (&sym->value->ts))
     {
@@ -2078,7 +2081,8 @@ check_substring:
 
   if (primary->ts.type == BT_CHARACTER)
     {
-      switch (match_substring (primary->ts.u.cl, equiv_flag, &substring))
+      bool def = primary->ts.deferred == 1;
+      switch (match_substring (primary->ts.u.cl, equiv_flag, &substring, def))
 	{
 	case MATCH_YES:
 	  if (tail == NULL)
@@ -2642,7 +2646,7 @@ gfc_match_structure_constructor (gfc_symbol *sym, gfc_expr **result)
   gfc_expr *e;
   gfc_symtree *symtree;
 
-  gfc_get_sym_tree (sym->name, NULL, &symtree, false);   /* Can't fail */
+  gfc_get_ha_sym_tree (sym->name, &symtree);
 
   e = gfc_get_expr ();
   e->symtree = symtree;
@@ -3091,7 +3095,7 @@ gfc_match_rvalue (gfc_expr **result)
 	     that we're not sure is a variable yet.  */
 
 	  if ((implicit_char || sym->ts.type == BT_CHARACTER)
-	      && match_substring (sym->ts.u.cl, 0, &e->ref) == MATCH_YES)
+	      && match_substring (sym->ts.u.cl, 0, &e->ref, false) == MATCH_YES)
 	    {
 
 	      e->expr_type = EXPR_VARIABLE;

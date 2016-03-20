@@ -1,3 +1,475 @@
+2015-12-04  Release Manager
+
+	* GCC 5.3.0 released.
+
+2015-11-26  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/libstdc++-prettyprinters/debug.cc: Add -std=gnu++98 to
+	dg-options and avoid use of uniform-init.
+
+	* testsuite/libstdc++-prettyprinters/simple.cc: Add -std=gnu++98 to
+	dg-options and avoid use of uniform-init.
+
+2015-11-26  David Edelsohn  <dje.gcc@gmail.com>
+
+	* configure: Regenerate.
+
+2015-11-25  Jonathan Wakely  <jwakely@redhat.com>
+
+	Backport from mainline
+	2015-11-12  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/56158
+	* include/bits/ios_base.h (_Ios_Fmtflags, _Ios_Openmode, _Ios_Iostate):
+	Define enumerators to ensure all values of type int are valid values
+	of the enumeration type.
+	* testsuite/27_io/ios_base/types/fmtflags/case_label.cc: Add new cases.
+	* testsuite/27_io/ios_base/types/iostate/case_label.cc: Likewise.
+	* testsuite/27_io/ios_base/types/openmode/case_label.cc: Likewise.
+
+	Backport from mainline
+	2015-09-17  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/allocator.h (__shrink_to_fit_aux<T, true>::_S_do_it):
+	Do nothing if exceptions are disabled.
+	* include/bits/basic_string.h (basic_string::shrink_to_fit): Likewise.
+
+2015-11-24  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* acinclude.m4 (GLIBCXX_CHECK_MATH11_PROTO): New test.
+	* configure.ac: Use it.
+	* configure: Regenerate.
+	* config.h.in: Regenerate.
+
+	* include/c_global/cmath [__cplusplus >= 201103L]
+	(std::fpclassify): Wrap in !__CORRECT_ISO_CPP11_MATH_H_PROTO.
+	(std::isfinite): Likewise.
+	(std::isinf): Likewise.
+	(std::isnan): Likewise.
+	(std::isnormal): Likewise.
+	(std::signbit): Likewise.
+	(std::isgreater): Likewise.
+	(std::isgreaterequal): Likewise.
+	(std::isless): Likewise.
+	(std::islessequal): Likewise.
+	(std::islessgreater): Likewise.
+	(std::isunordered): Likewise.
+	(std::acosh): Likewise.
+	(std::asinh): Likewise.
+	(std::atanh): Likewise.
+	(std::cbrt): Likewise.
+	(std::copysign): Likewise.
+	(std::erf): Likewise.
+	(std::erfc): Likewise.
+	(std::exp2): Likewise.
+	(std::expm1): Likewise.
+	(std::fdim): Likewise.
+	(std::fma): Likewise.
+	(std::fmax): Likewise.
+	(std::fmin): Likewise.
+	(std::hypot): Likewise.
+	(std::ilogb): Likewise.
+	(std::lgamma): Likewise.
+	(std::llrint): Likewise.
+	(std::llround): Likewise.
+	(std::log1p): Likewise.
+	(std::log2): Likewise.
+	(std::logb): Likewise.
+	(std::lrint): Likewise.
+	(std::lround): Likewise.
+	(std::nearbyint): Likewise.
+	(std::nextafter): Likewise.
+	(std::nexttoward): Likewise.
+	(std::remainder): Likewise.
+	(std::remquo): Likewise.
+	(std::rint): Likewise.
+	(std::round): Likewise.
+	(std::scalbln): Likewise.
+	(std::scalbn): Likewise.
+	(std::tgamma): Likewise.
+	(std::trunc): Likewise.
+	* include/tr1/cmath [_GLIBCXX_USE_C99_MATH_TR1] (std::tr1::acosh):
+	Wrap in !__CORRECT_ISO_CPP11_MATH_H_PROTO.
+	(std::tr1::asinh): Likewise.
+	(std::tr1::atanh): Likewise.
+	(std::tr1::cbrt): Likewise.
+	(std::tr1::copysign): Likewise.
+	(std::tr1::erf): Likewise.
+	(std::tr1::erfc): Likewise.
+	(std::tr1::exp2): Likewise.
+	(std::tr1::expm1): Likewise.
+	(std::tr1::fabs): Likewise.
+	(std::tr1::fdim): Likewise.
+	(std::tr1::fma): Likewise.
+	(std::tr1::fmax): Likewise.
+	(std::tr1::fmin): Likewise.
+	(std::tr1::hypot): Likewise.
+	(std::tr1::ilogb): Likewise.
+	(std::tr1::lgamma): Likewise.
+	(std::tr1::llrint): Likewise.
+	(std::tr1::llround): Likewise.
+	(std::tr1::log1p): Likewise.
+	(std::tr1::log2): Likewise.
+	(std::tr1::logb): Likewise.
+	(std::tr1::lrint): Likewise.
+	(std::tr1::lround): Likewise.
+	(std::tr1::nearbyint): Likewise.
+	(std::tr1::nextafter): Likewise.
+	(std::tr1::nexttoward): Likewise.
+	(std::tr1::remainder): Likewise.
+	(std::tr1::remquo): Likewise.
+	(std::tr1::rint): Likewise.
+	(std::tr1::scalbln): Likewise.
+	(std::tr1::scalbn): Likewise.
+	(std::tr1::tgamma): Likewise.
+	(std::tr1::trunc): Likewise.
+	(std::tr1::pow): Likewise.
+
+	* testsuite/26_numerics/headers/cmath/c99_classification_macros_c.cc:
+	Restrict dg-xfail-if to *-*-solaris2.1[01]*.
+
+2015-11-20  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	PR libstdc++/68448
+	* python/hook.in: Call register_libstdcxx_printers.
+	* python/libstdcxx/v6/__init__.py: Wrap it to
+	register_libstdcxx_printers.
+
+2015-11-16  Doug Evans  <dje@google.com>
+
+	PR libstdc++/67440
+	* python/libstdcxx/v6/printers.py (find_type): Handle "const" in
+	type name.
+	* testsuite/libstdc++-prettyprinters/debug.cc: Add test for
+	const set<int>.
+	* testsuite/libstdc++-prettyprinters/simple.cc: Ditto.
+	* testsuite/libstdc++-prettyprinters/simple11.cc: Ditto.
+
+2015-11-10  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/68190
+	* include/bits/stl_multiset.h (multiset::find): Fix return types.
+	* include/bits/stl_set.h (set::find): Likewise.
+	* testsuite/23_containers/map/operations/2.cc: Test find return types.
+	* testsuite/23_containers/multimap/operations/2.cc: Likewise.
+	* testsuite/23_containers/multiset/operations/2.cc: Likewise.
+	* testsuite/23_containers/set/operations/2.cc: Likewise.
+
+2015-10-08  Jonathan Wakely  <jwakely@redhat.com>
+
+	Backport from mainline
+	2015-09-17  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/65913
+	* include/bits/atomic_base.h (__atomic_base<_TTp>::is_lock_free(),
+	__atomic_base<_PTp*>::is_lock_free()): Call the built-in with the
+	immediate pointer value, not a variable.
+	* include/std/atomic (atomic<T>::is_lock_free()): Likewise.
+	* testsuite/29_atomics/atomic/65913.cc: New.
+
+2015-10-07  Jonathan Wakely  <jwakely@redhat.com>
+
+	Backport Filesystem TS fixes from mainline.
+
+	PR libstdc++/67173
+	PR libstdc++/67747
+	* acinclude.m4 (GLIBCXX_CHECK_FILESYSTEM_DEPS): Check _XOPEN_VERSION
+	and PATH_MAX for _GLIBCXX_USE_REALPATH.  Remove _GLIBCXX_ prefix
+	from HAVE_STRUCT_DIRENT_D_TYPE.
+	* config.h.in: Regenerate.
+	* configure: Regenerate.
+	* include/bits/locale_conv.h [!_GLIBCXX_USE_WCHAR_T]
+	(__do_str_codecvt, __str_codecvt_in, __str_codecvt_out): Enable.
+	* include/experimental/fs_dir.h (operator==, operator==):
+	Use owner_before instead of pointer equality.
+	(directory_iterator(std::shared_ptr<_Dir>, error_code*)): Remove.
+	* include/experimental/fs_path.h (operator==, operator==):
+	* include/experimental/fs_path.h [!_GLIBCXX_USE_WCHAR_T]
+	(path::wstring, path::generic_wstring): Disable.
+	* src/filesystem/path.cc (path::_S_convert_loc)
+	[!_GLIBCXX_USE_WCHAR_T]: Skip conversion.
+	* src/filesystem/Makefile.am: Add cxx11_abi_sources.
+	* src/filesystem/Makefile.in: Regenerate.
+	* src/filesystem/cow-dir.cc: New.
+	* src/filesystem/cow-ops.cc: New.
+	* src/filesystem/cow-path.cc: New.
+	* src/filesystem/dir.cc: Define macro for new ABI.
+	(native_readdir): Remove.
+	(_Dir::advance): Use readdir instead of native_readdir.
+	(recursive_directory_iterator(const path&, directory_options,
+	error_code*)): Use swap instead of reset.
+	(ErrorCode): Remove.
+	(_Dir::advance): Change ErrorCode parameter to error_code*, add
+	directory_options parameter and check it on error.
+	(opendir): Rename to open_dir to avoid clashing with macro. Change
+	ErrorCode parameter to error_code*.
+	(make_shared_dir): Remove.
+	(native_readdir) [_GLIBCXX_FILESYSTEM_IS_WINDOWS]: Don't set errno.
+	(directory_iterator(std::shared_ptr<_Dir>, error_code*)): Remove.
+	(directory_iterator(const path&, directory_options, error_code*)):
+	Pass options to _Dir::advance and create non-end iterator on error.
+	(recursive_directory_iterator(const path&, directory_options,
+	error_code*)): Clear error_code on ignored error, create non-end
+	iterator otherwise.
+	(recursive_directory_iterator::increment): Pass _M_options to
+	_Dir::advance.
+	(recursive_directory_iterator::pop): Likewise.
+	* src/filesystem/ops.cc: Define macro for new ABI.
+	(canonical) [!_GLIBCXX_USE_REALPATH]: Add alternative implementation.
+	(is_dot, is_dotdot): Define new helpers.
+	(create_directories): Fix error handling.
+	* src/filesystem/path.cc: Define macro for new ABI.
+	(path::_S_convert_loc) [!_GLIBCXX_USE_WCHAR_T]: Skip conversion.
+	* testsuite/experimental/filesystem/iterators/directory_iterator.cc:
+	New.
+	* testsuite/experimental/filesystem/iterators/
+	recursive_directory_iterator.cc: New.
+	* testsuite/experimental/filesystem/operations/canonical.cc: New.
+	* testsuite/experimental/filesystem/operations/create_directories.cc:
+	New.
+	* testsuite/experimental/filesystem/operations/exists.cc: Add more
+	tests.
+	* testsuite/experimental/filesystem/operations/absolute.cc: Add test
+	variables.
+	* testsuite/experimental/filesystem/operations/copy.cc: Likewise.
+	* testsuite/experimental/filesystem/operations/current_path.cc:
+	Likewise.
+	* testsuite/experimental/filesystem/operations/file_size.cc: Likewise.
+	* testsuite/experimental/filesystem/operations/status.cc: Likewise.
+	* testsuite/experimental/filesystem/operations/temp_directory_path.cc:
+	Likewise.
+	* testsuite/experimental/filesystem/path/assign/assign.cc: Check for
+	wchar_t support.
+	* testsuite/experimental/filesystem/path/concat/strings.cc: Likewise.
+	* testsuite/experimental/filesystem/path/construct/range.cc: Likewise.
+
+2015-10-02  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/65049
+	* include/bits/char_traits.h (char_traits<char>::compare,
+	char_traits<char>::find, char_traits<char>::move,
+	char_traits<char>::copy, char_traits<char>::assign): Check for zero
+	length.
+	(char_traits<wchar_t>::compare, char_traits<wchar_t>::find,
+	char_traits<wchar_t>::move, char_traits<wchar_t>::copy,
+	char_traits<wchar_t>::assign): Likewise.
+	(char_traits<char16_t>::move, char_traits<char16_t>::copy): Likewise.
+	(char_traits<char32_t>::move, char_traits<char32_t>::copy): Likewise.
+	* include/ext/pod_char_traits.h (char_traits<character<>>::move,
+	char_traits<character<>>::copy): Likewise.
+	* testsuite/21_strings/char_traits/requirements/char/65049.cc: New.
+	* testsuite/21_strings/char_traits/requirements/char16_t/65049.cc:
+	New.
+	* testsuite/21_strings/char_traits/requirements/char32_t/65049.cc:
+	New.
+	* testsuite/21_strings/char_traits/requirements/wchar_t/65049.cc:
+	New.
+
+	PR libstdc++/67707
+	* include/bits/stl_deque.h (_Deque_base::_M_move_impl): Initialize
+	empty object.
+	* testsuite/23_containers/deque/allocator/move.cc: Check moved-from
+	deque.
+	* testsuite/23_containers/deque/requirements/dr438/assign_neg.cc:
+	Adjust dg-error line number.
+	* testsuite/23_containers/deque/requirements/dr438/
+	constructor_1_neg.cc: Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/
+	constructor_2_neg.cc: Likewise.
+	* testsuite/23_containers/deque/requirements/dr438/insert_neg.cc:
+	Likewise.
+
+	PR libstdc++/65142
+	* src/c++11/random.cc (random_device::_M_getval()): Check read result
+	and retry after short reads.
+
+2015-09-03  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/std/shared_mutex (shared_timed_mutex::shared_timed_mutex):
+	Replace throw with __throw_bad_alloc.
+
+	PR libstdc++/66998
+	* include/experimental/functional (_Not_fn): Add exception
+	specifications and non-deduced return types.
+	(not_fn): Add exception specification and wrap pointer-to-member.
+	* testsuite/experimental/functional/not_fn.cc: Test in SFINAE context
+	and test pointer-to-member.
+
+	Backport from mainline
+	2015-08-27  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/67374
+	* include/bits/range_access.h (valarray, begin, end): Declare.
+	* testsuite/26_numerics/valarray/range_access.cc: Test const
+	overloads.
+	* testsuite/26_numerics/valarray/range_access2.cc: New.
+
+	Backport from mainline
+	2015-07-24  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/atomic_futex.h [_GLIBCXX_HAVE_LINUX_FUTEX]
+	(_M_load_and_test_until): Whitespace.
+	(_M_load_and_test): Value-initialize the unused durations.
+	(_M_load_when_equal): Add missing return value.
+
+	Backport from mainline
+	2015-07-13  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/66855
+	* src/c++11/codecvt.cc (__codecvt_utf8_utf16_base::do_in): Override
+	endianness bit in mode.
+	* testsuite/22_locale/codecvt/codecvt_utf8_utf16/66855.cc: New.
+
+	Backport from mainline
+	2015-04-27  Dmitry Prokoptsev  <dprokoptsev@gmail.com>
+		    Michael Hanselmann  <public@hansmi.ch>
+
+	PR libstdc++/62258
+	* libsupc++/eh_ptr.cc (rethrow_exception): Increment count of
+	uncaught exceptions.
+	* testsuite/18_support/exception_ptr/62258.cc: New.
+
+2015-08-28  Tim Shen  <timshen@google.com>
+
+	Backport from mainline
+	2015-08-28  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/67362
+	* include/bits/regex_scanner.tcc (_Scanner<>::_M_scan_normal):
+	Always returns ordinary char token if the char isn't
+	considered a special char.
+	* testsuite/28_regex/regression.cc: New test file for collecting
+	regression testcases from, typically, bugzilla.
+
+2015-08-20  Jonathan Wakely  <jwakely@redhat.com>
+
+	* python/Makefile.am: Ensure gdb.py is installed for libstdc++ not
+	libstdc++fs.
+	* python/Makefile.in: Regenerate.
+
+2015-08-18  Jonathan Wakely  <jwakely@redhat.com>
+
+	Backport Filesystem TS from mainline
+	* acinclude.m4 (GLIBCXX_ENABLE_FILESYSTEM_TS,
+	GLIBCXX_CHECK_FILESYSTEM_DEPS): Define.
+	* configure.ac: Use them.
+	* configure: Regenerate.
+	* config.h.in: Regenerate.
+	* include/Makefile.am: Add filesystem headers. Fix order of headers.
+	* include/Makefile.in: Regenerate.
+	* include/bits/locale_conv.h (__do_str_codecvt, __str_codecvt_in,
+	__str_codecvt_out, wstring_convert): Refactor to move all conversion
+	logic to non-member functions.
+	* include/bits/quoted_string.h (_Quoted_string, operator<<,
+	operator>>): Move from <iomanip> to new header.
+	* include/experimental/filesystem: New.
+	* include/experimental/fs_dir.h: New.
+	* include/experimental/fs_fwd.h: New.
+	* include/experimental/fs_ops.h: New.
+	* include/experimental/fs_path.h: New.
+	* include/std/iomanip (_Quoted_string, operator<<, operator>>): Move
+	to <bits/quoted_string.h>.
+	* libstdcxx/v6/printers.py (StdExpPathPrinter): Define.
+	* scripts/testsuite_flags.in: Add filesystem dir to ldflags.
+	* src/Makefile.am: Add filesystem sub-dir.
+	* src/Makefile.in: Regenerate.
+	* src/filesystem/Makefile.am: New.
+	* src/filesystem/Makefile.in: New.
+	* src/filesystem/dir.cc: New.
+	* src/filesystem/ops.cc: New.
+	* src/filesystem/path.cc: New.
+	* testsuite/experimental/filesystem/operations/absolute.cc: New.
+	* testsuite/experimental/filesystem/operations/copy.cc: New.
+	* testsuite/experimental/filesystem/operations/current_path.cc: New.
+	* testsuite/experimental/filesystem/operations/exists.cc: New.
+	* testsuite/experimental/filesystem/operations/file_size.cc: New.
+	* testsuite/experimental/filesystem/operations/status.cc: New.
+	* testsuite/experimental/filesystem/operations/temp_directory_path.cc:
+	New.
+	* testsuite/experimental/filesystem/path/append/path.cc: New.
+	* testsuite/experimental/filesystem/path/assign/assign.cc: New.
+	* testsuite/experimental/filesystem/path/assign/copy.cc: New.
+	* testsuite/experimental/filesystem/path/compare/compare.cc: New.
+	* testsuite/experimental/filesystem/path/compare/path.cc: New.
+	* testsuite/experimental/filesystem/path/compare/strings.cc: New.
+	* testsuite/experimental/filesystem/path/concat/path.cc: New.
+	* testsuite/experimental/filesystem/path/concat/strings.cc: New.
+	* testsuite/experimental/filesystem/path/construct/copy.cc: New.
+	* testsuite/experimental/filesystem/path/construct/default.cc: New.
+	* testsuite/experimental/filesystem/path/construct/locale.cc: New.
+	* testsuite/experimental/filesystem/path/construct/range.cc: New.
+	* testsuite/experimental/filesystem/path/decompose/extension.cc: New.
+	* testsuite/experimental/filesystem/path/decompose/filename.cc: New.
+	* testsuite/experimental/filesystem/path/decompose/parent_path.cc:
+	New.
+	* testsuite/experimental/filesystem/path/decompose/relative_path.cc:
+	New.
+	* testsuite/experimental/filesystem/path/decompose/root_directory.cc:
+	New.
+	* testsuite/experimental/filesystem/path/decompose/root_name.cc: New.
+	* testsuite/experimental/filesystem/path/decompose/root_path.cc: New.
+	* testsuite/experimental/filesystem/path/decompose/stem.cc: New.
+	* testsuite/experimental/filesystem/path/generic/generic_string.cc:
+	New.
+	* testsuite/experimental/filesystem/path/itr/traversal.cc: New.
+	* testsuite/experimental/filesystem/path/modifiers/clear.cc: New.
+	* testsuite/experimental/filesystem/path/modifiers/make_preferred.cc:
+	New.
+	* testsuite/experimental/filesystem/path/modifiers/remove_filename.cc:
+	New.
+	* testsuite/experimental/filesystem/path/modifiers/
+	replace_extension.cc: New.
+	* testsuite/experimental/filesystem/path/modifiers/replace_filename.cc:
+	New.
+	* testsuite/experimental/filesystem/path/modifiers/swap.cc: New.
+	* testsuite/experimental/filesystem/path/nonmember/hash_value.cc:
+	New.
+	* testsuite/experimental/filesystem/path/query/empty.cc: New.
+	* testsuite/experimental/filesystem/path/query/has_extension.cc: New.
+	* testsuite/experimental/filesystem/path/query/has_filename.cc: New.
+	* testsuite/experimental/filesystem/path/query/has_parent_path.cc:
+	New.
+	* testsuite/experimental/filesystem/path/query/has_relative_path.cc:
+	New.
+	* testsuite/experimental/filesystem/path/query/has_root_directory.cc:
+	New.
+	* testsuite/experimental/filesystem/path/query/has_root_name.cc: New.
+	* testsuite/experimental/filesystem/path/query/has_root_path.cc: New.
+	* testsuite/experimental/filesystem/path/query/has_stem.cc: New.
+	* testsuite/experimental/filesystem/path/query/is_relative.cc: New.
+	* testsuite/lib/dg-options.exp (dg-require-filesystem-ts): Define.
+	* testsuite/lib/libstdc++.exp (check_v3_target_filesystem_ts): Define.
+	* testsuite/util/testsuite_fs.h: New.
+
+2015-08-18  Jonathan Wakely  <jwakely@redhat.com>
+
+	* Makefile.in: Regenerate with automake-1.11.6.
+	* aclocal.m4: Likewise.
+	* configure: Likewise.
+	* doc/Makefile.in: Likewise.
+	* include/Makefile.in: Likewise.
+	* libsupc++/Makefile.in: Likewise.
+	* po/Makefile.in: Likewise.
+	* python/Makefile.in: Likewise.
+	* src/Makefile.in: Likewise.
+	* src/c++11/Makefile.in: Likewise.
+	* src/c++98/Makefile.in: Likewise.
+	* testsuite/Makefile.in: Likewise.
+
+2015-07-29  Tim Shen  <timshen@google.com>
+
+	Backport from mainline
+	2015-07-29  Tim Shen  <timshen@google.com>
+
+	PR libstdc++/67015
+	* include/bits/regex_compiler.h (_Compiler<>::_M_expression_term,
+	_BracketMatcher<>::_M_add_collating_element): Change signature
+	to make checking the and of bracket expression easier.
+	* include/bits/regex_compiler.tcc (_Compiler<>::_M_expression_term):
+	Treat '-' as a valid literal if it's at the end of bracket expression.
+	* testsuite/28_regex/algorithms/regex_match/cstring_bracket_01.cc:
+	New testcases.
+
 2015-07-16  Release Manager
 
 	* GCC 5.2.0 released.

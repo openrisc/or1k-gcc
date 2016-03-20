@@ -1,3 +1,110 @@
+2015-12-04  Release Manager
+
+	* GCC 5.3.0 released.
+
+2015-11-24  Szabolcs Nagy  <szabolcs.nagy@arm.com>
+
+	Backport from mainline
+	2015-11-23  Szabolcs Nagy  <szabolcs.nagy@arm.com>
+
+	PR target/68059
+	* config/arm/linux-atomic-64bit.c (__write): Rename to...
+	(write): ...this and fix the return type.
+
+2015-11-16  David Edelsohn  <dje.gcc@gmail.com>
+
+	Backport from mainline
+	2015-11-15  David Edelsohn  <dje.gcc@gmail.com>
+
+	* config/rs6000/on_exit.c: New file.
+	* config/rs6000/t-aix-cxa (LIB2ADDEH): Build on_exit.c.
+	* config/rs6000/libgcc-aix-cxa.ver (on_exit): Add symbol to exports.
+
+2015-11-08  David Edelsohn  <dje.gcc@gmail.com>
+
+	Backport from mainline
+	2015-11-07  David Edelsohn  <dje.gcc@gmail.com>
+
+	* config/rs6000/atexit.c: New file.
+	* config/rs6000/t-aix-cxa (LIB2ADDEH): Build atexit.c.
+	* config/rs6000/libgcc-aix-cxa.ver (atexit): Add symbol to exports.
+	* config/rs6000/cxa_finalize.c
+	(catomic_compare_and_exchange_bool_acq): Negate return value.
+	
+2015-10-19  Venkataramanan Kumar  <Venkataramanan.kumar@amd.com>
+
+	Backport from mainline
+	2015-10-09  Venkataramanan kumar  <venkataramanan.kumar@amd.com>
+
+	 * config/i386/cpuinfo.c (get_amd_cpu): Detect bdver4.
+	(__cpu_indicator_init): Fix model selection for AMD CPUs.
+
+2015-10-01  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline
+	2015-09-24  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* config.host (*-*-solaris2*): Add t-crtstuff-pic to tmake_file.
+	Add crtbeginS.o, crtendS.o to extra_parts if libgcc_cv_solaris_crts.
+	* config/sol2/gmon.c: (monstartup): Don't write trailing NUL of
+	messages.
+	(internal_mcount): Likewise.
+	* config/sol2/t-sol2 (crtp.o, crtpg.o, gmon.o): Compile with
+	crt_compile, add CRTSTUFF_T_CFLAGS_S.
+
+2015-10-01  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	Backport from mainline
+	2015-09-24  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* configure.ac (libgcc_cv_solaris_crts): New test.
+	* configure: Regenerate.
+	* config.in: Regenerate.
+	* config/sol2/crtp.c, config/sol2/crtpg.c: New files.
+	* config/gmon-sol2.c: Rename to ...
+	* config/sol2/gmon.c: ... this.
+	Include auto-target.h.
+	(internal_mcount): Wrap setup handling in !HAVE_SOLARIS_CRTS.
+	* config/t-sol2: Rename to ...
+	* config/sol2/t-sol2: ... this.
+	(gmon.o): Reflect renaming.
+	(crtp.o, crtpg.o): New rules.
+	* config.host (*-*-solaris2*): Reflect renaming.
+	Use system CRTs if present.
+	Remove default CRT case.
+
+2015-09-23  John David Anglin  <danglin@gcc.gnu.org>
+
+	* config/pa/linux-atomic.c (__kernel_cmpxchg2): Reorder error checks.
+	(__sync_fetch_and_##OP##_##WIDTH): Change result to match type of
+	__kernel_cmpxchg2.
+	(__sync_##OP##_and_fetch_##WIDTH): Likewise.
+	(__sync_val_compare_and_swap_##WIDTH): Likewise.
+	(__sync_bool_compare_and_swap_##WIDTH): Likewise.
+	(__sync_lock_test_and_set_##WIDTH): Likewise.
+	(__sync_lock_release_##WIDTH): Likewise.
+	(__sync_fetch_and_##OP##_4): Change result to match type of
+	__kernel_cmpxchg.
+	(__sync_##OP##_and_fetch_4): Likewise.
+	(__sync_val_compare_and_swap_4): Likewise.
+	(__sync_bool_compare_and_swap_4): likewise.
+	(__sync_lock_test_and_set_4): Likewise.
+	(__sync_lock_release_4): Likewise.
+	(FETCH_AND_OP_2): Add long long variants.
+	(OP_AND_FETCH_2): Likewise.
+	(COMPARE_AND_SWAP_2 ): Likewise.
+	(SYNC_LOCK_TEST_AND_SET_2): Likewise.
+	(SYNC_LOCK_RELEASE_2): Likewise.
+	(__sync_bool_compare_and_swap_##WIDTH): Correct return.
+
+2015-07-23  Chung-Lin Tang  <cltang@codesourcery.com>
+
+	Backport from mainline:
+	2015-07-22  Chung-Lin Tang  <cltang@codesourcery.com>
+
+	* config/nios2/linux-atomic.c (<asm/unistd.h>): Remove #include.
+	(EFAULT,EBUSY,ENOSYS): Delete unused #defines.
+
 2015-07-16  Release Manager
 
 	* GCC 5.2.0 released.

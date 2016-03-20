@@ -2471,7 +2471,8 @@ gfc_check_init_expr (gfc_expr *e)
       t = false;
 
       {
-	gfc_intrinsic_sym* isym;
+	bool conversion;
+	gfc_intrinsic_sym* isym = NULL;
 	gfc_symbol* sym = e->symtree->n.sym;
 
 	/* Special case for IEEE_SELECTED_REAL_KIND from the intrinsic
@@ -2489,8 +2490,14 @@ gfc_check_init_expr (gfc_expr *e)
 	      }
 	  }
 
-	if (!gfc_is_intrinsic (sym, 0, e->where)
-	    || (m = gfc_intrinsic_func_interface (e, 0)) != MATCH_YES)
+	/* If a conversion function, e.g., __convert_i8_i4, was inserted
+	   into an array constructor, we need to skip the error check here.
+           Conversion errors are  caught below in scalarize_intrinsic_call.  */
+	conversion = e->value.function.isym
+		   && (e->value.function.isym->conversion == 1);
+
+	if (!conversion && (!gfc_is_intrinsic (sym, 0, e->where)
+	    || (m = gfc_intrinsic_func_interface (e, 0)) != MATCH_YES))
 	  {
 	    gfc_error ("Function %qs in initialization expression at %L "
 		       "must be an intrinsic function",
@@ -2517,7 +2524,7 @@ gfc_check_init_expr (gfc_expr *e)
 	   array argument.  */
 	isym = gfc_find_function (e->symtree->n.sym->name);
 	if (isym && isym->elemental
-	    && (t = scalarize_intrinsic_call(e)))
+	    && (t = scalarize_intrinsic_call (e)))
 	  break;
       }
 
@@ -2599,14 +2606,18 @@ gfc_check_init_expr (gfc_expr *e)
       break;
 
     case EXPR_SUBSTRING:
-      t = gfc_check_init_expr (e->ref->u.ss.start);
-      if (!t)
-	break;
+      if (e->ref)
+	{
+	  t = gfc_check_init_expr (e->ref->u.ss.start);
+	  if (!t)
+	    break;
 
-      t = gfc_check_init_expr (e->ref->u.ss.end);
-      if (t)
-	t = gfc_simplify_expr (e, 0);
-
+	  t = gfc_check_init_expr (e->ref->u.ss.end);
+	  if (t)
+	    t = gfc_simplify_expr (e, 0);
+	}
+      else
+	t = false;
       break;
 
     case EXPR_STRUCTURE:
@@ -3635,11 +3646,10 @@ gfc_check_pointer_assign (gfc_expr *lvalue, gfc_expr *rvalue)
 	       || (lvalue->ts.type == BT_DERIVED
 		   && (lvalue->ts.u.derived->attr.is_bind_c
 		       || lvalue->ts.u.derived->attr.sequence))))
-	gfc_error ("Data-pointer-object &L must be unlimited "
-		   "polymorphic, a sequence derived type or of a "
-		   "type with the BIND attribute assignment at %L "
-		   "to be compatible with an unlimited polymorphic "
-		   "target", &lvalue->where);
+	gfc_error ("Data-pointer-object at %L must be unlimited "
+		   "polymorphic, or of a type with the BIND or SEQUENCE "
+		   "attribute, to be compatible with an unlimited "
+		   "polymorphic target", &lvalue->where);
       else
 	gfc_error ("Different types in pointer assignment at %L; "
 		   "attempted assignment of %s to %s", &lvalue->where,
@@ -3854,7 +3864,17 @@ gfc_check_assign_symbol (gfc_symbol *sym, gfc_component *comp, gfc_expr *rvalue)
   if (pointer || proc_pointer)
     r = gfc_check_pointer_assign (&lvalue, rvalue);
   else
-    r = gfc_check_assign (&lvalue, rvalue, 1);
+    {
+      /* If a conversion function, e.g., __convert_i8_i4, was inserted
+	 into an array constructor, we should check if it can be reduced
+	 as an initialization expression.  */
+      if (rvalue->expr_type == EXPR_FUNCTION
+	  && rvalue->value.function.isym
+	  && (rvalue->value.function.isym->conversion == 1))
+	gfc_check_init_expr (rvalue);
+
+      r = gfc_check_assign (&lvalue, rvalue, 1);
+    }
 
   free (lvalue.symtree);
   free (lvalue.ref);

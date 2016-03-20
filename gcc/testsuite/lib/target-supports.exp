@@ -958,6 +958,13 @@ proc check_effective_target_pie { } {
 	 || [istarget *-*-gnu*] } {
 	return 1;
     }
+    if { [istarget *-*-solaris2.1\[1-9\]*] } {
+	# Full PIE support was added in Solaris 11.x and Solaris 12, but gcc
+	# errors out if missing, so check for that.
+	return [check_no_compiler_messages pie executable {
+	    int main (void) { return 0; }
+	} "-pie -fpie"]
+    }
     return 0
 }
 
@@ -2638,8 +2645,8 @@ proc check_effective_target_arm_neon_ok_nocache { } {
 		int dummy;
 		/* Avoid the case where a test adds -mfpu=neon, but the toolchain is
 		   configured for -mcpu=arm926ej-s, for example.  */
-		#if __ARM_ARCH < 7
-		#error Architecture too old for NEON.
+		#if __ARM_ARCH < 7 || __ARM_ARCH_PROFILE == 'M'
+		#error Architecture does not support NEON.
 		#endif
 	    } "$flags"] } {
 		set et_arm_neon_flags $flags
@@ -6277,4 +6284,14 @@ proc check_effective_target_comdat_group {} {
 	inline int foo () { return 1; }
 	int (*fn) () = foo;
     }]
+}
+
+# Return 1 if target supports __builtin_eh_return
+proc check_effective_target_builtin_eh_return { } {
+    return [check_no_compiler_messages builtin_eh_return object {
+	void test (long l, void *p)
+	{
+	    __builtin_eh_return (l, p);
+	}
+    } "" ]
 }

@@ -10269,7 +10269,7 @@ arm_new_rtx_costs (rtx x, enum rtx_code code, enum rtx_code outer_code,
 
 	  *cost = COSTS_N_INSNS (1);
 
-	  if (GET_CODE (op0) == NEG)
+	  if (GET_CODE (op0) == NEG && !flag_rounding_math)
 	    op0 = XEXP (op0, 0);
 
 	  if (speed_p)
@@ -10345,6 +10345,13 @@ arm_new_rtx_costs (rtx x, enum rtx_code code, enum rtx_code outer_code,
       if (TARGET_HARD_FLOAT && GET_MODE_CLASS (mode) == MODE_FLOAT
 	  && (mode == SFmode || !TARGET_VFP_SINGLE))
 	{
+	  if (GET_CODE (XEXP (x, 0)) == MULT)
+	    {
+	      /* VNMUL.  */
+	      *cost = rtx_cost (XEXP (x, 0), NEG, 0, speed_p);
+	      return true;
+	    }
+
 	  *cost = COSTS_N_INSNS (1);
 	  if (speed_p)
 	    *cost += extra_cost->fp[mode != SFmode].neg;
@@ -27537,25 +27544,36 @@ vfp3_const_double_for_fract_bits (rtx operand)
   return 0;
 }
 
+/* If X is a CONST_DOUBLE with a value that is a power of 2 whose
+   log2 is in [1, 32], return that log2.  Otherwise return -1.
+   This is used in the patterns for vcvt.s32.f32 floating-point to
+   fixed-point conversions.  */
+
 int
-vfp3_const_double_for_bits (rtx operand)
+vfp3_const_double_for_bits (rtx x)
 {
-  REAL_VALUE_TYPE r0;
+  if (!CONST_DOUBLE_P (x))
+    return -1;
 
-  if (!CONST_DOUBLE_P (operand))
-    return 0;
+  REAL_VALUE_TYPE r;
 
-  REAL_VALUE_FROM_CONST_DOUBLE (r0, operand);
-  if (exact_real_truncate (DFmode, &r0))
-    {
-      HOST_WIDE_INT value = real_to_integer (&r0);
-      value = value & 0xffffffff;
-      if ((value != 0) && ( (value & (value - 1)) == 0))
-	return int_log2 (value);
-    }
+  REAL_VALUE_FROM_CONST_DOUBLE (r, x);
+  if (REAL_VALUE_NEGATIVE (r)
+      || REAL_VALUE_ISNAN (r)
+      || REAL_VALUE_ISINF (r)
+      || !real_isinteger (&r, SFmode))
+    return -1;
 
-  return 0;
+  HOST_WIDE_INT hwint = exact_log2 (real_to_integer (&r));
+
+  /* The exact_log2 above will have returned -1 if this is
+     not an exact log2.  */
+  if (!IN_RANGE (hwint, 1, 32))
+    return -1;
+
+  return hwint;
 }
+
 
 /* Emit a memory barrier around an atomic sequence according to MODEL.  */
 
@@ -27678,8 +27696,8 @@ arm_expand_compare_and_swap (rtx operands[])
      promote succ to ACQ_REL so that we don't lose the acquire semantics.  */
 
   if (TARGET_HAVE_LDACQ
-      && INTVAL (mod_f) == MEMMODEL_ACQUIRE
-      && INTVAL (mod_s) == MEMMODEL_RELEASE)
+      && is_mm_acquire (memmodel_from_int (INTVAL (mod_f)))
+      && is_mm_release (memmodel_from_int (INTVAL (mod_s))))
     mod_s = GEN_INT (MEMMODEL_ACQ_REL);
 
   switch (mode)
@@ -27752,20 +27770,25 @@ arm_split_compare_and_swap (rtx operands[])
   oldval = operands[2];
   newval = operands[3];
   is_weak = (operands[4] != const0_rtx);
-  mod_s = (enum memmodel) INTVAL (operands[5]);
-  mod_f = (enum memmodel) INTVAL (operands[6]);
+  mod_s = memmodel_from_int (INTVAL (operands[5]));
+  mod_f = memmodel_from_int (INTVAL (operands[6]));
   scratch = operands[7];
   mode = GET_MODE (mem);
 
-  bool use_acquire = TARGET_HAVE_LDACQ
-                     && !(mod_s == MEMMODEL_RELAXED
-                          || mod_s == MEMMODEL_CONSUME
-                          || mod_s == MEMMODEL_RELEASE);
+  bool is_armv8_sync = arm_arch8 && is_mm_sync (mod_s);
 
+  bool use_acquire = TARGET_HAVE_LDACQ
+                     && !(is_mm_relaxed (mod_s) || is_mm_consume (mod_s)
+			  || is_mm_release (mod_s));
+		
   bool use_release = TARGET_HAVE_LDACQ
-                     && !(mod_s == MEMMODEL_RELAXED
-                          || mod_s == MEMMODEL_CONSUME
-                          || mod_s == MEMMODEL_ACQUIRE);
+                     && !(is_mm_relaxed (mod_s) || is_mm_consume (mod_s)
+			  || is_mm_acquire (mod_s));
+
+  /* For ARMv8, the load-acquire is too weak for __sync memory orders.  Instead,
+     a full barrier is emitted after the store-release.  */
+  if (is_armv8_sync)
+    use_acquire = false;
 
   /* Checks whether a barrier is needed and emits one accordingly.  */
   if (!(use_acquire || use_release))
@@ -27803,14 +27826,15 @@ arm_split_compare_and_swap (rtx operands[])
       emit_unlikely_jump (gen_rtx_SET (VOIDmode, pc_rtx, x));
     }
 
-  if (mod_f != MEMMODEL_RELAXED)
+  if (!is_mm_relaxed (mod_f))
     emit_label (label2);
 
   /* Checks whether a barrier is needed and emits one accordingly.  */
-  if (!(use_acquire || use_release))
+  if (is_armv8_sync
+      || !(use_acquire || use_release))
     arm_post_atomic_barrier (mod_s);
 
-  if (mod_f == MEMMODEL_RELAXED)
+  if (is_mm_relaxed (mod_f))
     emit_label (label2);
 }
 
@@ -27818,21 +27842,26 @@ void
 arm_split_atomic_op (enum rtx_code code, rtx old_out, rtx new_out, rtx mem,
 		     rtx value, rtx model_rtx, rtx cond)
 {
-  enum memmodel model = (enum memmodel) INTVAL (model_rtx);
+  enum memmodel model = memmodel_from_int (INTVAL (model_rtx));
   machine_mode mode = GET_MODE (mem);
   machine_mode wmode = (mode == DImode ? DImode : SImode);
   rtx_code_label *label;
   rtx x;
 
+  bool is_armv8_sync = arm_arch8 && is_mm_sync (model);
+
   bool use_acquire = TARGET_HAVE_LDACQ
-                     && !(model == MEMMODEL_RELAXED
-                          || model == MEMMODEL_CONSUME
-                          || model == MEMMODEL_RELEASE);
+                     && !(is_mm_relaxed (model) || is_mm_consume (model)
+			  || is_mm_release (model));
 
   bool use_release = TARGET_HAVE_LDACQ
-                     && !(model == MEMMODEL_RELAXED
-                          || model == MEMMODEL_CONSUME
-                          || model == MEMMODEL_ACQUIRE);
+                     && !(is_mm_relaxed (model) || is_mm_consume (model)
+			  || is_mm_acquire (model));
+
+  /* For ARMv8, a load-acquire is too weak for __sync memory orders.  Instead,
+     a full barrier is emitted after the store-release.  */
+  if (is_armv8_sync)
+    use_acquire = false;
 
   /* Checks whether a barrier is needed and emits one accordingly.  */
   if (!(use_acquire || use_release))
@@ -27904,7 +27933,8 @@ arm_split_atomic_op (enum rtx_code code, rtx old_out, rtx new_out, rtx mem,
   emit_unlikely_jump (gen_cbranchsi4 (x, cond, const0_rtx, label));
 
   /* Checks whether a barrier is needed and emits one accordingly.  */
-  if (!(use_acquire || use_release))
+  if (is_armv8_sync
+      || !(use_acquire || use_release))
     arm_post_atomic_barrier (model);
 }
 
@@ -28792,6 +28822,38 @@ arm_emit_coreregs_64bit_shift (enum rtx_code code, rtx out, rtx in,
   #undef BRANCH
 }
 
+/* Returns true if the pattern is a valid symbolic address, which is either a
+   symbol_ref or (symbol_ref + addend).
+
+   According to the ARM ELF ABI, the initial addend of REL-type relocations
+   processing MOVW and MOVT instructions is formed by interpreting the 16-bit
+   literal field of the instruction as a 16-bit signed value in the range
+   -32768 <= A < 32768.  */
+
+bool
+arm_valid_symbolic_address_p (rtx addr)
+{
+  rtx xop0, xop1 = NULL_RTX;
+  rtx tmp = addr;
+
+  if (GET_CODE (tmp) == SYMBOL_REF || GET_CODE (tmp) == LABEL_REF)
+    return true;
+
+  /* (const (plus: symbol_ref const_int))  */
+  if (GET_CODE (addr) == CONST)
+    tmp = XEXP (addr, 0);
+
+  if (GET_CODE (tmp) == PLUS)
+    {
+      xop0 = XEXP (tmp, 0);
+      xop1 = XEXP (tmp, 1);
+
+      if (GET_CODE (xop0) == SYMBOL_REF && CONST_INT_P (xop1))
+	  return IN_RANGE (INTVAL (xop1), -0x8000, 0x7fff);
+    }
+
+  return false;
+}
 
 /* Returns true if a valid comparison operation and makes
    the operands in a form that is valid.  */
@@ -28942,7 +29004,7 @@ arm_block_set_unaligned_vect (rtx dstbase,
   rtx (*gen_func) (rtx, rtx);
   machine_mode mode;
   unsigned HOST_WIDE_INT v = value;
-
+  unsigned int offset = 0;
   gcc_assert ((align & 0x3) != 0);
   nelt_v8 = GET_MODE_NUNITS (V8QImode);
   nelt_v16 = GET_MODE_NUNITS (V16QImode);
@@ -28963,7 +29025,7 @@ arm_block_set_unaligned_vect (rtx dstbase,
     return false;
 
   dst = copy_addr_to_reg (XEXP (dstbase, 0));
-  mem = adjust_automodify_address (dstbase, mode, dst, 0);
+  mem = adjust_automodify_address (dstbase, mode, dst, offset);
 
   v = sext_hwi (v, BITS_PER_WORD);
   val_elt = GEN_INT (v);
@@ -28980,7 +29042,11 @@ arm_block_set_unaligned_vect (rtx dstbase,
     {
       emit_insn ((*gen_func) (mem, reg));
       if (i + 2 * nelt_mode <= length)
-	emit_insn (gen_add2_insn (dst, GEN_INT (nelt_mode)));
+	{
+	  emit_insn (gen_add2_insn (dst, GEN_INT (nelt_mode)));
+	  offset += nelt_mode;
+	  mem = adjust_automodify_address (dstbase, mode, dst, offset);
+	}
     }
 
   /* If there are not less than nelt_v8 bytes leftover, we must be in
@@ -28991,6 +29057,9 @@ arm_block_set_unaligned_vect (rtx dstbase,
   if (i + nelt_v8 < length)
     {
       emit_insn (gen_add2_insn (dst, GEN_INT (length - i)));
+      offset += length - i;
+      mem = adjust_automodify_address (dstbase, mode, dst, offset);
+
       /* We are shifting bytes back, set the alignment accordingly.  */
       if ((length & 1) != 0 && align >= 2)
 	set_mem_align (mem, BITS_PER_UNIT);
@@ -29001,12 +29070,13 @@ arm_block_set_unaligned_vect (rtx dstbase,
   else if (i < length && i + nelt_v8 >= length)
     {
       if (mode == V16QImode)
-	{
-	  reg = gen_lowpart (V8QImode, reg);
-	  mem = adjust_automodify_address (dstbase, V8QImode, dst, 0);
-	}
+	reg = gen_lowpart (V8QImode, reg);
+
       emit_insn (gen_add2_insn (dst, GEN_INT ((length - i)
 					      + (nelt_mode - nelt_v8))));
+      offset += (length - i) + (nelt_mode - nelt_v8);
+      mem = adjust_automodify_address (dstbase, V8QImode, dst, offset);
+
       /* We are shifting bytes back, set the alignment accordingly.  */
       if ((length & 1) != 0 && align >= 2)
 	set_mem_align (mem, BITS_PER_UNIT);
@@ -29033,6 +29103,7 @@ arm_block_set_aligned_vect (rtx dstbase,
   rtx rval[MAX_VECT_LEN];
   machine_mode mode;
   unsigned HOST_WIDE_INT v = value;
+  unsigned int offset = 0;
 
   gcc_assert ((align & 0x3) == 0);
   nelt_v8 = GET_MODE_NUNITS (V8QImode);
@@ -29064,14 +29135,15 @@ arm_block_set_aligned_vect (rtx dstbase,
   /* Handle first 16 bytes specially using vst1:v16qi instruction.  */
   if (mode == V16QImode)
     {
-      mem = adjust_automodify_address (dstbase, mode, dst, 0);
+      mem = adjust_automodify_address (dstbase, mode, dst, offset);
       emit_insn (gen_movmisalignv16qi (mem, reg));
       i += nelt_mode;
       /* Handle (8, 16) bytes leftover using vst1:v16qi again.  */
       if (i + nelt_v8 < length && i + nelt_v16 > length)
 	{
 	  emit_insn (gen_add2_insn (dst, GEN_INT (length - nelt_mode)));
-	  mem = adjust_automodify_address (dstbase, mode, dst, 0);
+	  offset += length - nelt_mode;
+	  mem = adjust_automodify_address (dstbase, mode, dst, offset);
 	  /* We are shifting bytes back, set the alignment accordingly.  */
 	  if ((length & 0x3) == 0)
 	    set_mem_align (mem, BITS_PER_UNIT * 4);
@@ -29093,7 +29165,7 @@ arm_block_set_aligned_vect (rtx dstbase,
   for (; (i + nelt_mode <= length); i += nelt_mode)
     {
       addr = plus_constant (Pmode, dst, i);
-      mem = adjust_automodify_address (dstbase, mode, addr, i);
+      mem = adjust_automodify_address (dstbase, mode, addr, offset + i);
       emit_move_insn (mem, reg);
     }
 
@@ -29102,8 +29174,8 @@ arm_block_set_aligned_vect (rtx dstbase,
   if (i + UNITS_PER_WORD == length)
     {
       addr = plus_constant (Pmode, dst, i - UNITS_PER_WORD);
-      mem = adjust_automodify_address (dstbase, mode,
-				       addr, i - UNITS_PER_WORD);
+      offset += i - UNITS_PER_WORD;
+      mem = adjust_automodify_address (dstbase, mode, addr, offset);
       /* We are shifting 4 bytes back, set the alignment accordingly.  */
       if (align > UNITS_PER_WORD)
 	set_mem_align (mem, BITS_PER_UNIT * UNITS_PER_WORD);
@@ -29115,7 +29187,8 @@ arm_block_set_aligned_vect (rtx dstbase,
   else if (i < length)
     {
       emit_insn (gen_add2_insn (dst, GEN_INT (length - nelt_mode)));
-      mem = adjust_automodify_address (dstbase, mode, dst, 0);
+      offset += length - nelt_mode;
+      mem = adjust_automodify_address (dstbase, mode, dst, offset);
       /* We are shifting bytes back, set the alignment accordingly.  */
       if ((length & 1) == 0)
 	set_mem_align (mem, BITS_PER_UNIT * 2);

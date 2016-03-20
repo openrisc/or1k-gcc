@@ -1,3 +1,42 @@
+2015-12-04  Release Manager
+
+	* GCC 5.3.0 released.
+
+2015-11-07 Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	Backport from trunk
+	PR libgfortran/65089
+	* io/format.h (free_format): New function to free memory
+	allocated for building format error messages.
+	* io/format.c (format_error): Add checks before freeing memory
+	to avoid potential segfaults and free formatting data when
+	needed on error conditions. Always allocate and NULL terminate
+	the string.
+	* io/transfer.c (st_read_done, st_write_done): Use new
+	free_format function to clean up memory allocations when done.
+
+2015-09-02  Janne Blomqvist  <jb@gcc.gnu.org>
+
+	PR libfortran/67414
+	* runtime/error.c (gf_strerror): Handle newlocale() failure.
+
+2015-08-28  James Greenhalgh  <james.greenhalgh@arm.com>
+
+	* configure.ac: Define HAVE_FTRUNCATE for ARM/AArch64/SH newlib
+	builds.
+	* configure: Regenerate.
+
+2015-08-18  Francois-Xavier Coudert  <fxcoudert@gcc.gnu.org>
+
+	PR libfortran/66936
+	* io/unix.c (__MINGW32__): Undefine HAVE_UMASK.
+
+2015-07-29  Uros Bizjak  <ubizjak@gmail.com>
+
+	PR libgfortran/66650
+	* libgfortran.h (GFC_DTYPE_SIZE_MASK): Rewrite to avoid
+	"left shift of negative value" warning.
+
 2015-07-16  Release Manager
 
 	* GCC 5.2.0 released.

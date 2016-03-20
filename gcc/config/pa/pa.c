@@ -2443,6 +2443,7 @@ pa_output_move_double (rtx *operands)
   enum { REGOP, OFFSOP, MEMOP, CNSTOP, RNDOP } optype0, optype1;
   rtx latehalf[2];
   rtx addreg0 = 0, addreg1 = 0;
+  int highonly = 0;
 
   /* First classify both operands.  */
 
@@ -2653,7 +2654,14 @@ pa_output_move_double (rtx *operands)
   else if (optype1 == OFFSOP)
     latehalf[1] = adjust_address_nv (operands[1], SImode, 4);
   else if (optype1 == CNSTOP)
-    split_double (operands[1], &operands[1], &latehalf[1]);
+    {
+      if (GET_CODE (operands[1]) == HIGH)
+	{
+	  operands[1] = XEXP (operands[1], 0);
+	  highonly = 1;
+	}
+      split_double (operands[1], &operands[1], &latehalf[1]);
+    }
   else
     latehalf[1] = operands[1];
 
@@ -2706,8 +2714,11 @@ pa_output_move_double (rtx *operands)
   if (addreg1)
     output_asm_insn ("ldo 4(%0),%0", &addreg1);
 
-  /* Do that word.  */
-  output_asm_insn (pa_singlemove_string (latehalf), latehalf);
+  /* Do high-numbered word.  */
+  if (highonly)
+    output_asm_insn ("ldil L'%1,%0", latehalf);
+  else
+    output_asm_insn (pa_singlemove_string (latehalf), latehalf);
 
   /* Undo the adds we just did.  */
   if (addreg0)
@@ -5712,7 +5723,7 @@ pa_init_libfuncs (void)
     }
 
   if (TARGET_SYNC_LIBCALL)
-    init_sync_libfuncs (UNITS_PER_WORD);
+    init_sync_libfuncs (8);
 }
 
 /* HP's millicode routines mean something special to the assembler.
@@ -8473,14 +8484,6 @@ pa_function_ok_for_sibcall (tree decl, tree exp ATTRIBUTE_UNUSED)
   if (TARGET_PORTABLE_RUNTIME)
     return false;
 
-  /* Sibcalls are ok for TARGET_ELF32 as along as the linker is used in
-     single subspace mode and the call is not indirect.  As far as I know,
-     there is no operating system support for the multiple subspace mode.
-     It might be possible to support indirect calls if we didn't use
-     $$dyncall (see the indirect sequence generated in pa_output_call).  */
-  if (TARGET_ELF32)
-    return (decl != NULL_TREE);
-
   /* Sibcalls are not ok because the arg pointer register is not a fixed
      register.  This prevents the sibcall optimization from occurring.  In
      addition, there are problems with stub placement using GNU ld.  This
@@ -10513,6 +10516,81 @@ pa_output_addr_diff_vec (rtx lab, rtx body)
     }
   if (TARGET_GAS)
     fputs ("\t.end_brtab\n", asm_out_file);
+}
+
+/* This is a helper function for the other atomic operations.  This function
+   emits a loop that contains SEQ that iterates until a compare-and-swap
+   operation at the end succeeds.  MEM is the memory to be modified.  SEQ is
+   a set of instructions that takes a value from OLD_REG as an input and
+   produces a value in NEW_REG as an output.  Before SEQ, OLD_REG will be
+   set to the current contents of MEM.  After SEQ, a compare-and-swap will
+   attempt to update MEM with NEW_REG.  The function returns true when the
+   loop was generated successfully.  */
+
+static bool
+pa_expand_compare_and_swap_loop (rtx mem, rtx old_reg, rtx new_reg, rtx seq)
+{
+  machine_mode mode = GET_MODE (mem);
+  rtx_code_label *label;
+  rtx cmp_reg, success, oldval;
+
+  /* The loop we want to generate looks like
+
+        cmp_reg = mem;
+      label:
+        old_reg = cmp_reg;
+        seq;
+        (success, cmp_reg) = compare-and-swap(mem, old_reg, new_reg)
+        if (success)
+          goto label;
+
+     Note that we only do the plain load from memory once.  Subsequent
+     iterations use the value loaded by the compare-and-swap pattern.  */
+
+  label = gen_label_rtx ();
+  cmp_reg = gen_reg_rtx (mode);
+
+  emit_move_insn (cmp_reg, mem);
+  emit_label (label);
+  emit_move_insn (old_reg, cmp_reg);
+  if (seq)
+    emit_insn (seq);
+
+  success = NULL_RTX;
+  oldval = cmp_reg;
+  if (!expand_atomic_compare_and_swap (&success, &oldval, mem, old_reg,
+                                       new_reg, false, MEMMODEL_SYNC_SEQ_CST,
+                                       MEMMODEL_RELAXED))
+    return false;
+
+  if (oldval != cmp_reg)
+    emit_move_insn (cmp_reg, oldval);
+
+  /* Mark this jump predicted not taken.  */
+  emit_cmp_and_jump_insns (success, const0_rtx, EQ, const0_rtx,
+                           GET_MODE (success), 1, label, 0);
+  return true;
+}
+
+/* This function tries to implement an atomic exchange operation using a 
+   compare_and_swap loop. VAL is written to *MEM.  The previous contents of
+   *MEM are returned, using TARGET if possible.  No memory model is required
+   since a compare_and_swap loop is seq-cst.  */
+
+rtx
+pa_maybe_emit_compare_and_swap_exchange_loop (rtx target, rtx mem, rtx val)
+{
+  machine_mode mode = GET_MODE (mem);
+
+  if (can_compare_and_swap_p (mode, true))
+    {
+      if (!target || !register_operand (target, mode))
+        target = gen_reg_rtx (mode);
+      if (pa_expand_compare_and_swap_loop (mem, target, val, NULL_RTX))
+        return target;
+    }
+
+  return NULL_RTX;
 }
 
 #include "gt-pa.h"

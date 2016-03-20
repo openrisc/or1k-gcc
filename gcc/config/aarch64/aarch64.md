@@ -382,7 +382,7 @@
 )
 
 (define_insn "prefetch"
-  [(prefetch (match_operand:DI 0 "address_operand" "r")
+  [(prefetch (match_operand:DI 0 "register_operand" "r")
             (match_operand:QI 1 "const_int_operand" "")
             (match_operand:QI 2 "const_int_operand" ""))]
   ""
@@ -872,7 +872,7 @@
    fmov\\t%w0, %s1
    fmov\\t%s0, %s1"
    "CONST_INT_P (operands[1]) && !aarch64_move_imm (INTVAL (operands[1]), SImode)
-    && GP_REGNUM_P (REGNO (operands[0]))"
+    && REG_P (operands[0]) && GP_REGNUM_P (REGNO (operands[0]))"
    [(const_int 0)]
    "{
        aarch64_expand_mov_immediate (operands[0], operands[1]);
@@ -905,7 +905,7 @@
    fmov\\t%d0, %d1
    movi\\t%d0, %1"
    "(CONST_INT_P (operands[1]) && !aarch64_move_imm (INTVAL (operands[1]), DImode))
-    && GP_REGNUM_P (REGNO (operands[0]))"
+    && REG_P (operands[0]) && GP_REGNUM_P (REGNO (operands[0]))"
    [(const_int 0)]
    "{
        aarch64_expand_mov_immediate (operands[0], operands[1]);
@@ -3971,6 +3971,16 @@
         (mult:GPF
 		 (neg:GPF (match_operand:GPF 1 "register_operand" "w"))
 		 (match_operand:GPF 2 "register_operand" "w")))]
+  "TARGET_FLOAT && !flag_rounding_math"
+  "fnmul\\t%<s>0, %<s>1, %<s>2"
+  [(set_attr "type" "fmul<s>")]
+)
+
+(define_insn "*fnmul<mode>3"
+  [(set (match_operand:GPF 0 "register_operand" "=w")
+        (neg:GPF (mult:GPF
+		 (match_operand:GPF 1 "register_operand" "w")
+		 (match_operand:GPF 2 "register_operand" "w"))))]
   "TARGET_FLOAT"
   "fnmul\\t%<s>0, %<s>1, %<s>2"
   [(set_attr "type" "fmul<s>")]

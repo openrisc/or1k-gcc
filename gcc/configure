@@ -21771,7 +21771,7 @@ fi
 if test "${with_plugin_ld+set}" = set; then :
   withval=$with_plugin_ld; if test x"$withval" != x; then
    ORIGINAL_PLUGIN_LD_FOR_TARGET="$withval"
-   PLUGIN_LD_SUFFIX=`echo $withval | sed -e "s,$target_alias-,,"`
+   PLUGIN_LD_SUFFIX="$withval"
  fi
 fi
 
@@ -27158,15 +27158,37 @@ $as_echo "$gcc_cv_ld_eh_frame_ciev3" >&6; }
 $as_echo_n "checking linker position independent executable support... " >&6; }
 gcc_cv_ld_pie=no
 if test $in_tree_ld = yes ; then
-  if test "$gcc_cv_gld_major_version" -eq 2 -a "$gcc_cv_gld_minor_version" -ge 15 -o "$gcc_cv_gld_major_version" -gt 2 \
+  case "$target" in
+    # Full PIE support on Solaris was only introduced in gld 2.26.
+    *-*-solaris2*)  gcc_gld_pie_min_version=26 ;;
+    *) 		    gcc_gld_pie_min_version=15 ;;
+  esac
+  if test "$gcc_cv_gld_major_version" -eq 2 -a "$gcc_cv_gld_minor_version" -ge "$gcc_gld_pie_min_version" -o "$gcc_cv_gld_major_version" -gt 2 \
      && test $in_tree_ld_is_elf = yes; then
     gcc_cv_ld_pie=yes
   fi
 elif test x$gcc_cv_ld != x; then
-	# Check if linker supports -pie option
-	if $gcc_cv_ld --help 2>/dev/null | grep -- -pie > /dev/null; then
-		gcc_cv_ld_pie=yes
+  # Check if linker supports -pie option
+  if $gcc_cv_ld --help 2>/dev/null | grep -- -pie > /dev/null; then
+    gcc_cv_ld_pie=yes
+    case "$target" in
+      *-*-solaris2*)
+	if echo "$ld_ver" | grep GNU > /dev/null \
+	  && test "$ld_vers_major" -eq 2 -a "$ld_vers_minor" -lt 26; then
+	  gcc_cv_ld_pie=no
 	fi
+	;;
+    esac
+  else
+    case "$target" in
+      *-*-solaris2.1[1-9]*)
+	# Solaris 11.x and Solaris 12 added PIE support.
+	if $gcc_cv_ld -z help 2>&1 | grep -- type.*pie > /dev/null; then
+	  gcc_cv_ld_pie=yes
+	fi
+	;;
+    esac
+  fi
 fi
 if test x"$gcc_cv_ld_pie" = xyes; then
 
@@ -27751,6 +27773,44 @@ $as_echo "#define HAVE_LD_SYSROOT 1" >>confdefs.h
 
 fi
 
+case $target in
+*-*-solaris2*)
+  # Check for system-provided CRTs on Solaris 11.x and Solaris 12.
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking system-provided CRTs on Solaris" >&5
+$as_echo_n "checking system-provided CRTs on Solaris... " >&6; }
+if test "${gcc_cv_solaris_crts+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  gcc_cv_solaris_crts=no
+     if test x$host != x$target; then
+       if test "x$with_sysroot" = xyes; then
+         target_sysroot="${test_exec_prefix}/${target_noncanonical}/sys-root"
+       else
+         target_sysroot="${with_sysroot}"
+       fi
+     fi
+     target_libdir="$target_sysroot/usr/lib"
+     # At the time they were added, gcrt1.o became a symlink for backwards
+     # compatibility on x86, while crt1.o was added on sparc, so check for that.
+     case $target in
+       i?86-*-solaris2* | x86_64-*-solaris2*)
+         if test -h "$target_libdir/gcrt1.o"; then gcc_cv_solaris_crts=yes; fi
+	 ;;
+       sparc*-*-solaris2*)
+         if test -f "$target_libdir/crt1.o"; then gcc_cv_solaris_crts=yes; fi
+	 ;;
+     esac
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_solaris_crts" >&5
+$as_echo "$gcc_cv_solaris_crts" >&6; }
+  ;;
+esac
+if test x$gcc_cv_solaris_crts = xyes; then
+
+$as_echo "#define HAVE_SOLARIS_CRTS 1" >>confdefs.h
+
+fi
+
 # Test for stack protector support in target C library.
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking __stack_chk_fail in target C library" >&5
 $as_echo_n "checking __stack_chk_fail in target C library... " >&6; }
@@ -28262,6 +28322,8 @@ fi
 
 # Check whether isl_schedule_constraints_compute_schedule is available;
 # it's new in ISL-0.13.
+# Check whether isl_options_set_schedule_serialize_sccs is available;
+# it's new in ISL-0.15.
 if test "x${ISLLIBS}" != "x" ; then
   saved_CFLAGS="$CFLAGS"
   CFLAGS="$CFLAGS $ISLINC"
@@ -28291,12 +28353,41 @@ rm -f core conftest.err conftest.$ac_objext \
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_has_isl_schedule_constraints_compute_schedule" >&5
 $as_echo "$ac_has_isl_schedule_constraints_compute_schedule" >&6; }
 
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking Checking for isl_options_set_schedule_serialize_sccs" >&5
+$as_echo_n "checking Checking for isl_options_set_schedule_serialize_sccs... " >&6; }
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <isl/schedule.h>
+int
+main ()
+{
+isl_options_set_schedule_serialize_sccs (NULL, 0);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_has_isl_options_set_schedule_serialize_sccs=yes
+else
+  ac_has_isl_options_set_schedule_serialize_sccs=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_has_isl_options_set_schedule_serialize_sccs" >&5
+$as_echo "$ac_has_isl_options_set_schedule_serialize_sccs" >&6; }
+
   LIBS="$saved_LIBS"
   CFLAGS="$saved_CFLAGS"
 
   if test x"$ac_has_isl_schedule_constraints_compute_schedule" = x"yes"; then
 
 $as_echo "#define HAVE_ISL_SCHED_CONSTRAINTS_COMPUTE_SCHEDULE 1" >>confdefs.h
+
+  fi
+
+  if test x"$ac_has_isl_options_set_schedule_serialize_sccs" = x"yes"; then
+
+$as_echo "#define HAVE_ISL_OPTIONS_SET_SCHEDULE_SERIALIZE_SCCS 1" >>confdefs.h
 
   fi
 fi

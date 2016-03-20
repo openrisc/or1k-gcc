@@ -4554,8 +4554,7 @@ gfc_resolve_substring_charlen (gfc_expr *e)
     {
       if (e->ts.u.cl->length)
 	gfc_free_expr (e->ts.u.cl->length);
-      else if (e->expr_type == EXPR_VARIABLE
-		 && e->symtree->n.sym->attr.dummy)
+      else if (e->expr_type == EXPR_VARIABLE && e->symtree->n.sym->attr.dummy)
 	return;
     }
 
@@ -4584,11 +4583,18 @@ gfc_resolve_substring_charlen (gfc_expr *e)
       return;
     }
 
-  /* Length = (end - start +1).  */
+  /* Length = (end - start + 1).  */
   e->ts.u.cl->length = gfc_subtract (end, start);
   e->ts.u.cl->length = gfc_add (e->ts.u.cl->length,
 				gfc_get_int_expr (gfc_default_integer_kind,
 						  NULL, 1));
+
+  /* F2008, 6.4.1:  Both the starting point and the ending point shall
+     be within the range 1, 2, ..., n unless the starting point exceeds
+     the ending point, in which case the substring has length zero.  */
+
+  if (mpz_cmp_si (e->ts.u.cl->length->value.integer, 0) < 0)
+    mpz_set_si (e->ts.u.cl->length->value.integer, 0);
 
   e->ts.u.cl->length->ts.type = BT_INTEGER;
   e->ts.u.cl->length->ts.kind = gfc_charlen_int_kind;
@@ -10230,15 +10236,22 @@ gfc_resolve_code (gfc_code *code, gfc_namespace *ns)
 	  }
 
 	case EXEC_ARITHMETIC_IF:
-	  if (t
-	      && code->expr1->ts.type != BT_INTEGER
-	      && code->expr1->ts.type != BT_REAL)
-	    gfc_error ("Arithmetic IF statement at %L requires a numeric "
-		       "expression", &code->expr1->where);
+	  {
+	    gfc_expr *e = code->expr1;
 
-	  resolve_branch (code->label1, code);
-	  resolve_branch (code->label2, code);
-	  resolve_branch (code->label3, code);
+	    gfc_resolve_expr (e);
+	    if (e->expr_type == EXPR_NULL)
+	      gfc_error ("Invalid NULL at %L", &e->where);
+
+	    if (t && (e->rank > 0
+		      || !(e->ts.type == BT_REAL || e->ts.type == BT_INTEGER)))
+	      gfc_error ("Arithmetic IF statement at %L requires a scalar "
+			 "REAL or INTEGER expression", &e->where);
+
+	    resolve_branch (code->label1, code);
+	    resolve_branch (code->label2, code);
+	    resolve_branch (code->label3, code);
+	  }
 	  break;
 
 	case EXEC_IF:
@@ -10548,7 +10561,7 @@ gfc_verify_binding_labels (gfc_symbol *sym)
       sym->binding_label = NULL;
 
     }
-  else if (sym->attr.flavor == FL_VARIABLE
+  else if (sym->attr.flavor == FL_VARIABLE && module 
 	   && (strcmp (module, gsym->mod_name) != 0
 	       || strcmp (sym->name, gsym->sym_name) != 0))
     {
@@ -10636,18 +10649,11 @@ resolve_charlen (gfc_charlen *cl)
 	}
     }
 
-  /* "If the character length parameter value evaluates to a negative
-     value, the length of character entities declared is zero."  */
+  /* F2008, 4.4.3.2:  If the character length parameter value evaluates to
+     a negative value, the length of character entities declared is zero.  */
   if (cl->length && !gfc_extract_int (cl->length, &i) && i < 0)
-    {
-      if (warn_surprising)
-	gfc_warning_now (OPT_Wsurprising,
-			 "CHARACTER variable at %L has negative length %d,"
-			 " the length has been set to zero",
-			 &cl->length->where, i);
-      gfc_replace_expr (cl->length,
-			gfc_get_int_expr (gfc_default_integer_kind, NULL, 0));
-    }
+    gfc_replace_expr (cl->length,
+		      gfc_get_int_expr (gfc_default_integer_kind, NULL, 0));
 
   /* Check that the character length is not too large.  */
   k = gfc_validate_kind (BT_INTEGER, gfc_charlen_int_kind, false);

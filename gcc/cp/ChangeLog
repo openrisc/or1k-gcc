@@ -1,3 +1,220 @@
+2015-12-04  Release Manager
+
+	* GCC 5.3.0 released.
+
+2015-11-26  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/68508
+	* cp-tree.h (cp_ubsan_maybe_instrument_downcast): Add INTYPE argument.
+	* cp-ubsan.c (cp_ubsan_maybe_instrument_downcast): Likewise.  Use
+	it instead of or in addition to TREE_TYPE (op).  Use
+	is_properly_derived_from, return NULL_TREE if TREE_TYPE (intype) and
+	TREE_TYPE (type) are the same type minus qualifiers.
+	* typeck.c (build_static_cast_1): Adjust callers.
+
+2015-11-25  Jakub Jelinek  <jakub@redhat.com>
+
+	Backported from mainline
+	2015-11-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/67354
+	* cp-tree.h (defer_mangling_aliases): Declare.
+	(generate_mangling_aliases): New prototype.
+	* decl2.c (defer_mangling_aliases): New variable.
+	(note_mangling_alias): Use !defer_mangling_aliases
+	instead of at_eof.
+	(generate_mangling_aliases): No longer static. Clear
+	defer_mangling_aliases.
+	* optimize.c (maybe_thunk_body): Defer emitting mangling aliases
+	if !defer_mangling_aliases until the fns are put into the same
+	comdat group.
+
+	2015-05-09  Aldy Hernandez  <aldyh@redhat.com>
+
+	PR bootstrap/66085
+	* decl2.c (note_mangling_alias): Declare arguments as unused.
+
+	2015-05-08  Jason Merrill  <jason@redhat.com>
+
+	* decl2.c (mangling_aliases): New variable.
+	(note_mangling_alias, generate_mangling_aliases): New.
+	(cp_write_global_declarations): Call generate_mangling_aliases.
+	(generate_mangling_alias): Split out from...
+	* mangle.c (mangle_decl): ...here.
+	* cp-tree.h: Declare note_mangling_alias.
+
+2015-11-25  Jason Merrill  <jason@redhat.com>
+
+	PR c++/67941
+	* lambda.c (maybe_add_lambda_conv_op): Mark _FUN as
+	no_sanitize_undefined.
+
+	PR c++/68422
+	* cp-tree.h (PACK_EXPANSION_SIZEOF_P): New.
+	* parser.c (cp_parser_sizeof_pack): Set it.
+	* pt.c 	(tsubst_copy) [SIZEOF_EXPR]: Likewise.
+	(tsubst_pack_expansion): Improve T... shortcut when set.
+
+	PR c++/67813
+	* constexpr.c (cxx_eval_store_expression): Always use *valp if
+	set.
+
+2015-11-25  Markus Trippelsdorf  <markus@trippelsdorf.de>
+	    Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/68087
+	* constexpr.c (cxx_eval_array_reference): Use tree_fits_shwi_p before
+	tree_to_shwi to avoid ICEs.
+
+2015-11-19  Jakub Jelinek  <jakub@redhat.com>
+	    Manuel López-Ibáñez  <manu@gcc.gnu.org>
+
+	PR c++/67409
+	* decl.c (identify_goto): Add LOC and DIAG_KIND arguments, call
+	emit_diagnostic instead of permerror.
+	(check_previous_goto_1): Adjust identify_goto callers, treat all
+	cases but crossing initialization and entering scope of decl with
+	non-trivial dtor as unconditional hard errors.
+	(check_goto): Use identify_goto.  Treat all cases but crossing
+	initialization and entering scope of decl with non-trivial dtor
+	as unconditional hard errors.
+
+2015-10-20  Jason Merrill  <jason@redhat.com>
+
+	PR c++/66583
+	* init.c (innermost_aggr_scope): New.
+	(sort_mem_initializers): Use it.
+
+	PR c++/67557
+	* call.c (is_base_field_ref): New.
+	(unsafe_copy_elision_p): New.
+	(build_over_call): Use it.
+
+2015-09-12  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	Backport from mainline
+	2015-06-15  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/51048
+	* decl2.c (no_linkage_error): Do not issue a permerror if the DECL
+	using a local type is pure virtual.
+
+2015-09-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/67522
+	* semantics.c (handle_omp_array_sections_1): Only run
+	type_dependent_expression_p on VAR_DECL/PARM_DECLs.
+	(finish_omp_clauses) <case OMP_CLAUSE_LINEAR>: Likewise.
+	Don't adjust OMP_CLAUSE_LINEAR_STEP if OMP_CLAUSE_DECL
+	is not a VAR_DECL/PARM_DECL.
+
+	PR c++/67511
+	* semantics.c (handle_omp_for_class_iterator): Don't wrap
+	error_mark_node into a NOP_EXPR to void_type_node.
+
+2015-09-09  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/67504
+	* parser.c (cp_parser_omp_clause_collapse): Test tree_fits_shwi_p
+	before INTEGRAL_TYPE_P test.
+
+2015-09-08  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/67369
+	* pt.c (tsubst_copy, [case FUNCTION_DECL]): Do not call tsubst
+	if the first argument isn't a template.
+
+2015-08-17  Jason Merrill  <jason@redhat.com>
+
+	PR c++/66957
+	* search.c (protected_accessible_p): Revert fix for 38579.
+
+2015-08-17  Paolo Carlini  <paolo.carlini@oracle.com>
+
+	PR c++/66919
+	* pt.c (tsubst_copy): Pass complain to mark_used, check return value.
+
+2015-08-17  Jason Merrill  <jason@redhat.com>
+
+	PR c++/67244
+	* pt.c (tsubst_copy_and_build): Call insert_pending_capture_proxies.
+
+	PR c++/65734
+	* class.c (fixup_attribute_variants): Respect TYPE_USER_ALIGN.
+
+	PR c++/67104
+	* constexpr.c (cxx_eval_array_reference): Handle sparse
+	CONSTRUCTORs.
+
+2015-08-14  Jason Merrill  <jason@redhat.com>
+
+	PR c++/65974
+	* decl2.c (mark_vtable_entries): Suppress -Wdeprecated.
+
+2015-08-14  Patrick Palka  <ppalka@gcc.gnu.org>
+
+	PR c++/66857
+	* cvt.c (ocp_convert): Don't call scalar_constant_value when
+	converting to a class type.
+
+2015-08-12  Jason Merrill  <jason@redhat.com>
+
+	PR c++/67161
+	* error.c (dump_decl) [TEMPLATE_ID_EXPR]: Pass
+	TFF_NO_OMIT_DEFAULT_TEMPLATE_ARGUMENTS.
+
+2015-08-06  Jason Merrill  <jason@redhat.com>
+
+	PR c++/66533
+	* parser.c (cp_parser_primary_expression): Don't skip to the end
+	of the statement if we're parsing tentatively.
+
+	PR c++/67130
+	PR c++/67131
+	PR c++/66260
+	* mangle.c (write_expression) [TEMPLATE_ID_EXPR]: Handle variable
+	templates.
+	* pt.c (tsubst_copy_and_build): Check for argument substitution
+	failure.
+
+2015-08-05  Jason Merrill  <jason@redhat.com>
+
+	PR c++/66260
+	PR c++/66596
+	PR c++/66649
+	PR c++/66923
+	* pt.c (lookup_template_variable): Use NULL_TREE for type.
+	(instantiate_template_1): Also set DECL_TI_ARGS based on
+	the immediate parent.
+	(tsubst_copy_and_build) [TEMPLATE_ID_EXPR]: Handle variable templates.
+	(finish_template_variable): Add complain parm.
+	* cp-tree.h: Adjust.
+
+	PR c++/65195
+	PR c++/66619
+	* semantics.c (finish_id_expression): Call convert_from_reference
+	for variable template.
+
+	PR c++/66336
+	* pt.c (find_parameter_packs_r): Handle variable templates.
+	(variable_template_specialization_p): New.
+	* cp-tree.h: Declare it.
+
+2015-07-30  Jason Merrill  <jason@redhat.com>
+
+	DR 1558
+	PR c++/67021
+	* pt.c (tsubst_decl) [TYPE_DECL]: Clear TYPE_DEPENDENT_P_VALID.
+
+2015-07-16  Marek Polacek  <polacek@redhat.com>
+
+	Backported from mainline
+	2015-07-08  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/66748
+	* tree.c (handle_abi_tag_attribute): Check for CLASS_TYPE_P before
+	accessing TYPE_LANG_SPECIFIC node.
+
 2015-07-16  Release Manager
 
 	* GCC 5.2.0 released.

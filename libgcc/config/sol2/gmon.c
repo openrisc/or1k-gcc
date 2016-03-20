@@ -39,6 +39,7 @@
 
 #include "tconfig.h"
 #include "tsystem.h"
+#include "auto-target.h"
 #include <fcntl.h>		/* For creat.  */
 
 extern void monstartup (char *, char *);
@@ -113,12 +114,12 @@ monstartup (char *lowpc, char *highpc)
   monsize = (s_textsize / HISTFRACTION) + sizeof (struct phdr);
   buffer = sbrk (monsize);
   if (buffer == (void *) -1) {
-    write (STDERR_FILENO, MSG, sizeof (MSG));
+    write (STDERR_FILENO, MSG, sizeof (MSG) - 1);
     return;
   }
   froms = sbrk (s_textsize / HASHFRACTION);
   if (froms == (void *) -1) {
-    write (STDERR_FILENO, MSG, sizeof (MSG));
+    write (STDERR_FILENO, MSG, sizeof (MSG) - 1);
     froms = NULL;
     return;
   }
@@ -130,7 +131,7 @@ monstartup (char *lowpc, char *highpc)
   }
   tos = sbrk (tolimit * sizeof (struct tostruct));
   if (tos == (void *) -1) {
-    write (STDERR_FILENO, MSG, sizeof (MSG));
+    write (STDERR_FILENO, MSG, sizeof (MSG) - 1);
     froms = NULL;
     tos = NULL;
     return;
@@ -324,6 +325,11 @@ internal_mcount (char *selfpc, unsigned short *frompcindex)
   frompcindex = (void *) __builtin_return_address (1);
 #endif
 
+/* Only necessary without the Solaris CRTs or a proper gcrt1.o, otherwise
+   crtpg.o or gcrt1.o take care of that.
+
+   FIXME: What about _init vs. _start on sparc?  */
+#ifndef HAVE_SOLARIS_CRTS
   if(!already_setup) {
     extern char etext[];
 
@@ -344,6 +350,7 @@ internal_mcount (char *selfpc, unsigned short *frompcindex)
 #endif
     atexit (_mcleanup);
   }
+#endif /* !HAVE_SOLARIS_CRTS */
   /* Check that we are profiling and that we aren't recursively invoked.  */
   if (profiling) {
     goto out;
@@ -422,7 +429,7 @@ internal_mcount (char *selfpc, unsigned short *frompcindex)
   profiling++;
 
 #define	TOLIMIT	"mcount: tos overflow\n"
-  write (STDERR_FILENO, TOLIMIT, sizeof (TOLIMIT));
+  write (STDERR_FILENO, TOLIMIT, sizeof (TOLIMIT) - 1);
   goto out;
 }
 

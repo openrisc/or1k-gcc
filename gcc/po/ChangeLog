@@ -1,3 +1,34 @@
+2015-12-04  Release Manager
+
+	* GCC 5.3.0 released.
+
+2015-11-23  Joseph Myers  <joseph@codesourcery.com>
+
+	* zh_CN.po: Update.
+
+2015-11-16  Joseph Myers  <joseph@codesourcery.com>
+
+	* sv.po: Update.
+
+2015-09-25  Joseph Myers  <joseph@codesourcery.com>
+
+	* tr.po: Update.
+
+2015-08-17  Joseph Myers  <joseph@codesourcery.com>
+
+	* da.po: Update.
+
+2015-07-31  Joseph Myers  <joseph@codesourcery.com>
+
+	* sv.po: Update.
+
+2015-07-24  Joseph Myers  <joseph@codesourcery.com>
+
+	* be.po, da.po, de.po, el.po, es.po, fi.po, fr.po, hr.po, id.po,
+	ja.po, nl.po, ru.po, sr.po, sv.po, tr.po, vi.po, zh_CN.po,
+	zh_TW.po: Update.
+	* uk.po: New file.
+
 2015-07-16  Release Manager
 
 	* GCC 5.2.0 released.

@@ -1,3 +1,50 @@
+2015-12-04  Release Manager
+
+	* GCC 5.3.0 released.
+
+2015-10-05  Marek Polacek  <polacek@redhat.com>
+
+	Backport from mainline
+	2015-10-02  Marek Polacek  <polacek@redhat.com>
+
+	PR c/67730
+	* c-typeck.c (convert_for_assignment): Use the expansion point
+	location throughout.
+
+2015-09-30  Marek Polacek  <polacek@redhat.com>
+
+	Backport from mainline
+	2015-09-30  Marek Polacek  <polacek@redhat.com>
+
+	PR c/67730
+	* c-typeck.c (c_finish_return): Use the expansion point location for
+	certain "return with value" warnings.
+
+2015-09-10  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/67502
+	* c-parser.c (c_parser_omp_for_loop): Emit DECL_EXPR stmts
+	into OMP_FOR_PRE_BODY rather than before the loop.
+
+2015-09-09  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/67501
+	* c-parser.c (c_parser_oacc_all_clauses,
+	c_parser_omp_all_clauses): Remove invalid clause from
+	list of clauses even if parser->error is set.
+
+	PR c/67500
+	* c-parser.c (c_parser_omp_clause_aligned,
+	c_parser_omp_clause_safelen, c_parser_omp_clause_simdlen): Fix up
+	test for errors.
+	* c-decl.c (temp_pop_parm_decls): Allow b->decl equal to
+	error_mark_node.
+
+	PR c/67495
+	* c-parser.c (c_parser_omp_atomic): Use c_parser_cast_expression
+	instead of c_parser_unary_expression.  If the result is !lvalue_p,
+	wrap the result of c_fully_fold into NON_LVALUE_EXPR.
+
 2015-07-16  Release Manager
 
 	* GCC 5.2.0 released.

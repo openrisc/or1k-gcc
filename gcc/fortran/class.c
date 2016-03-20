@@ -843,7 +843,11 @@ has_finalizer_component (gfc_symbol *derived)
 	  && c->ts.u.derived->f2k_derived->finalizers)
 	return true;
 
+      /* Stop infinite recursion through this function by inhibiting
+	 calls when the derived type and that of the component are
+	 the same.  */
       if (c->ts.type == BT_DERIVED
+	  && !gfc_compare_derived_types (derived, c->ts.u.derived)
 	  && !c->attr.pointer && !c->attr.allocatable
 	  && has_finalizer_component (c->ts.u.derived))
 	return true;
@@ -1599,6 +1603,7 @@ generate_finalization_wrapper (gfc_symbol *derived, gfc_namespace *ns,
   final->ts.type = BT_INTEGER;
   final->ts.kind = 4;
   final->attr.artificial = 1;
+  final->attr.always_explicit = 1;
   final->attr.if_source = expr_null_wrapper ? IFSRC_IFBODY : IFSRC_DECL;
   if (ns->proc_name->attr.flavor == FL_MODULE)
     final->module = ns->proc_name->name;

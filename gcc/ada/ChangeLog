@@ -1,3 +1,34 @@
+2015-12-04  Release Manager
+
+	* GCC 5.3.0 released.
+
+2015-11-29  Matthias Klose  <doko@ubuntu.com>
+
+	PR ada/68564
+	* gcc-interface/Makefile.in: Fix powerpc/powerpc64* and
+	mipsel/mips64el bitness detection.
+	Merge the mipsel/mips64el definitions into one.
+
+2015-11-28  Matthias Klose  <doko@ubuntu.com>
+
+	PR ada/68564
+	* gcc-interface/Makefile.in: Fix sparc/sparc64 bitness detection.
+
+2015-11-24  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc-interface/decl.c (is_cplusplus_method): Check that the type of
+	the first parameter (indirectly) has C++ convention too.
+
+2015-11-18  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc-interface/trans.c (fold_constant_decl_in_expr) <ARRAY_REF>: If
+	the index is not itself constant then bail out.
+
+2015-10-09  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gcc-interface/Make-lang.in: Make sure that GNAT1_OBJS and not just
+	GNAT1_ADA_OBJS are compiled only after generated files are created.
+
 2015-07-16  Release Manager
 
 	* GCC 5.2.0 released.

@@ -269,15 +269,27 @@ gfc_expr *
 gfc_find_and_cut_at_last_class_ref (gfc_expr *e)
 {
   gfc_expr *base_expr;
-  gfc_ref *ref, *class_ref, *tail;
+  gfc_ref *ref, *class_ref, *tail, *array_ref;
 
   /* Find the last class reference.  */
   class_ref = NULL;
+  array_ref = NULL;
   for (ref = e->ref; ref; ref = ref->next)
     {
+      if (ref->type == REF_ARRAY
+	  && ref->u.ar.type != AR_ELEMENT)
+	array_ref = ref;
+
       if (ref->type == REF_COMPONENT
 	  && ref->u.c.component->ts.type == BT_CLASS)
+	{
+	  /* Component to the right of a part reference with nonzero rank
+	     must not have the ALLOCATABLE attribute.  */
+	  if (array_ref
+	      && CLASS_DATA (ref->u.c.component)->attr.allocatable)
+	    return NULL;
 	class_ref = ref;
+	}
 
       if (ref->next == NULL)
 	break;
@@ -318,47 +330,33 @@ gfc_find_and_cut_at_last_class_ref (gfc_expr *e)
 void
 gfc_reset_vptr (stmtblock_t *block, gfc_expr *e)
 {
-  gfc_expr *rhs, *lhs = gfc_copy_expr (e);
   gfc_symbol *vtab;
-  tree tmp;
-  gfc_ref *ref;
+  tree vptr;
+  tree vtable;
+  gfc_se se;
 
-  /* If we have a class array, we need go back to the class
-     container.  */
-  if (lhs->ref && lhs->ref->next && !lhs->ref->next->next
-      && lhs->ref->next->type == REF_ARRAY
-      && lhs->ref->next->u.ar.type == AR_FULL
-      && lhs->ref->type == REF_COMPONENT
-      && strcmp (lhs->ref->u.c.component->name, "_data") == 0)
-    {
-      gfc_free_ref_list (lhs->ref);
-      lhs->ref = NULL;
-    }
+  gfc_init_se (&se, NULL);
+  if (e->rank)
+    gfc_conv_expr_descriptor (&se, e);
   else
-    for (ref = lhs->ref; ref; ref = ref->next)
-      if (ref->next && ref->next->next && !ref->next->next->next
-	  && ref->next->next->type == REF_ARRAY
-	  && ref->next->next->u.ar.type == AR_FULL
-	  && ref->next->type == REF_COMPONENT
-	  && strcmp (ref->next->u.c.component->name, "_data") == 0)
-	{
-	  gfc_free_ref_list (ref->next);
-	  ref->next = NULL;
-	}
-
-  gfc_add_vptr_component (lhs);
+    gfc_conv_expr (&se, e);
+  gfc_add_block_to_block (block, &se.pre);
+  vptr = gfc_get_vptr_from_expr (se.expr);
+  if (vptr == NULL_TREE)
+    return;
 
   if (UNLIMITED_POLY (e))
-    rhs = gfc_get_null_expr (NULL);
+    gfc_add_modify (block, vptr, build_int_cst (TREE_TYPE (vptr), 0));
   else
     {
       vtab = gfc_find_derived_vtab (e->ts.u.derived);
-      rhs = gfc_lval_expr_from_sym (vtab);
+      vtable = vtab->backend_decl;
+      if (vtable == NULL_TREE)
+	vtable = gfc_get_symbol_decl (vtab);
+      vtable = gfc_build_addr_expr (NULL, vtable);
+      vtable = fold_convert (TREE_TYPE (vptr), vtable);
+      gfc_add_modify (block, vptr, vtable);
     }
-  tmp = gfc_trans_pointer_assignment (lhs, rhs);
-  gfc_add_expr_to_block (block, tmp);
-  gfc_free_expr (lhs);
-  gfc_free_expr (rhs);
 }
 
 
@@ -370,6 +368,8 @@ gfc_reset_len (stmtblock_t *block, gfc_expr *expr)
   gfc_expr *e;
   gfc_se se_len;
   e = gfc_find_and_cut_at_last_class_ref (expr);
+  if (e == NULL)
+    return;
   gfc_add_len_component (e);
   gfc_init_se (&se_len, NULL);
   gfc_conv_expr (&se_len, e);
@@ -5698,18 +5698,18 @@ gfc_conv_procedure_call (gfc_se * se, gfc_symbol * sym,
   vec_safe_reserve (retargs, arglen);
 
   /* Add the return arguments.  */
-  retargs->splice (arglist);
+  vec_safe_splice (retargs, arglist);
 
   /* Add the hidden present status for optional+value to the arguments.  */
-  retargs->splice (optionalargs);
+  vec_safe_splice (retargs, optionalargs);
 
   /* Add the hidden string length parameters to the arguments.  */
-  retargs->splice (stringargs);
+  vec_safe_splice (retargs, stringargs);
 
   /* We may want to append extra arguments here.  This is used e.g. for
      calls to libgfortran_matmul_??, which need extra information.  */
-  if (!vec_safe_is_empty (append_args))
-    retargs->splice (append_args);
+  vec_safe_splice (retargs, append_args);
+
   arglist = retargs;
 
   /* Generate the actual call.  */
@@ -5738,6 +5738,20 @@ gfc_conv_procedure_call (gfc_se * se, gfc_symbol * sym,
 
   fntype = TREE_TYPE (TREE_TYPE (se->expr));
   se->expr = build_call_vec (TREE_TYPE (fntype), se->expr, arglist);
+
+  /* Allocatable scalar function results must be freed and nullified
+     after use. This necessitates the creation of a temporary to
+     hold the result to prevent duplicate calls.  */
+  if (!byref && sym->ts.type != BT_CHARACTER
+      && sym->attr.allocatable && !sym->attr.dimension)
+    {
+      tmp = gfc_create_var (TREE_TYPE (se->expr), NULL);
+      gfc_add_modify (&se->pre, tmp, se->expr);
+      se->expr = tmp;
+      tmp = gfc_call_free (tmp);
+      gfc_add_expr_to_block (&post, tmp);
+      gfc_add_modify (&post, se->expr, build_int_cst (TREE_TYPE (se->expr), 0));
+    }
 
   /* If we have a pointer function, but we don't want a pointer, e.g.
      something like
@@ -6563,13 +6577,13 @@ gfc_trans_alloc_subarray_assign (tree dest, gfc_component * cm,
 	{
 	  tmp = TREE_TYPE (dest);
 	  tmp = gfc_duplicate_allocatable (dest, se.expr,
-					   tmp, expr->rank);
+					   tmp, expr->rank, NULL_TREE);
 	}
     }
   else
     tmp = gfc_duplicate_allocatable (dest, se.expr,
 				     TREE_TYPE(cm->backend_decl),
-				     cm->as->rank);
+				     cm->as->rank, NULL_TREE);
 
   gfc_add_expr_to_block (&block, tmp);
   gfc_add_block_to_block (&block, &se.post);
@@ -6732,6 +6746,29 @@ alloc_scalar_allocatable_for_subcomponent_assignment (stmtblock_t *block,
 				       TREE_TYPE (tmp), tmp,
 				       fold_convert (TREE_TYPE (tmp), size));
     }
+  else if (cm->ts.type == BT_CLASS)
+    {
+      gcc_assert (expr2->ts.type == BT_CLASS || expr2->ts.type == BT_DERIVED);
+      if (expr2->ts.type == BT_DERIVED)
+	{
+	  tmp = gfc_get_symbol_decl (expr2->ts.u.derived);
+	  size = TYPE_SIZE_UNIT (tmp);
+	}
+      else
+	{
+	  gfc_expr *e2vtab;
+	  gfc_se se;
+	  e2vtab = gfc_find_and_cut_at_last_class_ref (expr2);
+	  gfc_add_vptr_component (e2vtab);
+	  gfc_add_size_component (e2vtab);
+	  gfc_init_se (&se, NULL);
+	  gfc_conv_expr (&se, e2vtab);
+	  gfc_add_block_to_block (block, &se.pre);
+	  size = fold_convert (size_type_node, se.expr);
+	  gfc_free_expr (e2vtab);
+	}
+      size_in_bytes = size;
+    }
   else
     {
       /* Otherwise use the length in bytes of the rhs.  */
@@ -6859,7 +6896,8 @@ gfc_trans_subcomponent_assign (tree dest, gfc_component * cm, gfc_expr * expr,
       gfc_add_expr_to_block (&block, tmp);
     }
   else if (init && (cm->attr.allocatable
-	   || (cm->ts.type == BT_CLASS && CLASS_DATA (cm)->attr.allocatable)))
+	   || (cm->ts.type == BT_CLASS && CLASS_DATA (cm)->attr.allocatable
+	       && expr->ts.type != BT_CLASS)))
     {
       /* Take care about non-array allocatable components here.  The alloc_*
 	 routine below is motivated by the alloc_scalar_allocatable_for_
@@ -8634,12 +8672,17 @@ alloc_scalar_allocatable_for_assignment (stmtblock_t *block,
   tree jump_label1;
   tree jump_label2;
   gfc_se lse;
+  gfc_ref *ref;
 
   if (!expr1 || expr1->rank)
     return;
 
   if (!expr2 || expr2->rank)
     return;
+
+  for (ref = expr1->ref; ref; ref = ref->next)
+    if (ref->type == REF_SUBSTRING)
+      return;
 
   realloc_lhs_warning (expr2->ts.type, false, &expr2->where);
 
@@ -8975,7 +9018,6 @@ gfc_trans_assignment_1 (gfc_expr * expr1, gfc_expr * expr2, bool init_flag,
   scalar_to_array = (expr2->ts.type == BT_DERIVED
 		       && expr2->ts.u.derived->attr.alloc_comp
 		       && !expr_is_variable (expr2)
-		       && !gfc_is_constant_expr (expr2)
 		       && expr1->rank && !expr2->rank);
   scalar_to_array |= (expr1->ts.type == BT_DERIVED
 				    && expr1->rank
@@ -8984,7 +9026,7 @@ gfc_trans_assignment_1 (gfc_expr * expr1, gfc_expr * expr2, bool init_flag,
   if (scalar_to_array && dealloc)
     {
       tmp = gfc_deallocate_alloc_comp_no_caf (expr2->ts.u.derived, rse.expr, 0);
-      gfc_add_expr_to_block (&loop.post, tmp);
+      gfc_prepend_expr_to_block (&loop.post, tmp);
     }
 
   /* When assigning a character function result to a deferred-length variable,

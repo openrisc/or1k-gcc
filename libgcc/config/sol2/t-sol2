@@ -16,9 +16,15 @@
 # along with GCC; see the file COPYING3.  If not see
 # <http://www.gnu.org/licenses/>.
 
-# gmon build rule:
-gmon.o:	$(srcdir)/config/gmon-sol2.c
-	$(gcc_compile) -c $<
+# crtp, crtpg build rules
+crtp.o: $(srcdir)/config/sol2/crtp.c
+	$(crt_compile) $(CRTSTUFF_T_CFLAGS_S) -c $<
+crtpg.o: $(srcdir)/config/sol2/crtpg.c
+	$(crt_compile) $(CRTSTUFF_T_CFLAGS_S) -c $<
+
+# gmon build rule
+gmon.o:	$(srcdir)/config/sol2/gmon.c
+	$(crt_compile) $(CRTSTUFF_T_CFLAGS_S) -c $<
 
 # Assemble startup files.
 crt1.o: $(srcdir)/config/$(cpu_type)/sol2-c1.S

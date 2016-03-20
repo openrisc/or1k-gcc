@@ -544,7 +544,10 @@ gfc_match_name (char *buffer)
   c = gfc_next_ascii_char ();
   if (!(ISALPHA (c) || (c == '_' && flag_allow_leading_underscore)))
     {
-      if (!gfc_error_flag_test () && c != '(')
+      /* Special cases for unary minus and plus, which allows for a sensible
+	 error message for code of the form 'c = exp(-a*b) )' where an
+	 extra ')' appears at the end of statement.  */
+      if (!gfc_error_flag_test () && c != '(' && c != '-' && c != '+')
 	gfc_error ("Invalid character in name at %C");
       gfc_current_locus = old_loc;
       return MATCH_NO;
@@ -1942,6 +1945,11 @@ kind_selector:
 
   if (m == MATCH_NO)
     m = MATCH_YES;		/* No kind specifier found.  */
+
+  /* gfortran may have matched REAL(a=1), which is the keyword form of the
+     intrinsic procedure.  */
+  if (ts->type == BT_REAL && m == MATCH_ERROR)
+    m = MATCH_NO;
 
   return m;
 }
@@ -4925,6 +4933,15 @@ gfc_match_st_function (void)
 
   sym->value = expr;
 
+  if ((gfc_current_state () == COMP_FUNCTION
+       || gfc_current_state () == COMP_SUBROUTINE)
+      && gfc_state_stack->previous->state == COMP_INTERFACE)
+    {
+      gfc_error ("Statement function at %L cannot appear within an INTERFACE",
+		 &expr->where);
+      return MATCH_ERROR;
+    }
+
   if (!gfc_notify_std (GFC_STD_F95_OBS, "Statement function at %C"))
     return MATCH_ERROR;
 
@@ -4966,7 +4983,9 @@ gfc_free_case_list (gfc_case *p)
 }
 
 
-/* Match a single case selector.  */
+/* Match a single case selector.  Combining the requirements of F08:C830
+   and F08:C832 (R838) means that the case-value must have either CHARACTER,
+   INTEGER, or LOGICAL type.  */
 
 static match
 match_case_selector (gfc_case **cp)
@@ -4984,6 +5003,14 @@ match_case_selector (gfc_case **cp)
 	goto need_expr;
       if (m == MATCH_ERROR)
 	goto cleanup;
+
+      if (c->high->ts.type != BT_LOGICAL && c->high->ts.type != BT_INTEGER
+	  && c->high->ts.type != BT_CHARACTER)
+	{
+	  gfc_error ("Expression in CASE selector at %L cannot be %s",
+		     &c->high->where, gfc_typename (&c->high->ts));
+	  goto cleanup;
+	}
     }
   else
     {
@@ -4992,6 +5019,14 @@ match_case_selector (gfc_case **cp)
 	goto cleanup;
       if (m == MATCH_NO)
 	goto need_expr;
+
+      if (c->low->ts.type != BT_LOGICAL && c->low->ts.type != BT_INTEGER
+	  && c->low->ts.type != BT_CHARACTER)
+	{
+	  gfc_error ("Expression in CASE selector at %L cannot be %s",
+		     &c->low->where, gfc_typename (&c->low->ts));
+	  goto cleanup;
+	}
 
       /* If we're not looking at a ':' now, make a range out of a single
 	 target.  Else get the upper bound for the case range.  */

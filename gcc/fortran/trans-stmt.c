@@ -5210,6 +5210,17 @@ gfc_trans_allocate (gfc_code * code)
 		 here, fix it for future use.  */
 	      if (se.string_length)
 		expr3_len = gfc_evaluate_now (se.string_length, &block);
+
+	      /* Deallocate any allocatable components after all the allocations
+		 and assignments of expr3 have been completed.  */
+	      if (expr3 && code->expr3->ts.type == BT_DERIVED
+		  && code->expr3->rank == 0
+		  && code->expr3->ts.u.derived->attr.alloc_comp)
+		{
+		  tmp = gfc_deallocate_alloc_comp (code->expr3->ts.u.derived,
+						   expr3, 0);
+		  gfc_add_expr_to_block (&post, tmp);
+		}
 	    }
 	}
 
@@ -5618,7 +5629,8 @@ gfc_trans_allocate (gfc_code * code)
 	      tmp = gfc_copy_class_to_class (expr3, to,
 					     nelems, upoly_expr);
 	    }
-	  else if (code->expr3->ts.type == BT_CHARACTER)
+	  else if (code->expr3->ts.type == BT_CHARACTER
+		   && !GFC_DESCRIPTOR_TYPE_P (TREE_TYPE (se.expr)))
 	    {
 	      tmp = INDIRECT_REF_P (se.expr) ?
 			se.expr :
