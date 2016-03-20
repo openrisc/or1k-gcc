@@ -1,0 +1,900 @@
+2015-01-17  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.md (cmpxchg_mask): Mask set register.
+
+2014-08-13  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.h (ASM_PREFERRED_EH_DATA_FORMAT): Define.
+
+2013-02-13  Franck Jullien  <franck.jullien@gmail.com>
+
+	* config/or1k/or1k.h:
+	(LIB_SPEC): use -lboard-%* or -lboard-or1ksim even when
+	-static option is used.
+
+2013-02-13  Christian Svensson  <blue@cmd.nu>
+
+	* config/or1k/or1k-protos.h
+	(or1k_expand_pic_symbol_ref): Removed declaration.
+	(or1k_expand_symbol_ref): Added declaration.
+	* config/or1k/or1k.c
+	(or1k_expand_pic_symbol_ref): Made static.
+	(or1k_tls_symbolic_operand): New, returns TLS model of operand.
+	(gen_tls_tga): New, static cache of __tls_get_addr reference.
+	(gen_tls_get_addr): New, returns reference to __tls_get_addr.
+	(or1k_tls_call): New, emits call to __tls_get_addr.
+	(or1k_expand_symbol_ref): New, handles TLS operands.
+	(or1k_expand_move): Call or1k_expand_symbol_ref instead which will
+	then call or1k_expand_pic_symbol_ref if needed.
+	(gt-or1k.h): Include. Needed for gen_tls_tga.
+	* config/or1k/or1k.h (TARGET_HAVE_TLS): Define if HAVE_AS_TLS is set.
+	* config/or1k/or1k.md
+	(UNSPECS): Added UNSPEC_TPOFFLO, UNSPEC_TPOFFHI, UNSPEC_GOTTPOFFLO,
+	UNSPEC_GOTTPOFFHI, UNSPEC_GOTTPOFFLD, UNSPEC_TLSGDLO, UNSPEC_TLSGDHI.
+	(movsi_tlsgdlo): Added.
+	(movsi_tlsgdhi): Added.
+	(movsi_gottpofflo): Added.
+	(movsi_gottpoffhi): Added.
+	(load_gottpoff): Added.
+	(movsi_tpofflo): Added.
+	(movsi_tpoffhi): Added.
+	(movsi_insn_big): Call or1k_expand_symbol_ref instead.
+	* configure.ac: (TLS test): Check for or1k TLS support in AS.
+	* configure: (TLS test): Manually added same as in .ac.
+
+2013-02-11  Franck Jullien  <franck.jullien@gmail.com>
+
+	* config/or1k/or1k.h:
+	(LINK_SPEC): add a space between arguments.
+
+2013-01-22  Christian Svensson  <blue@cmd.nu>
+
+	* common/config/or1k/or1k-common.c
+	(TARGET_EXCEPT_UNWIND_INFO): define.
+	(or1k_except_unwind_info): use DWARF2 unwind info as default
+	but support SJLJ if forced with --enable-sjlj-exceptions.
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_pic_symbol_ref): removed unneeded ATTRIBUTE_UNUSED.
+	(or1k_eh_return_handler_rtx): defined prototype (body in or1k.c).
+	(or1k_return_addr_rtx): defined prototype (body in or1k.c).
+	* config/or1k/or1k.c
+	(or1k_save_reg_p): save stack pointer when frame pointer is not saved.
+	(or1k_save_reg_p): save registers used with eh_return.
+	(or1k_save_reg_p): save LR to stack if used by RETURN_ADDR_RTX.
+	(or1k_expand_epilogue): do not restore link register if we are 
+	returning from eh_return.
+	(or1k_expand_epilogue): apply EH stack adjustment to stack pointer.
+	(or1k_eh_return_handler_rtx): eh_return should write to the link register.
+	(or1k_return_addr_rtx): in the case of GOT the link register cannot be read
+	after the prologue. store LR on stack and read it back when needed.
+	(or1k_frame_pointer_required): require FP in eh_return and 
+	when alloca is used.
+	(or1k_init_machine_status): init cfun->machine.
+	(or1k_init_expanders): added LR forced save, default to false.
+	(TARGET_FRAME_POINTER_REQUIRED): define.
+	* config/or1k/or1k.h
+	(INITIAL_FRAME_POINTER_OFFSET): not used, removed.
+	(RETURN_ADDR_RTX): define.
+	(EH_RETURN_REGNUM): define. use reg 23.
+	(EH_RETURN_DATA_REGNO): define. use reg 25, 27, 29 and 31.
+	(EH_RETURN_STACKADJ_RTX): define.
+	(EH_RETURN_HANDLER_RTX): define.
+	(INIT_EXPANDERS): define.
+	(struct GTY()): define.
+
+2012-12-29  Christian Svensson  <blue@cmd.nu>
+
+	* config.gcc: Use GNU userspace link options when compiling for Linux.
+	* config/or1k/linux-elf.h:
+	(DRIVER_SELF_SPECS): Do not assume uclibc when -m glibc is absent, use
+	target configuration instead.
+
+2012-12-21  Christian Svensson  <blue@cmd.nu>
+
+	* config/or1k/linux-elf.h (GLIBC_DYNAMIC_LINKER): Define.
+	(LINK_SPEC): Use -muclibc / -mglibc to detect wanted interp to
+	-dynamic_linker.
+
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.c:
+	(or1k_output_highadd) removed, unneeded
+
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_sibcall) removed, unneeded
+
+2012-11-29  Peter Gavin  <pgavin@gmail.com>
+
+	fix some things that broke in merge with upstream
+	* config/or1k/or1k.h:
+	(GO_IF_MODE_DEPENDENT_ADDRESS) poisoned in last GCC merge, seems
+	obsolete now
+	(FIXUNS_TRUNC_LIKE_FIX_TRUNC) ditto
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_pic_symbol_ref) added prototype (function body is in or1k.c)
+	(or1k_legitimate_pic_operand_p) ditto
+	* config/or1k/or1k.c:
+	(or1k_compute_frame_size) use crtl->is_leaf instead of current_function_is_leaf
+
+2012-10-28  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* common/config/or1k/or1k-common.c (or1k_handle_option): Remove.
+	(TARGET_HANDLE_OPTION): Likewise.
+	* gcc/config.gcc (or1k-*-elf*): Remove OR1K_LIBC_DEFAULT from tm_defines
+	(or1k-*-linux-*): Likewise.
+	(or1knd-*-elf*): Likewise.
+	(or1knd-*-linux-*): Likewise.
+	* config/or1k/linux-elf.h (DRIVER_SELF_SPECS): Define -muclibc when
+	-mglibc is not given.
+	(TARGET_OS_CPP_BUILTINS): Define "__UCLIBC__" on OPTION_UCLIBC.
+	* config/or1k/or1k.h: Remove custom libc handling
+	* config/or1k/or1k.opt: Likewise.
+
+2012-09-30  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.h (DWARF2_ASM_LINE_DEBUG_INFO): Define.
+
+2012-09-23  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.c (or1k_expand_prologue): Add asserts checking that
+	link reg and fp stack slots offsets are not equal to other offsets.
+
+2012-09-23  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.c (or1k_save_reg_p): Save link register when
+	crtl->uses_pic_offset_table is set.
+	(or1k_compute_frame_size): Reserve space for PIC reg and link register
+	when -fPIC is defined.
+	(or1k_print_operand_address): Remove UNSPEC_GOTOFF handling.
+	(or1k_legitimate_address_p): Likewise.
+	(or1k_legitimate_pic_operand_p): New function.
+	(expand_pic_symbol_ref): Rename to:
+	(or1k_expand_pic_symbol_ref): Emit appropriate GOT references.
+	I.e. labels, local symbols and weak symbols use relative referencing
+	to GOT and global symbol references use referencing through GOT.
+	(or1k_expand_move): Utilize the functionality from
+	(or1k_expand_pic_symbol_ref).
+	(or1k_expand_prologue): Use crtl->uses_pic_offset_tale and
+	frame_info.save_lr_p to determine if the got pointer should be acquired
+	instead of df_regs_ever_live_p (PIC_OFFSET_TABLE_REGNUM).
+	(or1k_output_addr_const_extra): Remove.
+	(or1k_legitimize_address): Likewise.
+	(TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA): Likewise.
+	(TARGET_LEGITIMIZE_ADDRESS): Likewise.
+	* config/or1k/or1k.h (FIXED_REGISTERS): Add r16 (GOT pointer).
+	(CALL_USED_REGISTERS): Likewise.
+	(PIC_OFFSET_TABLE_REGNUM): Change from r10 to r16.
+	(LEGITIMATE_PIC_OPERAND_P): Define.
+	* config/or1k/or1k.md (UNSPEC_GOTOFF): Remove.
+	(UNSPEC_PCREL): Likewise.
+	(UNSPEC_PIC_LABEL): Likewise.
+	(UNSPEC_SYMBOL_OFFSET): Likewise.
+	(UNSPEC_GOTOFFHI): New constant.
+	(UNSPEC_GOTOFFLO): Likewise.
+	(movsi_gotofflo): New insn.
+	(movsi_gotoffhi): Likewise.
+	(movsi_got): Likewise.
+	(movsi_insn_big): Expand PIC symbol ref if necessary on -fpic
+	(call): Set r16 as used.
+	(call_indirect): Likewise.
+	(call_indirect_internal): Likewise.
+	(call_value): Likewise.
+	(call_value_indirect): Likewise.
+	(call_value_indirect_internal): Likewise.
+	(call_internal): Set r16 as used and emit call through plt on -fpic.
+	(call_value_internal): Likewise.
+	(set_got): Set r9 and r16 as clobbered, use gotpchi() and gotpclo()
+	assembler keywords.
+
+2012-09-18  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/picflag.m4 (or1k-*-*): Set picflag.
+
+2012-09-14  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* gcc/config/or1k/t-linux (MULTILIB_DIRNAMES): Remove 'be' multilib.
+
+2012-09-12  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/linux-elf.h (TARGET_VERSION): Remove.
+
+2012-09-11  Stefan Kristiansson  <stefan.kristiansson@saunalahti.fi>
+
+	* config/or1k/or1k.c (or1k_output_cmov): Remove '\t' in front of l.cmov
+	in asm output.
+
+2012-06-23  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.c:
+	(or1k_output_tailcall) remove
+
+2012-06-23  Peter Gavin  <pgavin@gmail.com>
+
+	turn off delay-slot pass when not using delayed branches
+	* config/or1k/or1k.c:
+	(or1k_option_override) new function, for now just clear
+	flag_delayed_branch when !TARGET_DELAY_ON
+	(TARGET_OPTION_OVERRIDE) define
+
+2012-06-23  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.h:
+	(or1k_asm_file_start) remove prototype
+	(TARGET_ASM_FILE_START) moved to or1k.c
+	* config/or1k/or1k.c:
+	(or1k_asm_file_start) make static
+	(TARGET_ASM_FILE_START) moved from or1k.h
+
+2012-06-23  Peter Gavin  <pgavin@gmail.com>
+
+	more fixes (and fixes to fixes) needed for update against upstream
+	* config/or1k/or1k-common.c: delete
+	* config/common/or1k/or1k-common.c:
+	include opts.h & flags.h
+	(or1k_option_optimization_table) add entry for OPT_fomit_frame_pointer
+	(or1k_handle_option) move from config/or1k/or1k-common.c
+	(TARGET_HANDLE_OPTION) move from config/or1k/or1k.c
+	* config/or1k/or1k.c:
+	(TARGET_HANDLE_OPTION) move from config/or1k/or1k.c
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.md: add comments to each instruction annotating
+	where it came from; add "length" and "type" attributes to l.sf*
+	instructions
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.h:
+	(TARGET_CPU_CPP_BUILTINS) make sure things are properly defined
+	for or1knd
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.c:
+	(or1k_output_mi_thunk) remove (not used?)
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.c: properly terminate some comments
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.c:
+	(or1k_trampoline_code_words) make static
+
+2012-06-22  Peter Gavin  <pgavin@gmail.com>
+
+	some fixes needed for update against mainline
+	* config/or1k/or1k-common.c: new file
+	(or1k_handle_option) moved from or1k.c
+	* config/or1k/or1k.c
+	(stack_disp_mem) pass Pmode as first argument to plus_constant
+	(or1k_handle_option) removed
+
+2012-05-28  Peter Gavin  <pgavin@gmail.com>
+
+	fix cmov
+	* config/or1k/or1k-protos.h:
+	(or1k_select_cc_mode) new prototype
+	* config/or1k/or1k.h:
+	(SELECT_CC_MODE) redefine to call or1k_select_cc_mode
+	(or1k_compare_op0) remove
+	(or1k_compare_op1) remove
+	* config/or1k/or1k.c:
+	(or1k_select_cc_mode) new function: does what SELECT_CC_MODE did,
+	but as a function; only takes one argument (the first), since the
+	second two in SELECT_CC_MODE are never used
+	(or1k_compare_op0) remove
+	(or1k_compare_op1) remove
+	(or1k_emit_int_cmov) use operands passed in instead of
+	or1k_compare_op[01]
+	(or1k_output_bf) call or1k_select_cc_mode instead of using SELECT_CC_MODE
+	(or1k_output_cmov) ditto
+
+2012-05-24  Peter Gavin  <pgavin@gmail.com>
+
+	remove some unneeded code
+	* config/or1k/or1k.c: remove use of INITIALIZER (was commented
+	anyways)
+	(calculate_stack_size) remove, never used
+	(or1k_frame_pointer_required) ditto
+
+2012-05-24  Peter Gavin  <pgavin@gmail.com>
+
+	remove sibcall support for or1k
+	* config/or1k/constraints.md:
+	(define_constraint "Rsc") removed
+	* config/or1k/predicates.md:
+	(define_predicate "sibcall_insn_operand") removed
+	* config/or1k/or1k-protos.h:
+	(or1k_expand_epilogue) removed sibcall parameter
+	* config/or1k/or1k.h:
+	(PRINT_OPERAND) removed 'J' and 'K' constraints
+	* config/or1k/or1k.c:
+	(or1k_expand_epilogue) removed sibcall parameter, don't check for
+	sibcalls
+	(or1k_print_jump_restore) removed
+	(or1k_expand_sibcall) removed
+	(or1k_function_ok_for_sibcall) return 0 so sibcalls are never used
+	* config/or1k/or1k.md:
+	(define_constants UNSPECV_SIBCALL_EPILOGUE) removed
+	(define_expand "epilogue") don't pass null to or1k_expand_epilogue
+	(define_insn_and_split "sibcall_epilogue") removed
+	(define_expand "sibcall") removed
+	(define_expand "sibcall_value") removed
+	(define_insn "sibcall_internal") removed
+
+2012-05-24  Peter Gavin  <pgavin@gmail.com>
+
+	remove -mlogue flag, always use scheduled prologue/epilogue
+	* config/common/or1k-common.c:
+	(TARGET_DEFAULT_TARGET_FLAGS) remove MASK_SCHED_LOGUE
+	* config/or1k/or1k.c:
+	(or1k_output_function_prologue) removed
+	(or1k_output_function_epilogue) removed
+	(TARGET_ASM_FUNCTION_PROLOGUE) removed
+	(TARGET_ASM_FUNCTION_EPILOGUE) removed
+	* config/or1k/or1k.md:
+	(prologue) remove TARGET_SCHED_LOGUE from constraints
+	(epilogue) ditto
+	(sibcall_epilogue) ditto
+	(return_internal) ditto
+	* config/or1k/or1k.opt:
+	(mlogue) removed
+
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
+	* gcc/config.gcc: add or1knd target; add OR1K_DELAY_DEFAULT
+	definitions to tm_defines for or1k and or1knd
+	* gcc/config/or1k/or1k-opts.h: new file; defines enum and flags
+	for delay slot options
+	* gcc/config/or1k/or1k.h: make delay slot optional
+	(TARGET_CPU_CPP_BUILTINS) define __OR1K_DELAY__, __OR1K_NODELAY__,
+	or __OR1K_DELAY_COMPAT__ depending on delay slot option chosen
+	(TARGET_ASM_FILE_START) new define
+	(or1k_asm_file_start) new prototype
+	(PRINT_OPERAND) emit different code depending on delay slot option
+	- added %K operand which is like %J but only emits code when no
+	delay slot
+	* gcc/config/or1k/or1k.c: make delay slot optional
+	(OR1K_NOP) new define, needed when inserting NOP in trampoline for
+	-mcompat-delay mode
+	(or1k_asm_file_start) new function; add ".nodelay" directive to
+	assembly file when not using delay slot
+	(or1k_trampoline_words) new function; return number of words in
+	trampoline. The number of words depends on whether a delay slot is
+	used
+	(or1k_trampoline_code_size) use or1k_trampoline_words
+	(or1k_output_function_epilogue) emit different code depending on
+	delay slot option
+	(or1k_trampoline_init) ditto
+	(or1k_output_mi_thunk) ditto
+	* gcc/config/or1k/or1k.md: make delay slot optional
+	- change when delay on branches & jumps is used
+	- add %K0 operand in sibcall with Rsc constraint
+	* gcc/config/or1k/or1k.opt: add -mdelay, -mno-delay -mcompat-delay flags
+	* gcc/config/or1k/t-or1k: add multilibs for no-delay and compat-delay
+	* gcc/config/or1k/t-or1knd: new file
+
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.h: change some specs
+	(CONC_DIR) remove
+	(TARGET_PREFIX) remove
+	(EXTRA_SPECS) remove
+	(STARTFILE_SPEC) use %s to search for files instead of using target_prefix
+	(LINK_SPEC) set entry to 0x100 when using newlib; remove -L%(target_prefix)/...
+	(LIB_SPEC) use %s to search for files; use -lboard-${board} to
+	link, instead of adding -L.../${board} and using -lboard
+	- this fixes a problem finding the libraries when using multilibs
+
+2012-05-13  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k-protos.h: add prototype for
+	or1k_expand_move (suppresses "no previous prototype" warning)
+	* config/or1k/or1k.c: (or1k_legitimize_address) add
+	ATTRIBUTE_UNUSED to mode (suppresses unused variable warning)
+
+2012-04-25  Peter Gavin  <pgavin@gmail.com>
+
+	* gcc/config/or1k/default.h: remove (why is this here?)
+
+2012-03-03  Peter Gavin  <pgavin@gmail.com>
+
+	* configure: regenerated
+
+2012-02-23  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.md: change if to else if in condition for
+	"movhi" (shouldn't make a difference); fix conditions for
+	"movsi_insn_big"
+	* config/or1k/predicates.md: remove unneeded fprintf
+
+2012-02-18  Peter Gavin  <pgavin@gmail.com>
+
+	* config/or1k/or1k.S: moved to libgcc/config/or1k/or1k.S
+	* config/or1k/crti.S, gcc/config/or1k/crtn.S: deleted
+	* config/or1k/or1k.c: remove dwarf2 code since this has been
+	moved into it's own compiler pass (more will probably have to be
+	done about this but it seems to work ok for now); fix some
+	warnings; include <ansidecl.h>; remove INITIALIZER (what was it
+	supposed to do?)
+	* config/or1k/or1k.h: make SELECT_CC_MODE return an something
+	of correct type on failure instead of just 0
+	* config/or1k/t-or1k: remove a bunch of obsolete stuff
+
+2011-12-01  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.md (cbranchsi4): Fix mode of operands 1 and 2.
+
+2011-07-07  Giuseppe Scrivano  <giuseppe@southpole.se>
+
+	* config/or32/or32.c (or32_print_operand_address): New function.
+	(expand_pic_symbol_ref): Likewise.
+	(or32_expand_move): Likewise.
+	(or32_expand_prologue): Set the PIC register.
+	(or32_output_addr_const_extra): Likewise.
+	(or32_legitimate_address_p): Handle UNSPEC.
+	(or32_legitimate_constant_p): When PIC is used don't allow
+	constants in VOIDmode.
+	(TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA, TARGET_LEGITIMIZE_ADDRESS): Define
+	hooks.
+
+	* config/or32/or32.md (UNSPEC_GOTOFF, UNSPEC_PCREL): Define.
+	(UNSPEC_PIC_LABEL, UNSPEC_SYMBOL_OFFSET, UNSPEC_SET_GOT): Likewise.
+	(set_got): New function.
+	(movhi_internal): Delegate to or32_expand_move.
+
+2011-06-27  Giuseppe Scrivano  <giuseppe@southpole.se>
+
+	* config/or32/or32.h: Define PIC_OFFSET_TABLE_REGNUM.
+	* config/or32/or32.c: Remove definition for GOT_SYMBOL_NAME and
+	GOT_REGISTER.
+
+2011-06-20  Giuseppe Scrivano  <giuseppe@southpole.se>
+
+	* config/or32/or32.c: Define GOT_SYMBOL_NAME and GOT_REGISTER.
+	(or32_expand_prologue): Store the GOT location in the GOT_REGISTER if
+	PIC code is generated.
+
+2011-06-17  Giuseppe Scrivano  <giuseppe@southpole.se>
+
+	* common/config/or32/or32-common.c: New file.
+	* config/or32/or32.h (LINK_SPEC): Support -shared.
+	* config/or32/or32.c (TARGET_EXCEPT_UNWIND_INFO): Remove definition.
+	* config/or32/or32.c (or32_pass_by_reference): Change type of CUM to
+	cumulative_args_t.
+	(or32_arg_partial_bytes): Likewise.
+	(or32_function_arg): Likewise.
+	(or32_function_arg_advance): Likewise.
+
+2011-05-28  Giuseppe Scrivano  <gscrivano@southpole.se>
+
+	* or32.h (FUNCTION_ARG, FUNCTION_ARG_ADVANCE): Undefine.
+	(HANDLE_PRAGMA_PACK_PUSH_POP, LEGITIMATE_CONSTANT_P): Likewise.
+	(CAN_DEBUG_WITHOUT_FP, RETURN_POPS_ARGS): Likewise.
+	(target_flags): Remove extern declaration.
+	* or32.c (TARGET_FUNCTION_ARG, TARGET_FUNCTION_ARG_ADVANCE): Define.
+	(TARGET_LEGITIMATE_CONSTANT_P, TARGET_EXCEPT_UNWIND_INFO): Likewise.
+	(or32_legitimate_constant_p, or32_function_arg): New functions.
+	(or32_function_arg, or32_function_arg_advance): Likewise.
+
+2011-04-13  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/elf.h (DRIVER_SELF_SPECS): Define.
+	* config/or32/linux-elf.h (DRIVER_SELF_SPECS): Undef.
+
+2011-04-09  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* BASE_VER: Updated for gcc-4.5.1-or32-1.0rc3.
+
+2011-03-22  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.h (LEGITIMATE_CONSTANT_P): Allow VOIDmode
+	CONST_DOUBLE.
+	* config/or32/or32.md (movsi_insn_big): Enable splitting of CONST_INT.
+	(movdi): Now a define_insn_and_split.
+	* config/or32/or32.c (or32_output_move_double): Abort for CONST_INT.
+
+2011-02-17  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* gcc.c (do_spec_1) <%*>: Don't append a space unless the next
+	character is '}'.
+	* config/or32/or32.h (STARTFILE_SPEC): For mor32-newlib-*,
+	add crtparam-%*.o.
+
+2011-02-15  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.md (frame_alloc_fp): New pattern.
+	* config/or32/or32.c (or32_expand_prologue): Use it if a frame pointer
+	is used.
+
+2011-02-03  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/uclibc-stdint.h: New file.
+	* config.gcc (or32-*linux*): Add uclibc-stdint.h to tm_file.
+
+2011-02-03  Jonas Bonn  <jonas@southpole.se>
+
+	* config/or32/or32.h (CALL_USED_REGS): Include r12.
+
+2011-01-12  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config.or32/or32.h (CPP_SPEC): Add -D_XOPEN_SOURCE=600 for pthread.
+	(LIB_SPEC): Add --whole-archive -lpthread --no-whole-archive for
+	pthread.
+
+2010-12-19  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config.gcc <or32-*-linux*>: Remove extra_parts.
+	* config/or32/crti.S (__init): Add l.nop, so doesn't start at zero.
+
+2010-12-19  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config/or32/crtn.S (__init, __fini): remove labels.
+	* config.gcc <or32-*-linux*>: Add crti.o and crt.n to extra_parts.
+
+2010-12-16  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config.gcc (or32-*-elf*) <tm_defines>:
+	Add OR32_LIBC_DEFAULT=or32_libc_newlib.
+	(or32-*linux*) <tm_defines>: Set UCLIBC_DEFAULT=1.
+	Add OR32_LIBC_DEFAULT=or32_libc_uclibc.
+	* config/or32/or32.opt (mnewlib): New option.
+	(muclibc, mglibc): Stub options.
+	* config/or32/or32.h (TARGET_CPU_CPP_BUILTINS): When using uClibc,
+	define __UCLIBC__.
+	(or32_libc_kind): New enum.
+	* config/or32/or32.c (or32_handle_option): New function.
+	(TARGET_HANDLE_OPTION): Override.
+
+2010-12-10  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.c (TARGET_STRICT_ARGUMENT_NAMING): Overrride.
+
+2010-11-18  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* config/or32/t-linux ($(T)crtbegin.o): Reverse out __dso_handle
+	rename.
+	(crtbegin$(objext)): Likewise.
+
+2010-11-07  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.opt (mredzone=): New option.
+	* config/or32/or32.c (frame_info): New members gpr_frame, late_frame.
+	(or32_compute_frame_size, or32_expand_prologue): Implement -mredzone.
+	or32_expand_epilogue, or32_initial_elimination_offset): Likewise.
+	(or32_function_ok_for_sibcall): Suppress sibcall optimization if
+	the sibcall register might not be available.
+
+	* config/or32/or32.c (or32_expand_prologue): Fix threshold for
+	loading the frame size into a register.
+
+	* config/or32/or32.md (SP_REG, FP_REG, UNSPEC_FRAME): New constants.
+	(frame_dealloc_fp, frame_dealloc_sp): New insn patterns.
+	* config/or32/or32.c (or32_expand_epilogue): Use frame_dealloc_[fs]p.
+
+2010-11-01  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.h (HANDLE_PRAGMA_PACK_PUSH_POP): Define.
+
+	* config/or32/t-linux ($(T)crtbegin.o): Rename __dso_handle.
+
+	(crtbegin$(objext)): Likewise.
+
+2010-10-31  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	 * config/or32/or32.c (or32_struct_alignment): Refine rules to
+	 avoid overriding user settings.
+
+	 * Don't increase alignment of struct with sole packed field.
+
+2010-10-29  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.c (or32_output_mi_thunk): New function.
+	(or32_output_highadd, or32_output_tailcall): Likewise.
+	(TARGET_ASM_OUTPUT_MI_THUNK): Redefine.
+	(TARGET_ASM_CAN_OUTPUT_MI_THUNK): Likewise.
+
+	(or32_output_mi_thunk): Don't emit add of zero delta.
+
+	* config/or32/or32.opt: Remove -maj option.
+	* config/or32/or32.md, config/or32/or32.c: Likewise.
+
+	* config.gcc: Add Embecosm Copyright notice.
+	* config/or32/predicates.md: Likewise.
+	* config/or32/or32.md: Likewise.
+	* config/or32/t-or32: Likewise.
+	* config/or32/or32.opt: Likewise.
+	* config/or32/or32-protos.h: Likewise.
+	* config/or32/crti.S: Likewise.
+	* config/or32/or32.c: Likewise.
+	* config/or32/constraints.md: Likewise.
+	* config/or32/crtn.S: Likewise.
+	* config/or32/default.h: Likewise.
+	* config/or32/or32.h: Likewise.
+
+2010-10-28  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.md (movsi_lo_sum, movsi_high): Enable generator
+	function generation.
+	(movsi_insn_big): Now define_insn_and_split.
+
+	* config.gcc (or32-*-elf*): Change extra_parts to:
+	"crti.o crtbegin.o crtend.o crtn.o".
+	( or32-*linux*): Change tmake_file to
+	"${cpu_type}/t-${cpu_type} or32/t-linux"
+	* config/or32/t-default, config/or32/initfini.c: Delete.
+	* t-or32 ((T)or32-crtbegin.o, $(T)or32-crtend.o): Replace with:
+	((T)crti.o, $(T)crtn.o).
+	* config/or32/t-linux: New file.
+	* config/or32/crti.S, config/or32/crtn.S: Likewise.
+	* config/or32/or32.h (STARTFILE_SPEC): Replace or32-crtbegin.o%s with
+	crti.o%s crtbegin.o%s.
+	(ENDFILE_SPEC): Set to crtend.o%s crtn.o%s.
+
+	* config/or32/elf.h (DBX_DEBUGGING_INFO): Don't redefine.
+	(PREFERRED_DEBUGGING_TYPE, PUT_SDB_DEF): Likewise.
+
+	* config/or32/or32.md (tablejump): For -fpic, emit add of table base.
+
+2010-10-26  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config.gcc (or32-*-elf*): Rename crtinit.o / crtfini.o
+	to or32-crtbegin.o / or32-crtend.o.
+	* config/or32/t-default, config/or32/t-or32 (Entire file): Likewise.
+	* config/or32/initfini.c, config/or32/or32.h: Likewise.
+
+2010-10-26  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.opt Mask(MASK_SCHED_LOGUE): Renamed to
+	Mask(SCHED_LOGUE).  Changed all users.
+	(-msibcall): Delete option.
+	* config/or32/or32.md (sibcall, sibcall_value, sibcall_internal): Make
+	patterns unconditional.
+	(sibcall_internal): Change alternatives to handle callee-saved
+	registers correctly.
+	* config/or32/or32.c (or32_compute_frame_size): Place register save
+	area at bottom of frame.
+	(or32_expand_prologue): Initialize frame pointer from stack pointer.
+	For large offsets, add a REG_FRAME_RELATED_EXPR note.
+	(or32_expand_epilogue): Restore stack pointer from frame pointer.
+	sibcall is now the sibcall epilogue insn to be split.
+	(or32_compute_frame_size, or32_expand_prologue, or32_expand_epilogue):
+	Use PROLOGUE_TMP and EPILOGUE_TMP.
+	(or32_function_ok_for_sibcall): Retrun true.
+	(TARGET_DEFAULT_TARGET_FLAGS): Include MASK_SCHED_LOGUE.
+	(PROLOGUE_TMP, EPILOGUE_TMP): Define.
+	* config/or32/or32.md (CC_REG): New constant.  Use it to denote
+	register number of flags register.
+	Include constraints.md.
+	* config/or32/predicates.md (cc_reg_operand): Use CC_REG.
+	(input_operand): Use satisfies_constraint_[KMI].
+	* config/or32/or32-protos.h (or32_initial_elimination_offset): Declare.
+	(or32_print_jump_restore): Declare.
+	* config/or32/or32.h (OR32_LAST_ACTUAL_REG): Define.  Use in place of
+	OR32_LAST_INT_REG to iterate through registers where appropriate.
+	(ELIMINABLE_REGS, INITIAL_ELIMINATION_OFFSET): Define.
+	(ARG_POINTER_REGNUM, FRAME_POINTER_REGNUM): Define as fake hard
+	registers.
+	(FIXED_REGISTERS, CALL_USED_REGISTERS, REG_CLASS_CONTENTS): Update.
+	(REGNO_REG_CLASS, REGISTER_NAMES): : Likewise.
+	* config/or32/or32.c: Use HARD_FRAME_POINTER_REGNUM /
+	hard_frame_pointer_rtx to refer to the hard frame pointer.
+	(or32_emit_move): Now static.
+	(or32_print_jump_restore): New function.
+	(or32_compute_frame_size): Distinguish between saving the hard frame
+	pointer and saving the GPR with the regno of the eliminated frame
+	pointer.
+	(indexed_memory): Delete.
+	(stack_disp_mem): New function.
+	(or32_compute_frame_size): Avoid over-wide shifts.
+	(or32_output_function_prologue): Likewise.
+	(or32_output_function_epilogue): Likewise.
+	(or32_frame_pointer_required): Comment out.
+	(or32_initial_elimination_offset): New function.
+	(TARGET_FRAME_POINTER_REQUIRED): Don't redefine.
+	(PRINT_OPERAND): Handle %J.
+	* config/or32/constraints.md: New file.
+
+2010-10-25  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32-protos.h (get_hard_reg_initial_val): Declare.
+	* config/or32/or32.h (INCOMING_RETURN_ADDR_RTX): Fix register number.
+	* (RETURN_ADDR_RTX): Define.
+
+2010-10-12  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.c (or32_struct_alignment): Round up alignment to
+	power of two.
+
+	For unions, use maximum of field size for size estimate.
+
+2010-10-11  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.opt (mpadstruct): New option.
+	* config/or32/or32-protos.h (or32_struct_alignment): Declare.
+	(or32_data_alignment): Likewise.
+	* config/or32/or32.c (or32_struct_alignment): New function.
+	(or32_data_alignment): Likewise.
+	* config/or32/or32.h (STRUCTURE_SIZE_BOUNDARY): Default to 8.
+	(ROUND_TYPE_ALIGN, DATA_ALIGNMENT, LOCAL_ALIGNMENT): Define.
+
+	* config/or32/or32.c (or32_struct_alignment): Take
+	maximum_field_alignment into account.
+
+2010-09-14  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.h (ASM_OUTPUT_ADDR_DIFF_ELT): Fix typo.
+	(JUMP_TABLES_IN_TEXT_SECTION): Define.
+	* config/or32/default.h (JUMP_TABLES_IN_TEXT_SECTION): Use flag_pic.
+
+2010-09-13  Joern Rennecke  <joern.rennecke@embecosm.com>
+
+	* config/or32/or32.h (TRAMPOLINE_SIZE): Use result of
+	or32_trampoline_code_size rather than its address.
+
+	* config/or32/initfini.c (init): Rename to:
+	(__init).
+	* config/or32/or32.c (or32_trampoline_init): Don't clobber r12.
+
+	* config.gcc (or32-*-elf*): Add newlib-stdint.h to tm_file.
+
+2010-09-05  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* BASE_VER: Updated for gcc-4.5.1-or32-1.0rc1.
+
+2010-09-05  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32-protos.c <or32_trampoline_code_size>: Added.
+	* config/or32/or32.c <TARGET_DEFAULT_TARGET_FLAGS>: Added.
+	* config/or32/or32.h <TARGET_DEFAULT>: Deleted.
+	* doc/contrib.texi: Updated for OpenRISC.
+	* doc/invoke.texi: Updated for OpenRISC.
+
+2010-09-04  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32-protos.c <or32_trampoline_code_size>: Added.
+	* config/or32/or32.c <OR32_MOVHI, OR32_ORI, OR32_LWZ, OR32_JR>:
+	New macros added.
+	(or32_emit_mode, or32_emit_binary, or32_force_binary)
+	(or32_trampoline_code_size, or32_trampoline_init): Created.
+	(or32_output_bf): Tabbing fixed.
+	<TARGET_TRAMPOLINE_INIT>: Definition added.
+	* config/or32/or32.h <STATIC_CHAIN_REGNUM>: Uses R11.
+	<TRAMPOLINE_SIZE>: redefined.
+	<TRAMPOLINE_ENVIRONMENT>: Added definition.
+
+2010-09-01  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* haifa-sched.c (initiate_bb_reg_pressure_info): Declaration of i
+	made conditional to avoid warning.
+	* or32.c: Updated for compatibility with GCC 4.5.1. Redundant
+	functions remobed. Now contains all target hooks.
+	* or32.h: Complete rewrite for compatibility with GCC
+	4.5.1. Removed all target hooks.
+	* or32.md: Rewrite for compatibility with GCC 4.5.1.
+	* or32-protos.h: Updated to match or32.c.
+
+2010-09-01  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* .: All files updated to GCC 4.5.1 base.
+
+2010-08-26  mirekez  <mirekez@gmail.com>
+
+	* config/or32/or32.h <enum reg_class>: CR_REGS removed from
+	enumeration.
+
+2010-08-26  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* vec.h: All references to VEC_TA_GTY with an empty fourth
+	argument replaced by VEC_TA_GTY_ANON with only three arguments
+	<VEC_TA_GTY_ANON>: Created.
+
+2010-08-25  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* config/or32/elf.h <DWARF2_DEBUGGING_INFO>: Defined.
+	<PREFERRED_DEBUGGING_TYPE>: Changed to DWARF2_DEBUG.
+	<PUT_SDB_DEF>: Deleted.
+	* config/or32/or32.h: Obsolete code surrounded by "#if 0" removed
+	for clarity.
+	<SDB_DELIM>: Definition deleted.
+	<DBX_CONTIN_LENGTH, DBX_CONTIN_CHAR, DBX_REGISTER_NUMBER>:
+	Definition deleted (default suffices).
+	<DWARF2_UNWIND_INFO, DWARF2_FRAME_INFO>: Defined.
+	<DWARF2_ASM_LINE_DEBUG_INFO, INCOMIN_RETURN_ADDR_RTX>: Defined.
+	* config/or32/or32.md: Commenting clarified. Obsolete code for
+	define_function_unit deleted.
+
+2010-08-19  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* config/or32/elf.h <PUT_SDB_DEF>: Definition removed.
+	<USER_LABEL_PREFIX>: Modified to match or32.h
+	* config/or32/linux-elf.h<USER_LABEL_PREFIX>: Modified to match
+	or32.h
+	* config/or32/or32.h <LIB_SPEC>: Changed to use free instead of
+	_free to match change in USER_LABEL_PREFIX.
+	<USER_LABEL_PREFIX>: Changed from "_" to "".
+	<ASM_OUTPUT_FUNCTION_PREFIX>: Surround .proc by tab chars.
+	* config/or32/or32.S (__mulsi3, __udivsi3, __divsi3, __umodsi3)
+	(__modsi3): Changed from ___mulsi3, ___udivsi3, ___divsi3,
+	___umodsi3 and ___modsi3 respectively to match change in
+	USER_LABEL_PREFIX.
+
+2010-07-20  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32.h: Updated LIB_SPEC for newlib 1.18.0 to force
+	linking of _malloc and _free against a weak reference also when
+	using -lg.
+
+2010-07-19  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32.h: Updated LIB_SPEC for newlib 1.18.0 to force
+	linking of _malloc and _free against a weak reference.
+
+2010-07-17  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32.h: Updated STARTFILE_SPEC and LIB_SPEC
+	definition for newlib.
+
+2010-07-16  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32.h: Updated SPEC definitions to pick up newlib
+	in custom location.
+
+2010-07-13  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config/or32/initfini.c: Corrected assembler sequences.
+
+2010-07-07  Jeremy Bennett <jeremy.bennett@embecosm.com>
+
+	* config.gcc: Specified cpu_type for or32. Corrected templates
+	specified for or32-*-elf*. Added extra_parts for
+	or32-*-elf*. Specified t-or32 as tmake_file for or32-*-elf*.
+	* config/or32/initfini.c: Created.
+	* config/or32/or32.h <LINK_SPEC>: Removed.
+	<STARTFILE_SPEC>: Add crtinit.o.
+	<ENDFILE_SPEC>: Just specify crtfini.o.
+	<LIB_SPEC>: Unified multiple definitions. Added newlib library
+	when specified.
+	* config/or32/or32.opt <mor32-newlib-uart>: New option added.
+	* config/or32/t-default: Added details for crtinit and crtfini.
+	* config/or32/t-or32: Added details for crtinit and crtfini.
+
+2010-06-30  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32.h <FUNCTION_PROFILER>: Corrected definition.
+	<LINK_SPEC>: Pick up newlib specific linker script.
+	<ENDFILE_SPEC>: Specify newlib library.
+	* config/or32/or32.opt <mor32-newlib>: New option added.
+
+2010-06-21  Jeremy Bennett  <jeremy.bennett@embecosm.com>
+
+	* config/or32/or32.md: Duplicate define_insn of "movdf" and "movsf"
+	removed.
+
+2010-06-17  Jungsook yang  <jungsook.yang@uci.edu>
+
+	* config/or32/or32.c (or32_expand_branch): Added SFmode case.
+	* config/or32/or32.md <define_expand "*cmpsf">: Added.
+	<define_expand "*cmpsf_eq">: Added.
+	<define_expand "*cmpsf_ne">: Added.
+	<define_expand "*cmpsf_gt">: Added.
+	<define_expand "*cmpsf_ge">: Added.
+	<define_expand "*cmpsf_lt">: Added.
+	<define_expand "*cmpsf_le">: Added.
+	<define_insn "movdf">: Added.
+	<define_insn "movsf">: Added.
+	<define_insn "adddf3">: Added TARGET_DOUBLE_FLOAT.
+	<define_insn "subdf3">: Added TARGET_DOUBLE_FLOAT.
+	<define_insn "muldf3">: Added TARGET_DOUBLE_FLOAT.
+	<define_insn "divdf3">: Added TARGET_DOUBLE_FLOAT.
+	<define_insn "floatsisf2">: Added.
+	<define_insn "fixunssfsi2">: Added.
+	<define_insn "movdf">: Added.
+	<define_insn "movsf">: Added.
+	* config/or32/or32.opt: mdouble-float option added.
+

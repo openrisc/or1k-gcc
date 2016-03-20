@@ -20,6 +20,8 @@
 // @require@ %-*.tst %-*.txt
 // @diff@ %-*.tst %-*.txt
 
+// { dg-xfail-run-if "not supported on OR1K newlib" { or1k-*-elf } }
+
 #include <istream>
 #include <sstream>
 #include <fstream>

@@ -19,6 +19,8 @@
 // @require@ %-*.tst %-*.txt
 // @diff@ %-*.tst %-*.txt
 
+// { dg-xfail-run-if "not supported on OR1K newlib" { or1k-*-elf } }
+
 #include <ostream>
 #include <sstream>
 #include <fstream>

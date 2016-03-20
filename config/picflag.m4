@@ -47,6 +47,9 @@ case "${$2}" in
     mips-sgi-irix6*)
 	# PIC is the default.
 	;;
+    or1k-*-*)
+	$1=-fPIC
+        ;;
     rs6000-ibm-aix* | powerpc-ibm-aix*)
 	# All AIX code is PIC.
 	;;
