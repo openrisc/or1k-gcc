@@ -26,13 +26,20 @@
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
-#include "tm.h"
+#include "backend.h"
+#include "target.h"
 #include "rtl.h"
+#include "tree.h"
+#include "df.h"
+#include "tm.h"
+#include "tm_p.h"
+#include "stringpool.h"
+#include "optabs.h"
 #include "hash-set.h"
+#include "emit-rtl.h"
+#include "recog.h"
 #include "inchash.h"
 #include "symtab.h"
-#include "tree.h"
-#include "stringpool.h"
 #include "stor-layout.h"
 #include "calls.h"
 #include "varasm.h"
@@ -48,24 +55,19 @@
 #include "reload.h"
 #include "function.h"
 #include "explow.h"
-#include "emit-rtl.h"
 #include "expr.h"
 #include "toplev.h"
-#include "recog.h"
 #include "ggc.h"
 #include "except.h"
-#include "tm_p.h"
-#include "target.h"
 #include "target-def.h"
 #include "debug.h"
 #include "langhooks.h"
 #include "predict.h"
 #include "basic-block.h"
-#include "df.h"
-#include "optabs.h"
 #include "dwarf2.h"
 #include "ansidecl.h"
 #include "builtins.h"
+#include "sbitmap.h"
 
 /* ========================================================================== */
 /* Local macros                                                               */
@@ -379,7 +381,7 @@ or1k_expand_int_compare (enum rtx_code  code,
   /* This is very simple, but making the interface the same as in the
      FP case makes the rest of the code easier.  */
   tmp = gen_rtx_COMPARE (cmpmode, op0, op1);
-  emit_insn (gen_rtx_SET (VOIDmode, flags, tmp));
+  emit_insn (gen_rtx_SET (flags, tmp));
 
   /* Return the test that should be put into the flags user, i.e.
      the bcc, scc, or cmov instruction.  */
@@ -434,14 +436,14 @@ or1k_expand_cmpxchg_qihi (rtx bval, rtx retval, rtx mem, rtx oldval, rtx newval,
 
   mask_const = gen_rtx_CONST_INT (VOIDmode,
                                   mode == QImode ? 0xff : 0xffff);
-  emit_insn (gen_rtx_SET (VOIDmode, mask, mask_const));
+  emit_insn (gen_rtx_SET (mask, mask_const));
 
   /* align address and retrieve the offset. */
-  emit_insn (gen_rtx_SET (VOIDmode, addr,
+  emit_insn (gen_rtx_SET (addr,
              gen_rtx_AND (Pmode, addr1, GEN_INT (-4))));
-  emit_insn (gen_rtx_SET (VOIDmode, off,
+  emit_insn (gen_rtx_SET (off,
              gen_rtx_AND (SImode, addr1, GEN_INT (3))));
-  emit_insn (gen_rtx_SET (VOIDmode, off,
+  emit_insn (gen_rtx_SET (off,
                           gen_rtx_XOR (SImode, off,
                                        GEN_INT (GET_MODE (mem) == QImode
                                                 ? 3 : 2))));
@@ -450,7 +452,7 @@ or1k_expand_cmpxchg_qihi (rtx bval, rtx retval, rtx mem, rtx oldval, rtx newval,
 
   /* shift all arguments to be aligned to where the data we want
    * to operate on is located. */
-  emit_insn (gen_rtx_SET (VOIDmode, shifter,
+  emit_insn (gen_rtx_SET (shifter,
              gen_rtx_ASHIFT (SImode, off, GEN_INT (3))));
 
   emit_insn (gen_ashlsi3 (shifted_oldval, oldval, shifter));
@@ -490,14 +492,14 @@ or1k_expand_fetch_op_qihi (rtx oldval, rtx mem, rtx operand, rtx newval,
 
   mask_const = gen_rtx_CONST_INT (VOIDmode,
                                   mode == QImode ? 0xff : 0xffff);
-  emit_insn (gen_rtx_SET (VOIDmode, mask, mask_const));
+  emit_insn (gen_rtx_SET (mask, mask_const));
 
   /* align address and retrieve the offset. */
-  emit_insn (gen_rtx_SET (VOIDmode, addr,
+  emit_insn (gen_rtx_SET (addr,
              gen_rtx_AND (Pmode, addr1, GEN_INT (-4))));
-  emit_insn (gen_rtx_SET (VOIDmode, off,
+  emit_insn (gen_rtx_SET (off,
              gen_rtx_AND (SImode, addr1, GEN_INT (3))));
-  emit_insn (gen_rtx_SET (VOIDmode, off,
+  emit_insn (gen_rtx_SET (off,
                           gen_rtx_XOR (SImode, off,
                                        GEN_INT (GET_MODE (mem) == QImode
                                                 ? 3 : 2))));
@@ -506,7 +508,7 @@ or1k_expand_fetch_op_qihi (rtx oldval, rtx mem, rtx operand, rtx newval,
 
   /* shift all arguments to be aligned to where the data we want
    * to operate on is located. */
-  emit_insn (gen_rtx_SET (VOIDmode, shifter,
+  emit_insn (gen_rtx_SET (shifter,
              gen_rtx_ASHIFT (SImode, off, GEN_INT (3))));
 
   emit_insn (gen_ashlsi3 (shifted_operand, operand, shifter));
@@ -565,7 +567,7 @@ or1k_emit_int_cmove (rtx  dest,
 
 
 static void
-or1k_print_operand_address (FILE *stream, rtx addr)
+or1k_print_operand_address (FILE *stream, machine_mode /* mode */, rtx addr)
 {
   rtx offset;
 
@@ -595,7 +597,7 @@ or1k_print_operand_address (FILE *stream, rtx addr)
           offset = XEXP (addr, 0);
           addr   = XEXP (addr, 1);
         }
-      output_address (offset);
+      output_address (GET_MODE(addr), offset);
       fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
       break;
 
@@ -999,7 +1001,7 @@ or1k_emit_binary (enum rtx_code  code,
 		  rtx            op0,
 		  rtx            op1)
 {
-  emit_insn (gen_rtx_SET (VOIDmode, target,
+  emit_insn (gen_rtx_SET (target,
 			  gen_rtx_fmt_ee (code, GET_MODE (target), op0, op1)));
 
 }	/* or1k_emit_binary () */
@@ -1102,8 +1104,7 @@ or1k_expand_prologue (void)
 				    GEN_INT (-frame_info.gpr_frame)));
   if (frame_info.save_fp_p)
     {
-      emit_frame_insn (gen_rtx_SET (Pmode,
-				    stack_disp_mem (frame_info.fp_save_offset),
+      emit_frame_insn (gen_rtx_SET (stack_disp_mem (frame_info.fp_save_offset),
 				    hard_frame_pointer_rtx));
 
       emit_frame_insn
@@ -1112,7 +1113,7 @@ or1k_expand_prologue (void)
   if (frame_info.save_lr_p)
     {
       emit_frame_insn
-	(gen_rtx_SET (Pmode, stack_disp_mem (frame_info.lr_save_offset),
+	(gen_rtx_SET (stack_disp_mem (frame_info.lr_save_offset),
 		      gen_rtx_REG (Pmode, LINK_REGNUM)));
     }
   if (frame_info.gpr_size)
@@ -1134,8 +1135,7 @@ or1k_expand_prologue (void)
 			  != frame_info.fp_save_offset));
 
 	  emit_frame_insn
-	    (gen_rtx_SET (Pmode,
-			  stack_disp_mem (frame_info.gpr_offset + offset),
+	    (gen_rtx_SET (stack_disp_mem (frame_info.gpr_offset + offset),
 			  gen_rtx_REG (Pmode, regno)));
 	  offset = offset + UNITS_PER_WORD;
 	}
@@ -1194,7 +1194,7 @@ or1k_expand_epilogue (void)
     {
       emit_insn (gen_frame_dealloc_fp ());
       emit_insn
-	(gen_rtx_SET (Pmode, hard_frame_pointer_rtx,
+	(gen_rtx_SET (hard_frame_pointer_rtx,
 		      stack_disp_mem (frame_info.fp_save_offset)));
     }
   else
@@ -1217,7 +1217,7 @@ or1k_expand_epilogue (void)
   if (frame_info.save_lr_p && !crtl->calls_eh_return)
     {
       emit_insn
-        (gen_rtx_SET (Pmode, gen_rtx_REG (Pmode, LINK_REGNUM),
+        (gen_rtx_SET (gen_rtx_REG (Pmode, LINK_REGNUM),
                       stack_disp_mem (frame_info.lr_save_offset)));
     }
 
@@ -1233,7 +1233,7 @@ or1k_expand_epilogue (void)
 
 	  if (regno != FIRST_PSEUDO_REGISTER)
 	    emit_insn
-	      (gen_rtx_SET (Pmode, gen_rtx_REG (Pmode, regno),
+	      (gen_rtx_SET (gen_rtx_REG (Pmode, regno),
 			    stack_disp_mem (frame_info.gpr_offset + offset)));
 	  offset = offset + UNITS_PER_WORD;
 	}
@@ -1414,7 +1414,7 @@ or1k_expand_conditional_branch (rtx               *operands,
 				  tmp,
 				  gen_rtx_LABEL_REF (VOIDmode, operands[3]),
 				  pc_rtx);
-      emit_jump_insn (gen_rtx_SET (VOIDmode, pc_rtx, tmp));
+      emit_jump_insn (gen_rtx_SET (pc_rtx, tmp));
       return;
       
     case SFmode:
@@ -1423,7 +1423,7 @@ or1k_expand_conditional_branch (rtx               *operands,
 				  tmp,
 				  gen_rtx_LABEL_REF (VOIDmode, operands[3]),
 				  pc_rtx);
-      emit_jump_insn (gen_rtx_SET (VOIDmode, pc_rtx, tmp));
+      emit_jump_insn (gen_rtx_SET (pc_rtx, tmp));
       return;
       
     default:
@@ -1554,12 +1554,11 @@ or1k_emit_set_const32 (rtx  op0,
       /* Emit them as real moves instead of a HIGH/LO_SUM,
          this way CSE can see everything and reuse intermediate
          values if it wants.  */
-      emit_insn (gen_rtx_SET (VOIDmode, temp,
+      emit_insn (gen_rtx_SET (temp,
 			      GEN_INT (INTVAL (op1)
 				       & ~(HOST_WIDE_INT) 0xffff)));
 
-      emit_insn (gen_rtx_SET (VOIDmode,
-			      op0,
+      emit_insn (gen_rtx_SET (op0,
 			      gen_rtx_IOR (mode, temp,
 					   GEN_INT (INTVAL (op1) & 0xffff))));
     }

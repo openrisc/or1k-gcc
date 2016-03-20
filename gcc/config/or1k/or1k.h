@@ -166,7 +166,7 @@ Boston, MA 02111-1307, USA.  */
 
 /* Define if operations between registers always perform the operation
    on the full register even if a narrower mode is specified.  */
-#define WORD_REGISTER_OPERATIONS  /* CHECK */
+#define WORD_REGISTER_OPERATIONS 1
  
 
 /* Define if loading in MODE, an integral mode narrower than BITS_PER_WORD
@@ -343,9 +343,6 @@ Boston, MA 02111-1307, USA.  */
 /* Register in which address to store a structure value
    is passed to a function.  */
 /*#define STRUCT_VALUE_REGNUM 0*/
-
-/* Pass address of result struct to callee as "invisible" first argument */
-#define STRUCT_VALUE 0
 
 /* -----------------------[ PHX start ]-------------------------------- */
 
@@ -1153,7 +1150,7 @@ enum reg_class
   else if (GET_CODE (x) == REG)						\
     fprintf (stream, "%s", reg_names[REGNO (x)]);			\
   else if (GET_CODE (x) == MEM)						\
-    output_address (XEXP (x, 0));					\
+    output_address (GET_MODE(x), XEXP (x, 0));				\
   else									\
     output_addr_const (stream, x);					\
 }

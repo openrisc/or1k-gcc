@@ -192,7 +192,7 @@
 	    {
 	      rtx reg = gen_reg_rtx (SImode);
 
-	      emit_insn (gen_rtx_SET (SImode, reg,
+	      emit_insn (gen_rtx_SET (reg,
 				  gen_rtx_ZERO_EXTEND (SImode,
 						       operands[1])));
 
@@ -238,7 +238,7 @@
 	    {
 	      rtx reg = gen_reg_rtx (SImode);
 
-	      emit_insn (gen_rtx_SET (SImode, reg,
+	      emit_insn (gen_rtx_SET (reg,
 				      gen_rtx_ZERO_EXTEND (SImode,
 					   	           operands[1])));
 	      operands[1] = gen_lowpart (HImode, reg);

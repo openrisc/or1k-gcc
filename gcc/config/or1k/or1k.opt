@@ -25,63 +25,63 @@ enum or1k_delay or1k_delay_selected = OR1K_DELAY_DEFAULT
 
 mdelay
 Target RejectNegative Negative(mno-delay) Var(or1k_delay_selected, OR1K_DELAY_ON)
-Assume branches and jumps have a delay slot
+Assume branches and jumps have a delay slot.
 
 mno-delay
 Target RejectNegative Negative(mcompat-delay) Var(or1k_delay_selected, OR1K_DELAY_OFF)
-Assume branches and jumps do not have a delay slot
+Assume branches and jumps do not have a delay slot.
 
 mcompat-delay
 Target RejectNegative Negative(mdelay) Var(or1k_delay_selected, OR1K_DELAY_COMPAT)
-Assume branches and jumps have a delay slot, but fill them with nops
+Assume branches and jumps have a delay slot, but fill them with nops.
 
 mhard-float
 Target RejectNegative Mask(HARD_FLOAT)
-Use hardware floating point
+Use hardware floating point.
 
 msoft-float
 Target RejectNegative InverseMask(HARD_FLOAT)
-Do not use hardware floating point
+Do not use hardware floating point.
 
 mdouble-float
 Target Report RejectNegative Mask(DOUBLE_FLOAT)
-Allow hardware floating-point instructions to cover both 32-bit and 64-bit operations
+Allow hardware floating-point instructions to cover both 32-bit and 64-bit operations.
 
 mhard-div
 Target RejectNegative Mask(HARD_DIV)
-Use hardware division
+Use hardware division.
 
 msoft-div
 Target RejectNegative InverseMask(HARD_DIV)
-Do not use hardware division
+Do not use hardware division.
 
 mhard-mul
 Target RejectNegative Mask(HARD_MUL)
-Use hardware multiplication
+Use hardware multiplication.
 
 msoft-mul
 Target RejectNegative InverseMask(HARD_MUL)
-Do not use hardware multiplication
+Do not use hardware multiplication.
 
 msext
 Target Mask(MASK_SEXT)
-Use sign-extending instructions
+Use sign-extending instructions.
 
 mcmov
 Target Mask(MASK_CMOV)
-Use conditional move instructions
+Use conditional move instructions.
 
 mror
 Target Mask(MASK_ROR)
-Emit ROR instructions
+Emit ROR instructions.
 
 mboard=
 Target RejectNegative Joined
-Link with libgloss configuration suitable for this board
+Link with libgloss configuration suitable for this board.
 
 mnewlib
 Target Report RejectNegative
-Compile for the Linux/Gnu/newlib based toolchain
+Compile for the Linux/Gnu/newlib based toolchain.
 
 ;; provide struct padding as in previous releases.
 ;; Note that this will only affect STRUCTURE_SIZE_BOUNDARY, in particular
@@ -89,7 +89,7 @@ Compile for the Linux/Gnu/newlib based toolchain
 ;; We still use ROUND_TYPE_ALIGN to increase alignment of larger structs.
 mpadstruct
 Target Report RejectNegative Mask(PADSTRUCT)
-Make structs a multiple of 4 bytes (warning: ABI altered)
+Make structs a multiple of 4 bytes (warning: ABI altered).
 
 mredzone=
 Target RejectNegative Joined UInteger Var(or1k_redzone) Init(128)
