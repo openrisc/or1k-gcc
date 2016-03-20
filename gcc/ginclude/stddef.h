@@ -181,6 +181,7 @@ typedef __PTRDIFF_TYPE__ ptrdiff_t;
 #ifndef _GCC_SIZE_T
 #ifndef _SIZET_
 #ifndef __size_t
+#ifndef __DEFINED_size_t /* musl */
 #define __size_t__	/* BeOS */
 #define __SIZE_T__	/* Cray Unicos/Mk */
 #define _SIZE_T
@@ -197,6 +198,7 @@ typedef __PTRDIFF_TYPE__ ptrdiff_t;
 #define ___int_size_t_h
 #define _GCC_SIZE_T
 #define _SIZET_
+#define __DEFINED_size_t /* musl */
 #if (defined (__FreeBSD__) && (__FreeBSD__ >= 5)) \
   || defined(__FreeBSD_kernel__)
 /* __size_t is a typedef on FreeBSD 5, must not trash it. */
@@ -214,6 +216,7 @@ typedef __SIZE_TYPE__ size_t;
 typedef long ssize_t;
 #endif /* __BEOS__ */
 #endif /* !(defined (__GNUG__) && defined (size_t)) */
+#endif /* __DEFINED_size_t */
 #endif /* __size_t */
 #endif /* _SIZET_ */
 #endif /* _GCC_SIZE_T */
