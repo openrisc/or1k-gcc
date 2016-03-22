@@ -318,7 +318,7 @@ Boston, MA 02111-1307, USA.  */
 		  respectively."
 
 		  This seems ad-hoc. Probably we need some experiments. */
-#define BRANCH_COST(speed_p, predictable_p)  2
+#define BRANCH_COST(speed_p, predictable_p)  4
 
 /* Specify the registers used for certain standard purposes.
    The values of these macros are register numbers.  */
