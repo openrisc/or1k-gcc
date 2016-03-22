@@ -429,7 +429,7 @@
 	 (if_then_else:SI (match_operand 1 "comparison_operator" "")
 			  (match_operand:SI 2 "register_operand" "")
 			  (match_operand:SI 3 "register_operand" "")))]
-  "TARGET_MASK_CMOV"
+  "TARGET_CMOV"
   "
 {
   if (or1k_emit_cmove (operands[0], operands[1], operands[2], operands[3]))
@@ -448,7 +448,7 @@
 			  (const_int 0)])
 	 (match_operand:SI 2 "register_operand" "r")
 	 (match_operand:SI 3 "register_operand" "r")))]
-  "TARGET_MASK_CMOV"
+  "TARGET_CMOV"
   "*
    return or1k_output_cmov(operands);
   ")
@@ -781,7 +781,7 @@
   ""
   "
 {
-  if (TARGET_MASK_SEXT)
+  if (TARGET_SEXT)
     emit_insn (gen_extendqisi2_sext(operands[0], operands[1]));
   else {
     if ( GET_CODE(operands[1]) == MEM ) {
@@ -797,7 +797,7 @@
 (define_insn "extendqisi2_sext"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(sign_extend:SI (match_operand:QI 1 "nonimmediate_operand" "r,m")))]
-  "TARGET_MASK_SEXT"
+  "TARGET_SEXT"
   "@
    l.extbs \t%0,%1\t # extendqisi2_has_signed_extend
    l.lbs   \t%0,%1\t # extendqisi2_has_signed_extend"
@@ -807,7 +807,7 @@
 (define_insn "extendqisi2_no_sext_mem"
   [(set (match_operand:SI 0 "register_operand" "=r")
         (sign_extend:SI (match_operand:QI 1 "memory_operand" "m")))]
-  "!TARGET_MASK_SEXT"
+  "!TARGET_SEXT"
   "l.lbs   \t%0,%1\t # extendqisi2_no_sext_mem"
   [(set_attr "length" "1")
    (set_attr "type" "load")])
@@ -819,7 +819,7 @@
    (set (match_operand:SI 0 "register_operand" "")
 	(ashiftrt:SI (match_dup 2)
 		     (const_int 24)))]
-  "!TARGET_MASK_SEXT"
+  "!TARGET_SEXT"
   "
 {
   operands[1] = gen_lowpart (SImode, operands[1]);
@@ -835,7 +835,7 @@
   ""
   "
 {
-  if (TARGET_MASK_SEXT)
+  if (TARGET_SEXT)
     emit_insn (gen_extendhisi2_sext(operands[0], operands[1]));
   else {
     if ( GET_CODE(operands[1]) == MEM ) {
@@ -851,7 +851,7 @@
 (define_insn "extendhisi2_sext"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(sign_extend:SI (match_operand:HI 1 "nonimmediate_operand" "r,m")))]
-  "TARGET_MASK_SEXT"
+  "TARGET_SEXT"
   "@
    l.exths \t%0,%1\t # extendhisi2_has_signed_extend
    l.lhs   \t%0,%1\t # extendhisi2_has_signed_extend"
@@ -861,7 +861,7 @@
 (define_insn "extendhisi2_no_sext_mem"
   [(set (match_operand:SI 0 "register_operand" "=r")
         (sign_extend:SI (match_operand:HI 1 "memory_operand" "m")))]
-  "!TARGET_MASK_SEXT"
+  "!TARGET_SEXT"
   "l.lhs   \t%0,%1\t # extendhisi2_no_sext_mem"
   [(set_attr "length" "1")
    (set_attr "type" "load")])
@@ -873,7 +873,7 @@
    (set (match_operand:SI 0 "register_operand" "")
 	(ashiftrt:SI (match_dup 2)
 		     (const_int 16)))]
-  "!TARGET_MASK_SEXT"
+  "!TARGET_SEXT"
   "
 {
   operands[1] = gen_lowpart (SImode, operands[1]);
@@ -946,7 +946,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r,r")
         (rotatert:SI (match_operand:SI 1 "register_operand" "r,r")
                    (match_operand:SI 2 "nonmemory_operand" "r,L")))]
-  "TARGET_MASK_ROR"
+  "TARGET_ROR"
   "@
    l.ror   \t%0,%1,%2 # rotrsi3
    l.rori  \t%0,%1,%2 # rotrsi3"

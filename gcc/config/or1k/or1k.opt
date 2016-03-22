@@ -64,15 +64,15 @@ Target RejectNegative InverseMask(HARD_MUL)
 Do not use hardware multiplication.
 
 msext
-Target Mask(MASK_SEXT)
+Target Mask(SEXT)
 Use sign-extending instructions.
 
 mcmov
-Target Mask(MASK_CMOV)
+Target Mask(CMOV)
 Use conditional move instructions.
 
 mror
-Target Mask(MASK_ROR)
+Target Mask(ROR)
 Emit ROR instructions.
 
 mboard=
