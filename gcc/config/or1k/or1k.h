@@ -245,8 +245,13 @@ Boston, MA 02111-1307, USA.  */
 #define HARD_REGNO_NREGS(REGNO, MODE)   \
  ((GET_MODE_SIZE (MODE) + UNITS_PER_WORD - 1) / UNITS_PER_WORD)
 
-/* Value is 1 if hard register REGNO can hold a value of machine-mode MODE. */
-#define HARD_REGNO_MODE_OK(REGNO, MODE) 1
+/* The flag registers are 1 bit wide, and thus can only hold BImode...  */
+#define HARD_REGNO_MODE_OK(REGNO, MODE) \
+  (REGNO_REG_CLASS (REGNO) != FLAG_REGS || (MODE) == BImode)
+
+/* ... and thus the flag registers cannot change mode at all.  */
+#define CANNOT_CHANGE_MODE_CLASS(FROM, TO, CLASS) \
+  ((CLASS) >= FLAG_REGS ? (FROM) != (TO) : 0)
 
 /* Value is 1 if it is a good idea to tie two pseudo registers
    when one has mode MODE1 and one has mode MODE2.
@@ -367,14 +372,11 @@ Boston, MA 02111-1307, USA.  */
    For any two classes, it is very desirable that there be another
    class that represents their union.  */
    
-/* The or1k has only one kind of registers, so NO_REGS, GENERAL_REGS
-   and ALL_REGS are the only classes.  */
-/* JPB 26-Aug-10: Based on note from Mikhael (mirekez@gmail.com), we don't
-   need CR_REGS and it is in the wrong place for later things! */
 enum reg_class 
 { 
   NO_REGS,
   GENERAL_REGS,
+  FLAG_REGS,
   ALL_REGS,
   LIM_REG_CLASSES 
 };
@@ -386,6 +388,7 @@ enum reg_class
 {									\
   "NO_REGS",								\
   "GENERAL_REGS",   							\
+  "FLAG_REGS",								\
   "ALL_REGS"								\
 }
 
@@ -409,18 +412,19 @@ enum reg_class
   {									\
     { 0x00000000, 0x00000000 },		/* NO_REGS */			\
     { 0xffffffff, 0x00000003 },		/* GENERAL_REGS */		\
+    { 0x00000000, 0x00000004 },		/* FLAG_REGS */			\
     { 0xffffffff, 0x00000007 }		/* ALL_REGS */			\
   }
 
 /* The same information, inverted:
 
    Return the class number of the smallest class containing reg number REGNO.
-   This could be a conditional expression or could index an array.
+   This could be a conditional expression or could index an array.  */
 
-   ??? 0 is not really a register, but a constant.  */
-#define REGNO_REG_CLASS(regno)						\
-  ((0 == regno) ? ALL_REGS : ((1 <= regno) && (regno <= OR1K_LAST_INT_REG))		\
-   ? GENERAL_REGS : NO_REGS)
+#define REGNO_REG_CLASS(R)			\
+  ((R) <= OR1K_LAST_INT_REG ? GENERAL_REGS	\
+   : (R) < FIRST_PSEUDO_REGISTER ? FLAG_REGS	\
+   : ALL_REGS)
 
 /* The class value for index registers, and the one for base regs.  */
 #define INDEX_REG_CLASS GENERAL_REGS
@@ -771,24 +775,6 @@ enum reg_class
 
 
 /* -------------------------------------------------------------------------- */
-/* Condition code stuff */
-
-/* Given a comparison code (EQ, NE, etc.) and the first operand of a COMPARE,
-   return the mode to be used for the comparison. */
-#define SELECT_CC_MODE(op, x, y) or1k_select_cc_mode(op)
-
-/* Can the condition code MODE be safely reversed?  This is safe in
-   all cases on this port, because at present it doesn't use the
-   trapping FP comparisons (fcmpo).  */
-#define REVERSIBLE_CC_MODE(mode) 1
-
-/* Given a condition code and a mode, return the inverse condition.
-
-   JPB 31-Aug-10: This seems like the default. Do we even need this? */
-#define REVERSE_CONDITION(code, mode) reverse_condition (code)
-
-
-/* -------------------------------------------------------------------------- */
 /* Control the assembler format that we output.  */
 
 /* A C string constant describing how to begin a comment in the target
@@ -826,7 +812,7 @@ enum reg_class
    "r8",   "r9", "r10", "r11", "r12", "r13", "r14", "r15",		\
    "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",		\
    "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31",		\
-   "argp", "frame", "cc-flag"}
+   "argp", "frame", "F"}
 
 
 /* -------------------------------------------------------------------------- */

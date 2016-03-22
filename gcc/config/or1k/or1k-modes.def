@@ -18,21 +18,3 @@
    Free Software Foundation, 59 Temple Place - Suite 330, Boston,
    MA 02111-1307, USA.  */
 
-/* Add any extra modes needed to represent the condition code.
- */
-
-CC_MODE (CCEQ);
-CC_MODE (CCNE);
-
-CC_MODE (CCLE);
-CC_MODE (CCGE);
-CC_MODE (CCLT);
-CC_MODE (CCGT);
-
-CC_MODE (CCLEU);
-CC_MODE (CCGEU);
-CC_MODE (CCLTU);
-CC_MODE (CCGTU);
-
-CC_MODE(CCFP);
-CC_MODE(CCUNS);

@@ -28,7 +28,7 @@
 (define_constants [
   (SP_REG 1)
   (FP_REG 2) ; hard frame pointer
-  (CC_REG 34)
+  (SR_F_REG 34)
 
   ;; unspec values
   (UNSPEC_FRAME         0)
@@ -420,310 +420,111 @@
 ;; Conditional Branches & Moves
 ;; 
 
-;;
-;; conditional moves
-;;
-
-(define_expand "movsicc"
-   [(set (match_operand:SI 0 "register_operand" "")
-	 (if_then_else:SI (match_operand 1 "comparison_operator" "")
-			  (match_operand:SI 2 "register_operand" "")
-			  (match_operand:SI 3 "register_operand" "")))]
-  "TARGET_CMOV"
-  "
-{
-  if (or1k_emit_cmove (operands[0], operands[1], operands[2], operands[3]))
-    DONE;
-}")
-
-;; We use the BASE_REGS for the cmov input operands because, if rA is
-;; 0, the value of 0 is placed in rD upon truth.  Similarly for rB
-;; because we may switch the operands and rB may end up being rA.
-
-(define_insn "cmov"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(if_then_else:SI
-	 (match_operator 1 "comparison_operator"
-			 [(match_operand 4 "cc_reg_operand" "")
-			  (const_int 0)])
-	 (match_operand:SI 2 "register_operand" "r")
-	 (match_operand:SI 3 "register_operand" "r")))]
-  "TARGET_CMOV"
-  "*
-   return or1k_output_cmov(operands);
-  ")
-
-;;
-;;  ....................
-;;
-;;	COMPARISONS
-;;
-;;  ....................
-
-;; Flow here is rather complex:
-;;
-;;  1)	The cmp{si,di,sf,df} routine is called.  It deposits the
-;;	arguments into the branch_cmp array, and the type into
-;;	branch_type.  No RTL is generated.
-;;
-;;  2)	The appropriate branch define_expand is called, which then
-;;	creates the appropriate RTL for the comparison and branch.
-;;	Different CC modes are used, based on what type of branch is
-;;	done, so that we can constrain things appropriately.  There
-;;	are assumptions in the rest of GCC that break if we fold the
-;;	operands into the branches for integer operations, and use cc0
-;;	for floating point, so we use the fp status register instead.
-;;	If needed, an appropriate temporary is created to hold the
-;;	of the integer compare.
-
-;; Compare insns are next.  Note that the RS/6000 has two types of compares,
-;; signed & unsigned, and one type of branch.
-;;
-;; Start with the DEFINE_EXPANDs to generate the rtl for compares, scc
-;; insns, and branches.  We store the operands of compares until we see
-;; how it is used.
-
-;; JPB 31-Aug-10: cmpxx appears to be obsolete in GCC 4.5. Needs more
-;; investigation.
-
-;;(define_expand "cmpsi"
-;;  [(set (reg:CC CC_REG)
-;;	(compare:CC (match_operand:SI 0 "register_operand" "")
-;;		    (match_operand:SI 1 "nonmemory_operand" "")))]
-;;  ""
-;;  {
-;;   if (GET_CODE (operands[0]) == MEM && GET_CODE (operands[1]) == MEM)
-;;      operands[0] = force_reg (SImode, operands[0]);
-;;      or1k_compare_op0 = operands[0];
-;;     or1k_compare_op1 = operands[1];
-;;      DONE;
-;;      })
-
-;; (define_expand "cmpsf"
-;;   [(set (reg:CC CC_REG)
-;; 	(compare:CC (match_operand:SF 0 "register_operand" "")
-;; 		    (match_operand:SF 1 "register_operand" "")))]
-;;   "TARGET_HARD_FLOAT"
-;;   {
-;;    if (GET_CODE (operands[0]) == MEM && GET_CODE (operands[1]) == MEM)
-;;       operands[0] = force_reg (SFmode, operands[0]);
-;;       or1k_compare_op0 = operands[0];
-;;       or1k_compare_op1 = operands[1];
-;;       DONE;
-;;       })
-
+; ??? Perhaps delay this expansion until after reload.  We may be
+; committing too early as to the sense of the comparison we use to
+; make the most of our immediate operands.
 (define_expand "cbranchsi4"
-  [(match_operator 0 "comparison_operator"
-    [(match_operand:SI 1 "register_operand")
-     (match_operand:SI 2 "nonmemory_operand")])
-   (match_operand 3 "")]
+  [(set (pc)
+	(if_then_else
+	  (match_operator 0 "ordered_comparison_operator"
+	    [(match_operand:SI 1 "register_operand")
+	     (match_operand:SI 2 "nonmemory_operand")])
+	  (label_ref (match_operand 3 ""))
+	  (pc)))]
    ""
-   {
-   or1k_expand_conditional_branch (operands, SImode);
-   DONE;
-   })
+{
+  or1k_expand_compare (operands);
+})
 
+; ??? Note that we only support eq ge gt le lt ne.
+; There are no opcodes for (un)ordered comparisons.
+; Reject these and hope they go to the library.
 (define_expand "cbranchsf4"
-  [(match_operator 0 "comparison_operator"
-    [(match_operand:SF 1 "register_operand")
-     (match_operand:SF 2 "register_operand")])
-   (match_operand 3 "")]
+  [(set (pc)
+	(if_then_else
+	  (match_operator 0 "ordered_comparison_operator"
+	    [(match_operand:SF 1 "register_operand")
+	     (match_operand:SF 2 "register_operand")])
+	  (label_ref (match_operand 3 ""))
+	  (pc)))]
    "TARGET_HARD_FLOAT"
-   {
-   or1k_expand_conditional_branch (operands, SFmode);
-   DONE;
-   })
-
-;;
-;; Setting a CCxx registers from comparision
-;;
-
-
-
-;; Here are the actual compare insns.
-(define_insn "*cmpsi_eq"
-  [(set (reg:CCEQ CC_REG)
-	(compare:CCEQ (match_operand:SI 0 "register_operand" "r,r")
-		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfeqi\t%0,%1 # cmpsi_eq
-   l.sfeq \t%0,%1 # cmpsi_eq"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsi_ne"
-  [(set (reg:CCNE CC_REG)
-	(compare:CCNE (match_operand:SI 0 "register_operand" "r,r")
-		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfnei\t%0,%1 # cmpsi_ne
-   l.sfne \t%0,%1 # cmpsi_ne"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsi_gt"
-  [(set (reg:CCGT CC_REG)
-	(compare:CCGT (match_operand:SI 0 "register_operand" "r,r")
-		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfgtsi\t%0,%1 # cmpsi_gt
-   l.sfgts \t%0,%1 # cmpsi_gt"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsi_gtu"
-  [(set (reg:CCGTU CC_REG)
-	(compare:CCGTU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfgtui\t%0,%1 # cmpsi_gtu
-   l.sfgtu \t%0,%1 # cmpsi_gtu"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsi_lt"
-  [(set (reg:CCLT CC_REG)
-	(compare:CCLT (match_operand:SI 0 "register_operand" "r,r")
-		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfltsi\t%0,%1 # cmpsi_lt
-   l.sflts \t%0,%1 # cmpsi_lt"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsi_ltu"
-  [(set (reg:CCLTU CC_REG)
-	(compare:CCLTU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfltui\t%0,%1 # cmpsi_ltu
-   l.sfltu \t%0,%1 # cmpsi_ltu"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsi_ge"
-  [(set (reg:CCGE CC_REG)
-	(compare:CCGE (match_operand:SI 0 "register_operand" "r,r")
-		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfgesi\t%0,%1 # cmpsi_ge
-   l.sfges \t%0,%1 # cmpsi_ge"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-
-(define_insn "*cmpsi_geu"
-  [(set (reg:CCGEU CC_REG)
-	(compare:CCGEU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfgeui\t%0,%1 # cmpsi_geu
-   l.sfgeu \t%0,%1 # cmpsi_geu"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-
-(define_insn "*cmpsi_le"
-  [(set (reg:CCLE CC_REG)
-	(compare:CCLE (match_operand:SI 0 "register_operand" "r,r")
-		      (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sflesi\t%0,%1 # cmpsi_le
-   l.sfles \t%0,%1 # cmpsi_le"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsi_leu"
-  [(set (reg:CCLEU CC_REG)
-	(compare:CCLEU (match_operand:SI 0 "register_operand" "r,r")
-		       (match_operand:SI 1 "nonmemory_operand" "I,r")))]
-  ""
-  "@
-   l.sfleui\t%0,%1 # cmpsi_leu
-   l.sfleu \t%0,%1 # cmpsi_leu"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-;; Single precision floating point evaluation instructions
-(define_insn "*cmpsf_eq"
-  [(set (reg:CCEQ CC_REG)
-	(compare:CCEQ (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfeq.s\t%0,%1 # cmpsf_eq"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsf_ne"
-  [(set (reg:CCNE CC_REG)
-	(compare:CCNE (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfne.s\t%0,%1 # cmpsf_ne"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-
-(define_insn "*cmpsf_gt"
-  [(set (reg:CCGT CC_REG)
-	(compare:CCGT (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfgt.s\t%0,%1 # cmpsf_gt"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsf_ge"
-  [(set (reg:CCGE CC_REG)
-	(compare:CCGE (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfge.s\t%0,%1 # cmpsf_ge"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-
-(define_insn "*cmpsf_lt"
-  [(set (reg:CCLT CC_REG)
-	(compare:CCLT (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sflt.s\t%0,%1 # cmpsf_lt"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
-
-(define_insn "*cmpsf_le"
-  [(set (reg:CCLE CC_REG)
-	(compare:CCLE (match_operand:SF 0 "register_operand" "r,r")
-		      (match_operand:SF 1 "register_operand" "r,r")))]
-  "TARGET_HARD_FLOAT"
-  "lf.sfle.s\t%0,%1 # cmpsf_le"
-  [(set_attr "type" "compare")
-   (set_attr "length" "1")])
+{
+  if (!ordered_comparison_operator (operands[0], VOIDmode))
+    FAIL;
+  or1k_expand_compare (operands);
+})
 
 (define_insn "*bf"
   [(set (pc)
-	(if_then_else (match_operator 1 "comparison_operator"
-				      [(match_operand 2
-						      "cc_reg_operand" "")
-				       (const_int 0)])
-		      (label_ref (match_operand 0 "" ""))
-		      (pc)))]
+	(if_then_else (ne (reg:BI SR_F_REG) (const_int 0))
+	  (label_ref (match_operand 0 "" ""))
+	  (pc)))]
   ""
-  "*
-   return or1k_output_bf(operands);
-  "
-  [(set_attr "type" "branch")
-   (set_attr "length" "1")])
+  "l.bf\t%l0%("
+  [(set_attr "type" "branch")])
+
+(define_insn "*bnf"
+  [(set (pc)
+	(if_then_else (eq (reg:BI SR_F_REG) (const_int 0))
+	  (label_ref (match_operand 0 "" ""))
+	  (pc)))]
+  ""
+  "l.bnf\t%l0%("
+  [(set_attr "type" "branch")])
+
+(define_expand "movsicc"
+  [(set (reg:BI SR_F_REG) (match_operand 1 "comparison_operator" ""))
+   (set (match_operand:SI 0 "register_operand" "")
+	(if_then_else:SI
+	  (ne (reg:BI SR_F_REG) (const_int 0))
+	  (match_operand:SI 2 "register_operand" "")
+	  (match_operand:SI 3 "register_operand" "")))]
+  "TARGET_CMOV"
+{
+  PUT_MODE (operands[1], BImode);
+})
+
+(define_insn "*cmovsi_f"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(if_then_else:SI
+	  (ne (reg:BI SR_F_REG) (const_int 0))
+	  (match_operand:SI 1 "register_operand" "r")
+	  (match_operand:SI 2 "register_operand" "r")))]
+  "TARGET_CMOV"
+  "l.cmov\t%0,%1,%2")
+
+(define_insn "*cmovsi_nf"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(if_then_else:SI
+	  (eq (reg:BI SR_F_REG) (const_int 0))
+	  (match_operand:SI 1 "register_operand" "r")
+	  (match_operand:SI 2 "register_operand" "r")))]
+  "TARGET_CMOV"
+  "l.cmov\t%0,%2,%1")
+
+;;
+;; Setting SR[F] from comparision
+;;
+
+(define_insn "*comparesi"
+  [(set (reg:BI SR_F_REG)
+	(match_operator:BI 2 "ordered_comparison_operator"
+	  [(match_operand:SI 0 "register_operand"  "r,r")
+	   (match_operand:SI 1 "nonmemory_operand" "I,r")]))]
+  ""
+  "@
+   l.sf%C2i\t%0,%1
+   l.sf%C2\t%0,%1"
+  [(set_attr "type" "compare")])
+
+(define_insn "*comparesf"
+  [(set (reg:BI SR_F_REG)
+	(match_operator:BI 2 "ordered_comparison_operator"
+	  [(match_operand:SF 0 "register_operand" "r")
+	   (match_operand:SF 1 "register_operand" "r")]))]
+  "TARGET_HARD_FLOAT"
+  "lf.sf%C2.s\t%0,%1"
+  [(set_attr "type" "compare")])
 
 ;;
 ;;

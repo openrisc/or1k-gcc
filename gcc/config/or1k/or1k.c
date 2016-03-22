@@ -336,76 +336,20 @@ stack_disp_mem (HOST_WIDE_INT disp)
   return gen_frame_mem (Pmode, plus_constant (Pmode, stack_pointer_rtx, disp));
 }
 
-enum machine_mode
-or1k_select_cc_mode (enum rtx_code op)
+void
+or1k_expand_compare (rtx *operands)
 {
-  switch (op) {
-  case EQ:  return CCEQmode;
-  case NE:  return CCNEmode;
-  case GEU: return CCGEUmode;
-  case GTU: return CCGTUmode;
-  case LTU: return CCLTUmode;
-  case LEU: return CCLEUmode;
-  case GE:  return CCGEmode;
-  case LT:  return CCLTmode;
-  case GT:  return CCGTmode;
-  case LE:  return CCLEmode;
-  default:  gcc_unreachable ();
-  }
+  rtx sr_f = gen_rtx_REG (BImode, SR_F_REG);
+
+  /* Emit the given comparison into the Flag bit.  */
+  PUT_MODE (operands[0], BImode);
+  emit_insn (gen_rtx_SET (sr_f, operands[0]));
+
+  /* Adjust the operands for use in the caller.  */
+  operands[0] = gen_rtx_NE (VOIDmode, sr_f, const0_rtx);
+  operands[1] = sr_f;
+  operands[2] = const0_rtx;
 }
-
-/* -------------------------------------------------------------------------- */
-/*!Generate insn patterns to do an integer compare of operands.
-
-   @param[in] code  RTX for the condition code.
-   @param[in] op0   RTX for the first operand.
-   @param[in] op1   RTX for the second operand.
-
-   @return  RTX for the comparison.                                           */
-/* -------------------------------------------------------------------------- */
-static rtx
-or1k_expand_int_compare (enum rtx_code  code,
-			 rtx            op0,
-			 rtx            op1)
-{
-  enum machine_mode cmpmode;
-  rtx tmp, flags;
-
-  cmpmode = or1k_select_cc_mode (code);
-  flags = gen_rtx_REG (cmpmode, OR1K_FLAGS_REG);
-
-  /* This is very simple, but making the interface the same as in the
-     FP case makes the rest of the code easier.  */
-  tmp = gen_rtx_COMPARE (cmpmode, op0, op1);
-  emit_insn (gen_rtx_SET (flags, tmp));
-
-  /* Return the test that should be put into the flags user, i.e.
-     the bcc, scc, or cmov instruction.  */
-  return gen_rtx_fmt_ee (code, VOIDmode, flags, const0_rtx);
-
-}	/* or1k_expand_int_compare () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Generate insn patterns to do an integer compare of operands.
-
-   We only deal with the case where the comparison is an integer
-   comparison. This wrapper function potentially allows reuse for non-integer
-   comparison in the future.
-
-   @param[in] code  RTX for the condition code.
-   @param[in] op0   RTX for the first operand.
-   @param[in] op1   RTX for the second operand.
-
-   @return  RTX for the comparison.                                           */
-/* -------------------------------------------------------------------------- */
-static rtx
-or1k_expand_compare (enum rtx_code code, rtx op0, rtx op1)
-{
-  return or1k_expand_int_compare (code, op0, op1);
-
-}	/* or1k_expand_compare () */
-
 
 /* TODO(bluecmd): Write documentation for this function */
 void
@@ -518,48 +462,6 @@ or1k_expand_fetch_op_qihi (rtx oldval, rtx mem, rtx operand, rtx newval,
   emit_move_insn (oldval, gen_lowpart (GET_MODE (oldval), shifted_oldval));
   emit_move_insn (newval, gen_lowpart (GET_MODE (newval), shifted_newval));
 }
-
-/* -------------------------------------------------------------------------- */
-/*!Emit insns to use the l.cmov instruction
-
-   Emit a compare and then cmov. Only works for integer first operand.
-
-   @param[in] dest        RTX for the destination operand.
-   @param[in] op          RTX for the comparison operation
-   @param[in] true_cond   RTX to move to dest if condition is TRUE.
-   @param[in] false_cond  RTX to move to dest if condition is FALSE.
-   
-   @return  Non-zero (TRUE) if insns were emitted, zero (FALSE) otherwise.    */
-/* -------------------------------------------------------------------------- */
-static int
-or1k_emit_int_cmove (rtx  dest,
-		     rtx  op,
-		     rtx  true_cond,
-		     rtx  false_cond)
-{
-  rtx condition_rtx, cr;
-  rtx op0 = XEXP (op, 0);
-  rtx op1 = XEXP (op, 1);
-
-  if ((GET_MODE (op0) != SImode) &&
-      (GET_MODE (op0) != HImode) &&
-      (GET_MODE (op0) != QImode))
-    {
-      return 0;
-    }
-
-  /* We still have to do the compare, because cmov doesn't do a compare, it
-     just looks at the FLAG bit set by a previous compare instruction.  */
-  condition_rtx = or1k_expand_compare (GET_CODE (op), op0, op1);
-
-  cr = XEXP (condition_rtx, 0);
-
-  emit_insn (gen_cmov (dest, condition_rtx, true_cond, false_cond, cr));
-
-  return 1;
-
-}	/* or1k_emit_int_cmove () */
-
 
 static void
 or1k_print_operand_address (FILE *stream, machine_mode mode, rtx addr)
@@ -1387,128 +1289,6 @@ or1k_output_move_double (rtx *operands)
     }
 }	/* or1k_output_move_double () */
 
-
-/* -------------------------------------------------------------------------- */
-/*!Expand a conditional branch
-
-   @param[in] operands  Operands to the branch.
-   @param[in] mode      Mode of the comparison.                               */
-/* -------------------------------------------------------------------------- */
-void
-or1k_expand_conditional_branch (rtx               *operands,
-				enum machine_mode  mode)
-{
-  rtx tmp;
-  enum rtx_code test_code = GET_CODE(operands[0]);
-
-  switch (mode)
-    {
-    case SImode:
-      tmp = or1k_expand_compare (test_code, operands[1], operands[2]);
-      tmp = gen_rtx_IF_THEN_ELSE (VOIDmode,
-				  tmp,
-				  gen_rtx_LABEL_REF (VOIDmode, operands[3]),
-				  pc_rtx);
-      emit_jump_insn (gen_rtx_SET (pc_rtx, tmp));
-      return;
-      
-    case SFmode:
-      tmp = or1k_expand_compare (test_code, operands[1], operands[2]);
-      tmp = gen_rtx_IF_THEN_ELSE (VOIDmode,
-				  tmp,
-				  gen_rtx_LABEL_REF (VOIDmode, operands[3]),
-				  pc_rtx);
-      emit_jump_insn (gen_rtx_SET (pc_rtx, tmp));
-      return;
-      
-    default:
-      abort ();
-    }
-
-}	/* or1k_expand_conditional_branch () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Emit a conditional move
-
-   move "true_cond" to "dest" if "op" of the operands of the last comparison
-   is nonzero/true, "false_cond" if it is zero/false.
-
-   @param[in] dest        RTX for the destination operand.
-   @param[in] op          RTX for the comparison operation
-   @param[in] true_cond   RTX to move to dest if condition is TRUE.
-   @param[in] false_cond  RTX to move to dest if condition is FALSE.
-   
-   @return  Non-zero (TRUE) if the hardware supports such an operation, zero
-            (FALSE) otherwise.                                                */
-/* -------------------------------------------------------------------------- */
-int
-or1k_emit_cmove (rtx  dest,
-		 rtx  op,
-		 rtx  true_cond,
-		 rtx  false_cond)
-{
-  enum machine_mode result_mode = GET_MODE (dest);
-
-  if (GET_MODE (true_cond) != result_mode)
-    return 0;
-
-  if (GET_MODE (false_cond) != result_mode)
-    return 0;
-
-  /* First, work out if the hardware can do this at all */
-  return or1k_emit_int_cmove (dest, op, true_cond, false_cond);
-
-}	/* or1k_emit_cmove () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Output the assembler for a branch on flag instruction.
-
-   @param[in] operands  Operands to the branch.
-   
-   @return  The assembler string to use.                                      */
-/* -------------------------------------------------------------------------- */
-const char *
-or1k_output_bf (rtx * operands)
-{
-  enum rtx_code code;
-  enum machine_mode mode_calc, mode_got;
-
-  code      = GET_CODE (operands[1]);
-  mode_calc = or1k_select_cc_mode (code);
-  mode_got  = GET_MODE (operands[2]);
-
-  if (mode_calc != mode_got)
-    return "l.bnf\t%l0%(";
-  else
-    return "l.bf\t%l0%(";
-}	/* or1k_output_bf () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Output the assembler for a conditional move instruction.
-
-   @param[in] operands  Operands to the conditional move.
-   
-   @return  The assembler string to use.                                      */
-/* -------------------------------------------------------------------------- */
-const char *
-or1k_output_cmov (rtx * operands)
-{
-  enum rtx_code code;
-  enum machine_mode mode_calc, mode_got;
-
-  code      = GET_CODE (operands[1]);
-  mode_calc = or1k_select_cc_mode (code);
-  mode_got  = GET_MODE (operands[4]);
-
-  if (mode_calc != mode_got)
-    return "l.cmov\t%0,%3,%2";	/* reversed */
-  else
-    return "l.cmov\t%0,%2,%3";
-
-}	/* or1k_output_cmov () */
 
 /* -------------------------------------------------------------------------- */
 /*!Load a 32-bit constant.

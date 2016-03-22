@@ -18,17 +18,6 @@
 ;; along with GCC; see the file COPYING3.  If not see
 ;; <http://www.gnu.org/licenses/>.
 
-(define_predicate "cc_reg_operand"
-  (match_code "subreg,reg")
-{
-  register_operand (op, mode);
-
-  if (GET_CODE (op) == REG && REGNO (op) == CC_REG)
-    return 1;
-
-  return 0;
-})
-
 (define_predicate "input_operand"
   (match_code "subreg,reg,const_int,mem,const")
 {
