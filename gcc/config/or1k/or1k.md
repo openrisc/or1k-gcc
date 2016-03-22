@@ -420,31 +420,6 @@
 ;; Conditional Branches & Moves
 ;; 
 
-(define_expand "addsicc"
-  [(match_operand:SI 0 "register_operand" "")
-   (match_operand 1 "comparison_operator" "")
-   (match_operand:SI 2 "register_operand" "")
-   (match_operand:SI 3 "register_operand" "")]
-  ""
-  "FAIL;")
-
-(define_expand "addhicc"
-  [(match_operand:HI 0 "register_operand" "")
-   (match_operand 1 "comparison_operator" "")
-   (match_operand:HI 2 "register_operand" "")
-   (match_operand:HI 3 "register_operand" "")]
-  ""
-  "FAIL;")
-
-(define_expand "addqicc"
-  [(match_operand:QI 0 "register_operand" "")
-   (match_operand 1 "comparison_operator" "")
-   (match_operand:QI 2 "register_operand" "")
-   (match_operand:QI 3 "register_operand" "")]
-  ""
-  "FAIL;")
-
-
 ;;
 ;; conditional moves
 ;;
@@ -460,29 +435,6 @@
   if (or1k_emit_cmove (operands[0], operands[1], operands[2], operands[3]))
     DONE;
 }")
-
-(define_expand "movhicc"
-   [(set (match_operand:HI 0 "register_operand" "")
-	 (if_then_else:SI (match_operand 1 "comparison_operator" "")
-			  (match_operand:HI 2 "register_operand" "")
-			  (match_operand:HI 3 "register_operand" "")))]
-  ""
-  "
-{
-    FAIL;
-}")
-
-(define_expand "movqicc"
-   [(set (match_operand:QI 0 "register_operand" "")
-	 (if_then_else:SI (match_operand 1 "comparison_operator" "")
-			  (match_operand:QI 2 "register_operand" "")
-			  (match_operand:QI 3 "register_operand" "")))]
-  ""
-  "
-{
-    FAIL;
-}")
-
 
 ;; We use the BASE_REGS for the cmov input operands because, if rA is
 ;; 0, the value of 0 is placed in rD upon truth.  Similarly for rB
