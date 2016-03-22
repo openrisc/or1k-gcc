@@ -56,6 +56,6 @@ or1k_except_unwind_info (struct gcc_options *opts ATTRIBUTE_UNUSED)
 #define TARGET_OPTION_OPTIMIZATION_TABLE or1k_option_optimization_table
 
 #undef  TARGET_DEFAULT_TARGET_FLAGS
-#define TARGET_DEFAULT_TARGET_FLAGS (MASK_HARD_MUL)
+#define TARGET_DEFAULT_TARGET_FLAGS (MASK_HARD_MUL | MASK_CMOV | MASK_SEXT)
 
 struct gcc_targetm_common targetm_common = TARGETM_COMMON_INITIALIZER;
