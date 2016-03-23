@@ -567,8 +567,8 @@
 ;;
 ;;
 (define_insn_and_split "movdi"
-  [(set (match_operand:DI 0 "nonimmediate_operand" "=r, r, m, r")
-	(match_operand:DI 1 "general_operand"      " r, m, r, n"))]
+  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")
+	(match_operand:DI 1 "general_operand"      " r,o,r,n"))]
   ""
   { return or1k_output_move_double (operands); }
   "&& reload_completed && CONSTANT_P (operands[1])"
@@ -585,8 +585,8 @@
 
 
 (define_insn "movdf"
-  [(set (match_operand:DF 0 "nonimmediate_operand" "=r, r, m, r")
-	(match_operand:DF 1 "general_operand"      " r, m, r, i"))]
+  [(set (match_operand:DF 0 "nonimmediate_operand" "=r,r,o,r")
+	(match_operand:DF 1 "general_operand"      " r,o,r,i"))]
   ""
   { return or1k_output_move_double (operands); }
   [(set_attr "length" "2,2,2,3")])

@@ -498,45 +498,6 @@ or1k_print_operand_address (FILE *stream, machine_mode mode, rtx addr)
 }
 
 /* -------------------------------------------------------------------------- */
-/*!Is this a value suitable for an OR1K address displacement?
-
-   Must be an integer (signed) which fits into 16-bits. If the result is a
-   double word, we had better also check that we can also get at the second
-   word.
-
-   @param[in] mode  Mode of the result for which this displacement will be
-                    used.
-   @param[in] x     RTX for an expression.
-
-   @return  Non-zero (TRUE) if this is a valid 16-bit offset, zero (FALSE)
-            otherwise.                                                        */
-/* -------------------------------------------------------------------------- */
-static int
-or1k_legitimate_displacement_p (enum machine_mode  mode,
-				rtx                x)
-{
-  if (CONST_INT == GET_CODE(x))
-    {
-      HOST_WIDE_INT  disp = INTVAL (x);
-
-      /* Allow for a second access 4 bytes further on if double. */
-      if ((DFmode == mode) || (DImode == mode))
-	{
-	  return  (-32768 < disp) && (disp <= 32763);
-	}
-      else
-	{
-	  return  (-32768 < disp) && (disp <= 32767);
-	}
-    }
-  else
-    {
-      return  0;
-    }
-}	/* or1k_legitimate_displacement_p () */
-
-
-/* -------------------------------------------------------------------------- */
 /*!Can this register be used as a base register?
 
    We need a strict version, for which the register must either be a hard
@@ -581,7 +542,7 @@ or1k_legitimate_pic_operand_p (rtx x)
 	       || SYMBOL_REF_WEAK (XEXP (XEXP (x, 0), 0))))
 	  || GET_CODE (XEXP (XEXP (x, 0), 0)) == LABEL_REF)
       && CONST_INT_P (XEXP (XEXP (x, 0), 1)))
-    return or1k_legitimate_displacement_p (SImode, XEXP (XEXP (x, 0), 1));
+    return satisfies_constraint_I (XEXP (XEXP (x, 0), 1));
 
   return 1;
 }
@@ -634,7 +595,7 @@ or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
 	     fit directly as an 16-bit immediate in the add below.
 	     Note that the reg allocation is allowed here since
 	     we are guarded by LEGITIMATE_PIC_OPERAND_P. */
-	  if (!or1k_legitimate_displacement_p (mode, const_int))
+	  if (!satisfies_constraint_I (const_int))
 	    {
 	      rtx scratch = gen_reg_rtx (mode);
 
@@ -1742,45 +1703,23 @@ or1k_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
 			   rtx                x,
 			   bool               strict)
 {
-  /* You might think 16-bit constants are suitable. They can be built into
-     addresses using r0 as the base. However this seems to lead to defective
-     code. So for now this is a placeholder, and this code is not used.
-
-     if (or1k_legitimate_displacement_p (mode, x))
-     {
-     return  1;
-     }
-  */
-  /* Addresses consisting of a register and 16-bit displacement are also
-     suitable. We need the mode, since for double words, we had better be
-     able to address the full 8 bytes. */
-  if (GET_CODE(x) == PLUS)
+  if (GET_CODE (x) == PLUS)
     {
-      rtx reg = XEXP(x,0);
+      rtx offset = XEXP (x, 1);
+      x = XEXP (x, 0);
 
-      /* If valid register... */
-      if ((GET_CODE(reg) == REG)
-          && or1k_regnum_ok_for_base_p (REGNO (reg), strict))
-        {
-          rtx offset = XEXP(x,1);
+      /* Register elimination is going to adjust all of these offsets.
+	 We might as well keep them as a unit until then.  */
+      if (!strict && (x == arg_pointer_rtx || x == frame_pointer_rtx))
+	return CONST_INT_P (offset);
 
-          /* ...and valid offset */
-          if (or1k_legitimate_displacement_p (mode, offset))
-            {
-              return 1;
-            }
-        }
+      /* Otherwise, keep the offset within 16-bit signed.  */
+      if (! satisfies_constraint_I (offset))
+        return 0;
     }
 
-  /* Addresses consisting of just a register are OK. They can be built into
-     addresses using an offset of zero (and an offset of four if double
-     word). */
-  if (GET_CODE(x) == REG
-    && or1k_regnum_ok_for_base_p(REGNO(x),strict)) {
-      return 1;
-  }
-
-  return 0;
+  /* Addresses consisting of just a register are OK.  */
+  return REG_P (x) && or1k_regnum_ok_for_base_p (REGNO (x), strict);
 }
 
 /* -------------------------------------------------------------------------- */
