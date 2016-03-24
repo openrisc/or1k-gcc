@@ -882,24 +882,23 @@
 ;;
 
 (define_expand "extendqisi2"
-  [(use (match_operand:SI 0 "register_operand" ""))
-   (use (match_operand:QI 1 "nonimmediate_operand" ""))]
+  [(set (match_operand:SI 0 "register_operand")
+	(sign_extend:SI
+	  (match_operand:QI 1 "nonimmediate_operand")))]
   ""
 {
-  if (TARGET_SEXT)
-    emit_insn (gen_extendqisi2_sext(operands[0], operands[1]));
-  else {
-    if ( GET_CODE(operands[1]) == MEM ) {
-      emit_insn (gen_extendqisi2_no_sext_mem(operands[0], operands[1]));
+  if (!TARGET_SEXT && !MEM_P (operands[1]))
+    {
+      rtx shift = GEN_INT (24);
+      rtx sub = can_create_pseudo_p () ? gen_reg_rtx (SImode) : operands[0];
+      operands[1] = gen_lowpart (SImode, operands[1]);
+      emit_insn (gen_ashlsi3 (sub, operands[1], shift));
+      emit_insn (gen_ashrsi3 (operands[0], sub, shift));
+      DONE;
     }
-    else {
-      emit_insn (gen_extendqisi2_no_sext_reg(operands[0], operands[1]));
-    }
- }
- DONE;
 })
 
-(define_insn "extendqisi2_sext"
+(define_insn "*extendqisi2_sext"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(sign_extend:SI (match_operand:QI 1 "nonimmediate_operand" "r,m")))]
   "TARGET_SEXT"
@@ -908,49 +907,35 @@
    l.lbs\t%0,%1"
   [(set_attr "type" "extend,load")])
 
-(define_insn "extendqisi2_no_sext_mem"
+(define_insn "*extendqisi2_no_sext"
   [(set (match_operand:SI 0 "register_operand" "=r")
         (sign_extend:SI (match_operand:QI 1 "memory_operand" "m")))]
   "!TARGET_SEXT"
   "l.lbs\t%0,%1"
   [(set_attr "type" "load")])
 
-(define_expand "extendqisi2_no_sext_reg"
-  [(set (match_dup 2)
-	(ashift:SI (match_operand:QI 1 "register_operand" "")
-		   (const_int 24)))
-   (set (match_operand:SI 0 "register_operand" "")
-	(ashiftrt:SI (match_dup 2)
-		     (const_int 24)))]
-  "!TARGET_SEXT"
-{
-  operands[1] = gen_lowpart (SImode, operands[1]);
-  operands[2] = gen_reg_rtx (SImode);
-})
-
 ;;
 ;; extendhisi2
 ;;
 
 (define_expand "extendhisi2"
-  [(use (match_operand:SI 0 "register_operand" ""))
-   (use (match_operand:HI 1 "nonimmediate_operand" ""))]
+  [(set (match_operand:SI 0 "register_operand")
+	(sign_extend:SI
+	  (match_operand:HI 1 "nonimmediate_operand")))]
   ""
 {
-  if (TARGET_SEXT)
-    emit_insn (gen_extendhisi2_sext(operands[0], operands[1]));
-  else {
-    if ( GET_CODE(operands[1]) == MEM ) {
-      emit_insn (gen_extendhisi2_no_sext_mem(operands[0], operands[1]));
+  if (!TARGET_SEXT && !MEM_P (operands[1]))
+    {
+      rtx shift = GEN_INT (16);
+      rtx sub = can_create_pseudo_p () ? gen_reg_rtx (SImode) : operands[0];
+      operands[1] = gen_lowpart (SImode, operands[1]);
+      emit_insn (gen_ashlsi3 (sub, operands[1], shift));
+      emit_insn (gen_ashrsi3 (operands[0], sub, shift));
+      DONE;
     }
-    else {
-      emit_insn (gen_extendhisi2_no_sext_reg(operands[0], operands[1]));
-    }
- }
- DONE;
 })
 
-(define_insn "extendhisi2_sext"
+(define_insn "*extendhisi2_sext"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	(sign_extend:SI (match_operand:HI 1 "nonimmediate_operand" "r,m")))]
   "TARGET_SEXT"
@@ -959,26 +944,12 @@
    l.lhs\t%0,%1"
   [(set_attr "type" "extend,load")])
 
-(define_insn "extendhisi2_no_sext_mem"
+(define_insn "*extendhisi2_no_sext"
   [(set (match_operand:SI 0 "register_operand" "=r")
         (sign_extend:SI (match_operand:HI 1 "memory_operand" "m")))]
   "!TARGET_SEXT"
   "l.lhs\t%0,%1"
   [(set_attr "type" "load")])
-
-(define_expand "extendhisi2_no_sext_reg"
-  [(set (match_dup 2)
-	(ashift:SI (match_operand:HI 1 "register_operand" "")
-		   (const_int 16)))
-   (set (match_operand:SI 0 "register_operand" "")
-	(ashiftrt:SI (match_dup 2)
-		     (const_int 16)))]
-  "!TARGET_SEXT"
-{
-  operands[1] = gen_lowpart (SImode, operands[1]);
-  operands[2] = gen_reg_rtx (SImode);
-})
-
 
 ;;
 ;; zero_extend<m><n>2
