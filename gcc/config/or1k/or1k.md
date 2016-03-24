@@ -168,25 +168,8 @@
 	(match_operand:I12 1 "general_operand" ""))]
   ""
 {
-  if (can_create_pseudo_p() && optimize > 0)
-    {
-      if (CONST_INT_P (operands[1]))
-	{
-	  rtx reg = gen_reg_rtx (SImode);
-
-	  emit_insn (gen_movsi (reg, operands[1]));
-	  operands[1] = gen_lowpart (<MODE>mode, reg);
-	}
-      else if (MEM_P (operands[1]))
-	{
-	  rtx reg = gen_reg_rtx (SImode);
-
-	  emit_insn (gen_zero_extend<mode>si2 (reg, operands[1]));
-	  operands[1] = gen_lowpart (<MODE>mode, reg);
-	}
-    }
-  if (MEM_P (operands[0]) && operands[1] != const0_rtx)
-    operands[1] = force_reg (<MODE>mode, operands[1]);
+  or1k_expand_move (<MODE>mode, operands[0], operands[1]);
+  DONE;
 })
 
 (define_insn "*mov<mode>"
@@ -211,7 +194,8 @@
 	(match_operand:SI 1 "general_operand" ""))]
   ""
 {
-  if (or1k_expand_move (SImode, operands)) DONE;
+  or1k_expand_move (SImode, operands[0], operands[1]);
+  DONE;
 })
 
 (define_insn "*movsi_insn"
@@ -317,30 +301,6 @@
   ""
   "l.movhi\t%0,tpoffhi(%1)"
   [(set_attr "type" "move")])
-
-(define_insn_and_split "movsi_insn_big"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(match_operand:SI 1 "immediate_operand" "i"))]
-  "GET_CODE (operands[1]) != CONST_INT"
-  ;; the switch of or1k bfd to Rela allows us to schedule insns separately.
-  "l.movhi\t%0,hi(%1)\;l.ori\t%0,%0,lo(%1)"
-  "(GET_CODE (operands[1]) != CONST_INT
-    || ! (CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'I', \"I\")
-	  || CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'K', \"K\")
-	  || CONST_OK_FOR_CONSTRAINT_P (INTVAL (operands[1]), 'M', \"M\")))
-   && reload_completed
-   && GET_CODE (operands[1]) != HIGH && GET_CODE (operands[1]) != LO_SUM"
-  [(pc)]
-{
-  if (!or1k_expand_symbol_ref(SImode, operands))
-    {
-      emit_insn (gen_movsi_high (operands[0], operands[1]));
-      emit_insn (gen_movsi_lo_sum (operands[0], operands[0], operands[1]));
-    }
-  DONE;
-}
-  [(set_attr "type" "move")
-   (set_attr "length" "2")])
 
 (define_insn_and_split "movdi"
   [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")

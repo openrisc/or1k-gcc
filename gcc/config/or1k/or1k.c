@@ -854,70 +854,6 @@ or1k_legitimate_pic_operand_p (rtx x)
   return 1;
 }
 
-static bool
-or1k_expand_pic_symbol_ref (enum machine_mode mode ATTRIBUTE_UNUSED,
-			    rtx operands[])
-{
-  if (GET_CODE (operands[1]) == LABEL_REF
-      || (GET_CODE (operands[1]) == SYMBOL_REF
-	  && SYMBOL_REF_LOCAL_P (operands[1])
-	  && !SYMBOL_REF_WEAK (operands[1])))
-    {
-      crtl->uses_pic_offset_table = 1;
-      emit_insn (gen_movsi_gotoffhi (operands[0], operands[1]));
-      emit_insn (gen_movsi_gotofflo (operands[0], operands[0],
-				     operands[1]));
-      emit_insn (gen_add3_insn(operands[0], operands[0],
-			       pic_offset_table_rtx));
-      return true;
-    }
-  else if (GET_CODE (operands[1]) == SYMBOL_REF)
-    {
-      crtl->uses_pic_offset_table = 1;
-      emit_insn (gen_movsi_got (operands[0], operands[1]));
-      return true;
-    }
-  else if (GET_CODE (operands[1]) == CONST
-	   && GET_CODE (XEXP (operands[1], 0)) == PLUS
-	   && GET_CODE (XEXP (XEXP (operands[1], 0), 0)) == SYMBOL_REF
-	   && GET_CODE (XEXP (XEXP (operands[1], 0), 1)) == CONST_INT)
-    {
-      rtx symbolref = XEXP (XEXP (operands[1], 0), 0);
-      crtl->uses_pic_offset_table = 1;
-
-      if (SYMBOL_REF_LOCAL_P (symbolref)
-	  && !SYMBOL_REF_WEAK (symbolref))
-	{
-	  emit_insn (gen_movsi_gotoffhi (operands[0], operands[1]));
-	  emit_insn (gen_movsi_gotofflo (operands[0], operands[0],
-					 operands[1]));
-	  emit_insn (gen_add3_insn(operands[0], operands[0],
-				   pic_offset_table_rtx));
-	}
-      else
-	{
-	  rtx const_int = XEXP (XEXP (operands[1], 0), 1);
-
-	  /* Expand the constant into a register if it doesn't
-	     fit directly as an 16-bit immediate in the add below.
-	     Note that the reg allocation is allowed here since
-	     we are guarded by LEGITIMATE_PIC_OPERAND_P. */
-	  if (!satisfies_constraint_I (const_int))
-	    {
-	      rtx scratch = gen_reg_rtx (mode);
-
-	      or1k_emit_set_const32 (scratch, const_int);
-	      const_int = scratch;
-	    }
-
-	  emit_insn (gen_movsi_got (operands[0], symbolref));
-	  emit_insn (gen_add3_insn(operands[0], operands[0], const_int));
-	}
-      return true;
-    }
-  return false;
-}
-
 /* Return the TLS type for TLS symbols, 0 otherwise.  */
 enum tls_model
 or1k_tls_symbolic_operand (rtx op)
@@ -1041,70 +977,124 @@ or1k_cannot_force_const_mem (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
   return or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE;
 }
 
-bool
-or1k_expand_symbol_ref(enum machine_mode mode, rtx operands[])
-{
-  if (flag_pic && or1k_expand_pic_symbol_ref(mode, operands))
-    return true;
+/* Return true if X is a symbolic reference that binds locally.  */
 
-  return false;
+static bool
+local_symbol_ref (rtx x)
+{
+  switch (GET_CODE (x))
+    {
+    case LABEL_REF:
+      return true;
+    case SYMBOL_REF:
+      return SYMBOL_REF_LOCAL_P (x);
+    case CONST:
+      x = XEXP (x, 0);
+      if (GET_CODE (x) == PLUS && CONST_INT_P (XEXP (x, 1)))
+	return local_symbol_ref (XEXP (x, 0));
+      return false;
+    default:
+      return false;
+    }
 }
 
-bool
-or1k_expand_move (enum machine_mode mode, rtx operands[])
+void
+or1k_expand_move (machine_mode mode, rtx op0, rtx op1)
 {
-  if (can_create_pseudo_p ())
+  if (MEM_P (op0))
     {
-      if (GET_CODE (operands[0]) == MEM
-	  || (GET_CODE (operands[0]) == SUBREG
-	      && GET_CODE (SUBREG_REG (operands[0])) == MEM))
-        {
-          /* Source operand for store must be in a register.  */
-          operands[1] = force_reg (SImode, operands[1]);
-        }
+      if (!reg_or_0_operand (op1, mode))
+	op1 = force_reg (mode, op1);
     }
-
-  if (or1k_tls_symbolic_operand (operands[1]) != TLS_MODEL_NONE)
+  else if (mode == QImode || mode == HImode)
     {
-      or1k_legitimize_tls_address (force_reg (Pmode, operands[0]),
-          operands[1]);
-      return true;
+      if (can_create_pseudo_p() && optimize > 0)
+	{
+	  if (CONST_INT_P (op1))
+	    {
+	      rtx reg = gen_reg_rtx (SImode);
+	      emit_insn (gen_rtx_SET (reg, op1));
+	      op1 = gen_lowpart (mode, reg);
+	    }
+	  else if (MEM_P (op1))
+	    {
+	      rtx reg = gen_reg_rtx (SImode);
+	      if (mode == QImode)
+		emit_insn (gen_zero_extendqisi2 (reg, op1));
+	      else
+		emit_insn (gen_zero_extendhisi2 (reg, op1));
+	      op1 = gen_lowpart (mode, reg);
+	    }
+	}
     }
-
-  if (or1k_expand_symbol_ref (mode, operands))
-    return true;
-
-  /* Working with CONST_INTs is easier, so convert
-     a double if needed.  */
-
-  /* Handle sets of MEM first.  */
-  if (GET_CODE (operands[0]) == MEM)
+  else
     {
-      if (register_operand(operands[1], SImode)
-          || (operands[1] == const0_rtx))
-        goto movsi_is_ok;
+      rtx sub;
+      switch (GET_CODE (op1))
+	{
+	case CONST:
+	case SYMBOL_REF:
+	  if (or1k_tls_symbolic_operand (op1) != TLS_MODEL_NONE)
+	    {
+	      or1k_legitimize_tls_address (op0, op1);
+	      return;
+	    }
+	  /* FALLTHRU */
 
-      if (! reload_in_progress)
-        {
-          operands[0] = validize_mem (operands[0]);
-          operands[1] = force_reg (SImode, operands[1]);
-        }
+	case LABEL_REF:
+	  sub = can_create_pseudo_p () ? gen_reg_rtx (mode) : op0;
+	  if (flag_pic)
+	    {
+	      crtl->uses_pic_offset_table = 1;
+	      if (local_symbol_ref (op1))
+		{
+		  emit_insn (gen_movsi_gotoffhi (sub, op1));
+		  emit_insn (gen_movsi_gotofflo (sub, sub, op1));
+		  emit_insn (gen_add3_insn (op0, pic_offset_table_rtx, sub));
+		  return;
+		}
+
+	      /* If we have an offset from a symbol, pull that outside
+		 the CONST and perform the addition separately.  */
+	      if (GET_CODE (op1) == CONST
+		  && GET_CODE (XEXP (op1, 0)) == PLUS
+		  && CONST_INT_P (XEXP (XEXP (op1, 0), 1)))
+		{
+		  rtx sym = XEXP (XEXP (op1, 0), 0);
+		  rtx ofs = XEXP (XEXP (op1, 0), 1);
+		  emit_insn (gen_movsi_got (sub, sym));
+		  if (!satisfies_constraint_I (ofs))
+		    ofs = force_reg (mode, ofs);
+		  emit_insn (gen_add3_insn (op0, sub, ofs));
+		  return;
+		}
+
+	      emit_insn (gen_movsi_got (op0, op1));
+	      return;
+	    }
+	  emit_insn (gen_rtx_SET (sub, gen_rtx_HIGH (mode, op1)));
+	  emit_insn (gen_rtx_SET (op0, gen_rtx_LO_SUM (mode, sub, op1)));
+	  return;
+
+	case CONST_INT:
+	  if (!input_operand (op1, mode))
+	    {
+	      sub = can_create_pseudo_p () ? gen_reg_rtx (mode) : op0;
+	      HOST_WIDE_INT i = INTVAL (op1);
+	      HOST_WIDE_INT l = i & 0xffff;
+
+	      emit_insn (gen_rtx_SET (sub, gen_int_mode (i - l, mode)));
+	      emit_insn (gen_rtx_SET (op0, gen_rtx_IOR (mode, sub,
+							GEN_INT (l))));
+	      return;
+	    }
+	  break;
+
+	default:
+	  break;
+	}
     }
-
-  /* This makes sure we will not get rematched due to splittage.  */
-  if (! CONSTANT_P (operands[1]) || input_operand (operands[1], SImode))
-    ;
-  else if (CONSTANT_P (operands[1])
-           && GET_CODE (operands[1]) != HIGH
-           && GET_CODE (operands[1]) != LO_SUM)
-    {
-      or1k_emit_set_const32 (operands[0], operands[1]);
-      return true;
-    }
- movsi_is_ok:
-  ;
-
-  return false;
+  emit_insn (gen_rtx_SET (op0, op1));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1492,64 +1482,6 @@ or1k_expand_epilogue (void)
 
   /* Return instruction emitted in gen_epilogue.  */
 }
-
-/* -------------------------------------------------------------------------- */
-/*!Load a 32-bit constant.
-
-   We know it can't be done in one insn when we get here, the movsi expander
-   guarantees this.
-
-   @param[in] op0  RTX for the destination.
-   @param[in] op1  RTX for the (constant) source.                             */
-/* -------------------------------------------------------------------------- */
-void
-or1k_emit_set_const32 (rtx  op0,
-		       rtx  op1)
-{
-  enum machine_mode mode = GET_MODE (op0);
-  rtx temp;
-
-  /* Sanity check that we really can't do it in one instruction. I.e that we
-     don't have a 16-bit constant. */
-  if (GET_CODE (op1) == CONST_INT)
-    {
-      HOST_WIDE_INT val = INTVAL (op1) & GET_MODE_MASK (mode);
-
-      if ((-32768 <= val) && (val <= 32767))
-	{
-	  abort ();
-	}
-    }
-
-  /* Full 2-insn decomposition is needed.  */
-  if (reload_in_progress || reload_completed)
-    temp = op0;
-  else
-    temp = gen_reg_rtx (mode);
-
-  if (GET_CODE (op1) == CONST_INT)
-    {
-      /* Emit them as real moves instead of a HIGH/LO_SUM,
-         this way CSE can see everything and reuse intermediate
-         values if it wants.  */
-      emit_insn (gen_rtx_SET (temp,
-			      GEN_INT (INTVAL (op1)
-				       & ~(HOST_WIDE_INT) 0xffff)));
-
-      emit_insn (gen_rtx_SET (op0,
-			      gen_rtx_IOR (mode, temp,
-					   GEN_INT (INTVAL (op1) & 0xffff))));
-    }
-  else
-    {
-      /* since or1k bfd can not deal with relocs that are not of type
-         OR1K_CONSTH_RELOC + OR1K_CONST_RELOC (ie move high must be
-         followed by exactly one lo_sum)
-       */
-      emit_insn (gen_movsi_insn_big (op0, op1));
-    }
-}	/* or1k_emit_set_const32 () */
-
 
 /* ========================================================================== */
 /* Target hook functions.

@@ -33,12 +33,8 @@ extern void        or1k_expand_call (rtx, rtx, rtx);
 extern void        or1k_expand_prologue (void);
 extern void        or1k_expand_epilogue (void);
 extern bool        or1k_direct_return (void);
-extern bool        or1k_expand_move (enum machine_mode mode, rtx operands[]);
+extern void        or1k_expand_move (machine_mode mode, rtx, rtx);
 extern void        or1k_expand_compare(rtx *operands);
-extern void        or1k_emit_set_const32 (rtx  op0,
-                                          rtx  op1);
-extern bool        or1k_expand_symbol_ref (enum machine_mode mode,
-                                           rtx operands[]);
 
 void or1k_expand_atomic_compare_and_swap (rtx operands[]);
 void or1k_expand_atomic_compare_and_swap_qihi (rtx operands[]);
