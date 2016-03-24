@@ -30,21 +30,26 @@
   (FP_REG 2) ; hard frame pointer
   (LINK_REGNUM 9)
   (SR_F_REG 34)
+])
 
-  ;; unspec values
-  (UNSPEC_GOT           1)
-  (UNSPEC_GOTOFFHI      2)
-  (UNSPEC_GOTOFFLO      3)
-  (UNSPEC_TPOFFLO       4)
-  (UNSPEC_TPOFFHI       5)
-  (UNSPEC_GOTTPOFFLO    6)
-  (UNSPEC_GOTTPOFFHI    7)
-  (UNSPEC_GOTTPOFFLD    8)
-  (UNSPEC_TLSGDLO       9)
-  (UNSPEC_TLSGDHI       10)
-  (UNSPEC_SET_GOT       101)
-  (UNSPEC_CMPXCHG       201)
-  (UNSPEC_FETCH_AND_OP  202)
+(define_c_enum "unspec" [
+  UNSPEC_GOT
+  UNSPEC_GOTOFFHI
+  UNSPEC_GOTOFFLO
+  UNSPEC_TPOFFLO
+  UNSPEC_TPOFFHI
+  UNSPEC_GOTTPOFFLO
+  UNSPEC_GOTTPOFFHI
+  UNSPEC_GOTTPOFFLD
+  UNSPEC_TLSGDLO
+  UNSPEC_TLSGDHI
+  UNSPEC_SET_GOT
+  UNSPEC_MSYNC
+])
+
+(define_c_enum "unspecv" [
+  UNSPECV_LL
+  UNSPECV_SC
 ])
 
 (include "predicates.md")
@@ -83,20 +88,7 @@
 			 "or1k_alu")
 (define_insn_reservation "mul_unit" 16 (eq_attr "type" "mul") "or1k_alu*16")
 
-;; AI = Atomic Integers
-;; We do not support DI in our atomic operations.
-(define_mode_iterator AI [QI HI SI])
-
-;; Note: We use 'mult' here for nand since it does not have its own RTX class.
-(define_code_iterator atomic_op [plus minus and ior xor mult])
-(define_code_attr op_name
-  [(plus "add") (minus "sub") (and "and") (ior "or") (xor "xor") (mult "nand")])
-(define_code_attr op_insn
-  [(plus "add") (minus "sub") (and "and") (ior "or") (xor "xor") (mult "and")])
-(define_code_attr post_op_insn
-  [(plus "") (minus "") (and "") (ior "") (xor "")
-   ; mult = fetch_nand: invert
-   (mult "l.xori\t%3,%3,0xffff")])
+(define_mode_iterator I12 [QI HI])
 
 ;; Save registers and allocate the stack frame.
 (define_expand "prologue"
@@ -511,31 +503,57 @@
   DONE;
 })
 
-(define_insn_and_split "*scc_f"
-  [(set (match_operand 0 "register_operand" "=r")
+;; Being able to copy SR_F to a general register even without CMOV
+;; is helpful for the atomic insns, wherein the usual usage is to
+;; test the success of the compare-and-swap.  Leaving the success
+;; flag in SR_F means that we can in those cases avoid an extra compare
+;; and avoid the additional setting of a general register.
+;; Therefore, we allow for scc to operate without CMOV, but fail to
+;; advertise cstoresi4 without CMOV.
+
+(define_expand "sne"
+  [(set (match_operand:SI 0 "register_operand" "=r")
 	(ne:SI (reg:BI SR_F_REG) (const_int 0)))]
+  "")
+
+(define_insn "*scc"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(match_operator:SI 1 "equality_comparison_operator"
+	  [(reg:BI SR_F_REG) (const_int 0)]))]
+  ""
+  "#")
+
+(define_split
+  [(set (match_operand:SI 0 "register_operand")
+	(match_operator:SI 1 "equality_comparison_operator"
+	  [(reg:BI SR_F_REG) (const_int 0)]))]
   "TARGET_CMOV"
-  "#"
-  "&& 1"
   [(set (match_dup 0) (const_int 1))
    (set (match_dup 0)
-	(if_then_else:SI (ne (reg:BI SR_F_REG) (const_int 0))
+	(if_then_else:SI (match_dup 1)
 	  (match_dup 0)
 	  (const_int 0)))]
   "")
 
-(define_insn_and_split "*scc_nf"
-  [(set (match_operand 0 "register_operand" "=r")
-	(eq:SI (reg:BI SR_F_REG) (const_int 0)))]
-  "TARGET_CMOV"
-  "#"
-  "&& 1"
-  [(set (match_dup 0) (const_int 1))
-   (set (match_dup 0)
-	(if_then_else:SI (ne (reg:BI SR_F_REG) (const_int 0))
-	  (const_int 0)
-	  (match_dup 0)))]
-  "")
+(define_split
+  [(set (match_operand:SI 0 "register_operand")
+	(match_operator:SI 1 "equality_comparison_operator"
+	  [(reg:BI SR_F_REG) (const_int 0)]))]
+  "!TARGET_CMOV && reload_completed"
+  [(const_int 0)]
+{
+  emit_move_insn (operands[0], const1_rtx);
+
+  rtx label = gen_label_rtx ();
+  rtx x = gen_rtx_LABEL_REF (Pmode, label);
+  x = gen_rtx_IF_THEN_ELSE (VOIDmode, operands[1], x, pc_rtx);
+  emit_jump_insn (gen_rtx_SET (pc_rtx, x));
+
+  emit_move_insn (operands[0], const0_rtx);
+
+  emit_label (label);
+  DONE;
+})
 
 ;;
 ;; Setting SR[F] from comparision
@@ -1048,165 +1066,11 @@
 	  (const_int 5)
 	  (const_int 4)))])
 
-(define_expand "atomic_compare_and_swap<mode>"
-  [(match_operand:SI 0 "register_operand")   ;; bool output
-   (match_operand:AI 1 "register_operand")   ;; val output
-   (match_operand:AI 2 "memory_operand")     ;; memory
-   (match_operand:AI 3 "register_operand")   ;; expected
-   (match_operand:AI 4 "register_operand")   ;; desired
-   (match_operand:SI 5 "const_int_operand")  ;; is_weak
-   (match_operand:SI 6 "const_int_operand")  ;; mod_s
-   (match_operand:SI 7 "const_int_operand")] ;; mod_f
-  ""
-{
-  if (<MODE>mode == SImode)
-    emit_insn (gen_cmpxchg (operands[0], operands[1], operands[2], operands[3],
-                            operands[4]));
-  else
-    or1k_expand_cmpxchg_qihi (operands[0], operands[1], operands[2],
-                              operands[3], operands[4], INTVAL (operands[5]),
-                              (enum memmodel) INTVAL (operands[6]),
-                              (enum memmodel) INTVAL (operands[7]));
-  DONE;
-})
+;;
+;; Atomic operations
+;;
 
-(define_insn "cmpxchg"
-   [(set (match_operand:SI 0 "register_operand" "=&r")
-         (unspec_volatile:SI [(match_operand:SI 2 "memory_operand" "+m")]
-          UNSPEC_CMPXCHG))
-    (set (match_dup 2)
-         (unspec_volatile:SI [(match_operand:SI 3 "register_operand" "r")]
-          UNSPEC_CMPXCHG))
-    (set (match_operand:SI 1 "register_operand" "=&r")
-         (unspec_volatile:SI [(match_dup 2) (match_dup 3)
-                             (match_operand:SI 4 "register_operand" "r")]
-          UNSPEC_CMPXCHG))]
-  ""
-  "
-   l.lwa   \t%1,%2   # cmpxchg: load
-   l.sfeq  \t%1,%3   # cmpxchg: cmp
-   l.bnf   \t1f      # cmpxchg: not expected
-    l.ori  \t%0,r0,0 # cmpxchg: result = 0
-   l.swa   \t%2,%4   # cmpxchg: store new
-   l.bnf   \t1f      # cmpxchg: done
-    l.nop
-   l.ori   \t%0,r0,1 # cmpxchg: result = 1
-1:"
-  [(set_attr "length" "8")])
-
-(define_insn "cmpxchg_mask"
-   [(set (match_operand:SI 0 "register_operand" "=&r")
-         (unspec_volatile:SI [(match_operand:SI 2 "memory_operand" "+m")]
-          UNSPEC_CMPXCHG))
-    (set (match_dup 2)
-         (unspec_volatile:SI [(match_operand:SI 3 "register_operand" "r")]
-          UNSPEC_CMPXCHG))
-    (set (match_operand:SI 1 "register_operand" "=&r")
-         (unspec_volatile:SI [(match_dup 2) (match_dup 3)
-                             (match_operand:SI 4 "register_operand" "r")
-                             (match_operand:SI 5 "register_operand" "r")]
-          UNSPEC_CMPXCHG))
-   (clobber (match_scratch:SI 6 "=&r"))]
-  ""
-  "
-   l.lwa   \t%6,%2    # cmpxchg: load
-   l.and   \t%1,%6,%5 # cmpxchg: mask old
-   l.and   \t%4,%4,%5 # cmpxchg: mask set
-   l.sfeq  \t%1,%3    # cmpxchg: cmp
-   l.bnf   \t1f       # cmpxchg: not expected
-    l.ori  \t%0,r0,0  # cmpxchg: result = 0
-   l.xor   \t%6,%6,%1 # cmpxchg: clear
-   l.or    \t%6,%6,%4 # cmpxchg: set
-   l.swa   \t%2,%6    # cmpxchg: store new
-   l.bnf   \t1f       # cmpxchg: done
-    l.nop
-   l.ori   \t%0,r0,1  # cmpxchg: result = 1
-1:"
-  [(set_attr "length" "12")])
-
-(define_expand "atomic_fetch_<op_name><mode>"
-  [(match_operand:AI 0 "register_operand")
-   (match_operand:AI 1 "memory_operand")
-   (match_operand:AI 2 "register_operand")
-   (match_operand:SI 3 "const_int_operand")
-   (atomic_op:AI (match_dup 0) (match_dup 1))]
-  ""
-{
-  rtx ret = gen_reg_rtx (<MODE>mode);
-  if (<MODE>mode != SImode)
-    or1k_expand_fetch_op_qihi (operands[0], operands[1], operands[2], ret,
-                               gen_fetch_and_<op_name>_mask);
-  else
-    emit_insn (gen_fetch_and_<op_name> (operands[0], operands[1], operands[2],
-                                        ret));
-  DONE;
-})
-
-(define_expand "atomic_<op_name>_fetch<mode>"
-  [(match_operand:AI 0 "register_operand")
-   (match_operand:AI 1 "memory_operand")
-   (match_operand:AI 2 "register_operand")
-   (match_operand:SI 3 "const_int_operand")
-   (atomic_op:AI (match_dup 0) (match_dup 1))]
-  ""
-{
-  rtx ret = gen_reg_rtx (<MODE>mode);
-  if (<MODE>mode != SImode)
-    or1k_expand_fetch_op_qihi (ret, operands[1], operands[2], operands[0],
-                               gen_fetch_and_<op_name>_mask);
-  else
-    emit_insn (gen_fetch_and_<op_name> (ret, operands[1], operands[2],
-                                        operands[0]));
-  DONE;
-})
-
-(define_insn "fetch_and_<op_name>"
-  [(set (match_operand:SI 0 "register_operand" "=&r")
-        (match_operand:SI 1 "memory_operand" "+m"))
-   (set (match_operand:SI 3 "register_operand" "=&r")
-        (unspec_volatile:SI [(match_dup 1)
-                             (match_operand:SI 2 "register_operand" "r")]
-         UNSPEC_FETCH_AND_OP))
-   (set (match_dup 1)
-        (match_dup 3))
-   (atomic_op:SI (match_dup 0) (match_dup 1))]
-  ""
-  "
-1:
-   l.lwa   \t%0,%1  # fetch_<op_name>: load
-   l.<op_insn>\t\t%3,%0,%2 # fetch_<op_name>: logic
-   <post_op_insn>
-   l.swa   \t%1,%3  # fetch_<op_name>: store new
-   l.bnf   \t1b     # fetch_<op_name>: done
-    l.nop"
-  [(set_attr "length" "6")])
-
-(define_insn "fetch_and_<op_name>_mask"
-  [(set (match_operand:SI 0 "register_operand" "=&r")
-        (match_operand:SI 1 "memory_operand" "+m"))
-   (set (match_operand:SI 3 "register_operand" "=&r")
-        (unspec_volatile:SI [(match_dup 1)
-                             (match_operand:SI 2 "register_operand" "r")
-                             (match_operand:SI 4 "register_operand" "r")]
-         UNSPEC_FETCH_AND_OP))
-   (set (match_dup 1)
-        (unspec_volatile:SI [(match_dup 3) (match_dup 4)] UNSPEC_FETCH_AND_OP))
-   (clobber (match_scratch:SI 5 "=&r"))
-   (atomic_op:SI (match_dup 0) (match_dup 1))]
-  ""
-  "
-1:
-   l.lwa   \t%0,%1    # fetch_<op_name>: load
-   l.and   \t%5,%0,%4 # fetch_<op_name>: mask
-   l.xor   \t%5,%0,%5 # fetch_<op_name>: clear
-   l.<op_insn>\t\t%3,%0,%2 # fetch_<op_name>: logic
-   <post_op_insn>
-   l.and   \t%3,%3,%4 # fetch_<op_name>: mask result
-   l.or    \t%3,%5,%3 # fetch_<op_name>: set
-   l.swa   \t%1,%3    # fetch_<op_name>: store new
-   l.bnf   \t1b       # fetch_<op_name>: done
-    l.nop"
-  [(set_attr "length" "10")])
+(include "sync.md")
 
 ;;
 ;; CALLS

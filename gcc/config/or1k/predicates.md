@@ -124,3 +124,6 @@
 (define_predicate "tle_symbolic_operand"
   (and (match_code "symbol_ref")
        (match_test "SYMBOL_REF_TLS_MODEL (op) == TLS_MODEL_LOCAL_EXEC")))
+
+(define_predicate "equality_comparison_operator"
+  (match_code "eq,ne"))

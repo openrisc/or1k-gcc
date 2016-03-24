@@ -39,14 +39,16 @@ extern void        or1k_emit_set_const32 (rtx  op0,
                                           rtx  op1);
 extern bool        or1k_expand_symbol_ref (enum machine_mode mode,
                                            rtx operands[]);
-extern void        or1k_expand_cmpxchg_qihi (rtx bval, rtx retval,
-                        rtx mem, rtx oldval, rtx newval, int is_weak,
-                        enum memmodel success_mode, enum memmodel failure_mode);
-extern void  or1k_expand_fetch_op_qihi (rtx oldval, rtx mem, rtx operand,
-                                        rtx newval, rtx (*generator)(rtx, rtx, rtx, rtx, rtx));
-#endif
+
+void or1k_expand_atomic_compare_and_swap (rtx operands[]);
+void or1k_expand_atomic_compare_and_swap_qihi (rtx operands[]);
+void or1k_expand_atomic_exchange (rtx operands[]);
+void or1k_expand_atomic_exchange_qihi (rtx operands[]);
+void or1k_expand_atomic_op (rtx_code, rtx, rtx, rtx, rtx);
+void or1k_expand_atomic_op_qihi (rtx_code, rtx, rtx, rtx, rtx);
 
 #endif
+
 extern int or1k_struct_alignment (tree);
 extern int or1k_data_alignment (tree, int);
 
@@ -59,3 +61,5 @@ extern int or1k_legitimate_pic_operand_p (rtx x);
 
 /* For RETURN_ADDR_RTX */
 extern rtx get_hard_reg_initial_val (enum machine_mode, unsigned int);
+
+#endif
