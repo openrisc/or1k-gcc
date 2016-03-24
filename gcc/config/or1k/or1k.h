@@ -945,4 +945,6 @@ typedef struct GTY(()) machine_function
   int force_lr_save;
 } machine_function;
 
+#define TARGET_SUPPORTS_WIDE_INT 1
+
 #endif /* _OR1K_H_ */

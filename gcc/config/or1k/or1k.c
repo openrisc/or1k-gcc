@@ -1077,10 +1077,6 @@ or1k_expand_move (enum machine_mode mode, rtx operands[])
   /* Working with CONST_INTs is easier, so convert
      a double if needed.  */
 
-  if (GET_CODE (operands[1]) == CONST_DOUBLE) {
-    operands[1] = GEN_INT (CONST_DOUBLE_LOW (operands[1]));
-  }
-
   /* Handle sets of MEM first.  */
   if (GET_CODE (operands[0]) == MEM)
     {
@@ -1496,148 +1492,6 @@ or1k_expand_epilogue (void)
 
   /* Return instruction emitted in gen_epilogue.  */
 }
-
-/* -------------------------------------------------------------------------- */
-/*!Generate assembler code for a movdi/movdf pattern
-
-   @param[in] operands  Operands to the movdx pattern.
-
-   @return  The assembler string to output (always "", since we've done the
-            output here).                                                     */
-/* -------------------------------------------------------------------------- */
-const char *
-or1k_output_move_double (rtx *operands)
-{
-  rtx xoperands[3];
-
-  switch (GET_CODE (operands[0]))
-    {
-    case REG:
-      if (GET_CODE (operands[1]) == REG)
-	{
-	  if (REGNO (operands[0]) == REGNO (operands[1]) + 1)
-	    {
-	      output_asm_insn ("\tl.or    \t%H0, %H1, r0", operands);
-	      output_asm_insn ("\tl.or    \t%0, %1, r0", operands);
-	      return "";
-	    }
-	  else
-	    {
-	      output_asm_insn ("\tl.or    \t%0, %1, r0", operands);
-	      output_asm_insn ("\tl.or    \t%H0, %H1, r0", operands);
-	      return "";
-	    }
-	}
-      else if (GET_CODE (operands[1]) == MEM)
-	{
-	  xoperands[1] = XEXP (operands[1], 0);
-	  if (GET_CODE (xoperands[1]) == REG)
-	    {
-	      xoperands[0] = operands[0];
-	      if (REGNO (xoperands[0]) == REGNO (xoperands[1]))
-		{
-		  output_asm_insn ("\tl.lwz   \t%H0, 4(%1)", xoperands);
-		  output_asm_insn ("\tl.lwz   \t%0, 0(%1)", xoperands);
-		  return "";
-		}
-	      else
-		{
-		  output_asm_insn ("\tl.lwz   \t%0, 0(%1)", xoperands);
-		  output_asm_insn ("\tl.lwz   \t%H0, 4(%1)", xoperands);
-		  return "";
-		}
-	    }
-	  else if (GET_CODE (xoperands[1]) == PLUS)
-	    {
-	      if (GET_CODE (xoperands[2] = XEXP (xoperands[1], 1)) == REG)
-		{
-		  xoperands[0] = operands[0];
-		  xoperands[1] = XEXP (xoperands[1], 0);
-		  if (REGNO (xoperands[0]) == REGNO (xoperands[2]))
-		    {
-		      output_asm_insn ("\tl.lwz   \t%H0, %1+4(%2)",
-				       xoperands);
-		      output_asm_insn ("\tl.lwz   \t%0, %1(%2)", xoperands);
-		      return "";
-		    }
-		  else
-		    {
-		      output_asm_insn ("\tl.lwz   \t%0, %1(%2)", xoperands);
-		      output_asm_insn ("\tl.lwz   \t%H0, %1+4(%2)",
-				       xoperands);
-		      return "";
-		    }
-		}
-	      else if (GET_CODE (xoperands[2] = XEXP (xoperands[1], 0)) ==
-		       REG)
-		{
-		  xoperands[0] = operands[0];
-		  xoperands[1] = XEXP (xoperands[1], 1);
-		  if (REGNO (xoperands[0]) == REGNO (xoperands[2]))
-		    {
-		      output_asm_insn ("\tl.lwz   \t%H0, %1+4(%2)",
-				       xoperands);
-		      output_asm_insn ("\tl.lwz   \t%0, %1(%2)", xoperands);
-		      return "";
-		    }
-		  else
-		    {
-		      output_asm_insn ("\tl.lwz   \t%0, %1(%2)", xoperands);
-		      output_asm_insn ("\tl.lwz   \t%H0, %1+4(%2)",
-				       xoperands);
-		      return "";
-		    }
-		}
-	      else
-		abort ();
-	    }
-	  else
-	    abort ();
-	}
-      else
-	abort ();
-    case MEM:
-      xoperands[0] = XEXP (operands[0], 0);
-      if (GET_CODE (xoperands[0]) == REG)
-	{
-	  xoperands[1] = operands[1];
-	  output_asm_insn ("\tl.sw    \t0(%0), %1", xoperands);
-	  output_asm_insn ("\tl.sw    \t4(%0), %H1", xoperands);
-	  return "";
-	}
-      else if (GET_CODE (xoperands[0]) == PLUS)
-	{
-	  if (GET_CODE (xoperands[1] = XEXP (xoperands[0], 1)) == REG)
-	    {
-	      xoperands[0] = XEXP (xoperands[0], 0);
-	      xoperands[2] = operands[1];
-	      output_asm_insn ("\tl.sw    \t%0(%1), %2", xoperands);
-	      output_asm_insn ("\tl.sw    \t%0+4(%1), %H2", xoperands);
-	      return "";
-	    }
-	  else if (GET_CODE (xoperands[1] = XEXP (xoperands[0], 0)) == REG)
-	    {
-	      xoperands[0] = XEXP (xoperands[0], 1);
-	      xoperands[2] = operands[1];
-	      output_asm_insn ("\tl.sw    \t%0(%1), %2", xoperands);
-	      output_asm_insn ("\tl.sw    \t%0+4(%1), %H2", xoperands);
-	      return "";
-	    }
-	  else
-	    abort ();
-	}
-      else
-	{
-	  fprintf (stderr, "  O/p error %s\n",
-		   GET_RTX_NAME (GET_CODE (xoperands[0])));
-	  return "";
-	  /* abort (); */
-	}
-    default:
-      abort ();
-    }
-}	/* or1k_output_move_double () */
-
 
 /* -------------------------------------------------------------------------- */
 /*!Load a 32-bit constant.
@@ -2281,16 +2135,30 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 #undef TARGET_STRICT_ARGUMENT_NAMING
 #define TARGET_STRICT_ARGUMENT_NAMING hook_bool_CUMULATIVE_ARGS_true
 
-/* Is this suitable for an immediate operand.
+/* Is this suitable for an immediate operand.  */
 
-   JPB 1-Sep-10: Is this correct. We can only do 16-bit immediates directly. */
 static bool
 or1k_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 {
-  if (or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE)
-    return 0;
+  switch (GET_CODE (x))
+    {
+    case CONST_INT:
+    case CONST_WIDE_INT:
+    case HIGH:
+      /* We construct these, rather than spilling to memory.  */
+      return true;
 
-  return GET_CODE(x) != CONST_DOUBLE || (GET_MODE (x) == VOIDmode && !flag_pic);
+    case CONST:
+    case SYMBOL_REF:
+    case LABEL_REF:
+      /* These may need to be split and not reconstructed.  */
+      if (or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE)
+	return false;
+      return true;
+
+    default:
+      return false;
+    }
 }
 #undef TARGET_LEGITIMATE_CONSTANT_P
 #define TARGET_LEGITIMATE_CONSTANT_P or1k_legitimate_constant_p

@@ -342,6 +342,33 @@
   [(set_attr "type" "move")
    (set_attr "length" "2")])
 
+(define_insn_and_split "movdi"
+  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")
+	(match_operand:DI 1 "general_operand"      " r,o,r,n"))]
+  ""
+  "#"
+  ""
+  [(const_int 0)]
+{
+  rtx l0 = operand_subword (operands[0], 0, 0, DImode);
+  rtx l1 = operand_subword (operands[1], 0, 0, DImode);
+  rtx h0 = operand_subword (operands[0], 1, 0, DImode);
+  rtx h1 = operand_subword (operands[1], 1, 0, DImode);
+
+  if (reload_completed && reg_overlap_mentioned_p (l0, h1))
+    {
+      gcc_assert (!reg_overlap_mentioned_p (h0, l1));
+      emit_move_insn (h0, h1);
+      emit_move_insn (l0, l1);
+    }
+  else
+    {
+      emit_move_insn (l0, l1);
+      emit_move_insn (h0, h1);
+    }
+  DONE;
+})
+
 ;;
 ;; Conditional Branches & Moves
 ;; 
@@ -833,27 +860,6 @@
   "TARGET_HARD_FLOAT"
   "lf.sf%C2.s\t%0,%1"
   [(set_attr "type" "compare")])
-
-;;
-;;
-;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;
-;;
-(define_insn_and_split "movdi"
-  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")
-	(match_operand:DI 1 "general_operand"      " r,o,r,n"))]
-  ""
-  { return or1k_output_move_double (operands); }
-  "&& reload_completed && CONSTANT_P (operands[1])"
-  [(set (match_dup 2) (match_dup 3)) (set (match_dup 4) (match_dup 5))]
-  {
-    operands[2] = operand_subword (operands[0], 0, 0, DImode);
-    operands[3] = operand_subword (operands[1], 0, 0, DImode);
-    operands[4] = operand_subword (operands[0], 1, 0, DImode);
-    operands[5] = operand_subword (operands[1], 1, 0, DImode);
-  }
-  [(set_attr "length" "2,2,2,3")])
 
 ;; Moving double and single precision floating point values
 
