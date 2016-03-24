@@ -144,7 +144,10 @@ or1k_save_reg_p (unsigned int regno)
     case PIC_OFFSET_TABLE_REGNUM:
       return crtl->uses_pic_offset_table;
 
-    case 25: case 27: case 29: case 31:
+    case HW_TO_GCC_REGNO (25):
+    case HW_TO_GCC_REGNO (27):
+    case HW_TO_GCC_REGNO (29):
+    case HW_TO_GCC_REGNO (31):
       /* See EH_RETURN_DATA_REGNO.  */
       return crtl->calls_eh_return;
 

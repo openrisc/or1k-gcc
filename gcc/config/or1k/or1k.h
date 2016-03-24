@@ -194,7 +194,7 @@ Boston, MA 02111-1307, USA.  */
 #define PROLOGUE_TMP			13
 
 /* Position Independent Code.  */
-#define PIC_OFFSET_TABLE_REGNUM		16
+#define PIC_OFFSET_TABLE_REGNUM		HW_TO_GCC_REGNO (16)
 
 /* Fake registers for the incoming argument pointer and soft frame pointer.  */
 #define ARG_POINTER_REGNUM		32
@@ -210,16 +210,41 @@ Boston, MA 02111-1307, USA.  */
 #define OR1K_LAST_SGR_REGNUM	FRAME_POINTER_REGNUM
 #define FIRST_PSEUDO_REGISTER	(SR_CY_REG + 1)
 
+/* The standard ABI has no adjacent call-saved registers, which means
+   that DImode pseudos cannot be call-saved and will always be spilled
+   across calls.  To solve this without changing the ABI, remap the
+   compiler internal register numbers to place the even registers
+   R16-R30 in 24-31, and the odd registers R17-R31 in 16-23.  */
+
+#define HW_TO_GCC_REGNO(X)		\
+  ((X) < 16 || (X) > 31 ? (X)		\
+   : (X) & 1 ? ((X) - 16) / 2 + 16	\
+   : ((X) - 16) / 2 + 24)
+
+#define GCC_TO_HW_REGNO(X)		\
+  ((X) < 16 || (X) > 31 ? (X)		\
+   : (X) < 24 ? ((X) - 16) * 2 + 16	\
+   : ((X) - 24) * 2 + 16)
+
+#define DBX_REGISTER_NUMBER(X)  GCC_TO_HW_REGNO(X)
+
+#define REGISTER_NAMES						\
+  {"r0",   "r1",  "r2",  "r3",  "r4",  "r5",  "r6",  "r7",	\
+   "r8",   "r9", "r10", "r11", "r12", "r13", "r14", "r15",	\
+   "r17", "r19", "r21", "r23", "r25", "r27", "r29", "r31",	\
+   "r16", "r18", "r20", "r22", "r24", "r26", "r28", "r30",	\
+   "argp", "frame", "F", "CY" }
+
 /* 1 for registers that have pervasive standard uses
    and are not available for the register allocator.
    On the or1k, these are r1 as stack pointer and 
    r2 as frame/arg pointer.  r9 is link register, r0
    is zero, r10 is linux thread and r16 is got pointer */
-#define FIXED_REGISTERS { \
-  1, 1, 0, 0, 0, 0, 0, 0, \
-  0, 1, 1, 0, 0, 0, 0, 0, \
-  1, 0, 0, 0, 0, 0, 0, 0, \
-  0, 0, 0, 0, 0, 0, 0, 0, \
+#define FIXED_REGISTERS {	\
+  1, 1, 0, 0, 0, 0, 0, 0,	\
+  0, 1, 1, 0, 0, 0, 0, 0,	\
+  0, 0, 0, 0, 0, 0, 0, 0,	\
+  1, 0, 0, 0, 0, 0, 0, 0,	\
   1, 1, 1, 1 }
 
 /* 1 for registers not available across function calls.
@@ -228,14 +253,30 @@ Boston, MA 02111-1307, USA.  */
    The latter must include the registers where values are returned
    and the register where structure-value addresses are passed.
    Aside from that, you can include as many other registers as you like.  */
-/* ??? This is a horrible ABI.  There are no adjacent call-saved registers,
-   which means that pseudos larger than one word will always be spilled.  */
 #define CALL_USED_REGISTERS { \
   1, 1, 0, 1, 1, 1, 1, 1, \
   1, 1, 1, 1, 1, 1, 0, 1, \
-  1, 1, 0, 1, 0, 1, 0, 1, \
-  0, 1, 0, 1, 0, 1, 0, 1, \
+  1, 1, 1, 1, 1, 1, 1, 1, \
+  1, 0, 0, 0, 0, 0, 0, 0, \
   1, 1, 1, 1 }
+
+/* List the order in which to allocate registers.  Each register must
+   be listed once, even those in FIXED_REGISTERS.  */
+
+#define REG_ALLOC_ORDER { \
+  16, 17, 18, 19, 20, 21, 22, 23,	/* r17-r31 (odd), non-saved */	\
+  13, 15,				/* non-saved */			\
+  12, 11,				/* non-saved return values */	\
+  8, 7, 6, 5, 4, 3,			/* non-saved argument regs */	\
+  14, 24, 25, 26, 27, 28, 29, 30, 31,	/* r14,r16-r31 (even), saved */	\
+  2,					/* saved hard frame pointer */	\
+  9,					/* saved return address */	\
+  0,					/* fixed zero reg */		\
+  1,					/* fixed stack pointer */	\
+  10,					/* fixed thread pointer */	\
+  32, 33,				/* fixed ap, fp */		\
+  34, 35,				/* fixed sr[f], sr[cy] */	\
+}
 
 /* Return number of consecutive hard regs needed starting at reg REGNO
    to hold something of mode MODE.
@@ -393,7 +434,7 @@ enum reg_class
    epilogue.  This excludes R9 (LINK), R11 (STATIC_CHAIN),
    and R13 (PROLOGUE_TMP).  */
 
-#define SIBCALL_REGS_MASK	0xaaaa95f8
+#define SIBCALL_REGS_MASK	0x00ff95f8u
 #define REG_CLASS_CONTENTS						\
   {									\
     { 0x00000000, 0x00000000 },		/* NO_REGS */			\
@@ -754,16 +795,6 @@ enum reg_class
 /* Output before uninitialized data. */
 #define BSS_SECTION_ASM_OP  "\t.section .bss"
 
-/* How to refer to registers in assembler output.  This sequence is indexed by
-   compiler's hard-register-number (see above).  */
-#define REGISTER_NAMES							\
-  {"r0",   "r1",  "r2",  "r3",  "r4",  "r5",  "r6",  "r7",		\
-   "r8",   "r9", "r10", "r11", "r12", "r13", "r14", "r15",		\
-   "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",		\
-   "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31",		\
-   "argp", "frame", "F", "CY" }
-
-
 /* -------------------------------------------------------------------------- */
 /* Debug things for DBX (STABS)                                               */
 /*                                                                            */
@@ -893,9 +924,11 @@ enum reg_class
 #endif
 
 /* Describe how we implement __builtin_eh_return.  */
-#define EH_RETURN_REGNUM 23
-/* Use r25, r27, r29 and r31 (clobber regs) for exception data */
-#define EH_RETURN_DATA_REGNO(N) ((N) < 4 ? (25 + ((N)<<1)) : INVALID_REGNUM)
+#define EH_RETURN_REGNUM	HW_TO_GCC_REGNO (23)
+/* Use r25, r27, r29 and r31 (clobber regs) for exception data.
+   Recall that these are remapped consecutively.  */
+#define EH_RETURN_DATA_REGNO(N)	\
+    ((N) < 4 ? HW_TO_GCC_REGNO (25) + (N) : INVALID_REGNUM)
 #define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
 #define EH_RETURN_HANDLER_RTX   or1k_eh_return_handler_rtx ()
 

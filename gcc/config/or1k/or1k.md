@@ -261,7 +261,7 @@
 (define_insn "movsi_got"
   [(set (match_operand:SI 0 "register_operand" "=r")
         (unspec:SI [(match_operand 1 "symbolic_operand" "")] UNSPEC_GOT))
-   (use (reg:SI 16))]
+   (use (reg:SI 24))]
   "flag_pic"
   "l.lwz\t%0,got(%1)(r16)"
   [(set_attr "type" "load")])
