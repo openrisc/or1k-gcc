@@ -43,10 +43,6 @@ msoft-float
 Target RejectNegative InverseMask(HARD_FLOAT)
 Do not use hardware floating point.
 
-mdouble-float
-Target Report RejectNegative Mask(DOUBLE_FLOAT)
-Allow hardware floating-point instructions to cover both 32-bit and 64-bit operations.
-
 mhard-div
 Target RejectNegative Mask(HARD_DIV)
 Use hardware division.

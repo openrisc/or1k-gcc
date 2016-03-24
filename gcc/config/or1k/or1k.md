@@ -858,14 +858,6 @@
 ;; Moving double and single precision floating point values
 
 
-(define_insn "movdf"
-  [(set (match_operand:DF 0 "nonimmediate_operand" "=r,r,o,r")
-	(match_operand:DF 1 "general_operand"      " r,o,r,i"))]
-  ""
-  { return or1k_output_move_double (operands); }
-  [(set_attr "length" "2,2,2,3")])
-
-
 (define_insn "movsf"
   [(set (match_operand:SF 0 "nonimmediate_operand" "=r,r,m")
         (match_operand:SF 1 "general_operand"  "r,m,r"))]
@@ -1517,28 +1509,12 @@
   "lf.add.s\t%0,%1,%2"
   [(set_attr "type" "fp")])
 
-(define_insn "adddf3"
-  [(set (match_operand:DF 0 "register_operand" "=r")
-        (plus:DF (match_operand:DF 1 "register_operand" "r")
-                 (match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.add.d\t%0,%1,%2"
-  [(set_attr "type" "fp")])
-
 (define_insn "subsf3"
   [(set (match_operand:SF 0 "register_operand" "=r")
         (minus:SF (match_operand:SF 1 "register_operand" "r")
                  (match_operand:SF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
   "lf.sub.s\t%0,%1,%2"
-  [(set_attr "type" "fp")])
-
-(define_insn "subdf3"
-  [(set (match_operand:DF 0 "register_operand" "=r")
-        (minus:DF (match_operand:DF 1 "register_operand" "r")
-		  (match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.sub.d\t%0,%1,%2"
   [(set_attr "type" "fp")])
 
 (define_insn "mulsf3"
@@ -1549,28 +1525,12 @@
   "lf.mul.s\t%0,%1,%2"
   [(set_attr "type" "fp")])
 
-(define_insn "muldf3"
-  [(set (match_operand:DF 0 "register_operand" "=r")
-        (mult:DF (match_operand:DF 1 "register_operand" "r")
-                 (match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.mul.d\t%0,%1,%2"
-  [(set_attr "type" "fp")])
-
 (define_insn "divsf3"
   [(set (match_operand:SF 0 "register_operand" "=r")
         (div:SF (match_operand:SF 1 "register_operand" "r")
 		(match_operand:SF 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
   "lf.div.s\t%0,%1,%2"
-  [(set_attr "type" "fp")])
-
-(define_insn "divdf3"
-  [(set (match_operand:DF 0 "register_operand" "=r")
-        (div:DF (match_operand:DF 1 "register_operand" "r")
-		(match_operand:DF 2 "register_operand" "r")))]
-  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
-  "lf.div.d\t%0,%1,%2"
   [(set_attr "type" "fp")])
 
 ;; Conversion between fixed point and floating point.
