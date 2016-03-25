@@ -193,8 +193,13 @@ Boston, MA 02111-1307, USA.  */
 /* Register which may be clobbered while setting up the prologue.  */
 #define PROLOGUE_TMP			13
 
-/* Position Independent Code.  */
-#define PIC_OFFSET_TABLE_REGNUM		HW_TO_GCC_REGNO (16)
+/* Position Independent Code.  See or1k_init_pic_reg.  */
+#define REAL_PIC_OFFSET_TABLE_REGNUM	HW_TO_GCC_REGNO (16)
+
+/* ??? Follow i386 in working around gimple costing estimation, which
+   happens without properly initializing the pic_offset_table pseudo.  */
+#define PIC_OFFSET_TABLE_REGNUM \
+  (pic_offset_table_rtx ? INVALID_REGNUM : REAL_PIC_OFFSET_TABLE_REGNUM)
 
 /* Fake registers for the incoming argument pointer and soft frame pointer.  */
 #define ARG_POINTER_REGNUM		32
@@ -244,7 +249,7 @@ Boston, MA 02111-1307, USA.  */
   1, 1, 0, 0, 0, 0, 0, 0,	\
   0, 1, 1, 0, 0, 0, 0, 0,	\
   0, 0, 0, 0, 0, 0, 0, 0,	\
-  1, 0, 0, 0, 0, 0, 0, 0,	\
+  0, 0, 0, 0, 0, 0, 0, 0,	\
   1, 1, 1, 1 }
 
 /* 1 for registers not available across function calls.
@@ -257,18 +262,24 @@ Boston, MA 02111-1307, USA.  */
   1, 1, 0, 1, 1, 1, 1, 1, \
   1, 1, 1, 1, 1, 1, 0, 1, \
   1, 1, 1, 1, 1, 1, 1, 1, \
-  1, 0, 0, 0, 0, 0, 0, 0, \
+  0, 0, 0, 0, 0, 0, 0, 0, \
   1, 1, 1, 1 }
 
 /* List the order in which to allocate registers.  Each register must
-   be listed once, even those in FIXED_REGISTERS.  */
+   be listed once, even those in FIXED_REGISTERS.
+
+   ??? Note that placing REAL_PIC_OFFSET_TABLE_REGNUM (r16 = 24) first
+   happens to make it most likely selected *as* the pic register when
+   compiling without optimization, simply because the pic pseudo happens
+   to be allocated with the lowest pseudo regno.  */
 
 #define REG_ALLOC_ORDER { \
   16, 17, 18, 19, 20, 21, 22, 23,	/* r17-r31 (odd), non-saved */	\
   13, 15,				/* non-saved */			\
   12, 11,				/* non-saved return values */	\
   8, 7, 6, 5, 4, 3,			/* non-saved argument regs */	\
-  14, 24, 25, 26, 27, 28, 29, 30, 31,	/* r14,r16-r31 (even), saved */	\
+  24,					/* r16, saved, pic reg */	\
+  25, 26, 27, 28, 29, 30, 31, 14,	/* r18-r31,r14 (even), saved */	\
   2,					/* saved hard frame pointer */	\
   9,					/* saved return address */	\
   0,					/* fixed zero reg */		\
@@ -943,6 +954,8 @@ typedef struct GTY(()) machine_function
 {
   /* Force stack save of LR. Used in RETURN_ADDR_RTX. */
   int force_lr_save;
+  /* Remember where the set_got_placeholder is located.  */
+  rtx_insn *set_got_insn;
 } machine_function;
 
 #define TARGET_SUPPORTS_WIDE_INT 1

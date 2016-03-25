@@ -1437,6 +1437,17 @@
   "lf.ftoi.s\t%0,%1"
   [(set_attr "type" "fp")])
 
+;; This is a placeholder, during RA, in order to create the PIC register.
+;; We do this so that we don't unconditionally mark the LINK register as
+;; clobbered.  It is replaced during prologue generation with the proper
+;; set_got pattern below.  This works because the set_got_tmp insn is the
+;; first insn in the stream and that it isn't moved during RA.
+(define_insn "set_got_tmp"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec_volatile:SI [(const_int 0)] UNSPEC_SET_GOT))]
+  ""
+  { abort (); })
+
 ;; The insn to set GOT.
 (define_insn "set_got"
   [(set (match_operand:SI 0 "register_operand" "=r")

@@ -67,6 +67,7 @@
 #include "sbitmap.h"
 #include "tm-constrs.h"
 #include "alias.h"
+#include "cfgrtl.h"
 
 /* ========================================================================== */
 /* Local macros                                                               */
@@ -135,14 +136,10 @@ or1k_save_reg_p (unsigned int regno)
       return frame_pointer_needed;
 
     case LINK_REGNUM:
-      if (!crtl->is_leaf
-	  || cfun->machine->force_lr_save
-	  || df_regs_ever_live_p (regno))
-	return true;
-      /* FALLTHRU -- setting up PIC requires LR clobber.  */
-
-    case PIC_OFFSET_TABLE_REGNUM:
-      return crtl->uses_pic_offset_table;
+      return (!crtl->is_leaf
+	      || cfun->machine->force_lr_save
+	      || crtl->uses_pic_offset_table
+	      || df_regs_ever_live_p (regno));
 
     case HW_TO_GCC_REGNO (25):
     case HW_TO_GCC_REGNO (27):
@@ -1278,7 +1275,9 @@ or1k_expand_call (rtx retval, rtx fnaddr, rtx callarg1)
       && !SYMBOL_REF_LOCAL_P (XEXP (fnaddr, 0)))
     {
       crtl->uses_pic_offset_table = 1;
-      use_reg (&use, pic_offset_table_rtx);
+      rtx hard_pic = gen_rtx_REG (Pmode, REAL_PIC_OFFSET_TABLE_REGNUM);
+      emit_move_insn (hard_pic, pic_offset_table_rtx);
+      use_reg (&use, hard_pic);
     }
 
   if (!call_insn_operand (XEXP (fnaddr, 0), Pmode))
@@ -1409,7 +1408,7 @@ or1k_expand_prologue (void)
   rtx insn;
 
   if (total_size == 0 && save_mask == 0)
-    return;
+    goto fini;
 
   if (or1k_regs_in_redzone ())
     {
@@ -1452,9 +1451,17 @@ or1k_expand_prologue (void)
   pro_epi_adjust_stack (-total_size, frame_pointer_needed,
 			!frame_pointer_needed);
 
-  /* Build PIC register, if needed.  */
+ fini:
+  /* Fix up, or remove, the insn that initialized the pic register.  */
+  rtx_insn *set_got_insn = cfun->machine->set_got_insn;
   if (crtl->uses_pic_offset_table)
-    emit_insn (gen_set_got (pic_offset_table_rtx));
+    {
+      rtx reg = SET_DEST (PATTERN (set_got_insn));
+      rtx_insn *insn = emit_insn_before (gen_set_got (reg), set_got_insn);
+      RTX_FRAME_RELATED_P (insn) = 1;
+      add_reg_note (insn, REG_CFA_FLUSH_QUEUE, NULL_RTX);
+    }
+  delete_insn (set_got_insn);
 }
 
 /* Load a register for the epilogue.  Add the unwind info to *DWARF.  */
@@ -2535,6 +2542,27 @@ or1k_rtx_costs (rtx x, machine_mode mode, int outer_code,
 
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS or1k_rtx_costs
+
+/* Create and initialize PIC register if required.  */
+static void
+or1k_init_pic_reg (void)
+{
+  start_sequence ();
+
+  cfun->machine->set_got_insn
+    = emit_insn (gen_set_got_tmp (pic_offset_table_rtx));
+
+  rtx_insn *seq = get_insns ();
+  end_sequence ();
+
+  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
+  insert_insn_on_edge (seq, entry_edge);
+  commit_one_edge_insertion (entry_edge);
+}
+#undef TARGET_INIT_PIC_REG
+#define TARGET_INIT_PIC_REG or1k_init_pic_reg
+#undef TARGET_USE_PSEUDO_PIC_REG
+#define TARGET_USE_PSEUDO_PIC_REG hook_bool_void_true
 
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;
