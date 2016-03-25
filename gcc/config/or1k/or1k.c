@@ -2476,6 +2476,66 @@ or1k_init_expanders (void)
 #undef  TARGET_FRAME_POINTER_REQUIRED
 #define TARGET_FRAME_POINTER_REQUIRED or1k_frame_pointer_required
 
+static bool
+or1k_rtx_costs (rtx x, machine_mode mode, int outer_code,
+		int opno ATTRIBUTE_UNUSED, int *total,
+		bool speed ATTRIBUTE_UNUSED)
+{
+  switch (GET_CODE (x))
+    {
+    case CONST_INT:
+    case CONST_DOUBLE:
+      if (x == CONST0_RTX (mode))
+	*total = 0;
+      else if ((outer_code == PLUS || outer_code == XOR || outer_code == MULT)
+	       && satisfies_constraint_I (x))
+	*total = 0;
+      else if ((outer_code == AND || outer_code == IOR)
+	       && satisfies_constraint_K (x))
+	*total = 0;
+      else if (satisfies_constraint_I (x)
+	       || satisfies_constraint_K (x)
+	       || satisfies_constraint_M (x))
+	*total = 2;
+      else
+	*total = COSTS_N_INSNS (2);
+      return true;
+
+    case HIGH:
+      /* This is effectively an 'M' constraint.  */
+      *total = 2;
+      return true;
+
+    case CONST:
+    case SYMBOL_REF:
+    case LABEL_REF:
+      if (outer_code == LO_SUM || outer_code == HIGH)
+	*total = 0;
+      else
+	{
+	  /* ??? Extra cost for GOT or TLS symbols.  */
+	  *total = COSTS_N_INSNS (1 + (outer_code != MEM));
+	}
+      return true;
+
+    case LO_SUM:
+    case PLUS:
+      if (outer_code == MEM)
+	{
+	  *total = 0;
+	  return true;
+	}
+      break;
+
+    default:
+      break;
+    }
+  return false;
+}
+
+#undef TARGET_RTX_COSTS
+#define TARGET_RTX_COSTS or1k_rtx_costs
+
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;
 
