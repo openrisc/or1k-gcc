@@ -35,15 +35,10 @@
 
 (define_c_enum "unspec" [
   UNSPEC_GOT
-  UNSPEC_GOTOFFHI
-  UNSPEC_GOTOFFLO
-  UNSPEC_TPOFFLO
-  UNSPEC_TPOFFHI
-  UNSPEC_GOTTPOFFLO
-  UNSPEC_GOTTPOFFHI
-  UNSPEC_GOTTPOFFLD
-  UNSPEC_TLSGDLO
-  UNSPEC_TLSGDHI
+  UNSPEC_GOTOFF
+  UNSPEC_TPOFF
+  UNSPEC_GOTTPOFF
+  UNSPEC_TLSGD
   UNSPEC_SET_GOT
   UNSPEC_MSYNC
 ])
@@ -212,94 +207,19 @@
    l.lwz\t%0,%1"
   [(set_attr "type" "store,move,logic,logic,logic,load")])
 
-(define_insn "movsi_lo_sum"
+(define_insn "*movsi_lo_sum"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(lo_sum:SI (match_operand:SI 1 "register_operand" "r")
                    (match_operand:SI 2 "immediate_operand" "i")))]
   ""
-  "l.ori\t%0,%1,lo(%2)"
+  "l.ori\t%0,%1,%L2"
   [(set_attr "type" "logic")])
 
-(define_insn "movsi_high"
+(define_insn "*movsi_high"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(high:SI (match_operand:SI 1 "immediate_operand" "i")))]
   ""
-  "l.movhi\t%0,hi(%1)"
-  [(set_attr "type" "move")])
-
-(define_insn "movsi_gotofflo"
-  [(set (match_operand:SI 0 "register_operand" "=r")
- 	(unspec:SI [(lo_sum:SI (match_operand:SI 1 "register_operand" "r")
-                    (match_operand 2 "" ""))] UNSPEC_GOTOFFLO))]
-  "flag_pic"
-  "l.ori\t%0,%1,gotofflo(%2)"
-  [(set_attr "type" "logic")])
-
-(define_insn "movsi_gotoffhi"
-  [(set (match_operand:SI 0 "register_operand" "=r")
- 	(unspec:SI [(match_operand 1 "" "")] UNSPEC_GOTOFFHI))]
-  "flag_pic"
-  "l.movhi\t%0,gotoffhi(%1)"
-  [(set_attr "type" "move")])
-
-(define_insn "movsi_got"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-        (unspec:SI [(match_operand 1 "symbolic_operand" "")] UNSPEC_GOT))
-   (use (reg:SI 24))]
-  "flag_pic"
-  "l.lwz\t%0,got(%1)(r16)"
-  [(set_attr "type" "load")])
-
-(define_insn "movsi_tlsgdlo"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(lo_sum:SI (match_operand:SI 1 "register_operand" "r")
-                   (match_operand:SI 2 "immediate_operand" "i"))] UNSPEC_TLSGDLO))]
-  ""
-  "l.ori\t%0,%1,tlsgdlo(%2)"
-  [(set_attr "type" "logic")])
-
-(define_insn "movsi_tlsgdhi"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(match_operand:SI 1 "immediate_operand" "i")] UNSPEC_TLSGDHI))]
-  ""
-  "l.movhi\t%0,tlsgdhi(%1)"
-  [(set_attr "type" "move")])
-
-(define_insn "movsi_gottpofflo"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(lo_sum:SI (match_operand:SI 1 "register_operand" "r")
-                   (match_operand:SI 2 "immediate_operand" "i"))] UNSPEC_GOTTPOFFLO))]
-  ""
-  "l.ori\t%0,%1,gottpofflo(%2)"
-  [(set_attr "type" "logic")])
-
-(define_insn "movsi_gottpoffhi"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(match_operand:SI 1 "immediate_operand" "i")] UNSPEC_GOTTPOFFHI))]
-  ""
-  "l.movhi\t%0,gottpoffhi(%1)"
-  [(set_attr "type" "move")])
-
-(define_insn "load_gottpoff"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(match_operand:SI 1 "register_operand" "r")] UNSPEC_GOTTPOFFLD))]
-  ""
-  "l.lwz\t%0,0(%1)"
-  [(set_attr "type" "load")])
-
-(define_insn "movsi_tpofflo"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(lo_sum:SI (match_operand:SI 1 "register_operand" "r")
-                   (match_operand:SI 2 "immediate_operand" "i"))] UNSPEC_TPOFFLO))]
-  ""
-  "l.ori\t%0,%1,tpofflo(%2)"
-  [(set_attr "type" "logic")])
-
-(define_insn "movsi_tpoffhi"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(match_operand:SI 1 "immediate_operand" "i")] UNSPEC_TPOFFHI))]
-  ""
-  "l.movhi\t%0,tpoffhi(%1)"
+  "l.movhi\t%0,%h1"
   [(set_attr "type" "move")])
 
 (define_insn_and_split "movdi"

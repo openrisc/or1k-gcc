@@ -650,6 +650,71 @@ output_addr_reloc (FILE *stream, rtx x, const char *reloc)
   fputc (')', stream);
 }
 
+static void
+print_lo_sum_reloc (FILE *stream, rtx x)
+{
+  const char *reloc = "lo";
+
+  if (GET_CODE (x) == CONST)
+    x = XEXP (x, 0);
+  if (GET_CODE (x) == UNSPEC)
+    {
+      switch (XINT (x, 1))
+	{
+	case UNSPEC_GOT:
+	  reloc = "got";
+	  break;
+	case UNSPEC_GOTOFF:
+	  reloc = "gotofflo";
+	  break;
+	case UNSPEC_TPOFF:
+	  reloc = "tpofflo";
+	  break;
+	case UNSPEC_GOTTPOFF:
+	  reloc = "gottpofflo";
+	  break;
+	case UNSPEC_TLSGD:
+	  reloc = "tlsgdlo";
+	  break;
+	default:
+	  output_operand_lossage("invalid lo_sum relocation");
+	}
+      x = XVECEXP (x, 0, 0);
+    }
+  output_addr_reloc (stream, x, reloc);
+}
+
+static void
+print_high_reloc (FILE *stream, rtx x)
+{
+  const char *reloc = "hi";
+
+  if (GET_CODE (x) == CONST)
+    x = XEXP (x, 0);
+  if (GET_CODE (x) == UNSPEC)
+    {
+      switch (XINT (x, 1))
+	{
+	case UNSPEC_GOTOFF:
+	  reloc = "gotoffhi";
+	  break;
+	case UNSPEC_TPOFF:
+	  reloc = "tpoffhi";
+	  break;
+	case UNSPEC_GOTTPOFF:
+	  reloc = "gottpoffhi";
+	  break;
+	case UNSPEC_TLSGD:
+	  reloc = "tlsgdhi";
+	  break;
+	default:
+	  output_operand_lossage("invalid high relocation");
+	}
+      x = XVECEXP (x, 0, 0);
+    }
+  output_addr_reloc (stream, x, reloc);
+}
+
 /* Prettify the assembly.  Indicate an instruction is filling a delay slot
    by indenting it one space.  */
 
@@ -735,6 +800,13 @@ or1k_print_operand (FILE *stream, rtx x, int code)
 	fprintf (stream, "\n\t l.nop");
       break;
 
+    case 'h':
+      print_high_reloc (stream, x);
+      break;
+    case 'L':
+      print_lo_sum_reloc (stream, x);
+      break;
+
     case 'P':
       if (!flag_pic || SYMBOL_REF_LOCAL_P (x))
 	output_addr_const (stream, x);
@@ -757,55 +829,35 @@ or1k_print_operand (FILE *stream, rtx x, int code)
 }
 
 static void
-or1k_print_operand_address (FILE *stream, machine_mode mode, rtx addr)
+or1k_print_operand_address (FILE *stream, machine_mode, rtx addr)
 {
   rtx offset;
 
   switch (GET_CODE (addr))
     {
-    case MEM:
-      if (GET_CODE (XEXP (addr, 0)) == REG)
-        fprintf (stream, "%s", reg_names[REGNO (addr)]);
-      else
-        abort ();
-      break;
-
     case REG:
-      fprintf (stream, "0(%s)", reg_names[REGNO (addr)]);
+      putc ('0', stream);
       break;
 
     case PLUS:
-      offset = 0;
-
-      if (GET_CODE (XEXP (addr, 0)) == REG)
-        {
-          offset = XEXP (addr, 1);
-          addr   = XEXP (addr, 0);
-        }
-      else if (GET_CODE (XEXP (addr, 1)) == REG)
-        {
-          offset = XEXP (addr, 0);
-          addr   = XEXP (addr, 1);
-        }
-      output_address (mode, offset);
-      fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
+      gcc_assert (REG_P (XEXP (addr, 0)));
+      offset = XEXP (addr, 1);
+      addr = XEXP (addr, 0);
+      output_addr_const (stream, offset);
       break;
 
-    case SYMBOL_REF:
-      if (SYMBOL_REF_DECL (addr))
-        assemble_external (SYMBOL_REF_DECL (addr));
-
-      if (XSTR (addr, 0)[0] == '*')
-        fputs (&XSTR (addr, 0)[1], stream);
-      else
-        {
-          asm_fprintf (stream, "%U%s", XSTR (addr, 0));
-        }
+    case LO_SUM:
+      offset = XEXP (addr, 1);
+      addr = XEXP (addr, 0);
+      print_lo_sum_reloc (stream, offset);
       break;
 
     default:
       output_addr_const (stream, addr);
+      return;
     }
+
+  fprintf (stream, "(%s)", reg_names[REGNO (addr)]);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -891,111 +943,203 @@ or1k_tls_call (rtx dest, rtx arg)
 }
 
 static rtx
-or1k_legitimize_tls_address (rtx dest, rtx x)
+gen_sym_unspec (rtx x, int kind)
 {
-  rtx sym;
-  rtx tp = gen_rtx_REG(Pmode, THREAD_PTR_REGNUM);
-  rtx addend = NULL_RTX;
-  rtx result = dest;
+  return gen_rtx_CONST (Pmode, gen_rtx_UNSPEC (Pmode, gen_rtvec (1, x), kind));
+}
 
-  enum tls_model tls_kind = or1k_tls_symbolic_operand (x);
+static rtx
+or1k_legitimize_address_1 (rtx x, rtx scratch)
+{
+  rtx base, addend, t1, t2;
+  enum tls_model tls_kind = TLS_MODEL_NONE;
+  bool is_local = true;
 
-  if (GET_CODE (x) == SYMBOL_REF)
-    sym = gen_rtx_SYMBOL_REF(Pmode, XSTR(x, 0));
-  else if (GET_CODE (x) == CONST)
+  split_const (x, &base, &addend);
+
+  switch (GET_CODE (base))
     {
-      result = gen_reg_rtx (Pmode);
-      split_const (x, &sym, &addend);
-      sym = gen_rtx_SYMBOL_REF(Pmode, XSTR(sym, 0));
-    }
-  else
-    gcc_unreachable ();
+    case REG:
+    case SUBREG:
+      break;
 
-  switch (tls_kind) {
-    case TLS_MODEL_GLOBAL_DYNAMIC:
-    case TLS_MODEL_LOCAL_DYNAMIC:
-      {
-        /* TODO: For now, treat LD as GD */
-        rtx hi = gen_reg_rtx (Pmode);
-        rtx offset = gen_reg_rtx (Pmode);
-        rtx addr = gen_reg_rtx (Pmode);
-        crtl->uses_pic_offset_table = 1;
-        /* Generate a new symbol ref that is not marked as TLS or we will recurse
-         * in or1k_legitimate_constant_p. */
-        emit_insn (gen_movsi_tlsgdhi (hi, sym));
-        emit_insn (gen_movsi_tlsgdlo (offset, hi, sym));
-        emit_insn (gen_add3_insn (addr, offset, pic_offset_table_rtx));
-        or1k_tls_call (result, addr);
-        break;
-      }
-    case TLS_MODEL_INITIAL_EXEC:
-      {
-        rtx hi = gen_reg_rtx (Pmode);
-        rtx offset = gen_reg_rtx (Pmode);
-        rtx addr = gen_reg_rtx (Pmode);
-        rtx tpoffset = gen_reg_rtx (Pmode);
-        crtl->uses_pic_offset_table = 1;
-        emit_insn (gen_movsi_gottpoffhi (hi, sym));
-        emit_insn (gen_movsi_gottpofflo (offset, hi, sym));
-        emit_insn (gen_add3_insn (addr, offset, pic_offset_table_rtx));
-        emit_insn (gen_load_gottpoff (tpoffset, addr));
-        emit_insn (gen_add3_insn (result, tpoffset, tp));
-        break;
-      }
-    case TLS_MODEL_LOCAL_EXEC:
-      {
-        rtx hi = gen_reg_rtx (Pmode);
-        rtx addr = gen_reg_rtx (Pmode);
-        emit_insn (gen_movsi_tpoffhi (hi, sym));
-        emit_insn (gen_movsi_tpofflo (addr, hi, sym));
-        emit_insn (gen_add3_insn (result, addr, tp));
-        break;
-      }
+    case SYMBOL_REF:
+      tls_kind = SYMBOL_REF_TLS_MODEL (base);
+      is_local = SYMBOL_REF_LOCAL_P (base);
+      /* FALLTHRU */
+
+    case LABEL_REF:
+      switch (tls_kind)
+	{
+	case TLS_MODEL_NONE:
+	  t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+	  if (!flag_pic)
+	    {
+	      emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, x)));
+	      emit_insn (gen_rtx_SET (t1, gen_rtx_LO_SUM (Pmode, t1, x)));
+	      return t1;
+	    }
+	  else if (is_local)
+	    {
+	      crtl->uses_pic_offset_table = 1;
+	      t2 = gen_sym_unspec (x, UNSPEC_GOTOFF);
+	      emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, t2)));
+	      t2 = gen_sym_unspec (x, UNSPEC_GOTOFF);
+	      emit_insn (gen_rtx_SET (t1, gen_rtx_LO_SUM (Pmode, t1, t2)));
+	      emit_insn (gen_add3_insn (t1, pic_offset_table_rtx, t1));
+	      return t1;
+	    }
+	  else
+	    {
+	      crtl->uses_pic_offset_table = 1;
+	      base = gen_sym_unspec (base, UNSPEC_GOT);
+	      t2 = gen_rtx_LO_SUM (Pmode, pic_offset_table_rtx, base);
+	      t2 = gen_const_mem (Pmode, t2);
+	      emit_insn (gen_rtx_SET (t1, t2));
+	      base = t1;
+	    }
+	  break;
+
+	case TLS_MODEL_GLOBAL_DYNAMIC:
+	case TLS_MODEL_LOCAL_DYNAMIC:
+	  /* TODO: For now, treat LD as GD */
+	  crtl->uses_pic_offset_table = 1;
+	  t1 = gen_reg_rtx (Pmode);
+	  t2 = gen_sym_unspec (base, UNSPEC_TLSGD);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, t2)));
+	  t2 = gen_sym_unspec (base, UNSPEC_TLSGD);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_LO_SUM (Pmode, t1, t2)));
+	  emit_insn (gen_add3_insn (t1, pic_offset_table_rtx, t1));
+	  base = gen_reg_rtx (Pmode);
+	  or1k_tls_call (base, t1);
+	  break;
+
+	case TLS_MODEL_INITIAL_EXEC:
+	  crtl->uses_pic_offset_table = 1;
+	  t1 = gen_reg_rtx (Pmode);
+	  t2 = gen_sym_unspec (base, UNSPEC_GOTTPOFF);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, t2)));
+	  t2 = gen_sym_unspec (base, UNSPEC_GOTTPOFF);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_LO_SUM (Pmode, t1, t2)));
+	  emit_insn (gen_add3_insn (t1, pic_offset_table_rtx, t1));
+	  t2 = force_reg (Pmode, gen_const_mem (Pmode, t1));
+	  t1 = gen_rtx_REG (Pmode, THREAD_PTR_REGNUM);
+	  base = gen_reg_rtx (Pmode);
+	  emit_insn (gen_add3_insn (base, t1, t2));
+	  break;
+
+	case TLS_MODEL_LOCAL_EXEC:
+	  t1 = gen_reg_rtx (Pmode);
+	  t2 = gen_sym_unspec (x, UNSPEC_TPOFF);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, t2)));
+	  t2 = gen_sym_unspec (x, UNSPEC_TPOFF);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_LO_SUM (Pmode, t1, t2)));
+	  t2 = gen_rtx_REG (Pmode, THREAD_PTR_REGNUM);
+	  emit_insn (gen_add3_insn (t1, t1, t2));
+	  return t1;
+
+	default:
+	  gcc_unreachable ();
+	}
+      break;
+
+    case UNSPEC:
+      /* Re-recognize what we've already emitted.  The CONST will
+	 have been stripped by split_const.  */
+      gcc_assert (GET_CODE (x) == CONST);
+      gcc_assert (base == XEXP (x, 0));
+      switch (XINT (base, 1))
+	{
+	case UNSPEC_GOTOFF:
+	case UNSPEC_TPOFF:
+	case UNSPEC_GOTTPOFF:
+	case UNSPEC_TLSGD:
+	  t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, copy_rtx (x))));
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_LO_SUM (Pmode, t1, x)));
+	  return t1;
+
+	case UNSPEC_GOT:
+	default:
+	  gcc_unreachable ();
+	};
+      break;
+
     default:
-      gcc_unreachable ();
-  }
+      gcc_assert (can_create_pseudo_p ());
+      base = force_reg (Pmode, base);
+      break;
+    }
 
-  if (addend != NULL_RTX)
-    emit_insn (gen_add3_insn (dest, result, addend));
+  /* If we get here, we still have addend outstanding.  */
+  gcc_checking_assert (register_operand (base, Pmode));
+  if (addend == const0_rtx)
+    return base;
+  if (!satisfies_constraint_I (addend))
+    {
+      HOST_WIDE_INT i = INTVAL (addend);
+      HOST_WIDE_INT l = sext_hwi (i, 16);
 
-  return dest;
+      t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+      t2 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+      emit_move_insn (t1, gen_int_mode (i - l, Pmode));
+      emit_insn (gen_add3_insn (t2, base, t1));
+      return plus_constant (Pmode, t2, l);
+    }
+  return gen_rtx_PLUS (Pmode, base, addend);
 }
 
 static rtx
 or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED,
                          enum machine_mode mode ATTRIBUTE_UNUSED)
 {
-  if (or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE)
-    return or1k_legitimize_tls_address (gen_reg_rtx (Pmode), x);
-
-  return x;
+  return or1k_legitimize_address_1 (x, NULL_RTX);
 }
+
+/* In the name of slightly smaller debug output, and to cater to
+   general assembler lossage, recognize PIC+GOTOFF and turn it back
+   into a direct symbol reference.  */
+
+static rtx
+or1k_delegitimize_address (rtx x)
+{
+  if (GET_CODE (x) == CONST)
+    {
+      /* The LO_SUM to which X was attached has been stripped.
+	 Since the only legitimate address we could have been computing
+	 is that of the symbol, assume that's what we've done.  */
+      rtx inner = XEXP (x, 0);
+      if (GET_CODE (inner) == UNSPEC
+	  && XINT (inner, 1) == UNSPEC_GOTOFF)
+	return XVECEXP (inner, 0, 0);
+    }
+  else if (MEM_P (x))
+    {
+      rtx addr = XEXP (x, 0);
+      if (GET_CODE (addr) == LO_SUM
+	  && XEXP (addr, 0) == pic_offset_table_rtx)
+	{
+	  rtx inner = XEXP (addr, 1);
+	  if (GET_CODE (inner) == UNSPEC
+	      && XINT (inner, 1) == UNSPEC_GOT)
+	    return XVECEXP (inner, 0, 0);
+	}
+    }
+  return delegitimize_mem_from_attrs (x);
+}
+
+/* Primarily this is required for TLS symbols, but given that our move
+   patterns *ought* to be able to handle any symbol at any time, we
+   should never be spilling symbolic operands to the constant pool, ever.  */
 
 static bool
 or1k_cannot_force_const_mem (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 {
-  return or1k_tls_symbolic_operand (x) != TLS_MODEL_NONE;
-}
-
-/* Return true if X is a symbolic reference that binds locally.  */
-
-static bool
-local_symbol_ref (rtx x)
-{
-  switch (GET_CODE (x))
-    {
-    case LABEL_REF:
-      return true;
-    case SYMBOL_REF:
-      return SYMBOL_REF_LOCAL_P (x);
-    case CONST:
-      x = XEXP (x, 0);
-      if (GET_CODE (x) == PLUS && CONST_INT_P (XEXP (x, 1)))
-	return local_symbol_ref (XEXP (x, 0));
-      return false;
-    default:
-      return false;
-    }
+  enum rtx_code code = GET_CODE (x);
+  return (code == SYMBOL_REF
+	  || code == LABEL_REF
+	  || code == CONST
+	  || code == HIGH);
 }
 
 void
@@ -1029,57 +1173,23 @@ or1k_expand_move (machine_mode mode, rtx op0, rtx op1)
     }
   else
     {
-      rtx sub;
       switch (GET_CODE (op1))
 	{
 	case CONST:
 	case SYMBOL_REF:
-	  if (or1k_tls_symbolic_operand (op1) != TLS_MODEL_NONE)
-	    {
-	      or1k_legitimize_tls_address (op0, op1);
-	      return;
-	    }
-	  /* FALLTHRU */
-
 	case LABEL_REF:
-	  sub = can_create_pseudo_p () ? gen_reg_rtx (mode) : op0;
-	  if (flag_pic)
+	  op1 = or1k_legitimize_address_1 (op1, op0);
+	  if (GET_CODE (op1) == PLUS)
 	    {
-	      crtl->uses_pic_offset_table = 1;
-	      if (local_symbol_ref (op1))
-		{
-		  emit_insn (gen_movsi_gotoffhi (sub, op1));
-		  emit_insn (gen_movsi_gotofflo (sub, sub, op1));
-		  emit_insn (gen_add3_insn (op0, pic_offset_table_rtx, sub));
-		  return;
-		}
-
-	      /* If we have an offset from a symbol, pull that outside
-		 the CONST and perform the addition separately.  */
-	      if (GET_CODE (op1) == CONST
-		  && GET_CODE (XEXP (op1, 0)) == PLUS
-		  && CONST_INT_P (XEXP (XEXP (op1, 0), 1)))
-		{
-		  rtx sym = XEXP (XEXP (op1, 0), 0);
-		  rtx ofs = XEXP (XEXP (op1, 0), 1);
-		  emit_insn (gen_movsi_got (sub, sym));
-		  if (!satisfies_constraint_I (ofs))
-		    ofs = force_reg (mode, ofs);
-		  emit_insn (gen_add3_insn (op0, sub, ofs));
-		  return;
-		}
-
-	      emit_insn (gen_movsi_got (op0, op1));
+	      emit_insn (gen_add3_insn (op0, XEXP (op1, 0), XEXP (op1, 1)));
 	      return;
 	    }
-	  emit_insn (gen_rtx_SET (sub, gen_rtx_HIGH (mode, op1)));
-	  emit_insn (gen_rtx_SET (op0, gen_rtx_LO_SUM (mode, sub, op1)));
-	  return;
+	  break;
 
 	case CONST_INT:
 	  if (!input_operand (op1, mode))
 	    {
-	      sub = can_create_pseudo_p () ? gen_reg_rtx (mode) : op0;
+	      rtx sub = can_create_pseudo_p () ? gen_reg_rtx (mode) : op0;
 	      HOST_WIDE_INT i = INTVAL (op1);
 	      HOST_WIDE_INT l = i & 0xffff;
 
@@ -1765,27 +1875,63 @@ or1k_promote_function_mode (const_tree         type ATTRIBUTE_UNUSED,
             otherwise.                                                        */
 /* -------------------------------------------------------------------------- */
 static bool
-or1k_legitimate_address_p (enum machine_mode  mode ATTRIBUTE_UNUSED,
-			   rtx                x,
-			   bool               strict)
+or1k_legitimate_address_p (machine_mode, rtx x, bool strict)
 {
-  if (GET_CODE (x) == PLUS)
+  rtx base;
+
+  switch (GET_CODE (x))
     {
-      rtx offset = XEXP (x, 1);
-      x = XEXP (x, 0);
+    case REG:
+      base = x;
+      break;
+
+    case LO_SUM:
+      base = XEXP (x, 0);
+      if (!REG_P (base))
+	return false;
+      x = XEXP (x, 1);
+      switch (GET_CODE (x))
+	{
+	case CONST:
+	  x = XEXP (x, 0);
+	  if (GET_CODE (x) == UNSPEC)
+	    {
+	      switch (XINT (x, 1))
+		{
+		case UNSPEC_GOT:
+		  /* Assume legitimize_address properly categorized
+		     the symbol.  Continue to check the base.  */
+		  break;
+		default:
+		  return false;
+		}
+	    }
+	  break;
+	default:
+	  return false;
+	}
+      break;
+
+    case PLUS:
+      base = XEXP (x, 0);
+      if (!REG_P (base))
+	return false;
+      x = XEXP (x, 1);
 
       /* Register elimination is going to adjust all of these offsets.
 	 We might as well keep them as a unit until then.  */
-      if (!strict && (x == arg_pointer_rtx || x == frame_pointer_rtx))
-	return CONST_INT_P (offset);
+      if (!strict && (base == arg_pointer_rtx || base == frame_pointer_rtx))
+	return CONST_INT_P (x);
 
-      /* Otherwise, keep the offset within 16-bit signed.  */
-      if (! satisfies_constraint_I (offset))
-        return 0;
+      if (!satisfies_constraint_I (x))
+	return false;
+      break;
+
+    default:
+      return false;
     }
 
-  /* Addresses consisting of just a register are OK.  */
-  return REG_P (x) && or1k_regnum_ok_for_base_p (REGNO (x), strict);
+  return or1k_regnum_ok_for_base_p (REGNO (base), strict);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2049,6 +2195,9 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 
 #undef  TARGET_LEGITIMIZE_ADDRESS
 #define TARGET_LEGITIMIZE_ADDRESS or1k_legitimize_address
+
+#undef  TARGET_DELEGITIMIZE_ADDRESS
+#define TARGET_DELEGITIMIZE_ADDRESS or1k_delegitimize_address
 
 #undef  TARGET_TRAMPOLINE_INIT
 #define TARGET_TRAMPOLINE_INIT  or1k_trampoline_init
