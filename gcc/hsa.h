@@ -110,6 +110,9 @@ struct hsa_symbol
   /* Symbol allocation.  */
   BrigAllocation m_allocation;
 
+  /* Flag used for global variables if a variable is already emitted or not.  */
+  bool m_emitted_to_brig;
+
 private:
   /* Default constructor.  */
   hsa_symbol ();
@@ -1353,6 +1356,9 @@ char *hsa_get_decl_kernel_mapping_name (unsigned i);
 unsigned hsa_get_decl_kernel_mapping_omp_size (unsigned i);
 bool hsa_get_decl_kernel_mapping_gridified (unsigned i);
 void hsa_free_decl_kernel_mapping (void);
+tree *hsa_get_ctor_statements (void);
+tree *hsa_get_dtor_statements (void);
+tree *hsa_get_kernel_dispatch_type (void);
 void hsa_add_kernel_dependency (tree caller, const char *called_function);
 void hsa_sanitize_name (char *p);
 char *hsa_brig_function_name (const char *p);

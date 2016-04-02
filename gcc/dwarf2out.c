@@ -25641,10 +25641,28 @@ prune_unused_types_walk_loc_descr (dw_loc_descr_ref loc)
   for (; loc != NULL; loc = loc->dw_loc_next)
     switch (loc->dw_loc_opc)
       {
+      case DW_OP_GNU_implicit_pointer:
+      case DW_OP_GNU_convert:
+      case DW_OP_GNU_reinterpret:
+	if (loc->dw_loc_oprnd1.val_class == dw_val_class_die_ref)
+	  prune_unused_types_mark (loc->dw_loc_oprnd1.v.val_die_ref.die, 1);
+	break;
       case DW_OP_call2:
       case DW_OP_call4:
       case DW_OP_call_ref:
+      case DW_OP_GNU_const_type:
+      case DW_OP_GNU_parameter_ref:
+	gcc_assert (loc->dw_loc_oprnd1.val_class == dw_val_class_die_ref);
 	prune_unused_types_mark (loc->dw_loc_oprnd1.v.val_die_ref.die, 1);
+	break;
+      case DW_OP_GNU_regval_type:
+      case DW_OP_GNU_deref_type:
+	gcc_assert (loc->dw_loc_oprnd2.val_class == dw_val_class_die_ref);
+	prune_unused_types_mark (loc->dw_loc_oprnd2.v.val_die_ref.die, 1);
+	break;
+      case DW_OP_GNU_entry_value:
+	gcc_assert (loc->dw_loc_oprnd1.val_class == dw_val_class_loc);
+	prune_unused_types_walk_loc_descr (loc->dw_loc_oprnd1.v.val_loc);
 	break;
       default:
 	break;
@@ -27263,12 +27281,15 @@ optimize_location_lists (dw_die_ref die)
 static void
 flush_limbo_die_list (void)
 {
-  limbo_die_node *node, *next_node;
+  limbo_die_node *node;
 
-  for (node = limbo_die_list; node; node = next_node)
+  /* get_context_die calls force_decl_die, which can put new DIEs on the
+     limbo list in LTO mode when nested functions are put in a different
+     partition than that of their parent function.  */
+  while ((node = limbo_die_list))
     {
       dw_die_ref die = node->die;
-      next_node = node->next;
+      limbo_die_list = node->next;
 
       if (die->die_parent == NULL)
 	{
@@ -27306,8 +27327,6 @@ flush_limbo_die_list (void)
 	    }
 	}
     }
-
-  limbo_die_list = NULL;
 }
 
 /* Output stuff that dwarf requires at the end of every file,
@@ -27667,10 +27686,15 @@ dwarf2out_finish (const char *filename)
 static void
 dwarf2out_early_finish (void)
 {
-  limbo_die_node *node;
+  /* The point here is to flush out the limbo list so that it is empty
+     and we don't need to stream it for LTO.  */
+  flush_limbo_die_list ();
+
+  gen_scheduled_generic_parms_dies ();
+  gen_remaining_tmpl_value_param_die_attribute ();
 
   /* Add DW_AT_linkage_name for all deferred DIEs.  */
-  for (node = deferred_asm_name; node; node = node->next)
+  for (limbo_die_node *node = deferred_asm_name; node; node = node->next)
     {
       tree decl = node->created_for;
       if (DECL_ASSEMBLER_NAME (decl) != DECL_NAME (decl)
@@ -27684,13 +27708,6 @@ dwarf2out_early_finish (void)
 	}
     }
   deferred_asm_name = NULL;
-
-  /* The point here is to flush out the limbo list so that it is empty
-     and we don't need to stream it for LTO.  */
-  flush_limbo_die_list ();
-
-  gen_scheduled_generic_parms_dies ();
-  gen_remaining_tmpl_value_param_die_attribute ();
 }
 
 /* Reset all state within dwarf2out.c so that we can rerun the compiler

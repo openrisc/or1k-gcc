@@ -1243,12 +1243,7 @@ expand_virtual_init (tree binfo, tree decl)
       /* The actual initializer is the VTT value only in the subobject
 	 constructor.  In maybe_clone_body we'll substitute NULL for
 	 the vtt_parm in the case of the non-subobject constructor.  */
-      vtbl = build3 (COND_EXPR,
-		     TREE_TYPE (vtbl),
-		     build2 (EQ_EXPR, boolean_type_node,
-			     current_in_charge_parm, integer_zero_node),
-		     vtbl2,
-		     vtbl);
+      vtbl = build_if_in_charge (vtbl, vtbl2);
     }
 
   /* Compute the location of the vtpr.  */
@@ -1741,11 +1736,7 @@ expand_default_init (tree binfo, tree true_exp, tree exp, tree init, int flags,
 					&parms, binfo, flags,
 					complain);
       base = fold_build_cleanup_point_expr (void_type_node, base);
-      rval = build3 (COND_EXPR, void_type_node,
-		     build2 (EQ_EXPR, boolean_type_node,
-			     current_in_charge_parm, integer_zero_node),
-		     base,
-		     complete);
+      rval = build_if_in_charge (complete, base);
     }
    else
     {
@@ -2872,6 +2863,14 @@ build_new_1 (vec<tree, va_gc> **placement, tree type, tree nelts,
 	  return error_mark_node;
 	}
       alloc_fn = OVL_CURRENT (alloc_fn);
+      if (TREE_CODE (alloc_fn) != FUNCTION_DECL
+	  || TREE_CODE (TREE_TYPE (alloc_fn)) != FUNCTION_TYPE
+	  || !POINTER_TYPE_P (TREE_TYPE (TREE_TYPE (alloc_fn))))
+	{
+	  if (complain & tf_error)
+	    error ("%qD is not a function returning a pointer", alloc_fn);
+	  return error_mark_node;
+	}
       class_addr = build1 (ADDR_EXPR, jclass_node, class_decl);
       alloc_call = cp_build_function_call_nary (alloc_fn, complain,
 						class_addr, NULL_TREE);
@@ -3685,6 +3684,7 @@ build_vec_delete_1 (tree base, tree maxindex, tree type,
   TREE_NO_WARNING (cond) = 1;
   body = build3_loc (input_location, COND_EXPR, void_type_node,
 		     cond, body, integer_zero_node);
+  COND_EXPR_IS_VEC_DELETE (body) = true;
   body = build1 (NOP_EXPR, void_type_node, body);
 
   if (controller)

@@ -3032,6 +3032,9 @@ operand_equal_p (const_tree arg0, const_tree arg1, unsigned int flags)
 					   TYPE_SIZE (TREE_TYPE (arg1)),
 					   flags)))
 		return 0;
+	      /* Verify that access happens in similar types.  */
+	      if (!types_compatible_p (TREE_TYPE (arg0), TREE_TYPE (arg1)))
+		return 0;
 	      /* Verify that accesses are TBAA compatible.  */
 	      if (!alias_ptr_types_compatible_p
 		    (TREE_TYPE (TREE_OPERAND (arg0, 1)),
@@ -6113,11 +6116,9 @@ extract_muldiv_1 (tree t, tree c, enum tree_code code, tree wide_type,
 	{
 	  tree tem = const_binop (code, fold_convert (ctype, t),
 				  fold_convert (ctype, c));
-	  /* If the multiplication overflowed to INT_MIN then we lost sign
-	     information on it and a subsequent multiplication might
-	     spuriously overflow.  See PR68142.  */
-	  if (TREE_OVERFLOW (tem)
-	      && wi::eq_p (tem, wi::min_value (TYPE_PRECISION (ctype), SIGNED)))
+	  /* If the multiplication overflowed, we lost information on it.
+	     See PR68142 and PR69845.  */
+	  if (TREE_OVERFLOW (tem))
 	    return NULL_TREE;
 	  return tem;
 	}
@@ -6373,18 +6374,17 @@ extract_muldiv_1 (tree t, tree c, enum tree_code code, tree wide_type,
 	  bool overflow_p = false;
 	  bool overflow_mul_p;
 	  signop sign = TYPE_SIGN (ctype);
-	  wide_int mul = wi::mul (op1, c, sign, &overflow_mul_p);
+	  unsigned prec = TYPE_PRECISION (ctype);
+	  wide_int mul = wi::mul (wide_int::from (op1, prec, sign),
+				  wide_int::from (c, prec, sign),
+				  sign, &overflow_mul_p);
 	  overflow_p = TREE_OVERFLOW (c) | TREE_OVERFLOW (op1);
 	  if (overflow_mul_p
 	      && ((sign == UNSIGNED && tcode != MULT_EXPR) || sign == SIGNED))
 	    overflow_p = true;
 	  if (!overflow_p)
-	    {
-	      mul = wide_int::from (mul, TYPE_PRECISION (ctype),
-				    TYPE_SIGN (TREE_TYPE (op1)));
-	      return fold_build2 (tcode, ctype, fold_convert (ctype, op0),
-				  wide_int_to_tree (ctype, mul));
-	    }
+	    return fold_build2 (tcode, ctype, fold_convert (ctype, op0),
+				wide_int_to_tree (ctype, mul));
 	}
 
       /* If these operations "cancel" each other, we have the main
@@ -14218,17 +14218,20 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
 	  if (TREE_CODE (op00type) == VECTOR_TYPE
 	      && type == TREE_TYPE (op00type))
 	    {
-	      HOST_WIDE_INT offset = tree_to_shwi (op01);
 	      tree part_width = TYPE_SIZE (type);
-	      unsigned HOST_WIDE_INT part_widthi = tree_to_shwi (part_width)/BITS_PER_UNIT;
-	      unsigned HOST_WIDE_INT indexi = offset * BITS_PER_UNIT;
-	      tree index = bitsize_int (indexi);
-
-	      if (offset / part_widthi < TYPE_VECTOR_SUBPARTS (op00type))
-		return fold_build3_loc (loc,
-					BIT_FIELD_REF, type, op00,
-					part_width, index);
-
+	      unsigned HOST_WIDE_INT max_offset
+		= (tree_to_uhwi (part_width) / BITS_PER_UNIT
+		   * TYPE_VECTOR_SUBPARTS (op00type));
+	      if (tree_int_cst_sign_bit (op01) == 0
+		  && compare_tree_int (op01, max_offset) == -1)
+		{
+		  unsigned HOST_WIDE_INT offset = tree_to_uhwi (op01);
+		  unsigned HOST_WIDE_INT indexi = offset * BITS_PER_UNIT;
+		  tree index = bitsize_int (indexi);
+		  return fold_build3_loc (loc,
+					  BIT_FIELD_REF, type, op00,
+					  part_width, index);
+		}
 	    }
 	  /* ((foo*)&complexfoo)[1] => __imag__ complexfoo */
 	  else if (TREE_CODE (op00type) == COMPLEX_TYPE

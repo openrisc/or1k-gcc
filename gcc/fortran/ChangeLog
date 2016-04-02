@@ -1,3 +1,47 @@
+2016-03-19  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+
+	PR fortran/69043
+	* scanner.c (load_file): Update to use S_ISREG macro.
+
+2016-03-17  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* gfortran.h (enum gfc_omp_map_op): Rename OMP_MAP_FORCE_DEALLOC
+	to OMP_MAP_DELETE.  Adjust all users.
+
+2016-03-13  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+	    Jim MacArthur  <jim.macarthur@codethink.co.uk>
+
+	PR fortran/69043
+	* scanner.c (load_file): Check that included file is regular.
+
+2016-03-12  Jerry DeLisle  <jvdelisle@gcc.gnu.org>
+	    Harold Anlauf  <anlauf@gmx.de>
+
+	PR fortran/69520
+	* invoke.texi: Explain use of the 'no-' construct within the
+	-fcheck= option.
+	* options.c (gfc_handle_runtime_check_option): Enable use of
+	'no-' prefix for the various options with -fcheck= to allow
+	negating previously enabled check options.
+
+2016-03-12  Paul Thomas  <pault@gcc.gnu.org>
+
+	PR fortran/70031
+	* decl.c (gfc_match_prefix): Treat the 'module' prefix in the
+	same way as the others, rather than fixing it to come last.
+	(gfc_match_function_decl, gfc_match_subroutine): After errors
+	in 'copy_prefix', emit them immediately in the case of module
+	procedures to prevent a later ICE.
+
+	PR fortran/69524
+	* decl.c (gfc_match_submod_proc): Permit 'module procedure'
+	declarations within the contains section of modules as well as
+	submodules.
+	* resolve.c (resolve_fl_procedure): Likewise.
+	*trans-decl.c (build_function_decl): Change the gcc_assert to
+	allow all forms of module procedure declarations within module
+	contains sections.
+
 2016-02-28  Thomas Koenig  <tkoenig@gcc.gnu.org>
 
 	PR fortran/68147

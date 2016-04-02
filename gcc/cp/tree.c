@@ -824,9 +824,8 @@ build_cplus_array_type (tree elt_type, tree index_type)
   if (elt_type == error_mark_node || index_type == error_mark_node)
     return error_mark_node;
 
-  bool dependent = (processing_template_decl
-		    && (dependent_type_p (elt_type)
-			|| (index_type && dependent_type_p (index_type))));
+  bool dependent = (uses_template_parms (elt_type)
+		    || (index_type && uses_template_parms (index_type)));
 
   if (elt_type != TYPE_MAIN_VARIANT (elt_type))
     /* Start with an array of the TYPE_MAIN_VARIANT.  */
@@ -1437,6 +1436,9 @@ strip_typedefs (tree t, bool *remove_attributes)
 	result = make_typename_type (strip_typedefs (TYPE_CONTEXT (t),
 						     remove_attributes),
 				     fullname, typename_type, tf_none);
+	/* Handle 'typedef typename A::N N;'  */
+	if (typedef_variant_p (result))
+	  result = TYPE_MAIN_VARIANT (DECL_ORIGINAL_TYPE (TYPE_NAME (result)));
       }
       break;
     case DECLTYPE_TYPE:
@@ -1457,9 +1459,12 @@ strip_typedefs (tree t, bool *remove_attributes)
   if (!result)
     {
       if (typedef_variant_p (t))
-	/* Explicitly get the underlying type, as TYPE_MAIN_VARIANT doesn't
-	   strip typedefs with attributes.  */
-	result = TYPE_MAIN_VARIANT (DECL_ORIGINAL_TYPE (TYPE_NAME (t)));
+	{
+	  /* Explicitly get the underlying type, as TYPE_MAIN_VARIANT doesn't
+	     strip typedefs with attributes.  */
+	  result = TYPE_MAIN_VARIANT (DECL_ORIGINAL_TYPE (TYPE_NAME (t)));
+	  result = strip_typedefs (result);
+	}
       else
 	result = TYPE_MAIN_VARIANT (t);
     }

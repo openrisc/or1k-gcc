@@ -328,12 +328,18 @@
 
 #ifndef __cpp_fold_expressions
 #  error "__cpp_fold_expressions"
-#elif __cpp_fold_expressions != 201411
-#  error "__cpp_fold_expressions != 201411"
+#elif __cpp_fold_expressions != 201603
+#  error "__cpp_fold_expressions != 201603"
 #endif
 
 #ifndef __cpp_nontype_template_args
 #  error "__cpp_nontype_template_args"
 #elif __cpp_nontype_template_args != 201411
 #  error "__cpp_nontype_template_args != 201411"
+#endif
+
+#ifndef __cpp_hex_float
+#  error "__cpp_hex_float"
+#elif __cpp_hex_float != 201603
+#  error "__cpp_hex_float != 201603"
 #endif

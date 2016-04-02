@@ -243,6 +243,7 @@ case ${target} in
  | avr-*rtems*				\
  | h8300-*rtems*			\
  | m32r-*rtems*			\
+ | mep-*				\
  )
     if test "x$enable_obsolete" != xyes; then
       echo "*** Configuration ${target} is obsolete." >&2
@@ -1174,7 +1175,7 @@ bfin*-*)
 	use_gcc_stdint=wrap
 	;;
 cr16-*-elf)
-        tm_file="elfos.h ${tm_file}"
+        tm_file="elfos.h ${tm_file} newlib-stdint.h"
         tmake_file="${tmake_file} cr16/t-cr16 "
         use_collect2=no
         ;;
@@ -1979,7 +1980,7 @@ mcore-*-elf)
 	inhibit_libc=true
 	;;
 mep-*-*)
-	tm_file="dbxelf.h elfos.h ${tm_file}"
+	tm_file="dbxelf.h elfos.h ${tm_file} newlib-stdint.h"
 	tmake_file=mep/t-mep
 	c_target_objs="mep-pragma.o"
 	cxx_target_objs="mep-pragma.o"

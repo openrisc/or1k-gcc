@@ -33,4 +33,4 @@ int main()
 }
 
 /* ??? XFAILed because we access "excess" elements with the permutation.  */
-/* { dg-final { scan-tree-dump "basic block vectorized" "slp2" { target vect_perm xfail *-*-* } } } */
+/* { dg-final { scan-tree-dump "basic block vectorized" "slp2" { target vect_perm xfail { ! { aarch64*-*-* arm*-*-* } } } } } */

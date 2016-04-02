@@ -2817,9 +2817,7 @@ s390_decompose_address (rtx addr, struct s390_address *out)
 	    return false;
 	  }
 
-      if (!REG_P (base)
-	  || (GET_MODE (base) != SImode
-	      && GET_MODE (base) != Pmode))
+      if (!REG_P (base) || GET_MODE (base) != Pmode)
 	return false;
 
       if (REGNO (base) == STACK_POINTER_REGNUM
@@ -2865,9 +2863,7 @@ s390_decompose_address (rtx addr, struct s390_address *out)
 	    return false;
 	  }
 
-      if (!REG_P (indx)
-	  || (GET_MODE (indx) != SImode
-	      && GET_MODE (indx) != Pmode))
+      if (!REG_P (indx) || GET_MODE (indx) != Pmode)
 	return false;
 
       if (REGNO (indx) == STACK_POINTER_REGNUM
@@ -2986,26 +2982,29 @@ s390_decompose_address (rtx addr, struct s390_address *out)
   return true;
 }
 
-/* Decompose a RTL expression OP for a shift count into its components,
-   and return the base register in BASE and the offset in OFFSET.
+/* Decompose a RTL expression OP for an address style operand into its
+   components, and return the base register in BASE and the offset in
+   OFFSET.  While OP looks like an address it is never supposed to be
+   used as such.
 
-   Return true if OP is a valid shift count, false if not.  */
+   Return true if OP is a valid address operand, false if not.  */
 
 bool
-s390_decompose_shift_count (rtx op, rtx *base, HOST_WIDE_INT *offset)
+s390_decompose_addrstyle_without_index (rtx op, rtx *base,
+					HOST_WIDE_INT *offset)
 {
-  HOST_WIDE_INT off = 0;
+  rtx off = NULL_RTX;
 
   /* We can have an integer constant, an address register,
      or a sum of the two.  */
-  if (GET_CODE (op) == CONST_INT)
+  if (CONST_SCALAR_INT_P (op))
     {
-      off = INTVAL (op);
+      off = op;
       op = NULL_RTX;
     }
-  if (op && GET_CODE (op) == PLUS && GET_CODE (XEXP (op, 1)) == CONST_INT)
+  if (op && GET_CODE (op) == PLUS && CONST_SCALAR_INT_P (XEXP (op, 1)))
     {
-      off = INTVAL (XEXP (op, 1));
+      off = XEXP (op, 1);
       op = XEXP (op, 0);
     }
   while (op && GET_CODE (op) == SUBREG)
@@ -3015,7 +3014,18 @@ s390_decompose_shift_count (rtx op, rtx *base, HOST_WIDE_INT *offset)
     return false;
 
   if (offset)
-    *offset = off;
+    {
+      if (off == NULL_RTX)
+	*offset = 0;
+      else if (CONST_INT_P (off))
+	*offset = INTVAL (off);
+      else if (CONST_WIDE_INT_P (off))
+	/* The offset will anyway be cut down to 12 bits so take just
+	   the lowest order chunk of the wide int.  */
+	*offset = CONST_WIDE_INT_ELT (off, 0);
+      else
+	gcc_unreachable ();
+    }
   if (base)
     *base = op;
 
@@ -3196,7 +3206,7 @@ s390_mem_constraint (const char *str, rtx op)
     case 'Y':
       /* Simply check for the basic form of a shift count.  Reload will
 	 take care of making sure we have a proper base register.  */
-      if (!s390_decompose_shift_count (op, NULL, NULL))
+      if (!s390_decompose_addrstyle_without_index (op, NULL, NULL))
 	return 0;
       break;
     case 'Z':
@@ -6871,13 +6881,13 @@ s390_delegitimize_address (rtx orig_x)
    instead the rightmost bits are interpreted as the value.  */
 
 static void
-print_shift_count_operand (FILE *file, rtx op)
+print_addrstyle_operand (FILE *file, rtx op)
 {
   HOST_WIDE_INT offset;
   rtx base;
 
   /* Extract base register and offset.  */
-  if (!s390_decompose_shift_count (op, &base, &offset))
+  if (!s390_decompose_addrstyle_without_index (op, &base, &offset))
     gcc_unreachable ();
 
   /* Sanity check.  */
@@ -7173,7 +7183,8 @@ print_operand_address (FILE *file, rtx addr)
     'O': print only the displacement of a memory reference or address.
     'R': print only the base register of a memory reference or address.
     'S': print S-type memory reference (base+displacement).
-    'Y': print shift count operand.
+    'Y': print address style operand without index (e.g. shift count or setmem
+	 operand).
 
     'b': print integer X as if it's an unsigned byte.
     'c': print integer X as if it's an signed byte.
@@ -7341,7 +7352,7 @@ print_operand (FILE *file, rtx x, int code)
       break;
 
     case 'Y':
-      print_shift_count_operand (file, x);
+      print_addrstyle_operand (file, x);
       return;
     }
 

@@ -162,7 +162,7 @@ hsa_symbol::hsa_symbol ()
     m_directive_offset (0), m_type (BRIG_TYPE_NONE),
     m_segment (BRIG_SEGMENT_NONE), m_linkage (BRIG_LINKAGE_NONE), m_dim (0),
     m_cst_value (NULL), m_global_scope_p (false), m_seen_error (false),
-    m_allocation (BRIG_ALLOCATION_AUTOMATIC)
+    m_allocation (BRIG_ALLOCATION_AUTOMATIC), m_emitted_to_brig (false)
 {
 }
 
@@ -174,7 +174,7 @@ hsa_symbol::hsa_symbol (BrigType16_t type, BrigSegment8_t segment,
     m_directive_offset (0), m_type (type), m_segment (segment),
     m_linkage (linkage), m_dim (0), m_cst_value (NULL),
     m_global_scope_p (global_scope_p), m_seen_error (false),
-    m_allocation (allocation)
+    m_allocation (allocation), m_emitted_to_brig (false)
 {
 }
 
@@ -880,10 +880,27 @@ get_symbol_for_decl (tree decl)
   gcc_checking_assert (slot);
   if (*slot)
     {
+      hsa_symbol *sym = (*slot);
+
       /* If the symbol is problematic, mark current function also as
 	 problematic.  */
-      if ((*slot)->m_seen_error)
+      if (sym->m_seen_error)
 	hsa_fail_cfun ();
+
+      /* PR hsa/70234: If a global variable was marked to be emitted,
+	 but HSAIL generation of a function using the variable fails,
+	 we should retry to emit the variable in context of a different
+	 function.
+
+	 Iterate elements whether a symbol is already in m_global_symbols
+	 of not.  */
+        if (is_in_global_vars && !sym->m_emitted_to_brig)
+	  {
+	    for (unsigned i = 0; i < hsa_cfun->m_global_symbols.length (); i++)
+	      if (hsa_cfun->m_global_symbols[i] == sym)
+		return *slot;
+	    hsa_cfun->m_global_symbols.safe_push (sym);
+	  }
 
       return *slot;
     }
@@ -3772,20 +3789,19 @@ gen_set_num_threads (tree value, hsa_bb *hbb)
   hbb->append_insn (basic);
 }
 
-static GTY (()) tree hsa_kernel_dispatch_type = NULL;
-
 /* Return byte offset of a FIELD_NAME in GOMP_hsa_kernel_dispatch which
    is defined in plugin-hsa.c.  */
 
 static HOST_WIDE_INT
 get_hsa_kernel_dispatch_offset (const char *field_name)
 {
-  if (hsa_kernel_dispatch_type == NULL)
+  tree *hsa_kernel_dispatch_type = hsa_get_kernel_dispatch_type ();
+  if (*hsa_kernel_dispatch_type == NULL)
     {
       /* Collection of information needed for a dispatch of a kernel from a
 	 kernel.  Keep in sync with libgomp's plugin-hsa.c.  */
 
-      hsa_kernel_dispatch_type = make_node (RECORD_TYPE);
+      *hsa_kernel_dispatch_type = make_node (RECORD_TYPE);
       tree id_f1 = build_decl (BUILTINS_LOCATION, FIELD_DECL,
 			       get_identifier ("queue"), ptr_type_node);
       DECL_CHAIN (id_f1) = NULL_TREE;
@@ -3835,12 +3851,12 @@ get_hsa_kernel_dispatch_offset (const char *field_name)
       DECL_CHAIN (id_f12) = id_f11;
 
 
-      finish_builtin_struct (hsa_kernel_dispatch_type, "__hsa_kernel_dispatch",
+      finish_builtin_struct (*hsa_kernel_dispatch_type, "__hsa_kernel_dispatch",
 			     id_f12, NULL_TREE);
-      TYPE_ARTIFICIAL (hsa_kernel_dispatch_type) = 1;
+      TYPE_ARTIFICIAL (*hsa_kernel_dispatch_type) = 1;
     }
 
-  for (tree chain = TYPE_FIELDS (hsa_kernel_dispatch_type);
+  for (tree chain = TYPE_FIELDS (*hsa_kernel_dispatch_type);
        chain != NULL_TREE; chain = TREE_CHAIN (chain))
     if (strcmp (field_name, IDENTIFIER_POINTER (DECL_NAME (chain))) == 0)
       return int_byte_position (chain);
@@ -5498,7 +5514,7 @@ gen_body_from_gimple ()
 	  gen_hsa_phi_from_gimple_phi (gsi_stmt (gsi), hbb);
     }
 
-  if (dump_file)
+  if (dump_file && (dump_flags & TDF_DETAILS))
     {
       fprintf (dump_file, "------- Generated SSA form -------\n");
       dump_hsa_cfun (dump_file);
