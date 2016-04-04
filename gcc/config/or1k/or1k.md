@@ -743,17 +743,39 @@
 
 ;; Moving double and single precision floating point values
 
-
-(define_insn "movsf"
-  [(set (match_operand:SF 0 "nonimmediate_operand" "=r,r,m")
-        (match_operand:SF 1 "general_operand"  "r,m,r"))]
+(define_expand "movsf"
+  [(set (match_operand:SI 0 "general_operand" "")
+	(match_operand:SI 1 "general_operand" ""))]
   ""
-  "@
-   l.ori\t%0,%1,0
-   l.lwz\t%0,%1
-   l.sw\t%0,%1"
-  [(set_attr "type" "logic,load,store")])
+{
+  or1k_expand_move (SFmode, operands[0], operands[1]);
+  DONE;
+})
 
+(define_insn "*movsf"
+  [(set (match_operand:SF 0 "nonimmediate_operand" "=r,r,m,r")
+        (match_operand:SF 1 "general_operand"      "rG,m,rG,F"))]
+  "register_operand (operands[0], SFmode)
+   || reg_or_0_operand (operands[1], SFmode)"
+  "@
+   l.ori\t%0,%r1,0
+   l.lwz\t%0,%1
+   l.sw\t%0,%r1
+   #"
+  [(set_attr "type" "logic,load,store,unknown")])
+
+(define_split
+  [(set (match_operand:SF 0 "register_operand")
+        (match_operand:SF 1 "const_double_operand"))]
+  "reload_completed"
+  [(const_int 0)]
+{
+  long img;
+  REAL_VALUE_TO_TARGET_SINGLE (*CONST_DOUBLE_REAL_VALUE (operands[1]), img);
+  emit_move_insn (gen_lowpart (SImode, operands[0]),
+		  gen_int_mode (img, SImode));
+  DONE;
+})
 
 ;;
 ;; extendqisi2

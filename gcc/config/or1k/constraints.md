@@ -56,7 +56,7 @@
   (and (match_code "const_int")
        (match_test "ival == 0")))
 
-(define_constraint "C"
+(define_constraint "G"
   ""
-  (match_code "const_double"))
-
+  (and (match_code "const_double")
+       (match_test "op == CONST0_RTX (mode)")))

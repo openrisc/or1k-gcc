@@ -2226,7 +2226,7 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 /* Is this suitable for an immediate operand.  */
 
 static bool
-or1k_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
+or1k_legitimate_constant_p (machine_mode mode, rtx x)
 {
   switch (GET_CODE (x))
     {
@@ -2235,6 +2235,10 @@ or1k_legitimate_constant_p (enum machine_mode mode ATTRIBUTE_UNUSED, rtx x)
     case HIGH:
       /* We construct these, rather than spilling to memory.  */
       return true;
+
+    case CONST_DOUBLE:
+      /* We construct these, rather than spilling to memory.  */
+      return mode == SFmode;
 
     case CONST:
     case SYMBOL_REF:
