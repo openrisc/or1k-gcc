@@ -929,13 +929,6 @@
    l.xori\t%0,%1,%2"
   [(set_attr "type" "logic")])
 
-(define_insn "one_cmplqi2"
-  [(set (match_operand:QI 0 "register_operand" "=r")
-	(not:QI (match_operand:QI 1 "register_operand" "r")))]
-  ""
-  "l.xori\t%0,%1,0x00ff"
-  [(set_attr "type" "logic")])
-
 (define_insn "one_cmplsi2"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(not:SI (match_operand:SI 1 "register_operand" "r")))]
