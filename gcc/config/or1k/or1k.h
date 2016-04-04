@@ -711,13 +711,6 @@ enum reg_class
    tablejump instruction.  */
 #define CASE_VECTOR_MODE SImode
 
-/* Define as C expression which evaluates to nonzero if the tablejump
-   instruction expects the table to contain offsets from the address of the
-   table.
-
-   Do not define this if the table should contain absolute addresses. */
-/* #define CASE_VECTOR_PC_RELATIVE 1 */
-
 /* Define this as 1 if `char' should by default be signed; else as 0.  */
 #define DEFAULT_SIGNED_CHAR 1
 
@@ -885,10 +878,6 @@ enum reg_class
 /* This is how to output an element of a case-vector that is relative.  */
 #define ASM_OUTPUT_ADDR_DIFF_ELT(stream, body, value, rel)		\
   fprintf (stream, "\t.word\t.L%d-.L%d\n", value, rel)
-
-#define JUMP_TABLES_IN_TEXT_SECTION (flag_pic)
-/* ??? If we were serious about PIC, we should also use l.jal to get
-   the table start address.  */
 
 /* This is how to output an assembler line that says to advance the location
    counter to a multiple of 2**log bytes.  */
