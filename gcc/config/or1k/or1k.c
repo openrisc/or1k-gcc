@@ -2564,6 +2564,11 @@ or1k_init_pic_reg (void)
 #undef TARGET_USE_PSEUDO_PIC_REG
 #define TARGET_USE_PSEUDO_PIC_REG hook_bool_void_true
 
+#undef TARGET_MIN_ANCHOR_OFFSET
+#define TARGET_MIN_ANCHOR_OFFSET  -32768
+#undef TARGET_MAX_ANCHOR_OFFSET
+#define TARGET_MAX_ANCHOR_OFFSET  32767
+
 /* Initialize the GCC target structure.  */
 struct gcc_target targetm = TARGET_INITIALIZER;
 
