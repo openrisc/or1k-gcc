@@ -920,11 +920,9 @@ enum reg_class
 
 /* The size of the trampoline in bytes. This is a block of code followed by
    two words specifying the function address and static chain pointer. */
-#define TRAMPOLINE_SIZE							\
-  (or1k_trampoline_code_size () + GET_MODE_SIZE (ptr_mode) * 2)
+#define TRAMPOLINE_SIZE  or1k_trampoline_code_size ()
 
 /* Alignment required for trampolines, in bits.
-
    For the OR1K, there is no need for anything other than word alignment. */
 #define TRAMPOLINE_ALIGNMENT  32
 

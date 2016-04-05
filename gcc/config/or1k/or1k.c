@@ -1204,63 +1204,6 @@ or1k_expand_move (machine_mode mode, rtx op0, rtx op1)
   emit_insn (gen_rtx_SET (op0, op1));
 }
 
-/* -------------------------------------------------------------------------- */
-/*!Emit a move from SRC to DEST.
-
-   Assume that the move expanders can handle all moves if !can_create_pseudo_p
-   ().  The distinction is important because, unlike emit_move_insn, the move
-   expanders know how to force Pmode objects into the constant pool even when
-   the constant pool address is not itself legitimate.
-
-   @param[in] dest  Destination of the move.
-   @param[in] src   Source for the move.
-
-   @return  RTX for the move.                                                 */
-/* -------------------------------------------------------------------------- */
-static rtx
-or1k_emit_move (rtx dest, rtx src)
-{
-  return (can_create_pseudo_p ()
-	  ? emit_move_insn (dest, src)
-	  : emit_move_insn_1 (dest, src));
-
-}	/* or1k_emit_move () */
-/* ========================================================================== */
-/* Global support functions                                                   */
-
-static int
-or1k_trampoline_code_words (void)
-{
-  int words = 5;
-
-  /* need one more word in TARGET_DELAY_COMPAT mode to hold l.nop in delay slot */
-  if (TARGET_DELAY_COMPAT)
-    words++;
-  
-  return words;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Return the size in bytes of the trampoline code.
-
-   Padded to TRAMPOLINE_ALIGNMENT bits. The code sequence is documented in
-   or1k_trampoline_init ().
-
-   This is just the code size. the static chain pointer and target function
-   address immediately follow.
-
-   @return  The size of the trampoline code in bytes.                         */
-/* -------------------------------------------------------------------------- */
-int
-or1k_trampoline_code_size (void)
-{
-  const int  TRAMP_BYTE_ALIGN = TRAMPOLINE_ALIGNMENT / 8;
-
-  return (or1k_trampoline_code_words() * 4 + TRAMP_BYTE_ALIGN - 1) / TRAMP_BYTE_ALIGN * TRAMP_BYTE_ALIGN;
-
-}	/* or1k_trampoline_code_size () */
-
-
 /* ========================================================================== */
 /* Functions to support the Machine Description                               */
 
@@ -1944,62 +1887,14 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict)
 /* -------------------------------------------------------------------------- */
 /*!Initialize a trampoline for nested functions.
 
-   A nested function is defined by *two* pieces of information, the address of
-   the function (like any other function) and a pointer to the frame of the
-   enclosing function. The latter is required to allow the nested function to
-   access local variables in the enclosing function's frame.
+   For the OR1K, we choose to re-use the return value (rv) register as
+   the static chain.
 
-   This represents a problem, since a function in C is represented as an
-   address that can be held in a single variable as a pointer. Requiring two
-   pointers will not fit.
-
-   The solution is documented in "Lexical Closures for C++" by Thomas
-   M. Breuel (USENIX C++ Conference Proceedings, October 17-21, 1988). The
-   nested function is represented by a small block of code and data on the
-   enclosing function's stack frame, which sets up a pointer to the enclosing
-   function's stack frame (the static chain pointer) in a register defined by
-   the ABI, and then jumps to the code of the function proper.
-
-   The function can be represented as a single pointer to this block of code,
-   known as a trampoline, which when called generates both pointers
-   needed. The nested function (which knows it is a nested function at compile
-   time) can then generate code to access the enclosing frame via the static
-   chain register.
-
-   There is a catch that the trampoline is set up as data, but executed as
-   instructions. The former will be via the data cache, the latter via the
-   instruction cache. There is a risk that a later trampoline will not be seen
-   by the instruction cache, so the wrong code will be executed. So the
-   instruction cache should be flushed for the trampoline address range.
-
-   This hook is called to initialize a trampoline. "m_tramp" is an RTX for the
-   memory block for the trampoline; "fndecl" is the FUNCTION_DECL for the
-   nested function; "static_chain" is an RTX for the static chain value that
-   should be passed to the function when it is called.
-
-   If the target defines TARGET_ASM_TRAMPOLINE_TEMPLATE, then the first thing
-   this hook should do is emit a block move into "m_tramp" from the memory
-   block returned by assemble_trampoline_template. Note that the block move
-   need only cover the constant parts of the trampoline. If the target
-   isolates the variable parts of the trampoline to the end, not all
-   TRAMPOLINE_SIZE bytes need be copied.
-
-   If the target requires any other actions, such as flushing caches or
-   enabling stack execution, these actions should be performed after
-   initializing the trampoline proper.
-
-   For the OR1K, no static chain register is used. We choose to use the return
-   value (rv) register. The code is based on that for MIPS.
-   The trampoline code is:
-
-              l.movhi r11,hi(end_addr)
-              l.ori   r11,lo(end_addr)
-              l.lwz   r13,4(r11)
-              l.jr    r13
-              l.lwz   r11,0(r11)
-      end_addr:
-              .word   <static chain>
-              .word   <nested_function>
+	l.movhi r13,hi(nested_func)
+	l.movhi r11,hi(static_chain)
+	l.ori	r13,r13,lo(nested_func)
+	l.jr	r13
+	 l.ori	r11,r11,lo(static_chain)
 
    @note For the OR1K we need to flush the instruction cache, which is a
          privileged operation. Needs fixing.
@@ -2009,113 +1904,63 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict)
    @param[in] chain_value  Static chain pointer to pass to the nested
                            function.                                          */
 /* -------------------------------------------------------------------------- */
-static void
-or1k_trampoline_init (rtx   m_tramp,
-		      tree  fndecl,
-		      rtx   chain_value)
+
+int
+or1k_trampoline_code_size (void)
 {
-  rtx  addr;				/* Start address of the trampoline */
-  rtx  end_addr;			/* End address of the code block */
+  // Need one more word in TARGET_DELAY_COMPAT mode for l.nop in delay slot.
+  int words = 5 + !!TARGET_DELAY_COMPAT;
+  return words * 4;
+}
 
-  rtx  high;				/* RTX for the high part of end_addr */
-  rtx  low;				/* RTX for the low part of end_addr */
-  rtx  opcode;				/* RTX for generated opcodes */
-  rtx  mem;				/* RTX for trampoline memory */
+static void
+or1k_trampoline_init (rtx m_tramp, tree fndecl, rtx chain)
+{
+  rtx tramp[6], fnaddr, f_hi, f_lo, c_hi, c_lo;
+  int n;
 
-  rtx *trampoline;	/* The trampoline code */
+  fnaddr = force_reg (SImode, XEXP (DECL_RTL (fndecl), 0));
+  f_hi = expand_binop (SImode, lshr_optab, fnaddr, GEN_INT (16),
+		       NULL, true, OPTAB_DIRECT);
+  f_lo = expand_binop (SImode, and_optab, fnaddr, GEN_INT (0xffff),
+		       NULL, true, OPTAB_DIRECT);
 
-  unsigned int  i;			/* Index into trampoline */
-  unsigned int  j;			/* General counter */
+  chain = force_operand (chain, NULL);
+  c_hi = expand_binop (SImode, lshr_optab, chain, GEN_INT (16),
+		       NULL, true, OPTAB_DIRECT);
+  c_lo = expand_binop (SImode, and_optab, chain, GEN_INT (0xffff),
+		       NULL, true, OPTAB_DIRECT);
 
-  HOST_WIDE_INT  end_addr_offset;	  /* Offset to end of code */
-  HOST_WIDE_INT  static_chain_offset;	  /* Offset to stack chain word */
-  HOST_WIDE_INT  target_function_offset;  /* Offset to func address word */
+  tramp[0] = expand_binop (SImode, ior_optab, f_hi,
+			   gen_int_mode (OR1K_MOVHI (13, 0), SImode),
+			   f_hi, true, OPTAB_DIRECT);
+  tramp[1] = expand_binop (SImode, ior_optab, c_hi,
+			   gen_int_mode (OR1K_MOVHI (11, 0), SImode),
+			   c_hi, true, OPTAB_DIRECT);
+  tramp[2] = expand_binop (SImode, ior_optab, f_lo,
+			   gen_int_mode (OR1K_ORI (13, 13, 0), SImode),
+			   f_lo, true, OPTAB_DIRECT);
+  tramp[3] = expand_binop (SImode, ior_optab, c_lo,
+			   gen_int_mode (OR1K_ORI (11, 11, 0), SImode),
+			   c_lo, true, OPTAB_DIRECT);
+  tramp[4] = gen_int_mode (OR1K_JR (13), SImode);
 
-  /* Work out the offsets of the pointers from the start of the trampoline
-     code.  */
-  trampoline             = (rtx*) alloca (or1k_trampoline_code_words() * sizeof(rtx));
-  end_addr_offset        = or1k_trampoline_code_size ();
-  static_chain_offset    = end_addr_offset;
-  target_function_offset = static_chain_offset + GET_MODE_SIZE (ptr_mode);
-
-  /* Get pointers in registers to the beginning and end of the code block.  */
-  addr     = force_reg (Pmode, XEXP (m_tramp, 0));
-  end_addr = force_reg (Pmode, plus_constant (Pmode, addr, end_addr_offset));
-
-  /* Build up the code in TRAMPOLINE.
-
-              l.movhi r11,hi(end_addr)
-              l.ori   r11,lo(end_addr)
-              l.lwz   r13,4(r11)
-              l.jr    r13
-              l.lwz   r11,0(r11)
-       end_addr:
-  */
-
-  i = 0;
-
-  /* Break out the high and low parts of the end_addr */
-  high = expand_simple_binop (SImode, LSHIFTRT, end_addr, GEN_INT (16),
-			      NULL, false, OPTAB_WIDEN);
-  low  = convert_to_mode (SImode, gen_lowpart (HImode, end_addr), true);
-
-  /* Emit the l.movhi, adding an operation to OR in the high bits from the
-     RTX. */
-  opcode = gen_int_mode (OR1K_MOVHI (11, 0), SImode);
-  trampoline[i++] = expand_simple_binop (SImode, IOR, opcode, high, NULL,
-					 false, OPTAB_WIDEN); 
-  
-  /* Emit the l.ori, adding an operations to OR in the low bits from the
-     RTX. */
-  opcode = gen_int_mode (OR1K_ORI (11, 11, 0), SImode);
-  trampoline[i++] = expand_simple_binop (SImode, IOR, opcode, low, NULL,
-					 false, OPTAB_WIDEN); 
-
-  /* Emit the l.lwz of the function address. No bits to OR in here, so we can
-     do the opcode directly. */
-  trampoline[i++] =
-    gen_int_mode (OR1K_LWZ (13, 11, target_function_offset - end_addr_offset),
-		  SImode);
-
-  if (TARGET_DELAY_ON) {
-    /* Emit the l.jr of the function. No bits to OR in here, so we can do the
-       opcode directly. */
-    trampoline[i++] = gen_int_mode (OR1K_JR (13), SImode);
-    
-    /* Emit the l.lwz of the static chain. No bits to OR in here, so we can
-       do the opcode directly. */
-    trampoline[i++] =
-      gen_int_mode (OR1K_LWZ (STATIC_CHAIN_REGNUM, 11,
-                              static_chain_offset - end_addr_offset), SImode);
-  } else {
-    trampoline[i++] =
-      gen_int_mode (OR1K_LWZ (STATIC_CHAIN_REGNUM, 11,
-                              static_chain_offset - end_addr_offset), SImode);
-    trampoline[i++] = gen_int_mode (OR1K_JR (13), SImode);
-    if (TARGET_DELAY_COMPAT)
-      trampoline[i++] = gen_int_mode (OR1K_NOP, SImode);
-  }
+  n = 5;
+  if (TARGET_DELAY_COMPAT)
+    tramp[n++] = gen_int_mode (OR1K_NOP, SImode);
+  else if (TARGET_DELAY_ON)
+    std::swap (tramp[3], tramp[4]);
 
   /* Copy the trampoline code.  Leave any padding uninitialized.  */
-  for (j = 0; j < i; j++)
+  for (int i = 0; i < n; ++i)
     {
-      mem = adjust_address (m_tramp, SImode, j * GET_MODE_SIZE (SImode));
-      or1k_emit_move (mem, trampoline[j]);
+      rtx mem = adjust_address (m_tramp, SImode, i * 4);
+      emit_move_insn (mem, tramp[i]);
     }
 
-  /* Set up the static chain pointer field.  */
-  mem = adjust_address (m_tramp, ptr_mode, static_chain_offset);
-  or1k_emit_move (mem, chain_value);
-
-  /* Set up the target function field.  */
-  mem = adjust_address (m_tramp, ptr_mode, target_function_offset);
-  or1k_emit_move (mem, XEXP (DECL_RTL (fndecl), 0));
-
-  /* Flushing the trampoline from the instruction cache needs to be done
-     here. */
-
-}	/* or1k_trampoline_init () */
-
+  /* Flushing the trampoline from the instruction cache needs
+     to be done here. */
+}
 
 /* -------------------------------------------------------------------------- */
 /*!Provide support for DW_AT_calling_convention
