@@ -52,31 +52,6 @@ Boston, MA 02111-1307, USA.  */
     }                                                   \
   while (0)
 
-#undef CPP_SPEC
-#define CPP_SPEC "%{!mnewlib:%{posix:-D_POSIX_SOURCE} %{pthread:-D_REENTRANT}}"
-
-/* Make sure we pick up the crti.o, crtbegin.o, crtend.o and crtn.o files. */
-#undef STARTFILE_SPEC
-#define STARTFILE_SPEC \
-  "%{!shared:%{pie:Scrt0.o%s;:crt0.o%s}} crti.o%s \
-   %{static:crtbeginT.o%s;shared|pie:crtbeginS.o%s;:crtbegin.o%s}"
-
-#undef ENDFILE_SPEC
-#define ENDFILE_SPEC "%{shared|pie:crtendS.o%s;:crtend.o%s} crtn.o%s"
-
-#undef LINK_SPEC
-#define LINK_SPEC "%{mnewlib:-entry 0x100} %{static:-static} %{shared:-shared}"
-
-/* Override previous definitions (linux.h). Newlib doesn't have a profiling
-   version of the library, but it does have a debugging version (libg.a) */
-#undef LIB_SPEC
-#define LIB_SPEC "%{!mnewlib:%{pthread:-lpthread}	\
-		             %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"			\
-                 "%{mnewlib:%{!g:-lc} %{g:-lg} -lor1k					\
-                            %{mboard=*:-lboard-%*} %{!mboard=*:-lboard-or1ksim}		\
-                            %{!g:-lc} %{g:-lg}						\
-                            }"
-
 /* Target machine storage layout */
 
 /* Define this if most significant bit is lowest numbered
@@ -98,6 +73,11 @@ Boston, MA 02111-1307, USA.  */
 #define FLOAT_TYPE_SIZE 32
 #define DOUBLE_TYPE_SIZE 64
 #define LONG_DOUBLE_TYPE_SIZE 64
+#define WCHAR_TYPE_SIZE 32
+
+#define SIZE_TYPE "unsigned int"
+#define PTRDIFF_TYPE "int"
+#define WCHAR_TYPE "unsigned int"
 
 /* Width of a word, in units (bytes).  */
 #define UNITS_PER_WORD 4
@@ -898,84 +878,7 @@ enum reg_class
 /* Prettify the assembly.  */
 #define ASM_OUTPUT_OPCODE(FILE, PTR)  or1k_output_opcode(FILE)
 
-/* This is how to output the definition of a user-level label named NAME,
-   such as the label on a static function or variable NAME.  */
-#define ASM_OUTPUT_LABEL(FILE,NAME)					\
-  { assemble_name (FILE, NAME); fputs (":\n", FILE); }
-
-/* We use -fleading-underscore to add it, when necessary.
-   JPB: No prefix for global symbols */
-#define USER_LABEL_PREFIX ""
-
-/* Remove any previous definition (elfos.h).  */
-#define ASM_GENERATE_INTERNAL_LABEL(LABEL, PREFIX, NUM)	\
-  sprintf (LABEL, "*%s%d", PREFIX, NUM)
-
-/* This is how to output an assembler line defining an int constant.  */
-#define ASM_OUTPUT_INT(stream, value)					\
-  {									\
-    fprintf (stream, "\t.word\t");					\
-    output_addr_const (stream, (value));				\
-    fprintf (stream, "\n")}
-
-/* This is how to output an assembler line defining a float constant.  */
-#define ASM_OUTPUT_FLOAT(stream, value)					\
-  { long l;								\
-    REAL_VALUE_TO_TARGET_SINGLE (value,l);				\
-    fprintf(stream,"\t.word\t0x%08x\t\t# float %26.7e\n", l, value); }
-
-/* This is how to output an assembler line defining a double constant.  */
-#define ASM_OUTPUT_DOUBLE(stream, value)				\
-  { long l[2];								\
-    REAL_VALUE_TO_TARGET_DOUBLE (value,&l[0]);				\
-    fprintf(stream,"\t.word\t0x%08x,0x%08x\t# float %26.16le\n",	\
-	    l[0],l[1],value); }
-
-/* This is how to output an assembler line defining a long double constant.
-
-   JPB 29-Aug-10: Do we really mean this. I thought long double on OR1K was
-                  the same as double. */
-#define ASM_OUTPUT_LONG_DOUBLE(stream, value)				\
-  { long l[4];								\
-    REAL_VALUE_TO_TARGET_DOUBLE (value,&l[0]);				\
-    fprintf (stream,							\
-	     "\t.word\t0x%08x,0x%08x,0x%08x,0x%08x\t# float %26.18lle\n", \
-	     l[0],l[1],l[2],l[3],value); }
-
-/* This is how to output an assembler line defining a short constant.  */
-#define ASM_OUTPUT_SHORT(stream, value)					\
-  { fprintf (stream, "\t.half\t");					\
-    output_addr_const (stream, (value));				\
-    fprintf (stream, "\n"); }
-
-/* This is how to output an assembler line defining a char constant.  */
-#define ASM_OUTPUT_CHAR(stream, value)					\
-  { fprintf (stream, "\t.byte\t");					\
-    output_addr_const (stream, (value));				\
-    fprintf (stream, "\n")}
-
-/* This is how to output an assembler line for a numeric constant byte.  */
-#define ASM_OUTPUT_BYTE(stream, value)  \
-  fprintf (stream, "\t.byte\t0x%02x\n", (value))
-
-/* This is how to output an insn to push a register on the stack.
-   It need not be very fast code.
-
-    JPB 29-Aug-10: This was using l.sub (since we don't have l.subi), so it
-                   was potty code. Replaced by adding immediate -1. */
-#define ASM_OUTPUT_REG_PUSH(stream, regno)				\
-  { fprintf (stream, "\tl.addi\tr1,r1,-4\n");				\
-    fprintf (stream, "\tl.sw\t0(r1),%s\n", reg_names[regno]); }
-
-/* This is how to output an insn to pop a register from the stack.
-   It need not be very fast code.  */
-#define ASM_OUTPUT_REG_POP(stream,REGNO)				\
-  { fprintf (stream, "\tl.lwz\t%s,0(r1)\n", reg_names[REGNO]);		\
-    fprintf (stream, "\tl.addi\tr1,r1,4\n"); }
-
-/* This is how to output an element of a case-vector that is absolute.
-   (The Vax does not use such vectors,
-   but we must define this macro anyway.)  */
+/* This is how to output an element of a case-vector that is absolute.  */
 #define ASM_OUTPUT_ADDR_VEC_ELT(stream, value)				\
   fprintf (stream, "\t.word\t.L%d\n", value)
 
@@ -990,81 +893,23 @@ enum reg_class
 /* This is how to output an assembler line that says to advance the location
    counter to a multiple of 2**log bytes.  */
 #define ASM_OUTPUT_ALIGN(stream, log)					\
-  if ((log) != 0)							\
-    {									\
-      fprintf (stream, "\t.align\t%d\n", 1 << (log));			\
-    }
-
-/* This is how to output an assembler line that says to advance the location
-   counter by "size" bytes.  */
-#define ASM_OUTPUT_SKIP(stream, size)					\
-  fprintf (stream, "\t.space %d\n", (size))
-
-/* Need to split up .ascii directives to avoid breaking
-   the linker. */
-
-/* This is how to output a string.  */
-#define ASM_OUTPUT_ASCII(stream, ptr, len)				\
-  output_ascii_pseudo_op (stream, (const unsigned char *) (ptr), len)
+  fprintf (stream, "\t.align\t%d\n", 1 << (log))
 
 /* Invoked just before function output. */
 #define ASM_OUTPUT_FUNCTION_PREFIX(stream, fnname)			\
   { fputs (".proc\t", stream); assemble_name (stream, fnname);		\
     fputs ("\n", stream); }
 
-/* This says how to output an assembler line to define a global common
-   symbol. */
-#define ASM_OUTPUT_COMMON(stream,name,size,rounded)			\
-  { data_section ();							\
-    fputs ("\t.global\t", stream);					\
-    assemble_name(stream, name);					\
-    fputs ("\n", stream);						\
-    assemble_name (stream, name);					\
-    fputs (":\n", stream);						\
-    fprintf (stream, "\t.space\t%d\n", rounded); }
-
-/* This says how to output an assembler line to define a local common
-   symbol.
-
-   JPB 29-Aug-10: I'm sure this doesn't work - we don't have a .bss directive
-   like this. */
-#define ASM_OUTPUT_LOCAL(stream, name, size, rounded)			\
-  { fputs ("\t.bss\t", (stream));					\
-    assemble_name ((stream), (name));					\
-    fprintf ((stream), ",%d,%d\n", (size), (rounded)); }
-
-/* This says how to output an assembler line to define a global common symbol
-   with size "size" (in bytes) and alignment "align" (in bits).  */
-#define ASM_OUTPUT_ALIGNED_COMMON(stream, name, size, align)		\
-  { data_section();							\
-    if ((ALIGN) > 8)							\
-      {									\
-	fprintf(stream, "\t.align %d\n", ((align) / BITS_PER_UNIT));	\
-      }									\
-    fputs("\t.global\t", stream); assemble_name(stream, name);      	\
-    fputs("\n", stream);                                        	\
-    assemble_name(stream, name);                                	\
-    fputs (":\n", stream);						\
-    fprintf(stream, "\t.space\t%d\n", size); }
-  
-/* This says how to output an assembler line to define a local common symbol
-   with size "size" (in bytes) and alignment "align" (in bits).  */
-#define ASM_OUTPUT_ALIGNED_LOCAL(stream, name, size, align)		\
-  { data_section();							\
-    if ((align) > 8)							\
-      {									\
-	fprintf(stream, "\t.align %d\n", ((align) / BITS_PER_UNIT));	\
-      }									\
-    assemble_name(stream, name);					\
-    fputs (":\n", stream);						\
-    fprintf(stream, "\t.space %d\n", size); }
-                                                     
-/* Store in "output" a string (made with alloca) containing an assembler-name
-   for a local static variable named "name".  "labelno" is an integer which is
-   different for each call.  */
-#define ASM_FORMAT_PRIVATE_NAME(output, name, labelno)			\
-  { (output) = (char *) alloca (strlen ((name)) + 10);			\
-    sprintf ((output), "%s.%lu", (name), (unsigned long int) (labelno)); }
+/* This is how we tell the assembler that two symbols have the same value.  */
+#define ASM_OUTPUT_DEF(FILE, NAME1, NAME2) \
+  do                                       \
+    {                                      \
+      assemble_name (FILE, NAME1);         \
+      fputs (" = ", FILE);                 \
+      assemble_name (FILE, NAME2);         \
+      fputc ('\n', FILE);                  \
+    }                                      \
+    while (0)
 
 /* The size of the trampoline in bytes. This is a block of code followed by
    two words specifying the function address and static chain pointer. */

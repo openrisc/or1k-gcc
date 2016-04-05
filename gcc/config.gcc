@@ -442,10 +442,7 @@ nios2-*-*)
 nvptx-*-*)
 	cpu_type=nvptx
 	;;
-or1k-*-*)
-	cpu_type=or1k
-	;;
-or1knd-*-*)
+or1k*-*-*)
 	cpu_type=or1k
 	;;
 powerpc*-*-*)
@@ -584,6 +581,14 @@ x86_64-*-*)
 arm*-*-*)
 	tm_p_file="arm/arm-flags.h arm/arm-isa.h ${tm_p_file} arm/aarch-common-protos.h"
 	tm_file="vxworks-dummy.h ${tm_file}"
+	;;
+or1k-*-*)
+	tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
+	tmake_file=or1k/t-or1k
+	;;
+or1knd-*-*)
+	tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_OFF"
+	tmake_file=or1k/t-or1knd
 	;;
 mips*-*-* | sh*-*-* | sparc*-*-*)
 	tm_file="vxworks-dummy.h ${tm_file}"
@@ -2327,33 +2332,20 @@ nvptx-*)
 		tm_file="${tm_file} nvptx/offload.h"
 	fi
 	;;
-or1k-*-elf*)
-	tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h ${cpu_type}/elf.h"
+or1k*-*-elf*)
+	tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h"
+	tm_file="${tm_file} ${cpu_type}/newlib.h"
 	extra_parts="crti.o crtbegin.o crtend.o crtn.o"
-	tmake_file=or1k/t-or1k
-	tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
 	;;
 or1k-*-linux-*)
-	tm_file="${tm_file} dbxelf.h elfos.h or1k/elf.h gnu-user.h linux.h or1k/linux-gas.h or1k/linux-elf.h uclibc-stdint.h"
-	tmake_file="or1k/t-or1k or1k/t-linux ${tmake_file}"
-	tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
+	tm_file="${tm_file} dbxelf.h elfos.h gnu-user.h linux.h"
+	tm_file="${tm_file} or1k/linux-elf.h uclibc-stdint.h"
+	tmake_file="${tmake_file} or1k/t-linux"
 	;;
 or1k*-*-rtems*)
-	tm_file="${tm_file} dbxelf.h elfos.h ${cpu_type}/elf.h"
+	tm_file="${tm_file} elfos.h ${cpu_type}/elf.h"
 	tm_file="${tm_file} newlib-stdint.h or1k/rtems.h rtems.h"
 	extra_parts="crti.o crtbegin.o crtend.o crtn.o"
-	tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_ON"
-	;;
-or1knd-*-elf*)
-	tm_file="${tm_file} dbxelf.h elfos.h newlib-stdint.h ${cpu_type}/elf.h"
-	extra_parts="crti.o crtbegin.o crtend.o crtn.o"
-	tmake_file=or1k/t-or1knd
-	tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_OFF"
-	;;
-or1knd-*-linux-*)
-	tm_file="${tm_file} dbxelf.h elfos.h or1k/elf.h linux.h or1k/linux-gas.h or1k/linux-elf.h uclibc-stdint.h"
-	tmake_file="or1k/t-or1knd or1k/t-linux ${tmake_file}"
-	tm_defines="${tm_defines} OR1K_DELAY_DEFAULT=OR1K_DELAY_OFF"
 	;;
 pdp11-*-*)
 	tm_file="${tm_file} newlib-stdint.h"
