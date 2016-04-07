@@ -663,6 +663,42 @@
   DONE;
 })
 
+(define_insn_and_split "*add1_sne_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=&r")
+	(plus:SI
+	  (ne:SI (match_operand:SI 1 "register_operand" "r")
+	         (const_int 0))
+	  (match_operand:SI 2 "reg_or_s16_operand" "rI")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_addsi_co (operands[0], operands[1], constm1_rtx));
+  emit_insn (gen_addsi_ci (operands[0], const0_rtx, operands[2]));
+  DONE;
+})
+
+(define_insn_and_split "*add2_sne_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=&r")
+	(plus:SI
+	  (plus:SI
+	    (ne:SI (match_operand:SI 1 "register_operand" "r")
+	           (const_int 0))
+	    (match_operand:SI 2 "register_operand" "%r"))
+	  (match_operand:SI 3 "reg_or_s16_operand" "rI")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_addsi_co (operands[0], operands[1], constm1_rtx));
+  emit_insn (gen_addsi_ci (operands[0], operands[2], operands[3]));
+  DONE;
+})
+
 (define_insn_and_split "sltu_sr_cy"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(ltu:SI (match_operand:SI 1 "reg_or_0_operand" "rO")
@@ -675,6 +711,44 @@
 {
   emit_insn (gen_subsi_co (operands[0], operands[1], operands[2]));
   emit_insn (gen_addsi_ci (operands[0], const0_rtx, const0_rtx));
+  DONE;
+})
+
+(define_insn_and_split "*add1_slt_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=&r")
+	(plus:SI
+	  (ltu:SI
+	    (match_operand:SI 1 "register_operand" "r")
+	    (match_operand:SI 2 "register_operand" "r"))
+	  (match_operand:SI 3 "reg_or_s16_operand" "rI")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_subsi_co (operands[0], operands[1], operands[2]));
+  emit_insn (gen_addsi_ci (operands[0], const0_rtx, operands[3]));
+  DONE;
+})
+
+(define_insn_and_split "*add2_slt_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=&r")
+	(plus:SI
+	  (plus:SI
+	    (ltu:SI
+	      (match_operand:SI 1 "register_operand" "r")
+	      (match_operand:SI 2 "register_operand" "r"))
+	    (match_operand:SI 3 "register_operand" "%r"))
+	  (match_operand:SI 4 "reg_or_s16_operand" "rI")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_subsi_co (operands[0], operands[1], operands[2]));
+  emit_insn (gen_addsi_ci (operands[0], operands[3], operands[4]));
   DONE;
 })
 
@@ -691,6 +765,48 @@
   HOST_WIDE_INT c = INTVAL (operands[2]);
   emit_insn (gen_addsi_co (operands[0], operands[1], GEN_INT (-c)));
   emit_insn (gen_addsi_ci (operands[0], const0_rtx, const0_rtx));
+  DONE;
+})
+
+(define_insn_and_split "*add1_sgeui_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=&r")
+	(plus:SI
+	  (geu:SI (match_operand:SI 1 "register_operand" "r")
+		  (match_operand:SI 2 "sgeui_operand" "n"))
+	  (match_operand:SI 3 "reg_or_s16_operand" "rI")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "&& reload_completed"
+  [(const_int 0)]
+{
+  HOST_WIDE_INT c = INTVAL (operands[2]);
+  /* See sgeui_operand comments.  */
+  c = (c < 0 ? -c : -1 - (c + 1));
+  emit_insn (gen_addsi_co (operands[0], operands[1], GEN_INT (c)));
+  emit_insn (gen_addsi_ci (operands[0], const0_rtx, operands[3]));
+  DONE;
+})
+
+(define_insn_and_split "*add2_sgeui_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=&r")
+	(plus:SI
+	  (plus:SI
+	    (geu:SI (match_operand:SI 1 "register_operand" "r")
+		    (match_operand:SI 2 "sgeui_operand" "n"))
+	    (match_operand:SI 3 "register_operand" "%r"))
+	  (match_operand:SI 4 "reg_or_s16_operand" "rI")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "&& reload_completed"
+  [(const_int 0)]
+{
+  HOST_WIDE_INT c = INTVAL (operands[2]);
+  /* See sgeui_operand comments.  */
+  c = (c < 0 ? -c : -1 - (c + 1));
+  emit_insn (gen_addsi_co (operands[0], operands[1], GEN_INT (c)));
+  emit_insn (gen_addsi_ci (operands[0], operands[3], operands[4]));
   DONE;
 })
 
@@ -1076,20 +1192,19 @@
   DONE;
 })
 
-;; Note that only one pair of operands can be commutative.
 (define_insn_and_split "adddi_int"
-  [(set (match_operand:SI 0 "register_operand"       "=r,&r, r,&r")
+  [(set (match_operand:SI 0 "register_operand"         "=r,&r")
 	(plus:SI
-	  (match_operand:SI 1 "register_operand"     "%0, r, 0, r")
-	  (match_operand:SI 2 "reg_or_s16_operand"   "rI,rI,rI,rI")))
-   (set (match_operand:SI 3 "register_operand"       "=r, r, r, r")
+	  (match_operand:SI 1 "register_operand"       "%0, r")
+	  (match_operand:SI 2 "reg_or_s16_operand"     "rI,rI")))
+   (set (match_operand:SI 3 "register_operand"         "=r, r")
 	(plus:SI
 	  (plus:SI
-	    (match_operand:SI 4 "reg_or_s16_operand" "rO,rO, I, I")
-	    (match_operand:SI 5 "reg_or_s16_operand" "rI,rI,rO,rO"))
-	  (ltu:SI
-	    (plus:SI (match_dup 1) (match_dup 2))
-	    (match_dup 2))))
+	    (ltu:SI
+	      (plus:SI (match_dup 1) (match_dup 2))
+              (match_dup 1))
+	    (match_operand:SI 4 "register_operand"     " r, r"))
+	  (match_operand:SI 5 "reg_or_s16_operand"     "rI,rI")))
    (clobber (reg:BI SR_CY_REG))]
   ""
   "#"
@@ -1103,17 +1218,17 @@
   DONE;
 })
 
-(define_insn_and_split "*adddi_int_0"
-  [(set (match_operand:SI 0 "register_operand"       "=r,&r")
+(define_insn_and_split "*adddi_1"
+  [(set (match_operand:SI 0 "register_operand"     "=r, r,&r")
 	(plus:SI
-	  (match_operand:SI 1 "register_operand"     "%0, r")
-	  (match_operand:SI 2 "reg_or_s16_operand"   "rI,rI")))
-   (set (match_operand:SI 3 "register_operand"       "=r, r")
+	  (match_operand:SI 1 "register_operand"   "%0, r, r")
+	  (match_operand:SI 2 "reg_or_s16_operand" "rI,rI,rI")))
+   (set (match_operand:SI 3 "register_operand"     "=r, r, r")
 	(plus:SI
 	  (ltu:SI
 	    (plus:SI (match_dup 1) (match_dup 2))
-	    (match_dup 2))
-	  (match_operand:SI 4 "reg_or_s16_operand"   "rI,rI")))
+	    (match_dup 1))
+	  (match_operand:SI 4 "reg_or_s16_operand" "rI, I, r")))
    (clobber (reg:BI SR_CY_REG))]
   ""
   "#"
@@ -1121,24 +1236,67 @@
   [(const_int 0)]
 {
   emit_insn (gen_addsi_co (operands[0], operands[1], operands[2]));
-  if (CONST_INT_P (operands[4]))
-    emit_insn (gen_addsi_ci (operands[3], const0_rtx, operands[4]));
-  else
-    emit_insn (gen_addsi_ci (operands[3], operands[4], const0_rtx));
+  emit_insn (gen_addsi_ci (operands[3], const0_rtx, operands[4]));
   DONE;
 })
 
-(define_insn_and_split "*adddi_int_m1"
-  [(set (match_operand:SI 0 "register_operand"       "=r,&r")
+(define_insn_and_split "*adddi_2"
+  [(set (match_operand:SI 0 "register_operand"         "=r,&r")
 	(plus:SI
-	  (match_operand:SI 1 "register_operand"     " 0, r")
-	  (const_int -1)))
-   (set (match_operand:SI 2 "register_operand"       "=r, r")
+	  (match_operand:SI 1 "register_operand"       "%0, r")
+	  (match_operand:SI 2 "reg_or_s16_operand"     "rI,rI")))
+   (set (match_operand:SI 3 "register_operand"         "=r, r")
 	(plus:SI
 	  (plus:SI
-	    (match_operand:SI 3 "reg_or_s16_operand" "%rO,rO")
-	    (match_operand:SI 4 "reg_or_s16_operand" " rI,rI"))
-	  (ne:SI (match_dup 1) (const_int 0))))
+	    (ltu:SI
+	      (plus:SI (match_dup 1) (match_dup 2))
+	      (match_dup 1))
+	    (match_operand:SI 4 "register_operand"     " r, r"))
+	  (match_operand:SI 5 "reg_or_s16_operand"     "rI,rI")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_addsi_co (operands[0], operands[1], operands[2]));
+  emit_insn (gen_addsi_ci (operands[3], operands[4], operands[5]));
+  DONE;
+})
+
+(define_insn_and_split "*adddi_3"
+  [(set (match_operand:SI 0 "register_operand"         "=r, r,&r")
+	(plus:SI
+	  (match_operand:SI 1 "register_operand"       "%0, r, r")
+	  (const_int -1)))
+   (set (match_operand:SI 2 "register_operand"         "=r, r, r")
+	(plus:SI
+	  (ne:SI (match_dup 1) (const_int 0))
+	  (match_operand:SI 3 "reg_or_s16_operand"     "rI, I, r")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_addsi_co (operands[0], operands[1], constm1_rtx));
+  emit_insn (gen_addsi_ci (operands[2], const0_rtx, operands[3]));
+  DONE;
+})
+
+(define_insn_and_split "*adddi_4"
+  [(set (match_operand:SI 0 "register_operand"         "=r,&r")
+	(plus:SI
+	  (match_operand:SI 1 "register_operand"       "%0, r")
+	  (const_int -1)))
+   (set (match_operand:SI 2 "register_operand"         "=r, r")
+	(plus:SI
+	  (plus:SI
+	    (ltu:SI
+	      (plus:SI (match_dup 1) (match_dup 2))
+	      (match_dup 1))
+	    (match_operand:SI 3 "register_operand"     " r, r"))
+	  (match_operand:SI 4 "reg_or_s16_operand"     "rI,rI")))
    (clobber (reg:BI SR_CY_REG))]
   ""
   "#"
@@ -1147,29 +1305,6 @@
 {
   emit_insn (gen_addsi_co (operands[0], operands[1], constm1_rtx));
   emit_insn (gen_addsi_ci (operands[2], operands[3], operands[4]));
-  DONE;
-})
-
-(define_insn_and_split "*adddi_int_0_m1"
-  [(set (match_operand:SI 0 "register_operand"       "=r,&r")
-	(plus:SI
-	  (match_operand:SI 1 "register_operand"     " 0, r")
-	  (const_int -1)))
-   (set (match_operand:SI 2 "register_operand"       "=r, r")
-	(plus:SI
-	  (ne:SI (match_dup 1) (const_int 0))
-	  (match_operand:SI 3 "reg_or_s16_operand"   "rI,rI")))
-   (clobber (reg:BI SR_CY_REG))]
-  ""
-  "#"
-  "reload_completed"
-  [(const_int 0)]
-{
-  emit_insn (gen_addsi_co (operands[0], operands[1], constm1_rtx));
-  if (CONST_INT_P (operands[3]))
-    emit_insn (gen_addsi_ci (operands[2], const0_rtx, operands[4]));
-  else
-    emit_insn (gen_addsi_ci (operands[2], operands[3], const0_rtx));
   DONE;
 })
 
@@ -1223,6 +1358,88 @@
       emit_insn (gen_subsi3 (operands[3], operands[4], operands[5]));
       emit_insn (gen_subsi3 (operands[3], operands[3], operands[6]));
     }
+  DONE;
+})
+
+(define_insn_and_split "*subdi_1"
+  [(set (match_operand:SI 0 "register_operand"           "=r,&r")
+	(minus:SI (match_operand:SI 1 "reg_or_0_operand" " 0,rO")
+		  (match_operand:SI 2 "reg_or_0_operand" "rO,rO")))
+   (set (match_operand:SI 3 "register_operand"           "=r,r")
+	(minus:SI
+	  (match_operand:SI 4 "reg_or_0_operand"         "rO,rO")
+	  (ltu:SI (match_dup 1) (match_dup 2))))
+   (clobber (match_scratch:SI 5 "=&r,&r"))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_subsi_co (operands[0], operands[1], operands[2]));
+  emit_insn (gen_addsi_ci (operands[5], const0_rtx, const0_rtx));
+  emit_insn (gen_subsi3 (operands[3], operands[4], operands[5]));
+  DONE;
+})
+
+(define_insn_and_split "*subdi_2"
+  [(set (match_operand:SI 0 "register_operand"           "=r,&r")
+	(minus:SI (match_operand:SI 1 "reg_or_0_operand" " 0,rO")
+		  (match_operand:SI 2 "reg_or_0_operand" "rO,rO")))
+   (set (match_operand:SI 3 "register_operand"           "=r,r")
+	(minus:SI
+	  (ltu:SI (match_dup 1) (match_dup 2))
+	  (match_operand:SI 4 "reg_or_0_operand"         "rO,rO")))
+   (clobber (match_scratch:SI 5 "=&r,&r"))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_subsi_co (operands[0], operands[1], operands[2]));
+  emit_insn (gen_addsi_ci (operands[5], const0_rtx, const0_rtx));
+  emit_insn (gen_subsi3 (operands[3], operands[5], operands[4]));
+  DONE;
+})
+
+(define_insn_and_split "*subdi_3"
+  [(set (match_operand:SI 0 "register_operand"     "=r")
+	(minus:SI
+	  (match_operand:SI 1 "reg_or_0_operand"   "rO")
+	  (ltu:SI
+	    (match_operand:SI 2 "reg_or_0_operand" "rO")
+	    (match_operand:SI 3 "reg_or_0_operand" "rO"))))
+   (clobber (match_scratch:SI 4 "=&r"))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_subsi_co (operands[4], operands[2], operands[3]));
+  emit_insn (gen_addsi_ci (operands[4], const0_rtx, const0_rtx));
+  emit_insn (gen_subsi3 (operands[0], operands[1], operands[4]));
+  DONE;
+})
+
+(define_insn_and_split "*subdi_4"
+  [(set (match_operand:SI 0 "register_operand"     "=r")
+	(minus:SI
+	  (ltu:SI
+	    (match_operand:SI 1 "reg_or_0_operand" "rO")
+	    (match_operand:SI 2 "reg_or_0_operand" "rO"))
+	  (match_operand:SI 3 "reg_or_0_operand"   "rO")))
+   (clobber (match_scratch:SI 4 "=&r"))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_subsi_co (operands[4], operands[1], operands[2]));
+  emit_insn (gen_addsi_ci (operands[4], const0_rtx, const0_rtx));
+  emit_insn (gen_subsi3 (operands[0], operands[4], operands[3]));
   DONE;
 })
 
