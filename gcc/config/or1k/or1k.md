@@ -432,12 +432,151 @@
   [(set (match_operand:SI 0 "register_operand")
 	(match_operator:SI 1 "ordered_comparison_operator"
 	  [(match_operand:SI 2 "reg_or_0_operand")
-	   (match_operand:SI 3 "reg_or_s16_operand")]))]
-  "TARGET_CMOV"
+	   (match_operand:SI 3 "nonmemory_operand")]))]
+  ""
 {
-  or1k_expand_compare (operands + 1);
-  PUT_MODE (operands[1], SImode);
-  emit_insn (gen_rtx_SET (operands[0], operands[1]));
+  rtx_code code = GET_CODE (operands[1]);
+  rtx out = operands[0];
+  rtx in0 = operands[2];
+  rtx in1 = operands[3];
+  bool need_inv = false;
+  bool need_swap = false;
+  bool need_zero = false;
+  bool need_reg = false;
+
+ restart:
+  switch (code)
+    {
+    case EQ:
+      need_inv = true;
+      /* fallthru */
+    case NE:
+      need_zero = in1 != const0_rtx;
+      need_reg = !reg_or_s16_operand(in1, SImode);
+      break;
+
+    case LEU:
+      if (CONST_INT_P (in1) && INTVAL (in1) != -1)
+	{
+	  in1 = gen_int_mode (INTVAL (in1) + 1, SImode);
+	  code = LTU;
+	  goto do_ltu_i;
+	}
+      need_swap = true;
+      goto do_geu;
+
+    case GTU:
+      if (CONST_INT_P (in1) && INTVAL (in1) != -1)
+	{
+	  in1 = gen_int_mode (INTVAL (in1) + 1, SImode);
+	  code = GEU;
+	  goto do_geu;
+	}
+      need_swap = true;
+      goto do_ltu_r;
+
+    case GEU:
+    do_geu:
+      if (sgeui_operand (in1, SImode))
+	break;
+      need_inv = true;
+      goto do_ltu_r;
+
+    case LTU:
+    do_ltu_i:
+      if (sgeui_operand (in1, SImode))
+	{
+	  need_inv = true;
+	  break;
+	}
+    do_ltu_r:
+      need_reg = !reg_or_0_operand (in1, SImode);
+      break;
+
+    case LT:
+      if (in1 == const0_rtx)
+	break;
+      goto do_default;
+
+    case GE:
+      if (in1 == const0_rtx)
+	{
+	  need_inv = true;
+	  break;
+	}
+      goto do_default;
+
+    default:
+    do_default:
+      if (TARGET_CMOV)
+	goto do_cmov;
+      if (optimize_size)
+	FAIL;
+      rtx min = force_reg (SImode, gen_int_mode (0x80000000, SImode));
+      in0 = expand_binop (SImode, add_optab, in0, min, NULL, 1, OPTAB_DIRECT);
+      if (CONST_INT_P (in1))
+	in1 = gen_int_mode (INTVAL (in1) + 0x80000000, SImode);
+      else
+	in1 = expand_binop (SImode, add_optab, in1, min, NULL, 1, OPTAB_DIRECT);
+      code = unsigned_condition (code);
+      goto restart;
+    }
+
+  /* Use l.cmov unless it's more expensive.  */
+  if (TARGET_CMOV
+      && (3 + !reg_or_s16_operand (in1, SImode)
+	  <= 2 + need_inv + need_zero + need_reg))
+    {
+    do_cmov:
+      if (!reg_or_s16_operand (in1, SImode))
+	in1 = force_reg (SImode, in1);
+      if (GET_CODE (operands[1]) != code || operands[3] != in1)
+	{
+	  operands[1] = gen_rtx_fmt_ee (code, SImode, in0, in1);
+	  operands[3] = in1;
+	}
+      or1k_expand_compare (operands + 1);
+      PUT_MODE (operands[1], SImode);
+      emit_insn (gen_rtx_SET (out, operands[1]));
+      DONE;
+    }
+
+  if (need_swap)
+    {
+      std::swap (in0, in1);
+      code = swap_condition (code);
+    }
+  if (need_inv)
+    code = reverse_condition (code);
+  if (need_reg)
+    in1 = force_reg (SImode, in1);
+  if (need_zero)
+    {
+      emit_insn (gen_xorsi3 (out, in0, in1));
+      in0 = out;
+      in1 = const0_rtx;
+    }
+
+  switch (code)
+    {
+    case NE:
+      emit_insn (gen_sne_sr_cy (out, in0));
+      break;
+    case LT:
+      emit_insn (gen_lshrsi3 (out, in0, GEN_INT (31)));
+      break;
+    case LTU:
+      emit_insn (gen_sltu_sr_cy (out, in0, in1));
+      break;
+    case GEU:
+      emit_insn (gen_sgeui_sr_cy (out, in0, in1));
+      break;
+    default:
+      gcc_unreachable ();
+    }
+
+  if (need_inv)
+    emit_insn (gen_xorsi3 (out, out, const1_rtx));
   DONE;
 })
 
@@ -465,7 +604,7 @@
 ;; Therefore, we allow for scc to operate without CMOV, but fail to
 ;; advertise cstoresi4 without CMOV.
 
-(define_expand "sne"
+(define_expand "sne_sr_f"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(ne:SI (reg:BI SR_F_REG) (const_int 0)))]
   "")
@@ -506,6 +645,52 @@
   emit_move_insn (operands[0], const0_rtx);
 
   emit_label (label);
+  DONE;
+})
+
+(define_insn_and_split "sne_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(ne:SI (match_operand:SI 1 "register_operand" "r")
+	       (const_int 0)))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_addsi_co (operands[0], operands[1], constm1_rtx));
+  emit_insn (gen_addsi_ci (operands[0], const0_rtx, const0_rtx));
+  DONE;
+})
+
+(define_insn_and_split "sltu_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(ltu:SI (match_operand:SI 1 "reg_or_0_operand" "rO")
+		(match_operand:SI 2 "reg_or_0_operand" "rO")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "reload_completed"
+  [(const_int 0)]
+{
+  emit_insn (gen_subsi_co (operands[0], operands[1], operands[2]));
+  emit_insn (gen_addsi_ci (operands[0], const0_rtx, const0_rtx));
+  DONE;
+})
+
+(define_insn_and_split "sgeui_sr_cy"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(geu:SI (match_operand:SI 1 "register_operand" "r")
+		(match_operand:SI 2 "sgeui_operand" "n")))
+   (clobber (reg:BI SR_CY_REG))]
+  ""
+  "#"
+  "&& reload_completed"
+  [(const_int 0)]
+{
+  HOST_WIDE_INT c = INTVAL (operands[2]);
+  emit_insn (gen_addsi_co (operands[0], operands[1], GEN_INT (-c)));
+  emit_insn (gen_addsi_ci (operands[0], const0_rtx, const0_rtx));
   DONE;
 })
 

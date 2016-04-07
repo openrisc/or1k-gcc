@@ -43,6 +43,13 @@
        (and (match_code "const_int")
 	    (match_test "satisfies_constraint_L (op)"))))
 
+(define_predicate "sgeui_operand"
+  (match_code "const_int")
+{
+  HOST_WIDE_INT ival = INTVAL (op);
+  return ival != 0 && IN_RANGE (-ival, -32768, 32767);
+})
+
 (define_predicate "input_operand"
   (match_code "subreg,reg,const_int,mem,const")
 {

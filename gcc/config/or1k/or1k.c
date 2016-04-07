@@ -360,7 +360,7 @@ or1k_expand_atomic_compare_and_swap (rtx operands[])
   emit_label (XEXP (label2, 0));
 
   /* In all cases, SR_F contains 1 on success, and 0 on failure.  */
-  emit_insn (gen_sne (boolval));
+  emit_insn (gen_sne_sr_f (boolval));
 }
 
 void
@@ -427,7 +427,7 @@ or1k_expand_atomic_compare_and_swap_qihi (rtx operands[])
   or1k_finish_atomic_subword (mode, orig_retval, retval, shift);
 
   /* In all cases, CR0 contains EQ on success, and NE on failure.  */
-  emit_insn (gen_sne (boolval));
+  emit_insn (gen_sne_sr_f (boolval));
 }
 
 /* Expand an atomic exchange operation.  */
