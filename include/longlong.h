@@ -894,6 +894,50 @@ extern UDItype __umulsidi3 (USItype, USItype);
   } while (0)
 #endif /* __ns32000__ */
 
+#if defined(__OR1K__) || defined(__OR1KND__)
+# define add_ssaaaa(sh, sl, ah, al, bh, bl)			\
+  do {								\
+    UDItype __a = ((UDItype)(ah) << 32) | (USItype)(al);	\
+    UDItype __b = ((UDItype)(bh) << 32) | (USItype)(bl);	\
+    UDItype __s = __a + __b;					\
+    (sl) = (USItype)__s; (sh) = __s >> 32;			\
+  } while (0)
+# define sub_ddmmss(sh, sl, ah, al, bh, bl)			\
+  do {								\
+    UDItype __a = ((UDItype)(ah) << 32) | (USItype)(al);	\
+    UDItype __b = ((UDItype)(bh) << 32) | (USItype)(bl);	\
+    UDItype __s = __a - __b;					\
+    (sl) = (USItype)__s; (sh) = __s >> 32;			\
+  } while (0)
+/* Unlike the generic version below, make use of carry arithmetic
+   to fold the intermediate multiples.  */
+#define umul_ppmm(w1, w0, u, v)						\
+  do {									\
+    UWtype __x0, __x1, __x2, __x3, __x1h, __x1l, __x2h, __x2l;		\
+    UHWtype __ul, __vl, __uh, __vh;					\
+									\
+    __ul = __ll_lowpart (u);						\
+    __uh = __ll_highpart (u);						\
+    __vl = __ll_lowpart (v);						\
+    __vh = __ll_highpart (v);						\
+									\
+    __x0 = (UWtype) __ul * __vl;					\
+    __x1 = (UWtype) __ul * __vh;					\
+    __x2 = (UWtype) __uh * __vl;					\
+    __x3 = (UWtype) __uh * __vh;					\
+									\
+    __x1l = __x1 << (W_TYPE_SIZE / 2);					\
+    __x2l = __x2 << (W_TYPE_SIZE / 2);					\
+    __x1h = __ll_highpart (__x1);					\
+    __x2h = __ll_highpart (__x2);					\
+									\
+    add_ssaaaa(__x3, __x0, __x3, __x0, __x1h, __x1l);			\
+    add_ssaaaa(__x3, __x0, __x3, __x0, __x2h, __x2l);			\
+    (w1) = __x3;							\
+    (w0) = __x0;							\
+  } while (0)
+#endif /* __OR1K__ */
+
 /* FIXME: We should test _IBMR2 here when we add assembly support for the
    system vendor compilers.
    FIXME: What's needed for gcc PowerPC VxWorks?  __vxworks__ is not good
