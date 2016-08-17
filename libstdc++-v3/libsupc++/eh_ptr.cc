@@ -1,5 +1,5 @@
 // -*- C++ -*- Implement the members of exception_ptr.
-// Copyright (C) 2008-2014 Free Software Foundation, Inc.
+// Copyright (C) 2008-2015 Free Software Foundation, Inc.
 //
 // This file is part of GCC.
 //
@@ -244,6 +244,9 @@ std::rethrow_exception(std::exception_ptr ep)
   dep->terminateHandler = get_terminate ();
   __GXX_INIT_DEPENDENT_EXCEPTION_CLASS(dep->unwindHeader.exception_class);
   dep->unwindHeader.exception_cleanup = __gxx_dependent_exception_cleanup;
+
+  __cxa_eh_globals *globals = __cxa_get_globals ();
+  globals->uncaughtExceptions += 1;
 
 #ifdef _GLIBCXX_SJLJ_EXCEPTIONS
   _Unwind_SjLj_RaiseException (&dep->unwindHeader);

@@ -1,5 +1,5 @@
 /* SSA name expresssons routines
-   Copyright (C) 2013-2014 Free Software Foundation, Inc.
+   Copyright (C) 2013-2015 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -47,13 +47,12 @@ struct GTY(()) ptr_info_def
 
 /* Value range information for SSA_NAMEs representing non-pointer variables.  */
 
-struct GTY (()) range_info_def {
-  /* Minimum for value range.  */
-  double_int min;
-  /* Maximum for value range.  */
-  double_int max;
-  /* Non-zero bits - bits not set are guaranteed to be always zero.  */
-  double_int nonzero_bits;
+struct GTY ((variable_size)) range_info_def {
+  /* Minimum, maximum and nonzero bits.  */
+  TRAILING_WIDE_INT_ACCESSOR (min, ints, 0)
+  TRAILING_WIDE_INT_ACCESSOR (max, ints, 1)
+  TRAILING_WIDE_INT_ACCESSOR (nonzero_bits, ints, 2)
+  trailing_wide_ints <3> ints;
 };
 
 
@@ -69,13 +68,13 @@ struct GTY (()) range_info_def {
 enum value_range_type { VR_UNDEFINED, VR_RANGE, VR_ANTI_RANGE, VR_VARYING };
 
 /* Sets the value range to SSA.  */
-extern void set_range_info (tree, enum value_range_type, double_int,
-			    double_int);
+extern void set_range_info (tree, enum value_range_type, const wide_int_ref &,
+			    const wide_int_ref &);
 /* Gets the value range from SSA.  */
-extern enum value_range_type get_range_info (const_tree, double_int *,
-					     double_int *);
-extern void set_nonzero_bits (tree, double_int);
-extern double_int get_nonzero_bits (const_tree);
+extern enum value_range_type get_range_info (const_tree, wide_int *,
+					     wide_int *);
+extern void set_nonzero_bits (tree, const wide_int_ref &);
+extern wide_int get_nonzero_bits (const_tree);
 extern void init_ssanames (struct function *, int);
 extern void fini_ssanames (void);
 extern void ssanames_print_statistics (void);
@@ -95,6 +94,8 @@ extern void duplicate_ssa_name_ptr_info (tree, struct ptr_info_def *);
 extern tree duplicate_ssa_name_fn (struct function *, tree, gimple);
 extern void duplicate_ssa_name_range_info (tree, enum value_range_type,
 					   struct range_info_def *);
+extern void reset_flow_sensitive_info (tree);
+extern void reset_flow_sensitive_info_in_bb (basic_block);
 extern void release_defs (gimple);
 extern void replace_ssa_name_symbol (tree, tree);
 
@@ -103,7 +104,7 @@ extern void replace_ssa_name_symbol (tree, tree);
    in function cfun.  */
 
 static inline tree
-make_ssa_name (tree var, gimple stmt)
+make_ssa_name (tree var, gimple stmt = NULL)
 {
   return make_ssa_name_fn (cfun, var, stmt);
 }
@@ -112,7 +113,7 @@ make_ssa_name (tree var, gimple stmt)
    statement STMT in function cfun.  */
 
 static inline tree
-copy_ssa_name (tree var, gimple stmt)
+copy_ssa_name (tree var, gimple stmt = NULL)
 {
   return copy_ssa_name_fn (cfun, var, stmt);
 }

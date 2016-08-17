@@ -1,5 +1,5 @@
 /* Memory management routines.
-   Copyright (C) 2002-2014 Free Software Foundation, Inc.
+   Copyright (C) 2002-2015 Free Software Foundation, Inc.
    Contributed by Paul Brook <paul@nowt.org>
 
 This file is part of the GNU Fortran runtime library (libgfortran).
@@ -86,4 +86,18 @@ xcalloc (size_t nmemb, size_t size)
     os_error ("Allocating cleared memory failed");
 
   return p;
+}
+
+
+void *
+xrealloc (void *ptr, size_t size)
+{
+  if (size == 0)
+    size = 1;
+
+  void *newp = realloc (ptr, size);
+  if (!newp)
+    os_error ("Memory allocation failure in xrealloc");
+
+  return newp;
 }

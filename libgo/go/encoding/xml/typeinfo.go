@@ -60,7 +60,7 @@ func getTypeInfo(typ reflect.Type) (*typeInfo, error) {
 		n := typ.NumField()
 		for i := 0; i < n; i++ {
 			f := typ.Field(i)
-			if f.PkgPath != "" || f.Tag.Get("xml") == "-" {
+			if (f.PkgPath != "" && !f.Anonymous) || f.Tag.Get("xml") == "-" {
 				continue // Private field
 			}
 
@@ -74,6 +74,9 @@ func getTypeInfo(typ reflect.Type) (*typeInfo, error) {
 					inner, err := getTypeInfo(t)
 					if err != nil {
 						return nil, err
+					}
+					if tinfo.xmlname == nil {
+						tinfo.xmlname = inner.xmlname
 					}
 					for _, finfo := range inner.fields {
 						finfo.idx = append([]int{i}, finfo.idx...)

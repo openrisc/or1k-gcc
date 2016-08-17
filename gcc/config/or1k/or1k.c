@@ -28,6 +28,9 @@
 #include "coretypes.h"
 #include "tm.h"
 #include "rtl.h"
+#include "hash-set.h"
+#include "inchash.h"
+#include "symtab.h"
 #include "tree.h"
 #include "stringpool.h"
 #include "stor-layout.h"
@@ -44,6 +47,8 @@
 #include "flags.h"
 #include "reload.h"
 #include "function.h"
+#include "explow.h"
+#include "emit-rtl.h"
 #include "expr.h"
 #include "toplev.h"
 #include "recog.h"
@@ -54,9 +59,13 @@
 #include "target-def.h"
 #include "debug.h"
 #include "langhooks.h"
+#include "predict.h"
+#include "basic-block.h"
 #include "df.h"
+#include "optabs.h"
 #include "dwarf2.h"
 #include "ansidecl.h"
+#include "builtins.h"
 
 /* ========================================================================== */
 /* Local macros                                                               */
@@ -403,8 +412,9 @@ or1k_expand_compare (enum rtx_code code, rtx op0, rtx op1)
 /* TODO(bluecmd): Write documentation for this function */
 void
 or1k_expand_cmpxchg_qihi (rtx bval, rtx retval, rtx mem, rtx oldval, rtx newval,
-                          int is_weak, enum memmodel success_mode,
-                          enum memmodel failure_mode)
+                          int  __attribute__ ((unused)) is_weak,
+                          enum memmodel __attribute__ ((unused)) success_mode,
+                          enum memmodel __attribute__ ((unused)) failure_mode)
 {
   rtx addr1 = force_reg (Pmode, XEXP (mem, 0));
   rtx addr = gen_reg_rtx (Pmode);
@@ -2410,7 +2420,7 @@ or1k_frame_pointer_required (void)
 static struct machine_function *
 or1k_init_machine_status (void)
 {
-    return ggc_alloc_cleared_machine_function ();
+  return ggc_cleared_alloc<machine_function> ();
 }
 
 void

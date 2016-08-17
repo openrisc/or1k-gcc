@@ -27,6 +27,5 @@ void *test (MMixin & anExample)
 int main ()
 {
   CExample c;
-  test (c);
-  return 0;
+  return (test (c) != &c);
 }

@@ -1,5 +1,5 @@
 /* Array things
-   Copyright (C) 2000-2014 Free Software Foundation, Inc.
+   Copyright (C) 2000-2015 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -21,6 +21,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
+#include "flags.h"
 #include "gfortran.h"
 #include "match.h"
 #include "constructor.h"
@@ -100,7 +101,7 @@ match_subscript (gfc_array_ref *ar, int init, bool match_star)
 
   if (star)
     {
-      gfc_error ("Unexpected '*' in coarray subscript at %C");
+      gfc_error ("Unexpected %<*%> in coarray subscript at %C");
       return MATCH_ERROR;
     }
 
@@ -145,9 +146,9 @@ matched:
 }
 
 
-/* Match an array reference, whether it is the whole array or a
-   particular elements or a section. If init is set, the reference has
-   to consist of init expressions.  */
+/* Match an array reference, whether it is the whole array or particular
+   elements or a section.  If init is set, the reference has to consist
+   of init expressions.  */
 
 match
 gfc_match_array_ref (gfc_array_ref *ar, gfc_array_spec *as, int init,
@@ -207,9 +208,9 @@ coarray:
 	return MATCH_ERROR;
     }
 
-  if (gfc_option.coarray == GFC_FCOARRAY_NONE)
+  if (flag_coarray == GFC_FCOARRAY_NONE)
     {
-      gfc_fatal_error ("Coarrays disabled at %C, use -fcoarray= to enable");
+      gfc_fatal_error ("Coarrays disabled at %C, use %<-fcoarray=%> to enable");
       return MATCH_ERROR;
     }
 
@@ -246,7 +247,7 @@ coarray:
       if (gfc_match_char (',') != MATCH_YES)
 	{
 	  if (gfc_match_char ('*') == MATCH_YES)
-	    gfc_error ("Unexpected '*' for codimension %d of %d at %C",
+	    gfc_error ("Unexpected %<*%> for codimension %d of %d at %C",
 		       ar->codimen + 1, corank);
 	  else
 	    gfc_error ("Invalid form of coarray reference at %C");
@@ -254,7 +255,7 @@ coarray:
 	}
       else if (ar->dimen_type[ar->codimen + ar->dimen] == DIMEN_STAR)
 	{
-	  gfc_error ("Unexpected '*' for codimension %d of %d at %C",
+	  gfc_error ("Unexpected %<*%> for codimension %d of %d at %C",
 		     ar->codimen + 1, corank);
 	  return MATCH_ERROR;
 	}
@@ -313,7 +314,7 @@ resolve_array_bound (gfc_expr *e, int check_constant)
   if (check_constant && !gfc_is_constant_expr (e))
     {
       if (e->expr_type == EXPR_VARIABLE)
-	gfc_error ("Variable '%s' at %L in this context must be constant",
+	gfc_error ("Variable %qs at %L in this context must be constant",
 		   e->symtree->n.sym->name, &e->where);
       else
 	gfc_error ("Expression at %L in this context must be constant",
@@ -415,6 +416,13 @@ match_array_element_spec (gfc_array_spec *as)
   if (!gfc_expr_check_typed (*upper, gfc_current_ns, false))
     return AS_UNKNOWN;
 
+  if ((*upper)->expr_type == EXPR_FUNCTION && (*upper)->ts.type == BT_UNKNOWN
+      && (*upper)->symtree && strcmp ((*upper)->symtree->name, "null") == 0)
+    {
+      gfc_error ("Expecting a scalar INTEGER expression at %C");
+      return AS_UNKNOWN;
+    }
+
   if (gfc_match_char (':') == MATCH_NO)
     {
       *lower = gfc_get_int_expr (gfc_default_integer_kind, NULL, 1);
@@ -435,13 +443,20 @@ match_array_element_spec (gfc_array_spec *as)
   if (!gfc_expr_check_typed (*upper, gfc_current_ns, false))
     return AS_UNKNOWN;
 
+  if ((*upper)->expr_type == EXPR_FUNCTION && (*upper)->ts.type == BT_UNKNOWN
+      && (*upper)->symtree && strcmp ((*upper)->symtree->name, "null") == 0)
+    {
+      gfc_error ("Expecting a scalar INTEGER expression at %C");
+      return AS_UNKNOWN;
+    }
+
   return AS_EXPLICIT;
 }
 
 
 /* Matches an array specification, incidentally figuring out what sort
-   it is. Match either a normal array specification, or a coarray spec
-   or both. Optionally allow [:] for coarrays.  */
+   it is.  Match either a normal array specification, or a coarray spec
+   or both.  Optionally allow [:] for coarrays.  */
 
 match
 gfc_match_array_spec (gfc_array_spec **asp, bool match_dim, bool match_codim)
@@ -590,9 +605,9 @@ coarray:
   if (!gfc_notify_std (GFC_STD_F2008, "Coarray declaration at %C"))
     goto cleanup;
 
-  if (gfc_option.coarray == GFC_FCOARRAY_NONE)
+  if (flag_coarray == GFC_FCOARRAY_NONE)
     {
-      gfc_fatal_error ("Coarrays disabled at %C, use -fcoarray= to enable");
+      gfc_fatal_error ("Coarrays disabled at %C, use %<-fcoarray=%> to enable");
       goto cleanup;
     }
 
@@ -684,7 +699,7 @@ coarray:
 
   if (current_type == AS_EXPLICIT)
     {
-      gfc_error ("Upper bound of last coarray dimension must be '*' at %C");
+      gfc_error ("Upper bound of last coarray dimension must be %<*%> at %C");
       goto cleanup;
     }
 
@@ -752,7 +767,7 @@ gfc_set_array_spec (gfc_symbol *sym, gfc_array_spec *as, locus *error_loc)
   if ((sym->as->type == AS_ASSUMED_RANK && as->corank)
       || (as->type == AS_ASSUMED_RANK && sym->as->corank))
     {
-      gfc_error ("The assumed-rank array '%s' at %L shall not have a "
+      gfc_error ("The assumed-rank array %qs at %L shall not have a "
 		 "codimension", sym->name, error_loc);
       return false;
     }
@@ -912,7 +927,7 @@ check_duplicate_iterator (gfc_constructor_base base, gfc_symbol *master)
 
       if (c->iterator->var->symtree->n.sym == master)
 	{
-	  gfc_error ("DO-iterator '%s' at %L is inside iterator of the "
+	  gfc_error ("DO-iterator %qs at %L is inside iterator of the "
 		     "same name", master->name, &c->where);
 
 	  return 1;
@@ -1073,7 +1088,8 @@ gfc_match_array_constructor (gfc_expr **result)
   /* Try to match an optional "type-spec ::"  */
   gfc_clear_ts (&ts);
   gfc_new_undo_checkpoint (changed_syms);
-  if (gfc_match_type_spec (&ts) == MATCH_YES)
+  m = gfc_match_type_spec (&ts);
+  if (m == MATCH_YES)
     {
       seen_ts = (gfc_match (" ::") == MATCH_YES);
 
@@ -1094,6 +1110,11 @@ gfc_match_array_constructor (gfc_expr **result)
 	      goto cleanup;
 	    }
 	}
+    }
+  else if (m == MATCH_ERROR)
+    {
+      gfc_restore_last_undo_checkpoint ();
+      goto cleanup;
     }
 
   if (seen_ts)
@@ -1136,6 +1157,35 @@ done:
     {
       expr = gfc_get_array_expr (ts.type, ts.kind, &where);
       expr->ts = ts;
+
+      /* If the typespec is CHARACTER, check that array elements can
+	 be converted.  See PR fortran/67803.  */
+      if (ts.type == BT_CHARACTER)
+	{
+	  gfc_constructor *c;
+
+	  c = gfc_constructor_first (head);
+	  for (; c; c = gfc_constructor_next (c))
+	    {
+	      if (gfc_numeric_ts (&c->expr->ts)
+		  || c->expr->ts.type == BT_LOGICAL)
+		{
+		  gfc_error ("Incompatiable typespec for array element at %L",
+			     &c->expr->where);
+		  return MATCH_ERROR;
+		}
+
+	      /* Special case null().  */
+	      if (c->expr->expr_type == EXPR_FUNCTION
+		  && c->expr->ts.type == BT_UNKNOWN
+		  && strcmp (c->expr->symtree->name, "null") == 0)
+		{
+		  gfc_error ("Incompatiable typespec for array element at %L",
+			     &c->expr->where);
+		  return MATCH_ERROR;
+		}
+	    }
+	}
     }
   else
     expr = gfc_get_array_expr (BT_UNKNOWN, 0, &where);
@@ -1145,6 +1195,7 @@ done:
     expr->ts.u.cl->length_from_typespec = seen_ts;
 
   *result = expr;
+
   return MATCH_YES;
 
 syntax:
@@ -1307,6 +1358,9 @@ check_constructor (gfc_constructor_base ctor, bool (*check_function) (gfc_expr *
   for (c = gfc_constructor_first (ctor); c; c = gfc_constructor_next (c))
     {
       e = c->expr;
+
+      if (!e)
+	continue;
 
       if (e->expr_type != EXPR_ARRAY)
 	{
@@ -1654,7 +1708,7 @@ gfc_expand_constructor (gfc_expr *e, bool fatal)
 
   /* If we can successfully get an array element at the max array size then
      the array is too big to expand, so we just return.  */
-  f = gfc_get_array_element (e, gfc_option.flag_max_array_constructor);
+  f = gfc_get_array_element (e, flag_max_array_constructor);
   if (f != NULL)
     {
       gfc_free_expr (f);
@@ -1662,9 +1716,8 @@ gfc_expand_constructor (gfc_expr *e, bool fatal)
 	{
 	  gfc_error ("The number of elements in the array constructor "
 		     "at %L requires an increase of the allowed %d "
-		     "upper limit.   See -fmax-array-constructor "
-		     "option", &e->where,
-		     gfc_option.flag_max_array_constructor);
+		     "upper limit.   See %<-fmax-array-constructor%> "
+		     "option", &e->where, flag_max_array_constructor);
 	  return false;
 	}
       return true;

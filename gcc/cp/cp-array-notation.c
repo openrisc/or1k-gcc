@@ -1,7 +1,7 @@
 /* This file is part of the Intel(R) Cilk(TM) Plus support
    It contains routines to handle Array Notation expression
    handling routines in the C++ Compiler.
-   Copyright (C) 2013-2014 Free Software Foundation, Inc.
+   Copyright (C) 2013-2015 Free Software Foundation, Inc.
    Contributed by Balaji V. Iyer <balaji.v.iyer@intel.com>,
                   Intel Corporation
 
@@ -26,7 +26,7 @@
    An array notation expression has 4 major components:
    1. The array name
    2. Start Index
-   3. Number of elements we need to acess (we call it length)
+   3. Number of elements we need to access (we call it length)
    4. Stride
 
    So, if we have something like A[0:5:2], we are accessing A[0], A[2], A[4],
@@ -53,6 +53,16 @@
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
+#include "hash-set.h"
+#include "machmode.h"
+#include "vec.h"
+#include "double-int.h"
+#include "input.h"
+#include "alias.h"
+#include "symtab.h"
+#include "options.h"
+#include "wide-int.h"
+#include "inchash.h"
 #include "tree.h"
 #include "cp-tree.h"
 #include "c-family/c-common.h"
@@ -181,7 +191,7 @@ replace_invariant_exprs (tree *node)
 	  if (VOID_TYPE_P (TREE_TYPE (t)))
 	    {
 	      finish_expr_stmt (t);
-	      new_var = void_zero_node;
+	      new_var = void_node;
 	    }
 	  else 
 	    new_var = get_temp_regvar (TREE_TYPE (t), t); 
@@ -1131,6 +1141,7 @@ expand_array_notation_exprs (tree t)
     {
     case ERROR_MARK:
     case IDENTIFIER_NODE:
+    case VOID_CST:
     case INTEGER_CST:
     case REAL_CST:
     case FIXED_CST:
@@ -1436,7 +1447,7 @@ cilkplus_an_triplet_types_ok_p (location_t loc, tree start_index, tree length,
       error_at (loc, "stride of array notation triplet is not an integer");
       return false;
     }
-  if (!TREE_CODE (type) == FUNCTION_TYPE)
+  if (TREE_CODE (type) == FUNCTION_TYPE)
     {
       error_at (loc, "array notation cannot be used with function type");
       return false;

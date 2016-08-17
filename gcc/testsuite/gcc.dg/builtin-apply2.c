@@ -1,18 +1,6 @@
 /* { dg-do run } */
-/* { dg-skip-if "Variadic funcs have all args on stack. Normal funcs have args in registers." { "aarch64*-*-* avr-*-* " } { "*" } { "" } } */
-/* { dg-skip-if "Variadic funcs use Base AAPCS.  Normal funcs use VFP variant." { "arm*-*-*" } { "-mfloat-abi=hard" } { "" } } */
-
-/* PR target/12503 */
-/* Origin: <pierre.nguyen-tuong@asim.lip6.fr> */
-
-/* Verify that __builtin_apply behaves correctly on targets
-   with pre-pushed arguments (e.g. SPARC).  */
-
-
-
-#define INTEGER_ARG  5
-/* { dg-do run } */
-/* { dg-skip-if "Variadic funcs have all args on stack. Normal funcs have args in registers." { "aarch64*-*-* avr-*-* nds32*-*-*" } { "*" } { "" } } */
+/* { dg-require-effective-target untyped_assembly } */
+/* { dg-skip-if "Variadic funcs have all args on stack. Normal funcs have args in registers." { "avr-*-* nds32*-*-*" } { "*" } { "" } } */
 /* { dg-skip-if "Variadic funcs use Base AAPCS.  Normal funcs use VFP variant." { arm*-*-* && arm_hf_eabi } { "*" } { "" } } */
 
 /* PR target/12503 */

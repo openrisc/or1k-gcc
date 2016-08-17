@@ -1,4 +1,4 @@
-/* Copyright (C) 2002-2014 Free Software Foundation, Inc.
+/* Copyright (C) 2002-2015 Free Software Foundation, Inc.
    Contributed by Andy Vaught
    F2003 I/O support contributed by Jerry DeLisle
 
@@ -240,6 +240,18 @@ get_fnode (format_data *fmt, fnode **head, fnode **tail, format_token t)
   f->repeat = -1;
   f->source = fmt->format_string;
   return f;
+}
+
+
+/* free_format()-- Free allocated format string.  */
+void
+free_format (st_parameter_dt *dtp)
+{
+  if ((dtp->common.flags & IOPARM_DT_HAS_FORMAT) && dtp->format)
+    {
+      free (dtp->format);
+      dtp->format = NULL;
+    }
 }
 
 
@@ -1117,25 +1129,26 @@ parse_format_list (st_parameter_dt *dtp, bool *seen_dd)
 void
 format_error (st_parameter_dt *dtp, const fnode *f, const char *message)
 {
-  int width, i, j, offset;
+  int width, i, offset;
 #define BUFLEN 300
   char *p, buffer[BUFLEN];
   format_data *fmt = dtp->u.p.fmt;
 
   if (f != NULL)
-    fmt->format_string = f->source;
+    p = f->source;
+  else                /* This should not happen.  */
+    p = dtp->format;
 
   if (message == unexpected_element)
     snprintf (buffer, BUFLEN, message, fmt->error_element);
   else
     snprintf (buffer, BUFLEN, "%s\n", message);
 
-  j = fmt->format_string - dtp->format;
+  /* Get the offset into the format string where the error occurred.  */
+  offset = dtp->format_len - (fmt->reversion_ok ?
+			      (int) strlen(p) : fmt->format_string_len);
 
-  offset = (j > 60) ? j - 40 : 0;
-
-  j -= offset;
-  width = dtp->format_len - offset;
+  width = dtp->format_len;
 
   if (width > 80)
     width = 80;
@@ -1144,18 +1157,39 @@ format_error (st_parameter_dt *dtp, const fnode *f, const char *message)
 
   p = strchr (buffer, '\0');
 
-  memcpy (p, dtp->format + offset, width);
+  if (dtp->format)
+    memcpy (p, dtp->format, width);
 
   p += width;
   *p++ = '\n';
 
   /* Show where the problem is */
 
-  for (i = 1; i < j; i++)
+  for (i = 1; i < offset; i++)
     *p++ = ' ';
 
   *p++ = '^';
   *p = '\0';
+
+  /* Cleanup any left over memory allocations before calling generate
+     error.  */
+  if (is_internal_unit (dtp))
+    {
+      if (dtp->format != NULL)
+	{
+	  free (dtp->format);
+	  dtp->format = NULL;
+	}
+
+      /* Leave these alone if IOSTAT was given because execution will
+	 return from generate error in those cases.  */
+      if (!(dtp->common.flags & IOPARM_HAS_IOSTAT))
+	{
+	  free (dtp->u.p.fmt);
+	  free_format_hash_table (dtp->u.p.current_unit);
+	  free_internal_unit (dtp);
+	}
+    }
 
   generate_error (&dtp->common, LIBERROR_FORMAT, buffer);
 }
@@ -1217,12 +1251,8 @@ parse_format (st_parameter_dt *dtp)
 
   /* Not found so proceed as follows.  */
 
-  if (format_cache_ok)
-    {
-      char *fmt_string = xmalloc (dtp->format_len);
-      memcpy (fmt_string, dtp->format, dtp->format_len);
-      dtp->format = fmt_string;
-    }
+  char *fmt_string = fc_strdup_notrim (dtp->format, dtp->format_len);
+  dtp->format = fmt_string;
 
   dtp->u.p.fmt = fmt = xmalloc (sizeof (format_data));
   fmt->format_string = dtp->format;
@@ -1254,19 +1284,13 @@ parse_format (st_parameter_dt *dtp)
   else
     fmt->error = "Missing initial left parenthesis in format";
 
-  if (fmt->error)
-    {
-      format_error (dtp, NULL, fmt->error);
-      if (format_cache_ok)
-	free (dtp->format);
-      free_format_hash_table (dtp->u.p.current_unit);
-      return;
-    }
-
   if (format_cache_ok)
     save_parsed_format (dtp);
   else
     dtp->u.p.format_not_saved = 1;
+
+  if (fmt->error)
+    format_error (dtp, NULL, fmt->error);
 }
 
 

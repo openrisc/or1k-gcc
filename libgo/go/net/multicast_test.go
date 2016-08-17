@@ -25,8 +25,10 @@ var ipv4MulticastListenerTests = []struct {
 // port.
 func TestIPv4MulticastListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9":
+	case "android", "nacl", "plan9":
 		t.Skipf("skipping test on %q", runtime.GOOS)
+	case "solaris":
+		t.Skipf("skipping test on solaris, see issue 7399")
 	}
 
 	closer := func(cs []*UDPConn) {
@@ -43,7 +45,7 @@ func TestIPv4MulticastListener(t *testing.T) {
 		// routing stuff for finding out an appropriate
 		// nexthop containing both network and link layer
 		// adjacencies.
-		if ifi == nil && !*testExternal {
+		if ifi == nil && (testing.Short() || !*testExternal) {
 			continue
 		}
 		for _, tt := range ipv4MulticastListenerTests {
@@ -93,8 +95,10 @@ var ipv6MulticastListenerTests = []struct {
 // port.
 func TestIPv6MulticastListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "plan9", "solaris":
+	case "plan9":
 		t.Skipf("skipping test on %q", runtime.GOOS)
+	case "solaris":
+		t.Skipf("skipping test on solaris, see issue 7399")
 	}
 	if !supportsIPv6 {
 		t.Skip("ipv6 is not supported")
@@ -117,7 +121,7 @@ func TestIPv6MulticastListener(t *testing.T) {
 		// routing stuff for finding out an appropriate
 		// nexthop containing both network and link layer
 		// adjacencies.
-		if ifi == nil && (!*testExternal || !*testIPv6) {
+		if ifi == nil && (testing.Short() || !*testExternal || !*testIPv6) {
 			continue
 		}
 		for _, tt := range ipv6MulticastListenerTests {

@@ -1,5 +1,5 @@
 /* Hash tables for the CPP library.
-   Copyright (C) 1986-2014 Free Software Foundation, Inc.
+   Copyright (C) 1986-2015 Free Software Foundation, Inc.
    Written by Per Bothner, 1994.
    Based on CCCP program by Paul Rubin, June 1986
    Adapted to ANSI C, Richard Stallman, Jan 1987
@@ -54,9 +54,7 @@ _cpp_init_hashtable (cpp_reader *pfile, cpp_hash_table *table)
       table = ht_create (13);	/* 8K (=2^13) entries.  */
       table->alloc_node = alloc_node;
 
-      _obstack_begin (&pfile->hash_ob, 0, 0,
-		      (void *(*) (long)) xmalloc,
-		      (void (*) (void *)) free);
+      obstack_specify_allocation (&pfile->hash_ob, 0, 0, xmalloc, free);
     }
 
   table->pfile = pfile;
