@@ -1,3 +1,20 @@
+2016-06-03  Release Manager
+
+	* GCC 5.4.0 released.
+
+2016-04-23  Dominique d'Humieres  <dominiq@lps.ens.fr>
+
+	backport from trunk:
+	2016-04-20  Ben Elliston  <bje@gnu.org>
+
+	* testsuite/lib/libjava.exp (libjava_arguments): Use 'file
+	normalize' rather than the defunct DejaGnu 'absolute' proc.
+
+2016-01-03  Matthias Klose  <doko@ubuntu.com>
+
+	* include/jvm.h (GCJ_CXX_ABI_VERSION): Freeze the ABI for releases
+	made from the gcc-5-branch.
+
 2015-12-04  Release Manager
 
 	* GCC 5.3.0 released.
