@@ -74,7 +74,7 @@ Boston, MA 02111-1307, USA.  */
 		             %{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"			\
                  "%{mnewlib:%{!g:-lc} %{g:-lg} -lor1k					\
                             %{mboard=*:-lboard-%*} %{!mboard=*:-lboard-or1ksim}		\
-                            %{!g:-lc} %{g:-lg}						\
+                            %{!g:-lc} -lor1k %{g:-lg}						\
                             }"
 
 /* Target machine storage layout */
