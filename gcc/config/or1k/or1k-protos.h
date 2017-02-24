@@ -35,6 +35,7 @@ extern void        or1k_expand_epilogue (void);
 extern bool        or1k_direct_return (void);
 extern void        or1k_expand_move (machine_mode mode, rtx, rtx);
 extern void        or1k_expand_compare(rtx *operands);
+extern machine_mode or1k_promote_mode(machine_mode, bool, const_tree);
 
 void or1k_expand_atomic_compare_and_swap (rtx operands[]);
 void or1k_expand_atomic_compare_and_swap_qihi (rtx operands[]);

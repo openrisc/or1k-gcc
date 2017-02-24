@@ -159,12 +159,8 @@ Boston, MA 02111-1307, USA.  */
    the value is constrained to be within the bounds of the declared
    type, but kept valid in the wider mode.  The signedness of the
    extension may differ from that of the type. */
-#define PROMOTE_MODE(MODE, UNSIGNEDP, TYPE)     \
-  if (GET_MODE_CLASS (MODE) == MODE_INT         \
-      && GET_MODE_SIZE (MODE) < UNITS_PER_WORD) \
-    (MODE) = SImode;
-  /* CHECK */
-
+#define PROMOTE_MODE(MODE, UNSIGNEDP, TYPE)  \
+    do { (MODE) = or1k_promote_mode (MODE, UNSIGNEDP, TYPE); } while (0)
 
 /*
  * brings 0.4% improvment in static size for linux
@@ -561,22 +557,6 @@ enum reg_class
    (including SYMBOL_REF) can be immediate operands when generating
    position independent code.  */
 #define LEGITIMATE_PIC_OPERAND_P(X) or1k_legitimate_pic_operand_p (X)
-
-/* A C expression to create an RTX representing the place where a library
-   function returns a value of mode mode.
-
-   Note that “library function” in this context means a compiler support
-   routine, used to perform arithmetic, whose name is known specially by the
-   compiler and was not mentioned in the C code being compiled.
-
-   For the OR1K, return value is in R11 (GP_ARG_RETURN).  */   
-#define LIBCALL_VALUE(mode)                                             \
-  gen_rtx_REG(								\
-	   ((GET_MODE_CLASS (mode) != MODE_INT				\
-	     || GET_MODE_SIZE (mode) >= 4)				\
-	    ? (mode)							\
-	    : SImode),							\
-	    GP_ARG_RETURN)
 
 /* Define this if PCC uses the nonreentrant convention for returning
    structure and union values. 

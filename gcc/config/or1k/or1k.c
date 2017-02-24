@@ -1553,71 +1553,32 @@ or1k_expand_epilogue (void)
    These are initialized at the end of this file, to avoid having to
    predeclare all the functions. They are only needed here, so are static.    */
 
-
-
-
-/* -------------------------------------------------------------------------- */
-/*!Define where a function returns values.
-
-   Define this to return an RTX representing the place where a function
-   returns or receives a value of data type ret type, a tree node representing
-   a data type.  "func" is a tree node representing FUNCTION_DECL or
-   FUNCTION_TYPE of a function being called. If "outgoing" is false, the hook
-   should compute the register in which the caller will see the return
-   value. Otherwise, the hook should return an RTX representing the place
-   where a function returns a value.
-
-   On many machines, only TYPE_MODE ("ret_type") is relevant. (Actually, on
-   most machines, scalar values are returned in the same place regardless of
-   mode.) The value of the expression is usually a reg RTX for the hard
-   register where the return value is stored. The value can also be a parallel
-   RTX, if the return value is in multiple places. See FUNCTION_ARG for an
-   explanation of the parallel form. Note that the callee will populate every
-   location specified in the parallel, but if the first element of the
-   parallel contains the whole return value, callers will use that element as
-   the canonical location and ignore the others. The m68k port uses this type
-   of parallel to return pointers in both ‘%a0’ (the canonical location) and
-   ‘%d0’.
-
-   If TARGET_PROMOTE_FUNCTION_RETURN returns true, you must apply the same
-   promotion rules specified in PROMOTE_MODE if valtype is a scalar type.
-
-   If the precise function being called is known, "func" is a tree node
-   (FUNCTION_DECL) for it; otherwise, "func" is a null pointer. This makes it
-   possible to use a different value-returning convention for specific
-   functions when all their calls are known.
-
-   Some target machines have "register windows" so that the register in which
-   a function returns its value is not the same as the one in which the caller
-   sees the value. For such machines, you should return different RTX
-   depending on outgoing.
-
-   TARGET_FUNCTION_VALUE is not used for return values with aggregate data
-   types, because these are returned in another way. See
-   TARGET_STRUCT_VALUE_RTX and related macros.
-
-   For the OR1K, we can just use the result of LIBCALL_VALUE, since all
-   functions return their result in the same place (register rv = r11).
-
-   JPB 30-Aug-10: What about 64-bit scalar returns (long long int, double),
-                  which also use rvh (=r12)?
-
-   @param[in] ret_type  The return type of the function.
-   @param[in] func      Tree representing function being called.
-   @param[in] outgoing  Non-zero (TRUE) if the result represents where the
-                        function places the results, zero (FALSE) if the
-                        result represents where the caller sees the result.
-
-   @return  A RTX representing where the result can be found.                 */
-/* -------------------------------------------------------------------------- */
-static rtx
-or1k_function_value (const_tree  ret_type,
-		     const_tree  func ATTRIBUTE_UNUSED,
-                     bool        outgoing ATTRIBUTE_UNUSED)
+machine_mode
+or1k_promote_mode(machine_mode mode, bool, const_tree type)
 {
-  return LIBCALL_VALUE (TYPE_MODE(ret_type));
+  if ((type ? INTEGRAL_TYPE_P (type) : SCALAR_INT_MODE_P (mode))
+      && GET_MODE_SIZE (mode) < UNITS_PER_WORD)
+    mode = SImode;
+  return mode;
+}
 
-}	/* or1k_function_value () */
+static rtx
+or1k_libcall_value (machine_mode mode, const_rtx /* func */)
+{
+  mode = or1k_promote_mode (mode, false, NULL);
+  return gen_rtx_REG (mode, GP_ARG_RETURN);
+}
+
+static rtx
+or1k_function_value (const_tree ret_type, const_tree /* fn_decl_or_type */,
+                     bool /* outgoing */)
+{
+  machine_mode mode = VOIDmode;
+  if (ret_type)
+    mode = TYPE_MODE (ret_type);
+  mode = or1k_promote_mode (mode, false, ret_type);
+  return gen_rtx_REG (mode, GP_ARG_RETURN);
+}
 
 
 /* Check if a function is suitable for tail call optimization,
@@ -1717,50 +1678,6 @@ or1k_arg_partial_bytes (cumulative_args_t cum ATTRIBUTE_UNUSED,
   return 0;
 
 }	/* or1k_arg_partial_bytes () */
-
-
-/* -------------------------------------------------------------------------- */
-/*!Promote the mode of a function's arguments/return value.
-
-   Like PROMOTE_MODE, but it is applied to outgoing function arguments or
-   function return values. The target hook should return the new mode and
-   possibly change "*punsignedp" if the promotion should change
-   signedness. This function is called only for scalar or pointer types.
-
-   "for_return" allows to distinguish the promotion of arguments and return
-   values. If it is 1, a return value is being promoted and
-   TARGET_FUNCTION_VALUE must perform the same promotions done here. If it is
-   2, the returned mode should be that of the register in which an incoming
-   parameter is copied, or the outgoing result is computed; then the hook
-   should return the same mode as PROMOTE_MODE, though the signedness may be
-   different.
-
-   The default is to not promote arguments and return values. You can also
-   define the hook to "default_promote_function_mode_always_promote" if you
-   would like to apply the same rules given by PROMOTE_MODE.
-
-   For the OR1K, if the size of the mode is integral and less than 4, we
-   promote to SImode, otherwise we return the mode we are supplied.
-
-   @param[in]  type        Not sure. Type of the argument?
-   @param[in]  mode        The mode of argument/return value to consider.
-   @param[out] punsignedp  Signedness of the value.
-   @param[in]  fntype      Not sure. Type of the function?
-   @param[in]  for_return  1 if a return value, 2 if an incoming value.
-
-   @return  The new mode.                                                     */
-/* -------------------------------------------------------------------------- */
-static enum machine_mode
-or1k_promote_function_mode (const_tree         type ATTRIBUTE_UNUSED,
-			    enum machine_mode  mode,
-			    int               *punsignedp ATTRIBUTE_UNUSED,
-			    const_tree         fntype ATTRIBUTE_UNUSED,
-			    int                for_return ATTRIBUTE_UNUSED)
-{
-  return (   (GET_MODE_CLASS (mode) == MODE_INT)
-	  && (GET_MODE_SIZE (mode) < 4)) ? SImode : mode;
-
-}	/* or1k_promote_function_mode () */
 
 
 /* -------------------------------------------------------------------------- */
@@ -2012,6 +1929,8 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 #undef  TARGET_ASM_NAMED_SECTION
 #define TARGET_ASM_NAMED_SECTION  default_elf_asm_named_section
 
+#undef  TARGET_LIBCALL_VALUE
+#define TARGET_LIBCALL_VALUE or1k_libcall_value
 #undef  TARGET_FUNCTION_VALUE
 #define TARGET_FUNCTION_VALUE or1k_function_value
 
@@ -2030,20 +1949,11 @@ or1k_dwarf_calling_convention (const_tree  function ATTRIBUTE_UNUSED)
 #undef TARGET_ASM_FILE_START
 #define TARGET_ASM_FILE_START or1k_asm_file_start
 
-/* This target hook returns TRUE if an argument declared in a prototype as an
-   integral type smaller than int should actually be passed as an int. In
-   addition to avoiding errors in certain cases of mismatch, it also makes for
-   better code on certain machines.
-
-   The default is to not promote prototypes.
-
-   For the OR1K we do require this, so use a utility hook, which always
-   returns TRUE. */
 #undef  TARGET_PROMOTE_PROTOTYPES
 #define TARGET_PROMOTE_PROTOTYPES hook_bool_const_tree_true
 
 #undef  TARGET_PROMOTE_FUNCTION_MODE
-#define TARGET_PROMOTE_FUNCTION_MODE or1k_promote_function_mode
+#define TARGET_PROMOTE_FUNCTION_MODE default_promote_function_mode_always_promote
 
 #undef  TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P  or1k_legitimate_address_p
