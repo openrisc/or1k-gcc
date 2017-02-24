@@ -678,6 +678,8 @@ print_lo_sum_reloc (FILE *stream, rtx x)
 	}
       x = XVECEXP (x, 0, 0);
     }
+  else
+    gcc_assert(!flag_pic);
   output_addr_reloc (stream, x, reloc);
 }
 
@@ -709,6 +711,8 @@ print_high_reloc (FILE *stream, rtx x)
 	}
       x = XVECEXP (x, 0, 0);
     }
+  else
+    gcc_assert(!flag_pic);
   output_addr_reloc (stream, x, reloc);
 }
 
@@ -1844,17 +1848,16 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict)
 	{
 	case CONST:
 	  x = XEXP (x, 0);
-	  if (GET_CODE (x) == UNSPEC)
+	  if (GET_CODE (x) != UNSPEC)
+	    return false;
+	  switch (XINT (x, 1))
 	    {
-	      switch (XINT (x, 1))
-		{
-		case UNSPEC_GOT:
-		  /* Assume legitimize_address properly categorized
-		     the symbol.  Continue to check the base.  */
-		  break;
-		default:
-		  return false;
-		}
+	    case UNSPEC_GOT:
+	      /* Assume legitimize_address properly categorized the symbol.
+		 Continue to check the base.  */
+	      break;
+	    default:
+	      return false;
 	    }
 	  break;
 	default:
