@@ -222,10 +222,20 @@
   "l.movhi\t%0,%h1"
   [(set_attr "type" "move")])
 
-(define_insn_and_split "movdi"
-  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")
-	(match_operand:DI 1 "general_operand"      " r,o,r,n"))]
+(define_expand "movdi"
+  [(set (match_operand:DI 0 "nonimmediate_operand")
+	(match_operand:DI 1 "general_operand"))]
   ""
+{
+  or1k_expand_move (DImode, operands[0], operands[1]);
+  DONE;
+})
+
+(define_insn_and_split "*movdi"
+  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")
+	(match_operand:DI 1 "general_operand"      " r,o,rO,n"))]
+  "register_operand (operands[0], DImode)
+   || reg_or_0_operand (operands[1], DImode)"
   "#"
   ""
   [(const_int 0)]
@@ -235,7 +245,7 @@
   rtx h0 = operand_subword (operands[0], 1, 0, DImode);
   rtx h1 = operand_subword (operands[1], 1, 0, DImode);
 
-  if (reload_completed && reg_overlap_mentioned_p (l0, h1))
+  if (REG_P (l0) && reg_overlap_mentioned_p (l0, h1))
     {
       gcc_assert (!reg_overlap_mentioned_p (h0, l1));
       emit_move_insn (h0, h1);

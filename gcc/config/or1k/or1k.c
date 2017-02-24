@@ -1172,7 +1172,7 @@ or1k_expand_move (machine_mode mode, rtx op0, rtx op1)
 	    }
 	}
     }
-  else
+  else if (mode == SImode)
     {
       switch (GET_CODE (op1))
 	{
