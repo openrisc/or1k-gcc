@@ -194,8 +194,8 @@
 })
 
 (define_insn "*movsi_insn"
-  [(set (match_operand:SI 0 "nonimmediate_operand" "=m,r,r,r,r,r")
-        (match_operand:SI 1 "input_operand"        "rO,M,K,I,r,m"))]
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=m,r,r,r,r,r,?r")
+        (match_operand:SI 1 "input_operand"        "rO,M,K,I,r,m,i"))]
   "register_operand (operands[0], SImode)
    || reg_or_0_operand (operands[1], SImode)"
   "@
@@ -204,8 +204,19 @@
    l.ori\t%0,r0,%1
    l.xori\t%0,r0,%1
    l.ori\t%0,%1,0
-   l.lwz\t%0,%1"
-  [(set_attr "type" "store,move,logic,logic,logic,load")])
+   l.lwz\t%0,%1
+   #"
+  [(set_attr "type" "store,move,logic,logic,logic,load,unknown")])
+
+(define_split
+  [(set (match_operand:SI 0 "register_operand")
+	(match_operand:SI 1 "immediate_operand"))]
+  "!input_operand (operands[1], SImode)"
+  [(const_int 0)]
+{
+  or1k_expand_move (SImode, operands[0], operands[1]);
+  DONE;
+})
 
 (define_insn "*movsi_lo_sum"
   [(set (match_operand:SI 0 "register_operand" "=r")
