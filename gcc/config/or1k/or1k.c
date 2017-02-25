@@ -116,6 +116,7 @@
 
 static struct
 {
+  HOST_WIDE_INT static_size;
   HOST_WIDE_INT total_size;
   int save_size;
   unsigned int save_mask;
@@ -174,6 +175,8 @@ or1k_compute_frame_size ()
   vars_size = OR1K_ALIGN (vars_size, UNITS_PER_WORD);
   args_size = crtl->outgoing_args_size;
   total_size = vars_size + save_size + args_size;
+
+  frame_info.static_size = total_size;
   if (crtl->is_leaf && !cfun->calls_alloca)
     {
       if (total_size > or1k_redzone)
@@ -1353,6 +1356,9 @@ or1k_expand_prologue (void)
   HOST_WIDE_INT total_size = frame_info.total_size;
   unsigned int save_mask = frame_info.save_mask;
   rtx insn;
+
+  if (flag_stack_usage_info)
+    current_function_static_stack_size = frame_info.static_size;
 
   if (total_size == 0 && save_mask == 0)
     goto fini;

@@ -97,6 +97,8 @@
 #define SIZE 252
 #elif defined (__M32R__)
 #define SIZE 252
+#elif defined (__OR1K__) || defined(__OR1KND__)
+#define SIZE 252
 #else
 #  define SIZE 256
 #endif
