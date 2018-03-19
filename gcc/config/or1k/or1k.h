@@ -65,10 +65,10 @@
 #define ZERO_REGNUM   0
 #define SP_REGNUM   1
 #define FP_REGNUM   2
-#define LR_REGNUM   10
-#define TLS_REGNUM  11
-#define RV_REGNUM   12
-#define RVH_REGNUM  13
+#define LR_REGNUM   9
+#define TLS_REGNUM  10
+#define RV_REGNUM   11
+#define RVH_REGNUM  12
 
 #define FIXED_REGISTERS   \
 { 1, 1, 0, 0, 0, 0, 0, 0, \
