@@ -454,6 +454,10 @@ nios2-*-*)
 nvptx-*-*)
 	cpu_type=nvptx
 	;;
+or1k*-*-*)
+	cpu_type=or1k
+	target_has_targetm_common=no
+	;;
 powerpc*-*-*spe*)
 	cpu_type=powerpcspe
 	extra_headers="ppc-asm.h altivec.h spe.h ppu_intrinsics.h paired.h spu2vmx.h vec_types.h si2vmx.h htmintrin.h htmxlintrin.h"
@@ -2369,6 +2373,12 @@ nvptx-*)
 		extra_programs="${extra_programs} mkoffload\$(exeext)"
 		tm_file="${tm_file} nvptx/offload.h"
 	fi
+	;;
+or1k*-*-elf)
+	gas=yes
+	gnu_ld=yes
+	tm_file="dbxelf.h elfos.h newlib-stdint.h ${tm_file}"
+	tmake_file="${tmake_file} or1k/t-or1k"
 	;;
 pdp11-*-*)
 	tm_file="${tm_file} newlib-stdint.h"
