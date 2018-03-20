@@ -44,6 +44,23 @@
 /* This file should be included last.  */
 #include "target-def.h"
 
+/* Worker function for TARGET_LEGITIMATE_ADDRESS_P.  */
+
+static bool
+or1k_legitimate_address_p (machine_mode mode ATTRIBUTE_UNUSED,
+			   rtx x, bool strict_p)
+{
+  if (GET_CODE(x) == PLUS
+      && REG_P (XEXP (x, 0))
+      && satisfies_constraint_J (XEXP (x, 1)))
+    return true;
+
+  return false;
+}
+
+#undef TARGET_LEGITIMATE_ADDRESS_P
+#define TARGET_LEGITIMATE_ADDRESS_P or1k_legitimate_address_p
+
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

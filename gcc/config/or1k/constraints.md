@@ -22,9 +22,25 @@
 ;; Constraints
 ;; -------------------------------------------------------------------------
 
-(define_constraint "O"
-  "The constant zero"
+;; Memory
+(define_constraint "W"
+  "A register indirect memory operand."
+  (and (match_code "mem")
+       (match_test "or1k_legitimate_address_p (mode, op, false)")))
+
+;; Immediates
+(define_constraint "I"
+  "The constant zerK"
   (and (match_code "const_int")
        (match_test "ival == 0")))
 
+(define_constraint "J"
+  "A signed 16-bit immediate in the range -32768 to 32767."
+  (and (match_code "const_int")
+       (match_test "IN_RANGE (ival, -32768, 32767)")))
 
+(define_constraint "K"
+  "A shifted signed 16-bit constant suitable for l.movhi."
+  (and (match_code "const_int")
+       (match_test "(ival & 0xffff) == 0
+                    && (ival >> 31 == -1 || ival >> 31 == 0)")))
