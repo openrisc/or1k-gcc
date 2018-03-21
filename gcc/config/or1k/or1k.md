@@ -25,6 +25,11 @@
 (include "constraints.md")
 (include "predicates.md")
 
+;; Register numbers
+(define_constants
+  [(LR_REGNUM       9)]
+)
+
 ; Most instructions are 4 bytes long.
 (define_attr "length" "" (const_int 4))
 
@@ -104,6 +109,66 @@
 ;; -------------------------------------------------------------------------
 ;; Call and Jump instructions
 ;; -------------------------------------------------------------------------
+(define_insn "jump"
+  [(set (pc) (label_ref (match_operand 0 "" "")))]
+  ""
+  "l.j\t%0"
+)
+
+(define_insn "indirect_jump"
+  [(set (pc) (match_operand:SI 0 "register_operand" "r"))]
+  ""
+  "l.jr\t%0"
+)
+
+(define_expand "call"
+  [(parallel [(call (match_operand 0 "" "")
+		    (match_operand 1 "" ""))
+	      (clobber (reg:SI LR_REGNUM))
+	     ])]
+  ""
+  "
+{
+  rtx addr = XEXP (operands[0], 0);
+  if (!CONSTANT_ADDRESS_P (addr))
+    XEXP (operands[0], 0) = force_reg (Pmode, addr);
+}")
+
+(define_insn "*call"
+  [(call (mem:SI (match_operand:SI 0 "general_operand" "r,s"))
+	 (match_operand 1 "" ""))
+   (clobber (reg:SI LR_REGNUM))]
+  ""
+  "@
+   l.jalr\t%0
+   l.jal\t%0"
+)
+
+;; Call with a retun value
+(define_expand "call_value"
+  [(parallel [(set (match_operand 0 "" "")
+		   (call (match_operand 1 "" "")
+		   (match_operand 2 "" "")))
+	      (clobber (reg:SI LR_REGNUM))
+             ])]
+  ""
+  "
+{
+  rtx addr = XEXP (operands[1], 0);
+  if (!CONSTANT_ADDRESS_P (addr))
+    XEXP (operands[1], 0) = force_reg (Pmode, addr);
+}")
+
+(define_insn "*call_value"
+  [(set (match_operand 0 "register_operand" "=r,r")
+	(call (mem:SI (match_operand:SI 1 "general_operand" "r,L"))
+	      (match_operand 2 "" "")))
+   (clobber (reg:SI LR_REGNUM))]
+  ""
+  "@
+   l.jalr\t%1
+   l.jal\t%1"
+)
 
 ;; -------------------------------------------------------------------------
 ;; Prologue & Epilogue

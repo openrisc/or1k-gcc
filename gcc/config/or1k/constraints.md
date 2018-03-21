@@ -44,3 +44,8 @@
   (and (match_code "const_int")
        (match_test "(ival & 0xffff) == 0
                     && (ival >> 31 == -1 || ival >> 31 == 0)")))
+
+(define_constraint "L"
+  "A signed 26-bit constant suitable for l.jal."
+  (and (match_code "const_int")
+       (match_test "IN_RANGE (ival, -33554432, 33554431)")))
