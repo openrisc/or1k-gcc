@@ -18,3 +18,4 @@ along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
 extern bool or1k_legitimate_address_p (machine_mode, rtx, bool);
+extern int  or1k_initial_elimination_offset (int, int);

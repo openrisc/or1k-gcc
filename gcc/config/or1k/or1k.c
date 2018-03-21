@@ -41,27 +41,58 @@
 #include "expr.h"
 #include "builtins.h"
 
+/* These 4 are needed to allow using satisfies_constraint_J.  */
+#include "insn-config.h"
+#include "recog.h"
+#include "tm_p.h"
+#include "tm-constrs.h"
+
 /* This file should be included last.  */
 #include "target-def.h"
 
+int
+or1k_initial_elimination_offset (int from ATTRIBUTE_UNUSED, int to ATTRIBUTE_UNUSED)
+{
+  return 0;
+}
+
+
 /* Worker function for TARGET_LEGITIMATE_ADDRESS_P.  */
 
-static bool
+bool
 or1k_legitimate_address_p (machine_mode mode ATTRIBUTE_UNUSED,
-			   rtx x, bool strict_p)
+			   rtx x, bool strict_p ATTRIBUTE_UNUSED)
 {
   if (GET_CODE(x) == PLUS
       && REG_P (XEXP (x, 0))
       && satisfies_constraint_J (XEXP (x, 1)))
     return true;
 
+  if (REG_P (x))
+    return true;
+
   return false;
 }
+
+/* Worker function for TARGET_FUNCTION_VALUE.  */
+
+static rtx
+or1k_function_value (const_tree valtype,
+		     const_tree fn_decl_or_type ATTRIBUTE_UNUSED,
+		     bool outgoing ATTRIBUTE_UNUSED)
+{
+  /* TODO support 2 reg return values and return on stack?  */
+  return gen_rtx_REG (TYPE_MODE (valtype), RV_REGNUM);
+}
+
 
 #undef TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P or1k_legitimate_address_p
 
+#undef TARGET_FUNCTION_VALUE
+#define TARGET_FUNCTION_VALUE or1k_function_value
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
-#include "gt-or1k.h"
+/* Enable when we need option_override TARGET_OPTION_OVERRIDE.  */
+//#include "gt-or1k.h"

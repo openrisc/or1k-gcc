@@ -57,8 +57,7 @@
 	   (match_operand:SI 1 "register_operand" "0")
 	   (match_operand:SI 2 "register_operand" "0")))]
   ""
-  "@
-  l.sub\t%0, %1 %2")
+  "l.sub\t%0, %1 %2")
 
 ;; -------------------------------------------------------------------------
 ;; Unary arithmetic instructions
@@ -91,8 +90,7 @@
    l.ori\t%0, r0, %1
    l.movhi\t%0, %1
    l.sw\t%0, %1
-   l.lwz\t%0, %1
-")
+   l.lwz\t%0, %1")
 
 
 ;; -------------------------------------------------------------------------
