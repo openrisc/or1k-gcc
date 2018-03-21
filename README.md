@@ -13,7 +13,7 @@ These items should be done to get to a point where very basic things compile.
 - memory layout
 - load/store - DONE
 - moves - DONE
-- jump
+- jump - DONE
 - branches
 
 ## building
