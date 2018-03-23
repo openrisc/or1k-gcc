@@ -135,7 +135,7 @@
 }")
 
 (define_insn "*call"
-  [(call (mem:SI (match_operand:SI 0 "general_operand" "r,s"))
+  [(call (mem:SI (match_operand:SI 0 "general_operand" "r,i"))
 	 (match_operand 1 "" ""))
    (clobber (reg:SI LR_REGNUM))]
   ""
@@ -161,7 +161,7 @@
 
 (define_insn "*call_value"
   [(set (match_operand 0 "register_operand" "=r,r")
-	(call (mem:SI (match_operand:SI 1 "general_operand" "r,L"))
+	(call (mem:SI (match_operand:SI 1 "general_operand" "r,i"))
 	      (match_operand 2 "" "")))
    (clobber (reg:SI LR_REGNUM))]
   ""
@@ -173,4 +173,22 @@
 ;; -------------------------------------------------------------------------
 ;; Prologue & Epilogue
 ;; -------------------------------------------------------------------------
+(define_expand "prologue"
+  [(const_int 1)]
+  ""
+  "
+{
+  or1k_expand_prologue ();
+  DONE;
+}")
+
+;; Expand epilogue as RTL
+(define_expand "epilogue"
+  [(return)]
+  ""
+  "
+{
+  or1k_expand_epilogue ();
+  DONE;
+}")
 

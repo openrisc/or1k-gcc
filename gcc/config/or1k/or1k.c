@@ -50,12 +50,218 @@
 /* This file should be included last.  */
 #include "target-def.h"
 
+/* Per-function machine data.  */
+struct GTY(()) machine_function
+ {
+   /* Number of bytes saved on the stack for callee saved registers.  */
+   int callee_saved_reg_size;
+
+   /* Number of bytes saved on the stack for local variables.  */
+   int local_vars_size;
+
+   /* The sum of sizes: locals vars, called saved regs, stack pointer
+    * and an optional frame pointer.
+    * Used in expand_prologue () and expand_epilogue().  */
+   int total_size;
+ };
+
+/* Zero initialization is OK for all current fields.  */
+
+static struct machine_function *
+or1k_init_machine_status (void)
+{
+  return ggc_cleared_alloc<machine_function> ();
+}
+
+
+/* The TARGET_OPTION_OVERRIDE worker.  */
+static void
+or1k_option_override (void)
+{
+  /* Set the per-function-data initializer.  */
+  init_machine_status = or1k_init_machine_status;
+}
+
+/* OpenRISC callee saved regs are even regs r14-r30.  */
+static bool
+callee_saved_regno_p (int regno)
+{
+  return regno <= 30
+         && regno >= 14
+         && (regno % 2 == 0);
+}
+
+/* Compute the size of the local area and the size to be adjusted by the
+ * prologue and epilogue.  This is now the TARGET_COMPUTE_FRAME_LAYOUT worker.
+ *
+ * OpenRISC stack grows downwards and contains:
+ *
+ *  ---- previous frame --------
+ *  current func arg[n]
+ *  current func arg[0]   <-- r2 [FP]
+ *  ---- current stack frame ---  ^
+ *  return address      r9        |
+ *  old frame pointer   r2       (+)
+ *  callee saved regs             |
+ *  local variables               |
+ *  sub function args     <-- r1 [SP]
+ *  ----------------------------  |
+ *                               (-)
+ *         (future)               |
+ *                                V
+ *
+ * All of these contents are optional.
+ *
+ * */
+static void
+or1k_compute_frame_layout (void)
+{
+  /* For aligning the local variables.  */
+  int stack_alignment = STACK_BOUNDARY / BITS_PER_UNIT;
+  int padding_locals;
+  int regno;
+
+  /* Padding needed for each element of the frame.  */
+  cfun->machine->local_vars_size = get_frame_size ();
+
+  /* Align to the stack alignment.  */
+  padding_locals = cfun->machine->local_vars_size % stack_alignment;
+  if (padding_locals)
+    padding_locals = stack_alignment - padding_locals;
+
+  cfun->machine->local_vars_size += padding_locals;
+
+  /* Save callee-saved registers.  */
+  cfun->machine->callee_saved_reg_size = 0;
+
+  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
+    if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
+      cfun->machine->callee_saved_reg_size += 4;
+
+  cfun->machine->total_size =
+    + cfun->machine->local_vars_size
+    + cfun->machine->callee_saved_reg_size;
+
+  if (frame_pointer_needed)
+    cfun->machine->total_size += 4;
+
+  /* Add space for the stack pointer.  */
+  cfun->machine->total_size += 4;
+}
+
+static void
+or1k_save_restore_reg (int regno, int offset, bool save_p)
+{
+  rtx reg;
+  rtx mem;
+
+  reg = gen_rtx_REG (Pmode, regno);
+  mem = gen_rtx_MEM (SImode, gen_rtx_PLUS (Pmode, stack_pointer_rtx,
+                                           GEN_INT (offset)));
+  if (save_p)
+    {
+      rtx insn = emit_move_insn (mem, reg);
+      RTX_FRAME_RELATED_P (insn) = 1;
+    }
+  else
+    emit_move_insn (reg, mem);
+}
+
+void
+or1k_expand_prologue (void)
+{
+  int offset;
+  int regno;
+
+  offset = -1 * cfun->machine->total_size;
+
+  if (flag_stack_usage_info)
+    current_function_static_stack_size = cfun->machine->total_size;
+
+  /* Reserve space for local vars.  */
+  offset += cfun->machine->local_vars_size;
+
+  /* Save callee-saved registers.  */
+  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
+    {
+      if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
+	{
+	  or1k_save_restore_reg (regno, offset, true);
+
+	  offset += 4;
+	}
+    }
+
+  /* Save frame pointer.  */
+  if (frame_pointer_needed)
+    {
+      gcc_assert (offset == -8);
+      or1k_save_restore_reg (FP_REGNUM, offset, true);
+      offset += 4;
+    }
+
+  /* Save the linkr register.  */
+  gcc_assert (offset == -4);
+  or1k_save_restore_reg (LR_REGNUM, offset, true);
+
+  /* Finally, adjust the stack pointer.  */
+  offset = cfun->machine->total_size;
+  if (offset != 0)
+    {
+      rtx insn = emit_insn (gen_subsi3 (stack_pointer_rtx,
+					stack_pointer_rtx,
+				    	GEN_INT (offset)));
+      RTX_FRAME_RELATED_P (insn) = 1;
+    }
+}
+
+void
+or1k_expand_epilogue (void)
+{
+  int regno;
+  int offset;
+
+  /* First, restore the stack pointer.  */
+  offset = -1 * cfun->machine->total_size;
+
+  if (offset != 0)
+    rtx insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
+				      stack_pointer_rtx,
+				      GEN_INT (-1 * offset)));
+
+  /* Reverse space for local vars.  */
+  offset += cfun->machine->local_vars_size;
+
+  /* Restore callee-saved registers.  */
+  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
+    {
+      if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
+	{
+	  or1k_save_restore_reg (regno, offset, false);
+	  offset += 4;
+	}
+    }
+
+  /* Restore frame pointer.  */
+  if (frame_pointer_needed)
+    {
+      gcc_assert (offset == -8);
+      or1k_save_restore_reg (FP_REGNUM, offset, false);
+      offset += 4;
+    }
+
+  /* Restore link register.  */
+  gcc_assert (offset == -4);
+  or1k_save_restore_reg (LR_REGNUM, offset, false);
+
+  emit_jump_insn (gen_indirect_jump (gen_rtx_REG (Pmode, LR_REGNUM)));
+}
+
 int
 or1k_initial_elimination_offset (int from ATTRIBUTE_UNUSED, int to ATTRIBUTE_UNUSED)
 {
   return 0;
 }
-
 
 /* Worker function for TARGET_LEGITIMATE_ADDRESS_P.  */
 
@@ -85,14 +291,82 @@ or1k_function_value (const_tree valtype,
   return gen_rtx_REG (TYPE_MODE (valtype), RV_REGNUM);
 }
 
+/* Worker function for TARGET_FUNCTION_VALUE_REGNO_P.  */
+
+static bool
+or1k_function_value_regno_p (const unsigned int regno)
+{
+  return (regno == RV_REGNUM);
+}
+
+/* Worker function for TARGET_FUNCTION_ARG.  Return the next register to be
+   used to hold a function argument or NULL_RTX if there's no more space.  */
+
+static rtx
+or1k_function_arg (cumulative_args_t cum_v, machine_mode mode,
+		   const_tree type ATTRIBUTE_UNUSED,
+		   bool named ATTRIBUTE_UNUSED)
+{
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+
+  if (*cum <= 6)
+    return gen_rtx_REG (mode, *cum + 3);
+  else
+    return NULL_RTX;
+}
+
+#define OR1K_FUNCTION_ARG_SIZE(MODE, TYPE)	\
+  ((MODE) != BLKmode ? GET_MODE_SIZE (MODE)	\
+   : (unsigned) int_size_in_bytes (TYPE))
+
+/* Worker function for TARGET_FUNCTION_ARG_ADVANCE.  Update the cumulative
+   args to advnaced past the next function argument.  This is not needed
+   for arguments passed on the stack.  */
+
+static void
+or1k_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
+			   const_tree type, bool named ATTRIBUTE_UNUSED)
+{
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+
+  *cum += ((3 + OR1K_FUNCTION_ARG_SIZE (mode, type)) / 4);
+}
+
+/* worker function for TARGET_RETURN_IN_MEMORY.  What type of args get returned
+   in memory?  Any value bigger than 64-bits is returned in memory.  */
+
+static bool
+or1k_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
+{
+  const HOST_WIDE_INT size = int_size_in_bytes (type);
+  return (size == -1 || size > (2 * UNITS_PER_WORD));
+}
+
+#undef TARGET_OPTION_OVERRIDE
+#define TARGET_OPTION_OVERRIDE or1k_option_override
+
+#undef TARGET_COMPUTE_FRAME_LAYOUT
+#define TARGET_COMPUTE_FRAME_LAYOUT or1k_compute_frame_layout
 
 #undef TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P or1k_legitimate_address_p
 
+/* Calling Conventions.  */
 #undef TARGET_FUNCTION_VALUE
 #define TARGET_FUNCTION_VALUE or1k_function_value
+#undef TARGET_FUNCTION_VALUE_REGNO_P
+#define TARGET_FUNCTION_VALUE_REGNO_P or1k_function_value_regno_p
+#undef TARGET_FUNCTION_ARG
+#define TARGET_FUNCTION_ARG or1k_function_arg
+#undef TARGET_FUNCTION_ARG_ADVANCE
+#define TARGET_FUNCTION_ARG_ADVANCE or1k_function_arg_advance
+#undef TARGET_RETURN_IN_MEMORY
+#define TARGET_RETURN_IN_MEMORY	or1k_return_in_memory
+#undef TARGET_MUST_PASS_IN_STACK
+#define	TARGET_MUST_PASS_IN_STACK must_pass_in_stack_var_size
+#undef TARGET_PASS_BY_REFERENCE
+#define	TARGET_PASS_BY_REFERENCE hook_pass_by_reference_must_pass_in_stack
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
-/* Enable when we need option_override TARGET_OPTION_OVERRIDE.  */
-//#include "gt-or1k.h"
+#include "gt-or1k.h"

@@ -9,7 +9,7 @@ These items should be done to get to a point where very basic things compile.
 
 - build infra + basic files - DONE
 - register definitions - DONE
-- calling conventions
+- calling conventions - DONE
 - memory layout
 - load/store - DONE
 - moves - DONE
@@ -17,3 +17,7 @@ These items should be done to get to a point where very basic things compile.
 - branches
 
 ## building
+
+### Stage 1 build
+../gcc/configure --target=or1k-elf --disable-shared --enable-stage1-languages=c --prefix=/home/shorne/work/gnu-toolchain/local
+make -j5

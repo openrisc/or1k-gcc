@@ -73,6 +73,42 @@
 
 /* Register usage, class and contents.  */
 
+/* In OpenRISC there are 32 general purpose registers with the following
+   designations:
+
+   r0    always 0
+   r1    stack pointer
+   r2    frame pointer (optional)
+   r3    arg 0
+   r4    arg 1
+   r5    arg 2
+   r6    arg 3
+   r7    arg 4
+   r8    arg 5
+   r9    function call return link address
+   r10   thread local storage
+   r11   function return value
+   r12   function return value high (upper 64-bit)
+   r13   temporary
+   r14   callee saved
+   r15   temporary
+   r16   callee saved
+   r17   position independent code base pointer
+   r18   callee saved
+   r19   temporary
+   r20   callee saved
+   r21   temporary
+   r22   callee saved
+   r23   temporary
+   r24   callee saved
+   r25   temporary
+   r26   callee saved
+   r27   temporary
+   r28   callee saved
+   r29   temporary
+   r30   callee saved
+   r31   temporary  */
+
 #define FIRST_PSEUDO_REGISTER  33
 
 #define ZERO_REGNUM   0
@@ -155,13 +191,9 @@ enum reg_class
   while (0)
 
 /* Calling convention definitions.  */
-typedef struct or1k_args
-{
-  int regs_used;
-} CUMULATIVE_ARGS;
-
+#define CUMULATIVE_ARGS int
 #define INIT_CUMULATIVE_ARGS(CUM, FNTYPE, LIBNAME, FNDECL, N_NAMED_ARGS) \
-  do { (CUM).regs_used = 0; } while (0)
+  do { (CUM) = 0; } while (0)
 
 
 /* Trampolines, for nested functions */
@@ -218,7 +250,7 @@ typedef struct or1k_args
    'crtl->outgoing_args_size'.  No space will be pushed
    onto the stack for each call; instead, the function prologue
    should increase the stack frame size by this amount.  */
-#define ACCUMULATE_OUTGOING_ARGS 1
+#define ACCUMULATE_OUTGOING_ARGS 0
 
 /* Offset from the argument pointer register to the first argument's
    address.  On some machines it may depend on the data type of the
