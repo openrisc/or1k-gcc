@@ -15,9 +15,67 @@ These items should be done to get to a point where very basic things compile.
 - moves - DONE
 - jump - DONE
 - branches
+- tuning
+  - ensure varargs are to spec
+  - ensure we can return 64-bit values in r11 and r12
+  - proper support for returning small structs/vectors in regs
+  - optional support for frame pointers
+  - delay slot
+  - optional support for delay slot
+  - correct predicates and constraints
 
 ## building
 
 ### Stage 1 build
+
+```
+mkdir build
+cd build
 ../gcc/configure --target=or1k-elf --disable-shared --enable-stage1-languages=c --prefix=/home/shorne/work/gnu-toolchain/local
 make -j5
+
+# Currently the entire build will not complete, but gcc will work, you can build
+# gcc in the directory using
+cd gcc
+./xgcc -B. -S ../../gcc/test2.c -fdump-rtl-all
+
+```
+
+## bootstrap tests
+
+Below are some really basic test programs we can compile before we move on to
+the testsuite to check things.
+
+### Verify types
+```
+/* Just test some types */
+    int myint;
+    short myshort;
+    double mydouble;
+```
+
+### Verify call/return
+```
+    int foo(int, int);
+    int main()
+    {
+       return foo (111, 222);
+    }
+```
+
+### Verify prolog/epilog
+```
+
+    int g;
+
+    int add(int a, int b, int c, int d, int e, int f)
+    {
+      return a + b + c + d + e + f + g;
+    }
+
+    int main()
+    {
+      g = 7;
+      return (add (1, 2, 3, 4, 5, 6));
+    }
+```

@@ -49,8 +49,8 @@
 (define_insn "addsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	  (plus:SI
-	   (match_operand:SI 1 "register_operand" "0,0")
-	   (match_operand:SI 2 "general_operand" "0,J")))]
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
   ""
   "@
   l.add\t%0, %1, %2
@@ -59,8 +59,8 @@
 (define_insn "subsi3"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	  (minus:SI
-	   (match_operand:SI 1 "register_operand" "0")
-	   (match_operand:SI 2 "register_operand" "0")))]
+	   (match_operand:SI 1 "register_operand" "r")
+	   (match_operand:SI 2 "register_operand" "r")))]
   ""
   "l.sub\t%0, %1 %2")
 
@@ -80,10 +80,11 @@
   [(set (match_operand:SI 0 "nonimmediate_operand" "")
 	(match_operand:SI 1 "general_operand" ""))]
   ""
+  "
 {
   if (MEM_P (operands[0]))
     operands[1] = force_reg (SImode, operands[1]);
-})
+}")
 
 (define_insn "*movsi_internal"
   [(set (match_operand:SI 0 "nonimmediate_operand" "=r,r,r,r,W,r")
@@ -112,14 +113,12 @@
 (define_insn "jump"
   [(set (pc) (label_ref (match_operand 0 "" "")))]
   ""
-  "l.j\t%0"
-)
+  "l.j\t%0")
 
 (define_insn "indirect_jump"
   [(set (pc) (match_operand:SI 0 "register_operand" "r"))]
   ""
-  "l.jr\t%0"
-)
+  "l.jr\t%0")
 
 (define_expand "call"
   [(parallel [(call (match_operand 0 "" "")
@@ -141,8 +140,7 @@
   ""
   "@
    l.jalr\t%0
-   l.jal\t%0"
-)
+   l.jal\t%0")
 
 ;; Call with a retun value
 (define_expand "call_value"
@@ -167,8 +165,7 @@
   ""
   "@
    l.jalr\t%1
-   l.jal\t%1"
-)
+   l.jal\t%1")
 
 ;; -------------------------------------------------------------------------
 ;; Prologue & Epilogue

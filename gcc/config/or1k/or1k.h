@@ -118,6 +118,7 @@
 #define TLS_REGNUM  10
 #define RV_REGNUM   11
 #define RVH_REGNUM  12
+#define AP_REGNUM   32
 
 #define FIXED_REGISTERS   \
 { 1, 1, 0, 0, 0, 0, 0, 0, \
@@ -161,7 +162,7 @@ enum reg_class
    choose a class which is "minimal", meaning that no smaller class
    also contains the register.  */
 #define REGNO_REG_CLASS(REGNO) \
-  (REGNO < FIRST_PSEUDO_REGISTER ? GENERAL_REGS : SPECIAL_REGS)
+  (REGNO == AP_REGNUM ? SPECIAL_REGS : GENERAL_REGS)
 
 /* Assembly definitions.  */
 
