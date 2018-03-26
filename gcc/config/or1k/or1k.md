@@ -91,7 +91,7 @@
 	(match_operand:SI 1 "general_operand" "r,I,J,K,r,W"))]
   "register_operand (operands[0], SImode) || register_operand (operands[1], SImode)"
   "@
-   l.ori\t%0, r0, %1
+   l.or\t%0, r0, %1
    l.movhi\t%0, %1
    l.ori\t%0, r0, %1
    l.movhi\t%0, %1
