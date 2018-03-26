@@ -32,19 +32,20 @@ These items should be done to get to a point where very basic things compile.
 mkdir build
 cd build
 ../gcc/configure --target=or1k-elf --disable-shared --enable-stage1-languages=c --prefix=/home/shorne/work/gnu-toolchain/local
-make -j5
+make -j5 all-gcc
+make install-gcc
 
-# Currently the entire build will not complete, but gcc will work, you can build
-# gcc in the directory using
-cd gcc
-./xgcc -B. -S ../../gcc/test2.c -fdump-rtl-all
+# Currently the entire build will not complete, but gcc will work, you can then
+# test gcc using one of the below tests
+../local/bin/or1k-elf-gcc -S ../gcc/test2.c -fdump-rtl-all
 
 ```
 
 ## bootstrap tests
 
 Below are some really basic test programs we can compile before we move on to
-the testsuite to check things.
+the testsuite to check things.  I pulled these from the ggx toolchain porting
+tutorial.
 
 ### Verify types
 ```
