@@ -205,7 +205,7 @@ or1k_expand_prologue (void)
   or1k_save_restore_reg (LR_REGNUM, offset, true);
 
   /* Finally, adjust the stack pointer.  */
-  offset = cfun->machine->total_size;
+  offset = -1 * cfun->machine->total_size;
   if (offset != 0)
     {
       rtx insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
@@ -225,9 +225,9 @@ or1k_expand_epilogue (void)
   offset = -1 * cfun->machine->total_size;
 
   if (offset != 0)
-    rtx insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
-				      stack_pointer_rtx,
-				      GEN_INT (-1 * offset)));
+    emit_insn (gen_addsi3 (stack_pointer_rtx,
+			   stack_pointer_rtx,
+			   GEN_INT (-1 * offset)));
 
   /* Reverse space for local vars.  */
   offset += cfun->machine->local_vars_size;
@@ -342,6 +342,96 @@ or1k_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
   return (size == -1 || size > (2 * UNITS_PER_WORD));
 }
 
+/* Worker function for TARGET_PRINT_OPERAND_ADDRESS.  */
+
+static void
+or1k_print_operand_address (FILE *file, machine_mode, rtx x)
+{
+  switch (GET_CODE (x))
+    {
+    case REG:
+      fprintf (file, "(%s)", reg_names[REGNO (x)]);
+      break;
+
+    case PLUS:
+      switch (GET_CODE (XEXP (x, 1)))
+	{
+	case CONST_INT:
+	  fprintf (file, "%ld(%s)",
+		   INTVAL(XEXP (x, 1)), reg_names[REGNO (XEXP (x, 0))]);
+	  break;
+	case SYMBOL_REF:
+	  output_addr_const (file, XEXP (x, 1));
+	  fprintf (file, "(%s)", reg_names[REGNO (XEXP (x, 0))]);
+	  break;
+	case CONST:
+	  {
+	    rtx plus = XEXP (XEXP (x, 1), 0);
+	    if (GET_CODE (XEXP (plus, 0)) == SYMBOL_REF
+		&& CONST_INT_P (XEXP (plus, 1)))
+	      {
+		output_addr_const(file, XEXP (plus, 0));
+		fprintf (file,"+%ld(%s)", INTVAL (XEXP (plus, 1)),
+			 reg_names[REGNO (XEXP (x, 0))]);
+	      }
+	    else
+	      abort();
+	  }
+	  break;
+	default:
+	  abort();
+	}
+      break;
+
+    default:
+      output_addr_const (file, x);
+      break;
+    }
+}
+
+/* Worker function for TARGET_PRINT_OPERAND.  */
+
+static void
+or1k_print_operand (FILE *file, rtx x, int code)
+{
+  rtx operand = x;
+
+  switch (code)
+    {
+    case 0:
+      /* No code, print as usual.  */
+      break;
+
+    default:
+      internal_error ("invalid operand modifier letter: %d", code);
+    }
+
+  /* Print an operand as without a modifier letter.  */
+  switch (GET_CODE (operand))
+    {
+    case REG:
+      if (REGNO (operand) > 31)
+	internal_error ("internal error: bad register: %d", REGNO (operand));
+      fprintf (file, "%s", reg_names[REGNO (operand)]);
+      return;
+
+    case MEM:
+      output_address (GET_MODE (XEXP (operand, 0)), XEXP (operand, 0));
+      return;
+
+    default:
+      /* No need to handle all strange variants, let output_addr_const
+	 do it for us.  */
+      if (CONSTANT_P (operand))
+	{
+	  output_addr_const (file, operand);
+	  return;
+	}
+
+      internal_error ("unexpected operand: %d", GET_CODE (operand));
+    }
+}
+
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override
 
@@ -366,6 +456,13 @@ or1k_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
 #define	TARGET_MUST_PASS_IN_STACK must_pass_in_stack_var_size
 #undef TARGET_PASS_BY_REFERENCE
 #define	TARGET_PASS_BY_REFERENCE hook_pass_by_reference_must_pass_in_stack
+
+/* Assembly generation.  */
+#undef  TARGET_PRINT_OPERAND
+#define TARGET_PRINT_OPERAND or1k_print_operand
+#undef  TARGET_PRINT_OPERAND_ADDRESS
+#define TARGET_PRINT_OPERAND_ADDRESS or1k_print_operand_address
+
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
