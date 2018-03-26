@@ -26,7 +26,8 @@
 (define_constraint "W"
   "A register indirect memory operand."
   (and (match_code "mem")
-       (match_test "or1k_legitimate_address_p (mode, op, false)")))
+       (match_test "or1k_legitimate_address_p (GET_MODE (op),
+					       XEXP (op, 0), false)")))
 
 ;; Immediates
 (define_constraint "I"

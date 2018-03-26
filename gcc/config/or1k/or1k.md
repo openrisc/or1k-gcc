@@ -189,3 +189,9 @@
   DONE;
 }")
 
+(define_insn "return_internal"
+  [(use (match_operand:SI 0 "register_operand" "r"))
+   (return)]
+  ""
+  "l.jr\t%0")
+

@@ -208,7 +208,7 @@ or1k_expand_prologue (void)
   offset = cfun->machine->total_size;
   if (offset != 0)
     {
-      rtx insn = emit_insn (gen_subsi3 (stack_pointer_rtx,
+      rtx insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
 					stack_pointer_rtx,
 				    	GEN_INT (offset)));
       RTX_FRAME_RELATED_P (insn) = 1;
@@ -254,7 +254,7 @@ or1k_expand_epilogue (void)
   gcc_assert (offset == -4);
   or1k_save_restore_reg (LR_REGNUM, offset, false);
 
-  emit_jump_insn (gen_indirect_jump (gen_rtx_REG (Pmode, LR_REGNUM)));
+  emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, LR_REGNUM)));
 }
 
 int
