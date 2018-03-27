@@ -87,8 +87,8 @@
 }")
 
 (define_insn "*movsi_internal"
-  [(set (match_operand:SI 0 "nonimmediate_operand" "=r,r,r,r,W,r")
-	(match_operand:SI 1 "general_operand" "r,I,J,K,r,W"))]
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=r,r,r,r,W,r,r")
+	(match_operand:SI 1 "general_operand" "r,I,J,K,r,W,i"))]
   "register_operand (operands[0], SImode) || register_operand (operands[1], SImode)"
   "@
    l.or\t%0, r0, %1
@@ -96,7 +96,8 @@
    l.ori\t%0, r0, %1
    l.movhi\t%0, %1
    l.sw\t%0, %1
-   l.lwz\t%0, %1")
+   l.lwz\t%0, %1
+   l.movhi\t%0, hi(%1)\n\tl.ori\t%0, %0, lo(%1)")
 
 
 ;; -------------------------------------------------------------------------

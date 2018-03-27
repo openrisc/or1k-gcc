@@ -192,15 +192,16 @@ or1k_expand_prologue (void)
 	}
     }
 
-  /* Save frame pointer.  */
+  /* Save and update frame pointer.  */
   if (frame_pointer_needed)
     {
       gcc_assert (offset == -8);
       or1k_save_restore_reg (FP_REGNUM, offset, true);
+      emit_move_insn (frame_pointer_rtx, stack_pointer_rtx);
       offset += 4;
     }
 
-  /* Save the linkr register.  */
+  /* Save the link register.  */
   gcc_assert (offset == -4);
   or1k_save_restore_reg (LR_REGNUM, offset, true);
 
