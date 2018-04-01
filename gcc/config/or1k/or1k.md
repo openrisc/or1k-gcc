@@ -27,7 +27,8 @@
 
 ;; Register numbers
 (define_constants
-  [(LR_REGNUM       9)]
+  [(LR_REGNUM       9)
+   (CC_REGNUM      33)]
 )
 
 ; Most instructions are 4 bytes long.
@@ -104,9 +105,57 @@
 ;; Compare instructions
 ;; -------------------------------------------------------------------------
 
+;; OpenRISC supports these integer comparisons:
+;;
+;;     l.sfeq[i] - equality, r r or r i
+;;     l.sfne[i] - not equal, r r or r i
+;;     l.sflt{s,u}[i] - less than, signed or unsigned, r r or r i
+;;     l.sfle{s,u}[i] - less than or equal, signed or unsigned, r r or r i
+;;     l.sfgt{s,u}[i] - greater than, signed or unsigned, r r or r i
+;;     l.sfge{s,u}[i] - greater than or equal, signed or unsigned, r r or r i
+;;
+;;  EQ,NE,LT,LTU,LE,LEU,GT,GTU,GE,GEU
+;;  We try to iterate all of thse
+;;
+
+(define_code_iterator cond [ne eq lt ltu gt gtu ge le geu leu])
+(define_code_attr insn [(ne "ne") (eq "eq") (lt "lts") (ltu "ltu")
+			(gt "gts") (gtu "gtu") (ge "ges") (le "les")
+			(geu "geu") (leu "leu") ])
+
+(define_insn "sf<code>_insn"
+  [(set (reg:CC CC_REGNUM)
+	(cond (match_operand:SI 0 "register_operand" "r,r")
+	      (match_operand:SI 1 "general_operand" "r,J")))]
+  ""
+  "@
+   l.sf<insn>\t%0, %1
+   l.sf<insn>i\t%0, %1")
+
 ;; -------------------------------------------------------------------------
 ;; Branch instructions
 ;; -------------------------------------------------------------------------
+
+(define_insn "*cbranchsi4_internal"
+  [(set (pc)
+	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
+		      (label_ref (match_operand 0 "" ""))
+		      (pc)))]
+  ""
+  "l.bf\t%0")
+
+
+(define_expand "cbranchsi4"
+  [(set (reg:CC CC_REGNUM)
+	(match_operator 0 "comparison_operator"
+	  [(match_operand:SI 1 "register_operand" "")
+	   (match_operand:SI 2 "general_operand" "")]))
+   (set (pc)
+	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
+		      (label_ref (match_operand 3 "" ""))
+		      (pc)))]
+  ""
+  "")
 
 ;; -------------------------------------------------------------------------
 ;; Call and Jump instructions

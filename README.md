@@ -14,7 +14,7 @@ These items should be done to get to a point where very basic things compile.
 - load/store - DONE
 - moves - DONE
 - jump - DONE
-- branches
+- branches - DONE
 - tuning
   - ensure varargs are to spec
   - ensure we can return 64-bit values in r11 and r12

@@ -420,6 +420,11 @@ or1k_print_operand (FILE *file, rtx x, int code)
       output_address (GET_MODE (XEXP (operand, 0)), XEXP (operand, 0));
       return;
 
+    case CODE_LABEL:
+    case LABEL_REF:
+      output_asm_label (operand);
+      break;
+
     default:
       /* No need to handle all strange variants, let output_addr_const
 	 do it for us.  */
@@ -428,7 +433,6 @@ or1k_print_operand (FILE *file, rtx x, int code)
 	  output_addr_const (file, operand);
 	  return;
 	}
-
       internal_error ("unexpected operand: %d", GET_CODE (operand));
     }
 }

@@ -109,8 +109,6 @@
    r30   callee saved
    r31   temporary  */
 
-#define FIRST_PSEUDO_REGISTER  33
-
 #define ZERO_REGNUM   0
 #define SP_REGNUM   1
 #define FP_REGNUM   2
@@ -119,20 +117,22 @@
 #define RV_REGNUM   11
 #define RVH_REGNUM  12
 #define AP_REGNUM   32
+#define CC_REGNUM   33
+#define FIRST_PSEUDO_REGISTER  34
 
 #define FIXED_REGISTERS   \
 { 1, 1, 0, 0, 0, 0, 0, 0, \
   0, 0, 1, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
-  1}
+  1, 1}
 
 #define CALL_USED_REGISTERS \
 { 1, 1, 0, 0, 0, 0, 0, 0, \
   0, 1, 1, 1, 1, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
-  1}
+  1, 1}
 
 enum reg_class
 {
@@ -154,8 +154,8 @@ enum reg_class
 #define REG_CLASS_CONTENTS      \
 { {0x00000000, 0x00000000},	\
   {0xffffffff, 0x00000000},	\
-  {0x00000000, 0x00000001},	\
-  {0xffffffff, 0x00000001}	\
+  {0x00000000, 0x00000003},	\
+  {0xffffffff, 0x00000003}	\
 }
 
 /* A C expression whose value is a register class containing hard
@@ -163,7 +163,7 @@ enum reg_class
    choose a class which is "minimal", meaning that no smaller class
    also contains the register.  */
 #define REGNO_REG_CLASS(REGNO) \
-  (REGNO == AP_REGNUM ? SPECIAL_REGS : GENERAL_REGS)
+  (REGNO == AP_REGNUM || REGNO == CC_REGNUM ? SPECIAL_REGS : GENERAL_REGS)
 
 /* Assembly definitions.  */
 
@@ -179,7 +179,7 @@ enum reg_class
   "r8",   "r9",   "r10",  "r11",  "r12",  "r13",  "r14",  "r15",	\
   "r16",  "r17",  "r18",  "r19",  "r20",  "r21",  "r22",  "r23",	\
   "r24",  "r25",  "r26",  "r27",  "r28",  "r29",  "r30",  "r31",	\
-  "?ap" }
+  "?ap",  "?cc" }
 
 /* This is how to output an assembler line
    that says to advance the location counter
