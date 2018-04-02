@@ -138,7 +138,7 @@
 
 (define_insn "*cbranchsi4_internal"
   [(set (pc)
-	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
+	(if_then_else (reg:CC CC_REGNUM)
 		      (label_ref (match_operand 0 "" ""))
 		      (pc)))]
   ""
@@ -151,7 +151,7 @@
 	  [(match_operand:SI 1 "register_operand" "")
 	   (match_operand:SI 2 "general_operand" "")]))
    (set (pc)
-	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
+	(if_then_else (reg:CC CC_REGNUM)
 		      (label_ref (match_operand 3 "" ""))
 		      (pc)))]
   ""
