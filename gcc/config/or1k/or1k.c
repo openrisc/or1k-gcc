@@ -351,7 +351,7 @@ or1k_print_operand_address (FILE *file, machine_mode, rtx x)
   switch (GET_CODE (x))
     {
     case REG:
-      fprintf (file, "(%s)", reg_names[REGNO (x)]);
+      fprintf (file, "0(%s)", reg_names[REGNO (x)]);
       break;
 
     case PLUS:
