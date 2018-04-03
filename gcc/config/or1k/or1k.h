@@ -173,6 +173,10 @@ enum reg_class
 #define ASM_COMMENT_START "# "
 
 #define GLOBAL_ASM_OP "\t.global\t"
+#define TEXT_SECTION_ASM_OP "\t.section\t.text"
+#define DATA_SECTION_ASM_OP "\t.section\t.data"
+#define BSS_SECTION_ASM_OP "\t.section\t.bss"
+#define SBSS_SECTION_ASM_OP "\t.section\t.sbss"
 
 #define REGISTER_NAMES {						\
   "r0",   "r1",   "r2",   "r3",   "r4",   "r5",   "r6",   "r7",		\
@@ -276,5 +280,10 @@ enum reg_class
 
 /* Profiling */
 #define FUNCTION_PROFILER(FILE,LABELNO) (abort (), 0)
+
+/* Dwarf 2 Support */
+#define DWARF2_DEBUGGING_INFO 1
+#define INCOMING_RETURN_ADDR_RTX gen_rtx_REG (Pmode, LR_REGNUM)
+#define DWARF_FRAME_RETURN_COLUMN LR_REGNUM
 
 #endif /* GCC_OR1K_H */
