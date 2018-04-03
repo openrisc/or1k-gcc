@@ -162,6 +162,9 @@ nds32*-*)
 nios2*-*-*)
 	cpu_type=nios2
 	;;
+or1k*-*-*)
+	cpu_type=or1k
+	;;
 powerpc*-*-*)
 	cpu_type=rs6000
 	;;
@@ -1004,6 +1007,9 @@ nios2-*-linux*)
 nios2-*-*)
 	tmake_file="$tmake_file nios2/t-nios2 t-softfp-sfdf t-softfp-excl t-softfp"
 	extra_parts="$extra_parts crti.o crtn.o"
+	;;
+or1k-*-*)
+	tmake_file="$tmake_file or1k/t-or1k"
 	;;
 pdp11-*-*)
 	tmake_file="pdp11/t-pdp11 t-fdpbit"

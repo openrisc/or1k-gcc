@@ -292,6 +292,17 @@ or1k_function_value (const_tree valtype,
   return gen_rtx_REG (TYPE_MODE (valtype), RV_REGNUM);
 }
 
+/* Worker function for TARGET_LIBCALL_VALUE.  */
+
+static rtx
+or1k_libcall_value (machine_mode mode,
+		    const_rtx fun ATTRIBUTE_UNUSED)
+{
+  /* TODO support 2 reg return values and return on stack?  */
+  return gen_rtx_REG (mode, RV_REGNUM);
+}
+
+
 /* Worker function for TARGET_FUNCTION_VALUE_REGNO_P.  */
 
 static bool
@@ -449,6 +460,8 @@ or1k_print_operand (FILE *file, rtx x, int code)
 /* Calling Conventions.  */
 #undef TARGET_FUNCTION_VALUE
 #define TARGET_FUNCTION_VALUE or1k_function_value
+#undef TARGET_LIBCALL_VALUE
+#define TARGET_LIBCALL_VALUE or1k_libcall_value
 #undef TARGET_FUNCTION_VALUE_REGNO_P
 #define TARGET_FUNCTION_VALUE_REGNO_P or1k_function_value_regno_p
 #undef TARGET_FUNCTION_ARG

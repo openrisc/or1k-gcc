@@ -203,7 +203,7 @@ enum reg_class
 
 
 /* Trampolines, for nested functions */
-#define TRAMPOLINE_SIZE (abort (), 0)
+#define TRAMPOLINE_SIZE 12
 #define TRAMPOLINE_ALIGNMENT (abort (), 0)
 
 /* Pointer mode */

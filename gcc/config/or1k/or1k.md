@@ -63,7 +63,7 @@
 	   (match_operand:SI 1 "register_operand" "r")
 	   (match_operand:SI 2 "register_operand" "r")))]
   ""
-  "l.sub\t%0, %1 %2")
+  "l.sub\t%0, %1, %2")
 
 ;; -------------------------------------------------------------------------
 ;; Unary arithmetic instructions
