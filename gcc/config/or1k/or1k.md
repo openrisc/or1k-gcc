@@ -77,6 +77,52 @@
 ;; Move instructions
 ;; -------------------------------------------------------------------------
 
+;; 8-bit moves
+
+(define_expand "movqi"
+  [(set (match_operand:QI 0 "nonimmediate_operand" "")
+	(match_operand:QI 1 "general_operand" ""))]
+  ""
+  "
+{
+  if (MEM_P (operands[0]))
+    operands[1] = force_reg (QImode, operands[1]);
+}")
+
+(define_insn "*movqi_internal"
+  [(set (match_operand:QI 0 "nonimmediate_operand" "=r,r,W,r")
+	(match_operand:QI 1 "general_operand"       "r,J,r,W"))]
+  "register_operand (operands[0], QImode) || register_operand (operands[1], QImode)"
+  "@
+   l.or\t%0, r0, %1
+   l.ori\t%0, r0, %1
+   l.sb\t%0, %1
+   l.lbz\t%0, %1")
+
+;; 16-bit moves
+
+(define_expand "movhi"
+  [(set (match_operand:HI 0 "nonimmediate_operand" "")
+	(match_operand:HI 1 "general_operand" ""))]
+  ""
+  "
+{
+  if (MEM_P (operands[0]))
+    operands[1] = force_reg (HImode, operands[1]);
+}")
+
+(define_insn "*movhi_internal"
+  [(set (match_operand:HI 0 "nonimmediate_operand" "=r,r,W,r")
+	(match_operand:HI 1 "general_operand"       "r,J,r,W"))]
+  "register_operand (operands[0], HImode) || register_operand (operands[1], HImode)"
+  "@
+   l.or\t%0, r0, %1
+   l.ori\t%0, r0, %1
+   l.sh\t%0, %1
+   l.lhz\t%0, %1")
+
+;; 32-bit moves
+
 (define_expand "movsi"
   [(set (match_operand:SI 0 "nonimmediate_operand" "")
 	(match_operand:SI 1 "general_operand" ""))]

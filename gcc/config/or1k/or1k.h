@@ -165,6 +165,14 @@ enum reg_class
 #define REGNO_REG_CLASS(REGNO) \
   (REGNO == AP_REGNUM || REGNO == CC_REGNUM ? SPECIAL_REGS : GENERAL_REGS)
 
+#define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)               \
+do {                                                    \
+  if (GET_MODE_CLASS (MODE) == MODE_INT                 \
+      && GET_MODE_SIZE (MODE) < UNITS_PER_WORD)         \
+    (MODE) = word_mode;                                 \
+} while (0)
+
+
 /* Assembly definitions.  */
 
 #define ASM_APP_ON ""
