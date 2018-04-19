@@ -51,6 +51,8 @@
 #define PREFERRED_STACK_BOUNDARY 32
 #define MAX_FIXED_MODE_SIZE 64
 
+#define TARGET_FLOAT_FORMAT IEEE_FLOAT_FORMAT
+
 /* Layout of source language data types.  */
 
 #define INT_TYPE_SIZE 32
@@ -59,7 +61,7 @@
 #define LONG_LONG_TYPE_SIZE 64
 #define FLOAT_TYPE_SIZE 32
 #define DOUBLE_TYPE_SIZE 64
-#define LONG_DOUBLE_TYPE_SIZE DOUBLE_TYPE_SIZE
+#define LONG_DOUBLE_TYPE_SIZE 64
 
 #undef SIZE_TYPE
 #define SIZE_TYPE "unsigned int"
@@ -129,7 +131,7 @@
 
 #define CALL_USED_REGISTERS \
 { 1, 1, 0, 0, 0, 0, 0, 0, \
-  0, 1, 1, 1, 1, 0, 0, 0, \
+  0, 1, 1, 1, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
   1, 1}
@@ -163,7 +165,9 @@ enum reg_class
    choose a class which is "minimal", meaning that no smaller class
    also contains the register.  */
 #define REGNO_REG_CLASS(REGNO) \
-  (REGNO == AP_REGNUM || REGNO == CC_REGNUM ? SPECIAL_REGS : GENERAL_REGS)
+  ((REGNO >= FIRST_PSEUDO_REGISTER) ? NO_REGS :	\
+   (REGNO == AP_REGNUM || 			\
+    REGNO == CC_REGNUM ? SPECIAL_REGS : GENERAL_REGS))
 
 #define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)               \
 do {                                                    \
@@ -172,6 +176,12 @@ do {                                                    \
     (MODE) = word_mode;                                 \
 } while (0)
 
+/* A macro whose definition is the name of the class to which a valid
+   base register must belong.  A base register is one used in an
+   address which is the register value plus a displacement.  */
+#define BASE_REG_CLASS GENERAL_REGS
+
+#define INDEX_REG_CLASS NO_REGS
 
 /* Assembly definitions.  */
 
@@ -224,18 +234,11 @@ do {                                                    \
 
 /* The register number of the arg pointer register, which is used to
    access the function's argument list.  */
-#define ARG_POINTER_REGNUM 32
+#define ARG_POINTER_REGNUM FRAME_POINTER_REGNUM
 
 /* A C expression that is nonzero if REGNO is the number of a hard
    register in which function arguments are sometimes passed.  */
 #define FUNCTION_ARG_REGNO_P(r) (r >= 3 && r <= 8)
-
-/* A macro whose definition is the name of the class to which a vqalid
-   base register must belong.  A base register is one used in an
-   address which is the register value plus a displacement.  */
-#define BASE_REG_CLASS GENERAL_REGS
-
-#define INDEX_REG_CLASS NO_REGS
 
 #define MAX_REGS_PER_ADDRESS 1
 
@@ -246,8 +249,7 @@ do {                                                    \
 
 #define ELIMINABLE_REGS					\
 {{ FRAME_POINTER_REGNUM, STACK_POINTER_REGNUM },	\
- { ARG_POINTER_REGNUM,	 STACK_POINTER_REGNUM },	\
- { ARG_POINTER_REGNUM,   FRAME_POINTER_REGNUM }}
+ { ARG_POINTER_REGNUM,	 STACK_POINTER_REGNUM }}
 
 #define INITIAL_ELIMINATION_OFFSET(FROM, TO, OFFSET) \
   do {							\
@@ -257,7 +259,7 @@ do {                                                    \
 #define REGNO_OK_FOR_INDEX_P(REGNO) 0
 #define REGNO_OK_FOR_BASE_P(REGNO) \
   ((REGNO) < FIRST_PSEUDO_REGISTER			\
-   || (reg_renumber[REGNO]) < FIRST_PSEUDO_REGISTER)
+   || ((unsigned int) reg_renumber[REGNO]) < FIRST_PSEUDO_REGISTER)
 
 /* If defined, the maximum amount of space required for outgoing
    arguments will be computed and placed into the variable
@@ -270,7 +272,7 @@ do {                                                    \
    address.  On some machines it may depend on the data type of the
    function.  If 'ARGS_GROW_DOWNWARD', this is the offset to the
    location above the first argument's address.  */
-#define FIRST_PARM_OFFSET(FNDECL) 0
+#define FIRST_PARM_OFFSET(FNDECL) (UNITS_PER_WORD)
 
 /* Stack layout and stack pointer usage.  */
 
@@ -280,7 +282,7 @@ do {                                                    \
 
 /* Offset from the stack pointer register to the first location at which
    outgoing arguments are placed.  */
-#define STACK_POINTER_OFFSET 0
+#define STACK_POINTER_OFFSET (UNITS_PER_WORD)
 
 /* An alias for a machine mode name.  This is the machine mode that
    elements of a jump-table should have.  */

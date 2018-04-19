@@ -124,8 +124,8 @@
 ;; 32-bit moves
 
 (define_expand "movsi"
-  [(set (match_operand:SI 0 "nonimmediate_operand" "")
-	(match_operand:SI 1 "general_operand" ""))]
+  [(set (match_operand:SI 0 "" "")
+	(match_operand:SI 1 "" ""))]
   ""
   "
 {
@@ -135,7 +135,7 @@
 
 (define_insn "*movsi_internal"
   [(set (match_operand:SI 0 "nonimmediate_operand" "=r,r,r,r,W,r,r")
-	(match_operand:SI 1 "general_operand" "r,I,J,K,r,W,i"))]
+	(match_operand:SI 1 "general_operand"       "r,I,J,K,r,W,i"))]
   "register_operand (operands[0], SImode) || register_operand (operands[1], SImode)"
   "@
    l.or\t%0, r0, %1

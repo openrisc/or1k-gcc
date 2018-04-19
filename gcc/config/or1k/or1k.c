@@ -99,11 +99,11 @@ callee_saved_regno_p (int regno)
  *  ---- previous frame --------
  *  current func arg[n]
  *  current func arg[0]   <-- r2 [FP]
- *  ---- current stack frame ---  ^
- *  return address      r9        |
- *  old frame pointer   r2       (+)
- *  callee saved regs             |
- *  local variables               |
+ *  ---- current stack frame ---  ^  ---\
+ *  return address      r9        |     |
+ *  old frame pointer   r2       (+)    |-- machine->total_size
+ *  callee saved regs             |     | > machine->callee_saved_reg_size
+ *  local variables               |  ---/ > machine->local_vars_size
  *  sub function args     <-- r1 [SP]
  *  ----------------------------  |
  *                               (-)
@@ -259,9 +259,25 @@ or1k_expand_epilogue (void)
 }
 
 int
-or1k_initial_elimination_offset (int from ATTRIBUTE_UNUSED, int to ATTRIBUTE_UNUSED)
+or1k_initial_elimination_offset (int from, int to)
 {
-  return 0;
+  int offset;
+
+  /* Set OFFSET to the offset from the stack pointer.  */
+  switch (from)
+    {
+    case FRAME_POINTER_REGNUM:
+      /* This is the high end of the local variable storage, not the
+	 hard frame pointer.  */
+      offset = cfun->machine->total_size;
+      break;
+
+    default:
+      gcc_unreachable ();
+    }
+
+  return offset;
+
 }
 
 /* Worker function for TARGET_LEGITIMATE_ADDRESS_P.  */
