@@ -31,7 +31,7 @@
 
 ;; Immediates
 (define_constraint "I"
-  "The constant zerK"
+  "The constant zero"
   (and (match_code "const_int")
        (match_test "ival == 0")))
 

@@ -165,8 +165,8 @@ enum reg_class
    choose a class which is "minimal", meaning that no smaller class
    also contains the register.  */
 #define REGNO_REG_CLASS(REGNO) \
-  ((REGNO >= FIRST_PSEUDO_REGISTER) ? NO_REGS :	\
-   (REGNO == AP_REGNUM || 			\
+  ((REGNO >= FIRST_PSEUDO_REGISTER || REGNO < 0) ? NO_REGS :	\
+   (REGNO == AP_REGNUM || 					\
     REGNO == CC_REGNUM ? SPECIAL_REGS : GENERAL_REGS))
 
 #define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)               \
@@ -287,6 +287,11 @@ do {                                                    \
 /* An alias for a machine mode name.  This is the machine mode that
    elements of a jump-table should have.  */
 #define CASE_VECTOR_MODE SImode
+
+#define STORE_FLAG_VALUE 1
+
+/* Indicates how loads of narrow mode values are loaded into words.  */
+#define LOAD_EXTEND_OP(MODE) (ZERO_EXTEND)
 
 /* Profiling */
 #define FUNCTION_PROFILER(FILE,LABELNO) (abort (), 0)
