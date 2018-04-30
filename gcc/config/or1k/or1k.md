@@ -27,7 +27,8 @@
 
 ;; Register numbers
 (define_constants
-  [(LR_REGNUM       9)
+  [(ZERO_REGNUM     0)
+   (LR_REGNUM       9)
    (CC_REGNUM      33)]
 )
 
@@ -56,6 +57,62 @@
   "@
   l.add\t%0, %1, %2
   l.addi\t%0, %1, %2")
+
+(define_insn "iorsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	  (ior:SI
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
+  ""
+  "@
+  l.or\t%0, %1, %2
+  l.ori\t%0, %1, %2")
+
+(define_insn "andsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	  (and:SI
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
+  ""
+  "@
+  l.and\t%0, %1, %2
+  l.andi\t%0, %1, %2")
+
+(define_insn "xorsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	  (xor:SI
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
+  ""
+  "@
+  l.xor\t%0, %1, %2
+  l.xori\t%0, %1, %2")
+
+(define_insn "multsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	  (mult:SI
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
+  ""
+  "@
+  l.mul\t%0, %1, %2
+  l.muli\t%0, %1, %2")
+
+(define_insn "divsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	  (div:SI
+	   (match_operand:SI 1 "register_operand" "r")
+	   (match_operand:SI 2 "general_operand" "r")))]
+  ""
+  "l.div\t%0, %1, %2")
+
+(define_insn "udivsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	  (udiv:SI
+	   (match_operand:SI 1 "register_operand" "r")
+	   (match_operand:SI 2 "general_operand" "r")))]
+  ""
+  "l.divu\t%0, %1, %2")
 
 (define_insn "subsi3"
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -92,17 +149,18 @@
 ;; Move instructions
 ;; -------------------------------------------------------------------------
 
-;; 8-bit moves
+(define_mode_iterator I [QI HI SI])
 
-(define_expand "movqi"
-  [(set (match_operand:QI 0 "nonimmediate_operand" "")
-	(match_operand:QI 1 "general_operand" ""))]
+(define_expand "mov<I:mode>"
+  [(set (match_operand:I 0 "nonimmediate_operand" "")
+	(match_operand:I 1 "general_operand" ""))]
   ""
-  "
-{
-  if (MEM_P (operands[0]))
-    operands[1] = force_reg (QImode, operands[1]);
-}")
+  {
+    if (MEM_P (operands[0]))
+      operands[1] = force_reg (<I:MODE>mode, operands[1]);
+})
+
+;; 8-bit moves
 
 (define_insn "*movqi_internal"
   [(set (match_operand:QI 0 "nonimmediate_operand" "=r,r,mW, r")
@@ -116,15 +174,6 @@
 
 ;; 16-bit moves
 
-(define_expand "movhi"
-  [(set (match_operand:HI 0 "nonimmediate_operand" "")
-	(match_operand:HI 1 "general_operand" ""))]
-  ""
-  {
-  if (MEM_P (operands[0]))
-    operands[1] = force_reg (HImode, operands[1]);
-})
-
 (define_insn "*movhi_internal"
   [(set (match_operand:HI 0 "nonimmediate_operand" "=r,r,mW, r")
 	(match_operand:HI 1 "general_operand"       "r,J,r ,mW"))]
@@ -136,15 +185,6 @@
    l.lhz\t%0, %1")
 
 ;; 32-bit moves
-
-(define_expand "movsi"
-  [(set (match_operand:SI 0 "" "")
-	(match_operand:SI 1 "" ""))]
-  ""
-  {
-  if (MEM_P (operands[0]) && !REG_P (operands[1]))
-    operands[1] = force_reg (SImode, operands[1]);
-})
 
 (define_insn "*movsi_internal"
   [(set (match_operand:SI 0 "nonimmediate_operand" "=mW,r,r, r,r,r,r")
@@ -181,6 +221,7 @@
 
 ;; Sign extension patterns
 
+;; We can do memory extensions with a single load
 (define_insn "extendhisi2"
   [(set (match_operand:SI 0 "register_operand"                     "=r,r")
 	(sign_extend:SI (match_operand:HI 1 "nonimmediate_operand"  "r,m")))]
@@ -197,6 +238,7 @@
    #
    l.lbs\t%0, %1")
 
+;; For register extensions we need for revert to arithmetic shifts
 (define_split
   [(set (match_operand:SI 0 "register_operand" "")
 	(sign_extend:SI (match_operand:HI 1 "register_operand" "")))]
@@ -239,15 +281,15 @@
 ;;  We try to iterate all of thse
 ;;
 
-(define_code_iterator cond [ne eq lt ltu gt gtu ge le geu leu])
+(define_code_iterator intcmpcc [ne eq lt ltu gt gtu ge le geu leu])
 (define_code_attr insn [(ne "ne") (eq "eq") (lt "lts") (ltu "ltu")
 			(gt "gts") (gtu "gtu") (ge "ges") (le "les")
 			(geu "geu") (leu "leu") ])
 
-(define_insn "*sf<code>_insn"
+(define_insn "*sf<intcmpcc:code>_insn"
   [(set (reg:CC CC_REGNUM)
-	(cond (match_operand:SI 0 "register_operand" "r,r")
-	      (match_operand:SI 1 "general_operand" "r,J")))]
+	(intcmpcc (match_operand:I 0 "register_operand" "r,r")
+	      (match_operand:I 1 "general_operand" "r,J")))]
   ""
   "@
    l.sf<insn>\t%0, %1
@@ -257,23 +299,24 @@
 ;; Conditional Store instructions
 ;; -------------------------------------------------------------------------
 
-(define_expand "cstoresi4"
-  [(set (reg:CC CC_REGNUM)
+(define_expand "cstore<I:mode>4"
+  [(set (match_operand:I 0 "register_operand" "") (const_int 1))
+   (set (reg:CC CC_REGNUM)
 	(match_operator 1 "comparison_operator"
-	  [(match_operand:SI 2 "register_operand" "")
-	   (match_operand:SI 3 "general_operand" "")]))
-   (set (match_operand:SI 0 "register_operand" "")
-	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
-		      (const_int 1)
-		      (const_int 0)))]
+	  [(match_operand:I 2 "register_operand" "")
+	   (match_operand:I 3 "general_operand" "")]))
+   (set (match_dup 0)
+	(if_then_else:I (ne (reg:CC CC_REGNUM) (const_int 0))
+		      (match_dup 0)
+		      (reg:I ZERO_REGNUM)))]
   ""
   "")
 
-(define_insn "*cmovsi_insn"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
-	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
-		      (match_operand:SI 1 "general_operand" "r,r")
-		      (match_operand:SI 2 "general_operand" "r,I")))]
+(define_insn "*cmov<I:mode>_insn"
+  [(set (match_operand:I 0 "register_operand" "=r,r")
+	(if_then_else:I (ne (reg:CC CC_REGNUM) (const_int 0))
+		      (match_operand:I 1 "register_operand" "r,r")
+		      (match_operand:I 2 "general_operand" "r,I")))]
   ""
   "@
    l.cmov\t%0, %1, %2
