@@ -58,36 +58,6 @@
   l.add\t%0, %1, %2
   l.addi\t%0, %1, %2")
 
-(define_insn "iorsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
-	  (ior:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
-  ""
-  "@
-  l.or\t%0, %1, %2
-  l.ori\t%0, %1, %2")
-
-(define_insn "andsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
-	  (and:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
-  ""
-  "@
-  l.and\t%0, %1, %2
-  l.andi\t%0, %1, %2")
-
-(define_insn "xorsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
-	  (xor:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
-  ""
-  "@
-  l.xor\t%0, %1, %2
-  l.xori\t%0, %1, %2")
-
 (define_insn "multsi3"
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	  (mult:SI
@@ -123,10 +93,6 @@
   "l.sub\t%0, %1, %2")
 
 ;; -------------------------------------------------------------------------
-;; Unary arithmetic instructions
-;; -------------------------------------------------------------------------
-
-;; -------------------------------------------------------------------------
 ;; Logical operators
 ;; -------------------------------------------------------------------------
 
@@ -144,6 +110,36 @@
   "@
    l.<shift_asm>\t%0, %1, %2
    l.<shift_asm>i\t%0, %1, %2")
+
+(define_insn "andsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	  (and:SI
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
+  ""
+  "@
+  l.and\t%0, %1, %2
+  l.andi\t%0, %1, %2")
+
+(define_insn "xorsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	  (xor:SI
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
+  ""
+  "@
+  l.xor\t%0, %1, %2
+  l.xori\t%0, %1, %2")
+
+(define_insn "iorsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+	  (ior:SI
+	   (match_operand:SI 1 "register_operand" "r,r")
+	   (match_operand:SI 2 "general_operand" "r,J")))]
+  ""
+  "@
+  l.or\t%0, %1, %2
+  l.ori\t%0, %1, %2")
 
 ;; -------------------------------------------------------------------------
 ;; Move instructions
