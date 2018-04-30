@@ -208,7 +208,7 @@
         (zero_extend:SI (match_operand:HI 1 "nonimmediate_operand" "r,m")))]
   ""
   "@
-   l.andi\t%0, %1, 0xffff
+   l.exthz\t%0, %1
    l.lhz\t%0, %1")
 
 (define_insn "zero_extendqisi2"
@@ -216,7 +216,7 @@
         (zero_extend:SI (match_operand:QI 1 "nonimmediate_operand" "r,m")))]
   ""
   "@
-   l.andi\t%0, %1, 0xff
+   l.extbz\t%0, %1
    l.lbz\t%0, %1")
 
 ;; Sign extension patterns
@@ -227,7 +227,7 @@
 	(sign_extend:SI (match_operand:HI 1 "nonimmediate_operand"  "r,m")))]
   ""
   "@
-   #
+   l.exths\t%0, %1
    l.lhs\t%0, %1")
 
 (define_insn "extendqisi2"
@@ -235,34 +235,8 @@
 	(sign_extend:SI (match_operand:QI 1 "nonimmediate_operand"  "r,m")))]
   ""
   "@
-   #
+   l.extbs\t%0, %1
    l.lbs\t%0, %1")
-
-;; For register extensions we need for revert to arithmetic shifts
-(define_split
-  [(set (match_operand:SI 0 "register_operand" "")
-	(sign_extend:SI (match_operand:HI 1 "register_operand" "")))]
-  ""
-  [(set (match_dup 0)
-	(ashift:SI (match_dup 1)
-		   (const_int 16)))
-   (set (match_dup 0)
-	(ashiftrt:SI (match_dup 1)
-		     (const_int 16)))]
-  "operands[1] = gen_lowpart (SImode, operands[1]);")
-
-(define_split
-  [(set (match_operand:SI 0 "register_operand" "")
-	(sign_extend:SI (match_operand:QI 1 "register_operand" "")))]
-  ""
-  [(set (match_dup 0)
-	(ashift:SI (match_dup 1)
-		   (const_int 24)))
-   (set (match_dup 0)
-	(ashiftrt:SI (match_dup 1)
-		     (const_int 24)))]
-  "operands[1] = gen_lowpart (SImode, operands[1]);")
-
 
 ;; -------------------------------------------------------------------------
 ;; Compare instructions
