@@ -154,6 +154,18 @@
   {
     if (MEM_P (operands[0]))
       operands[1] = force_reg (<I:MODE>mode, operands[1]);
+
+    if (CONSTANT_P (operands[1]))
+      {
+	int val = INTVAL (operands[1]);
+
+	if ((val & 0xffff0000) > 0 || val == 0)
+	  emit_insn (gen_movsi_high (operands[0], GEN_INT (val & 0xffff0000)));
+	if ((val & 0xffff) > 0)
+	  emit_insn (gen_movsi_lo_sum (operands[0], operands[0],
+				       GEN_INT (val & 0xffff)));
+	DONE;
+      }
 })
 
 ;; 8-bit moves
@@ -183,17 +195,27 @@
 ;; 32-bit moves
 
 (define_insn "*movsi_internal"
-  [(set (match_operand:SI 0 "nonimmediate_operand" "=mW,r,r, r,r,r,r")
-	(match_operand:SI 1 "general_operand"       "r, r,mW,I,J,K,i"))]
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=mW,  r, r")
+	(match_operand:SI 1 "nonimmediate_operand"    "r, r,mW"))]
   "register_operand (operands[0], SImode) || register_operand (operands[1], SImode)"
   "@
    l.sw\t%0, %1
    l.or\t%0, r0, %1
-   l.lwz\t%0, %1
-   l.movhi\t%0, %1
-   l.ori\t%0, r0, %1
-   l.movhi\t%0, %1
-   l.movhi\t%0, hi(%1)\n\tl.ori\t%0, %0, lo(%1)")
+   l.lwz\t%0, %1")
+
+(define_insn "movsi_high"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+        (high:SI (match_operand:SI 1 "immediate_operand" "K")))]
+  ""
+  "l.movhi\t%0, hi(%1)")
+
+(define_insn "movsi_lo_sum"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+        (lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
+                   (match_operand:SI 2 "immediate_operand" "J")))]
+  ""
+  "l.addi\t%0, %1, lo(%2)")
+
 
 ;; -------------------------------------------------------------------------
 ;; Sign Extending
