@@ -49,20 +49,20 @@
 ;; -------------------------------------------------------------------------
 
 (define_insn "addsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
+  [(set (match_operand:SI 0 "register_operand"   "=r, r")
 	  (plus:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
+	   (match_operand:SI 1 "register_operand" "r, r")
+	   (match_operand:SI 2 "general_operand"  "r,MJ")))]
   ""
   "@
   l.add\t%0, %1, %2
   l.addi\t%0, %1, %2")
 
 (define_insn "multsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
+  [(set (match_operand:SI 0 "register_operand"   "=r, r")
 	  (mult:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
+	   (match_operand:SI 1 "register_operand" "r, r")
+	   (match_operand:SI 2 "general_operand"  "r,MJ")))]
   ""
   "@
   l.mul\t%0, %1, %2
@@ -103,39 +103,39 @@
                               (lshiftrt "srl") (rotate "ror")])
 
 (define_insn "<shift_op>si3"
-  [(set (match_operand:SI 0 "register_operand"          "=r,r")
-        (SHIFT:SI (match_operand:SI 1 "register_operand" "r,r")
-                  (match_operand:SI 2 "general_operand"  "r,J")))]
+  [(set (match_operand:SI 0 "register_operand"          "=r, r")
+        (SHIFT:SI (match_operand:SI 1 "register_operand" "r, r")
+                  (match_operand:SI 2 "general_operand"  "r,MJ")))]
   ""
   "@
    l.<shift_asm>\t%0, %1, %2
    l.<shift_asm>i\t%0, %1, %2")
 
 (define_insn "andsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
+  [(set (match_operand:SI 0 "register_operand"   "=r, r")
 	  (and:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
+	   (match_operand:SI 1 "register_operand" "r, r")
+	   (match_operand:SI 2 "general_operand"  "r,MJ")))]
   ""
   "@
   l.and\t%0, %1, %2
   l.andi\t%0, %1, %2")
 
 (define_insn "xorsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
+  [(set (match_operand:SI 0 "register_operand"   "=r, r")
 	  (xor:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
+	   (match_operand:SI 1 "register_operand" "r, r")
+	   (match_operand:SI 2 "general_operand"  "r,MJ")))]
   ""
   "@
   l.xor\t%0, %1, %2
   l.xori\t%0, %1, %2")
 
 (define_insn "iorsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r,r")
+  [(set (match_operand:SI 0 "register_operand"   "=r, r")
 	  (ior:SI
-	   (match_operand:SI 1 "register_operand" "r,r")
-	   (match_operand:SI 2 "general_operand" "r,J")))]
+	   (match_operand:SI 1 "register_operand" "r, r")
+	   (match_operand:SI 2 "general_operand"  "r,MJ")))]
   ""
   "@
   l.or\t%0, %1, %2
@@ -155,24 +155,34 @@
     if (MEM_P (operands[0]))
       operands[1] = force_reg (<I:MODE>mode, operands[1]);
 
+    if (LABEL_P (operands[1]) || SYMBOL_REF_P (operands[1]))
+      {
+	emit_insn (gen_movsi_high (operands[0], operands[1]));
+	emit_insn (gen_movsi_lo_sum (operands[0], operands[0], operands[1]));
+	DONE;
+      }
+
     if (CONSTANT_P (operands[1]))
       {
-	int val = INTVAL (operands[1]);
+	/* If its not a 16-bit constant expand.  */
+	if (!(satisfies_constraint_J (operands[1])
+	      || satisfies_constraint_M (operands[1])))
+	  {
+	    int val = INTVAL (operands[1]);
 
-	if ((val & 0xffff0000) > 0 || val == 0)
-	  emit_insn (gen_movsi_high (operands[0], GEN_INT (val & 0xffff0000)));
-	if ((val & 0xffff) > 0)
-	  emit_insn (gen_movsi_lo_sum (operands[0], operands[0],
-				       GEN_INT (val & 0xffff)));
-	DONE;
+	    emit_insn (gen_movsi_high (operands[0], GEN_INT (val & ~0xffff)));
+	    emit_insn (gen_addsi3 (operands[0], operands[0],
+				   GEN_INT (val & 0xffff)));
+	    DONE;
+	  }
       }
 })
 
 ;; 8-bit moves
 
 (define_insn "*movqi_internal"
-  [(set (match_operand:QI 0 "nonimmediate_operand" "=r,r,mW, r")
-	(match_operand:QI 1 "general_operand"       "r,J,r ,mW"))]
+  [(set (match_operand:QI 0 "nonimmediate_operand" "=r, r,mW, r")
+	(match_operand:QI 1 "general_operand"       "r,MJ,r ,mW"))]
   "register_operand (operands[0], QImode) || register_operand (operands[1], QImode)"
   "@
    l.or\t%0, r0, %1
@@ -183,8 +193,8 @@
 ;; 16-bit moves
 
 (define_insn "*movhi_internal"
-  [(set (match_operand:HI 0 "nonimmediate_operand" "=r,r,mW, r")
-	(match_operand:HI 1 "general_operand"       "r,J,r ,mW"))]
+  [(set (match_operand:HI 0 "nonimmediate_operand" "=r, r,mW, r")
+	(match_operand:HI 1 "general_operand"       "r,MJ,r ,mW"))]
   "register_operand (operands[0], HImode) || register_operand (operands[1], HImode)"
   "@
    l.or\t%0, r0, %1
@@ -195,24 +205,25 @@
 ;; 32-bit moves
 
 (define_insn "*movsi_internal"
-  [(set (match_operand:SI 0 "nonimmediate_operand" "=mW,  r, r")
-	(match_operand:SI 1 "nonimmediate_operand"    "r, r,mW"))]
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=r, r,mW, r")
+	(match_operand:SI 1 "general_operand"       "r,MJ,r ,mW"))]
   "register_operand (operands[0], SImode) || register_operand (operands[1], SImode)"
   "@
-   l.sw\t%0, %1
    l.or\t%0, r0, %1
+   l.ori\t%0, r0, %1
+   l.sw\t%0, %1
    l.lwz\t%0, %1")
 
 (define_insn "movsi_high"
   [(set (match_operand:SI 0 "register_operand" "=r")
-        (high:SI (match_operand:SI 1 "immediate_operand" "K")))]
+        (high:SI (match_operand:SI 1 "general_operand" "i")))]
   ""
   "l.movhi\t%0, hi(%1)")
 
 (define_insn "movsi_lo_sum"
   [(set (match_operand:SI 0 "register_operand" "=r")
         (lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
-                   (match_operand:SI 2 "immediate_operand" "J")))]
+                   (match_operand:SI 2 "general_operand" "i")))]
   ""
   "l.addi\t%0, %1, lo(%2)")
 
@@ -280,8 +291,8 @@
 
 (define_insn "*sf<intcmpcc:code>_insn"
   [(set (reg:CC CC_REGNUM)
-	(intcmpcc (match_operand:I 0 "register_operand" "r,r")
-	      (match_operand:I 1 "general_operand" "r,J")))]
+	(intcmpcc (match_operand:I 0 "register_operand" "r, r")
+	      (match_operand:I 1 "general_operand"      "r,MJ")))]
   ""
   "@
    l.sf<insn>\t%0, %1
