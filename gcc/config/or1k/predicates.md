@@ -22,4 +22,10 @@
 ;; Predicates
 ;; -------------------------------------------------------------------------
 
+(define_predicate "or1k_mov_operand"
+  (and (match_code "reg,subreg,mem,const,const_int,const_poly_int")
+       (ior (match_operand 0 "register_operand")
+	    (ior (match_operand 0 "memory_operand")
+		 (match_operand 0 "const_int_operand")))))
+
 

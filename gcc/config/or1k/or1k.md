@@ -147,6 +147,8 @@
 
 (define_mode_iterator I [QI HI SI])
 
+(define_mode_attr losto [(QI "b") (HI "h") (SI "w")])
+
 (define_expand "mov<I:mode>"
   [(set (match_operand:I 0 "nonimmediate_operand" "")
 	(match_operand:I 1 "general_operand" ""))]
@@ -155,6 +157,7 @@
     if (MEM_P (operands[0]))
       operands[1] = force_reg (<I:MODE>mode, operands[1]);
 
+    /* Load labels as hi/lo sums.  */
     if (LABEL_P (operands[1]) || SYMBOL_REF_P (operands[1]))
       {
 	emit_insn (gen_movsi_high (operands[0], operands[1]));
@@ -162,6 +165,7 @@
 	DONE;
       }
 
+    /* Load constants as hi/lo sums, which can be optimized out if 0.  */
     if (CONSTANT_P (operands[1]))
       {
 	/* If its not a 16-bit constant expand.  */
@@ -178,41 +182,20 @@
       }
 })
 
-;; 8-bit moves
+;; 8-bit, 16-bit and 32-bit moves
 
-(define_insn "*movqi_internal"
-  [(set (match_operand:QI 0 "nonimmediate_operand" "=r, r,mW, r")
-	(match_operand:QI 1 "general_operand"       "r,MJ,r ,mW"))]
-  "register_operand (operands[0], QImode) || register_operand (operands[1], QImode)"
+(define_insn "*mov<I:mode>_internal"
+  [(set (match_operand:I 0 "nonimmediate_operand" "=r, r,mW, r")
+	(match_operand:I 1 "or1k_mov_operand"       "r,MJ, r,mW"))]
+  "register_operand (operands[0], <I:MODE>mode)
+   || register_operand (operands[1], <I:MODE>mode)"
   "@
    l.or\t%0, r0, %1
    l.ori\t%0, r0, %1
-   l.sb\t%0, %1
-   l.lbz\t%0, %1")
+   l.s<I:losto>\t%0, %1
+   l.l<I:losto>z\t%0, %1")
 
-;; 16-bit moves
-
-(define_insn "*movhi_internal"
-  [(set (match_operand:HI 0 "nonimmediate_operand" "=r, r,mW, r")
-	(match_operand:HI 1 "general_operand"       "r,MJ,r ,mW"))]
-  "register_operand (operands[0], HImode) || register_operand (operands[1], HImode)"
-  "@
-   l.or\t%0, r0, %1
-   l.ori\t%0, r0, %1
-   l.sh\t%0, %1
-   l.lhz\t%0, %1")
-
-;; 32-bit moves
-
-(define_insn "*movsi_internal"
-  [(set (match_operand:SI 0 "nonimmediate_operand" "=r, r,mW, r")
-	(match_operand:SI 1 "general_operand"       "r,MJ,r ,mW"))]
-  "register_operand (operands[0], SImode) || register_operand (operands[1], SImode)"
-  "@
-   l.or\t%0, r0, %1
-   l.ori\t%0, r0, %1
-   l.sw\t%0, %1
-   l.lwz\t%0, %1")
+;; Hi/Low moves for constant and symbol loading
 
 (define_insn "movsi_high"
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -292,7 +275,7 @@
 (define_insn "*sf<intcmpcc:code>_insn"
   [(set (reg:CC CC_REGNUM)
 	(intcmpcc (match_operand:I 0 "register_operand" "r, r")
-	      (match_operand:I 1 "general_operand"      "r,MJ")))]
+	             (match_operand:I 1 "general_operand"      "r,MJ")))]
   ""
   "@
    l.sf<insn>\t%0, %1
