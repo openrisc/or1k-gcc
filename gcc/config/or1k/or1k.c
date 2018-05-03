@@ -258,6 +258,14 @@ or1k_expand_epilogue (void)
   emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, LR_REGNUM)));
 }
 
+/* TODO, do we need to just set to r9? or should we put it to where r9
+ * is stored on the stack?  */
+void
+or1k_expand_eh_return (rtx eh_addr)
+{
+  emit_move_insn (gen_rtx_REG (Pmode, LR_REGNUM), eh_addr);
+}
+
 int
 or1k_initial_elimination_offset (int from, int to)
 {

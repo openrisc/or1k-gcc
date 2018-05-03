@@ -21,4 +21,4 @@ extern bool or1k_legitimate_address_p (machine_mode, rtx, bool);
 extern int  or1k_initial_elimination_offset (int, int);
 extern void or1k_expand_prologue (void);
 extern void or1k_expand_epilogue (void);
-
+extern void or1k_expand_eh_return (rtx);

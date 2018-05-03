@@ -172,7 +172,7 @@
 
 (define_mode_iterator I [QI HI SI])
 
-(define_mode_attr losto [(QI "b") (HI "h") (SI "w")])
+(define_mode_attr ldst [(QI "b") (HI "h") (SI "w")])
 
 (define_expand "mov<I:mode>"
   [(set (match_operand:I 0 "nonimmediate_operand" "")
@@ -217,9 +217,9 @@
   "@
    l.or\t%0, r0, %1
    l.ori\t%0, r0, %1
-   l.s<I:losto>\t%0, %1
-   l.l<I:losto>z\t%0, %1"
-  [(set_attr "type" "alu,alu,ld,st")])
+   l.s<I:ldst>\t%0, %1
+   l.l<I:ldst>z\t%0, %1"
+  [(set_attr "type" "alu,alu,st,ld")])
 
 ;; Hi/Low moves for constant and symbol loading
 
@@ -453,3 +453,11 @@
   ""
   "l.jr\t%0"
   [(set_attr "type" "control")])
+
+(define_expand "eh_return"
+  [(use (match_operand 0 "general_operand"))]
+  ""
+{
+  or1k_expand_eh_return (operands[0]);
+  DONE;
+})

@@ -230,8 +230,6 @@ do {                                                    \
 #define STACK_POINTER_REGNUM SP_REGNUM
 #define FRAME_POINTER_REGNUM FP_REGNUM
 
-#define HARD_FRAME_POINTER_REGNUM FP_REGNUM
-
 /* The register number of the arg pointer register, which is used to
    access the function's argument list.  */
 #define ARG_POINTER_REGNUM FRAME_POINTER_REGNUM
