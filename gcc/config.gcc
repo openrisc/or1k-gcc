@@ -2374,11 +2374,22 @@ nvptx-*)
 		tm_file="${tm_file} nvptx/offload.h"
 	fi
 	;;
-or1k*-*-elf)
-	gas=yes
-	gnu_ld=yes
-	tm_file="dbxelf.h elfos.h newlib-stdint.h ${tm_file}"
+or1k*-*-*)
+	tm_file="elfos.h ${tm_file}"
 	tmake_file="${tmake_file} or1k/t-or1k"
+        case ${target} in
+        or1k*-*-linux*)
+                tm_file="${tm_file} gnu-user.h linux.h glibc-stdint.h"
+                ;;
+	or1k*-*-elf*)
+		tm_file="${tm_file} newlib-stdint.h"
+		extra_options="${extra_options}"
+		;;
+	or1k*-*-rtems*)
+		tm_file="${tm_file} newlib-stdint.h rtems.h"
+		tmake_file="${tmake_file} t-rtems"
+		;;
+	esac
 	;;
 pdp11-*-*)
 	tm_file="${tm_file} newlib-stdint.h"
