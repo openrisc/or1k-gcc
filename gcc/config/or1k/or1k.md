@@ -98,14 +98,14 @@
 
 (define_code_iterator SHIFT  [ashift ashiftrt lshiftrt rotate])
 (define_code_attr shift_op   [(ashift "ashl") (ashiftrt "ashr")
-                              (lshiftrt "lshr") (rotate "rotl")])
+			      (lshiftrt "lshr") (rotate "rotl")])
 (define_code_attr shift_asm  [(ashift "sll") (ashiftrt "sra")
-                              (lshiftrt "srl") (rotate "ror")])
+			      (lshiftrt "srl") (rotate "ror")])
 
 (define_insn "<shift_op>si3"
   [(set (match_operand:SI 0 "register_operand"          "=r, r")
-        (SHIFT:SI (match_operand:SI 1 "register_operand" "r, r")
-                  (match_operand:SI 2 "general_operand"  "r,MJ")))]
+	(SHIFT:SI (match_operand:SI 1 "register_operand" "r, r")
+		  (match_operand:SI 2 "general_operand"  "r,MJ")))]
   ""
   "@
    l.<shift_asm>\t%0, %1, %2
@@ -186,7 +186,7 @@
 
 (define_insn "*mov<I:mode>_internal"
   [(set (match_operand:I 0 "nonimmediate_operand" "=r, r,mW, r")
-	(match_operand:I 1 "or1k_mov_operand"       "r,MJ, r,mW"))]
+	(match_operand:I 1 "or1k_mov_operand"      "r,MJ, r,mW"))]
   "register_operand (operands[0], <I:MODE>mode)
    || register_operand (operands[1], <I:MODE>mode)"
   "@
@@ -199,14 +199,14 @@
 
 (define_insn "movsi_high"
   [(set (match_operand:SI 0 "register_operand" "=r")
-        (high:SI (match_operand:SI 1 "general_operand" "i")))]
+	(high:SI (match_operand:SI 1 "general_operand" "i")))]
   ""
   "l.movhi\t%0, hi(%1)")
 
 (define_insn "movsi_lo_sum"
   [(set (match_operand:SI 0 "register_operand" "=r")
-        (lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
-                   (match_operand:SI 2 "general_operand" "i")))]
+	(lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
+		   (match_operand:SI 2 "general_operand" "i")))]
   ""
   "l.addi\t%0, %1, lo(%2)")
 
@@ -217,7 +217,7 @@
 
 (define_insn "zero_extendhisi2"
   [(set (match_operand:SI 0 "register_operand"                    "=r,r")
-        (zero_extend:SI (match_operand:HI 1 "nonimmediate_operand" "r,m")))]
+	(zero_extend:SI (match_operand:HI 1 "nonimmediate_operand" "r,m")))]
   ""
   "@
    l.exthz\t%0, %1
@@ -225,7 +225,7 @@
 
 (define_insn "zero_extendqisi2"
   [(set (match_operand:SI 0 "register_operand"                    "=r,r")
-        (zero_extend:SI (match_operand:QI 1 "nonimmediate_operand" "r,m")))]
+	(zero_extend:SI (match_operand:QI 1 "nonimmediate_operand" "r,m")))]
   ""
   "@
    l.extbz\t%0, %1
@@ -373,8 +373,7 @@
   [(parallel [(set (match_operand 0 "" "")
 		   (call (match_operand 1 "" "")
 		   (match_operand 2 "" "")))
-	      (clobber (reg:SI LR_REGNUM))
-             ])]
+	      (clobber (reg:SI LR_REGNUM))])]
   ""
   "
 {
