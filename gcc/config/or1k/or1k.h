@@ -214,6 +214,8 @@ do {                                                    \
     }							\
   while (0)
 
+#define PRINT_OPERAND_PUNCT_VALID_P(CODE) (code == '#')
+
 /* Calling convention definitions.  */
 #define CUMULATIVE_ARGS int
 #define INIT_CUMULATIVE_ARGS(CUM, FNTYPE, LIBNAME, FNDECL, N_NAMED_ARGS) \

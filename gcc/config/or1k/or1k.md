@@ -346,7 +346,7 @@
 		      (label_ref (match_operand 0 "" ""))
 		      (pc)))]
   ""
-  "l.bf\t%0"
+  "l.bf\t%0%#"
   [(set_attr "type" "control")])
 
 
@@ -368,13 +368,13 @@
 (define_insn "jump"
   [(set (pc) (label_ref (match_operand 0 "" "")))]
   ""
-  "l.j\t%0"
+  "l.j\t%0%#"
   [(set_attr "type" "control")])
 
 (define_insn "indirect_jump"
   [(set (pc) (match_operand:SI 0 "register_operand" "r"))]
   ""
-  "l.jr\t%0"
+  "l.jr\t%0%#"
   [(set_attr "type" "control")])
 
 (define_expand "call"
@@ -396,8 +396,8 @@
    (clobber (reg:SI LR_REGNUM))]
   ""
   "@
-   l.jalr\t%0
-   l.jal\t%0"
+   l.jalr\t%0%#
+   l.jal\t%0%#"
   [(set_attr "type" "control")])
 
 ;; Call with a retun value
@@ -421,8 +421,8 @@
    (clobber (reg:SI LR_REGNUM))]
   ""
   "@
-   l.jalr\t%1
-   l.jal\t%1"
+   l.jalr\t%1%#
+   l.jal\t%1%#"
   [(set_attr "type" "control")])
 
 ;; -------------------------------------------------------------------------
@@ -451,7 +451,7 @@
   [(use (match_operand:SI 0 "register_operand" "r"))
    (return)]
   ""
-  "l.jr\t%0"
+  "l.jr\t%0%#"
   [(set_attr "type" "control")])
 
 (define_expand "eh_return"

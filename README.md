@@ -17,12 +17,12 @@ These items should be done to get to a point where very basic things compile.
 - branches - DONE
 - tuning
   - ensure varargs are to spec
-  - ensure we can return 64-bit values in r11 and r12
+  - ensure we can return 64-bit values in r11 and r12 - DONE (OOTB)
   - proper support for returning small structs/vectors in regs
   - optional support for frame pointers
-  - delay slot
+  - delay slot - DONE
   - optional support for delay slot
-  - correct predicates and constraints
+  - correct predicates and constraints - OK
 
 ## building
 
@@ -31,12 +31,10 @@ These items should be done to get to a point where very basic things compile.
 ```
 mkdir build
 cd build
-../gcc/configure --target=or1k-elf --disable-shared --enable-stage1-languages=c --prefix=/home/shorne/work/gnu-toolchain/local
+../gcc/configure --target=or1k-elf --disable-shared --enable-languages=c --prefix=/home/shorne/work/gnu-toolchain/local
 make -j5 all-gcc
 make install-gcc
 
-# Currently the entire build will not complete, but gcc will work, you can then
-# test gcc using one of the below tests
 ../local/bin/or1k-elf-gcc -S ../gcc/test2.c -fdump-rtl-all
 
 ```

@@ -432,14 +432,21 @@ or1k_print_operand (FILE *file, rtx x, int code)
 {
   rtx operand = x;
 
-  switch (code)
+  if (PRINT_OPERAND_PUNCT_VALID_P (code))
     {
-    case 0:
-      /* No code, print as usual.  */
-      break;
+      switch (code)
+	{
+	case '#':
+	  /* Conditionally add a nop in unfilled delay slot.  */
+	  if (final_sequence == NULL)
+	    fputs ("\n\t l.nop\n", file);
+	  break;
 
-    default:
-      internal_error ("invalid operand modifier letter: %d", code);
+	default:
+	  output_operand_lossage ("unknown operand letter: '%c'", code);
+	  break;
+	}
+      return;
     }
 
   /* Print an operand as without a modifier letter.  */
