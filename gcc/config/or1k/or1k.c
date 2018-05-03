@@ -196,8 +196,8 @@ or1k_expand_prologue (void)
   if (frame_pointer_needed)
     {
       gcc_assert (offset == -8);
-      or1k_save_restore_reg (FP_REGNUM, offset, true);
-      emit_move_insn (frame_pointer_rtx, stack_pointer_rtx);
+      or1k_save_restore_reg (HARD_FRAME_POINTER_REGNUM, offset, true);
+      emit_move_insn (hard_frame_pointer_rtx, stack_pointer_rtx);
       offset += 4;
     }
 
@@ -247,7 +247,7 @@ or1k_expand_epilogue (void)
   if (frame_pointer_needed)
     {
       gcc_assert (offset == -8);
-      or1k_save_restore_reg (FP_REGNUM, offset, false);
+      or1k_save_restore_reg (HARD_FRAME_POINTER_REGNUM, offset, false);
       offset += 4;
     }
 
@@ -259,13 +259,19 @@ or1k_expand_epilogue (void)
 }
 
 /* TODO, do we need to just set to r9? or should we put it to where r9
- * is stored on the stack?  */
+   is stored on the stack?  */
 void
 or1k_expand_eh_return (rtx eh_addr)
 {
   emit_move_insn (gen_rtx_REG (Pmode, LR_REGNUM), eh_addr);
 }
 
+/* We allow the following eliminiations:
+    FP -> HARD_FP or SP
+    AP -> HARD_FP or SP
+
+  FP and AP are the same so.
+ */
 int
 or1k_initial_elimination_offset (int from, int to)
 {
@@ -274,15 +280,18 @@ or1k_initial_elimination_offset (int from, int to)
   /* Set OFFSET to the offset from the stack pointer.  */
   switch (from)
     {
+    case ARG_POINTER_REGNUM:
     case FRAME_POINTER_REGNUM:
-      /* This is the high end of the local variable storage, not the
-	 hard frame pointer.  */
       offset = cfun->machine->total_size;
       break;
+
 
     default:
       gcc_unreachable ();
     }
+
+  if (to == HARD_FRAME_POINTER_REGNUM)
+    offset = 0;
 
   return offset;
 

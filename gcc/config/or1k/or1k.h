@@ -113,28 +113,28 @@
 
 #define ZERO_REGNUM   0
 #define SP_REGNUM   1
-#define FP_REGNUM   2
 #define LR_REGNUM   9
 #define TLS_REGNUM  10
 #define RV_REGNUM   11
 #define RVH_REGNUM  12
 #define AP_REGNUM   32
 #define CC_REGNUM   33
-#define FIRST_PSEUDO_REGISTER  34
+#define FP_REGNUM   34
+#define FIRST_PSEUDO_REGISTER  35
 
 #define FIXED_REGISTERS   \
 { 1, 1, 0, 0, 0, 0, 0, 0, \
   0, 0, 1, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
-  1, 1}
+  1, 1, 1}
 
 #define CALL_USED_REGISTERS \
 { 1, 1, 0, 0, 0, 0, 0, 0, \
   0, 1, 1, 1, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
   0, 0, 0, 0, 0, 0, 0, 0, \
-  1, 1}
+  1, 1, 1}
 
 enum reg_class
 {
@@ -156,8 +156,8 @@ enum reg_class
 #define REG_CLASS_CONTENTS      \
 { {0x00000000, 0x00000000},	\
   {0xffffffff, 0x00000000},	\
-  {0x00000000, 0x00000003},	\
-  {0xffffffff, 0x00000003}	\
+  {0x00000000, 0x00000007},	\
+  {0xffffffff, 0x00000007}	\
 }
 
 /* A C expression whose value is a register class containing hard
@@ -165,9 +165,10 @@ enum reg_class
    choose a class which is "minimal", meaning that no smaller class
    also contains the register.  */
 #define REGNO_REG_CLASS(REGNO) \
-  ((REGNO >= FIRST_PSEUDO_REGISTER || REGNO < 0) ? NO_REGS :	\
-   (REGNO == AP_REGNUM || 					\
-    REGNO == CC_REGNUM ? SPECIAL_REGS : GENERAL_REGS))
+  ((REGNO >= FIRST_PSEUDO_REGISTER ) ? NO_REGS :		\
+   (REGNO == AP_REGNUM						\
+    || REGNO == CC_REGNUM					\
+    || REGNO == FP_REGNUM ? SPECIAL_REGS : GENERAL_REGS))
 
 #define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)               \
 do {                                                    \
@@ -201,7 +202,7 @@ do {                                                    \
   "r8",   "r9",   "r10",  "r11",  "r12",  "r13",  "r14",  "r15",	\
   "r16",  "r17",  "r18",  "r19",  "r20",  "r21",  "r22",  "r23",	\
   "r24",  "r25",  "r26",  "r27",  "r28",  "r29",  "r30",  "r31",	\
-  "?ap",  "?cc" }
+  "?ap",  "?cc",  "?fp" }
 
 /* This is how to output an assembler line
    that says to advance the location counter
@@ -231,10 +232,11 @@ do {                                                    \
 #define FUNCTION_MODE	SImode
 #define STACK_POINTER_REGNUM SP_REGNUM
 #define FRAME_POINTER_REGNUM FP_REGNUM
+#define HARD_FRAME_POINTER_REGNUM 2
 
 /* The register number of the arg pointer register, which is used to
    access the function's argument list.  */
-#define ARG_POINTER_REGNUM FRAME_POINTER_REGNUM
+#define ARG_POINTER_REGNUM AP_REGNUM
 
 /* A C expression that is nonzero if REGNO is the number of a hard
    register in which function arguments are sometimes passed.  */
@@ -249,7 +251,9 @@ do {                                                    \
 
 #define ELIMINABLE_REGS					\
 {{ FRAME_POINTER_REGNUM, STACK_POINTER_REGNUM },	\
- { ARG_POINTER_REGNUM,	 STACK_POINTER_REGNUM }}
+ { FRAME_POINTER_REGNUM, HARD_FRAME_POINTER_REGNUM },	\
+ { ARG_POINTER_REGNUM,	 STACK_POINTER_REGNUM },	\
+ { ARG_POINTER_REGNUM,   HARD_FRAME_POINTER_REGNUM }}
 
 #define INITIAL_ELIMINATION_OFFSET(FROM, TO, OFFSET) \
   do {							\
