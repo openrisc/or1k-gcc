@@ -19,7 +19,7 @@
 ;; <http://www.gnu.org/licenses/>.
 
 ;; -------------------------------------------------------------------------
-;; Moxie specific constraints, predicates and attributes
+;; OpenRISC specific constraints, predicates and attributes
 ;; -------------------------------------------------------------------------
 
 (include "constraints.md")
@@ -32,8 +32,33 @@
    (CC_REGNUM      33)]
 )
 
+;; Instruction scheduler
+
 ; Most instructions are 4 bytes long.
 (define_attr "length" "" (const_int 4))
+
+(define_attr "type"
+  "alu,st,ld,control"
+  (const_string "alu"))
+
+(define_automaton "or1k")
+(define_cpu_unit "cpu" "or1k")
+(define_insn_reservation "alu" 1
+  (eq_attr "type" "alu")
+  "cpu")
+(define_insn_reservation "st" 1
+  (eq_attr "type" "st")
+  "cpu")
+(define_insn_reservation "ld" 3
+  (eq_attr "type" "st")
+  "cpu")
+(define_insn_reservation "control" 1
+  (eq_attr "type" "control")
+  "cpu")
+
+; Define delay slots for any branch
+(define_delay (eq_attr "type" "control")
+  [(eq_attr "type" "!control") (nil) (nil)])
 
 ;; -------------------------------------------------------------------------
 ;; nop instruction
@@ -193,7 +218,8 @@
    l.or\t%0, r0, %1
    l.ori\t%0, r0, %1
    l.s<I:losto>\t%0, %1
-   l.l<I:losto>z\t%0, %1")
+   l.l<I:losto>z\t%0, %1"
+  [(set_attr "type" "alu,alu,ld,st")])
 
 ;; Hi/Low moves for constant and symbol loading
 
@@ -201,14 +227,16 @@
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(high:SI (match_operand:SI 1 "general_operand" "i")))]
   ""
-  "l.movhi\t%0, hi(%1)")
+  "l.movhi\t%0, hi(%1)"
+  [(set_attr "type" "alu")])
 
 (define_insn "movsi_lo_sum"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
 		   (match_operand:SI 2 "general_operand" "i")))]
   ""
-  "l.addi\t%0, %1, lo(%2)")
+  "l.addi\t%0, %1, lo(%2)"
+  [(set_attr "type" "alu")])
 
 
 ;; -------------------------------------------------------------------------
@@ -318,7 +346,8 @@
 		      (label_ref (match_operand 0 "" ""))
 		      (pc)))]
   ""
-  "l.bf\t%0")
+  "l.bf\t%0"
+  [(set_attr "type" "control")])
 
 
 (define_expand "cbranchsi4"
@@ -339,12 +368,14 @@
 (define_insn "jump"
   [(set (pc) (label_ref (match_operand 0 "" "")))]
   ""
-  "l.j\t%0")
+  "l.j\t%0"
+  [(set_attr "type" "control")])
 
 (define_insn "indirect_jump"
   [(set (pc) (match_operand:SI 0 "register_operand" "r"))]
   ""
-  "l.jr\t%0")
+  "l.jr\t%0"
+  [(set_attr "type" "control")])
 
 (define_expand "call"
   [(parallel [(call (match_operand 0 "" "")
@@ -366,7 +397,8 @@
   ""
   "@
    l.jalr\t%0
-   l.jal\t%0")
+   l.jal\t%0"
+  [(set_attr "type" "control")])
 
 ;; Call with a retun value
 (define_expand "call_value"
@@ -390,7 +422,8 @@
   ""
   "@
    l.jalr\t%1
-   l.jal\t%1")
+   l.jal\t%1"
+  [(set_attr "type" "control")])
 
 ;; -------------------------------------------------------------------------
 ;; Prologue & Epilogue
@@ -418,5 +451,5 @@
   [(use (match_operand:SI 0 "register_operand" "r"))
    (return)]
   ""
-  "l.jr\t%0")
-
+  "l.jr\t%0"
+  [(set_attr "type" "control")])
