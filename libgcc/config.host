@@ -1010,6 +1010,7 @@ nios2-*-*)
 	;;
 or1k-*-*)
 	tmake_file="$tmake_file or1k/t-or1k"
+	extra_parts="$extra_parts crti.o crtn.o"
 	;;
 pdp11-*-*)
 	tmake_file="pdp11/t-pdp11 t-fdpbit"

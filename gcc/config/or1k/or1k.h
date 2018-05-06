@@ -22,11 +22,11 @@
 #define GCC_OR1K_H
 
 /* Names to predefine in the preprocessor for this target machine.  */
-/* __M32R__ is defined by the existing compiler so we use that.  */
 #define TARGET_CPU_CPP_BUILTINS()		\
   do						\
     {						\
       builtin_define ("__OR1K__");		\
+      builtin_define ("__OR1K_DELAY__");	\
       builtin_define ("__or1k__");		\
       builtin_assert ("cpu=or1k");		\
       builtin_assert ("machine=or1k");		\

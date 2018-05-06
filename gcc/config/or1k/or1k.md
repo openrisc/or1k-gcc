@@ -83,7 +83,7 @@
   l.add\t%0, %1, %2
   l.addi\t%0, %1, %2")
 
-(define_insn "multsi3"
+(define_insn "mulsi3"
   [(set (match_operand:SI 0 "register_operand"   "=r, r")
 	  (mult:SI
 	   (match_operand:SI 1 "register_operand" "r, r")
@@ -165,6 +165,14 @@
   "@
   l.or\t%0, %1, %2
   l.ori\t%0, %1, %2")
+
+(define_expand "one_cmplsi2"
+  [(set (match_operand:SI 0 "register_operand" "") (high:SI (const_int -65536)))
+   (set (match_dup 0) (plus:SI (match_dup 0) (const_int 65535)))
+   (set (match_dup 0) (xor:SI (match_dup 0)
+			      (match_operand:SI 1 "register_operand" "")))]
+  ""
+  "")
 
 ;; -------------------------------------------------------------------------
 ;; Move instructions
