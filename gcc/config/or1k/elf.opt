@@ -1,4 +1,4 @@
-; OpenRISC command line options
+; OpenRISC command line options for newlib binaries
 
 ; Copyright (C) 2010-2018 Free Software Foundation, Inc.
 ;
@@ -23,4 +23,11 @@
 
 ; Please try to keep this file in ASCII collating order.
 
+mboard=
+Target RejectNegative Joined
+Configure board specific runtime.
+
+mnewlib
+Target RejectNegative
+For compatibility, it's always newlib for elf now.
 

@@ -2382,8 +2382,8 @@ or1k*-*-*)
                 tm_file="${tm_file} gnu-user.h linux.h glibc-stdint.h"
                 ;;
 	or1k*-*-elf*)
-		tm_file="${tm_file} newlib-stdint.h"
-		extra_options="${extra_options}"
+		tm_file="${tm_file} newlib-stdint.h or1k/elf.h"
+		extra_options="${extra_options} or1k/elf.opt"
 		;;
 	or1k*-*-rtems*)
 		tm_file="${tm_file} newlib-stdint.h rtems.h"
