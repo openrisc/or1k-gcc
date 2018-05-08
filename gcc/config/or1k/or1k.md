@@ -208,7 +208,7 @@
 	    int val = INTVAL (operands[1]);
 
 	    emit_insn (gen_movsi_high (operands[0], GEN_INT (val & ~0xffff)));
-	    emit_insn (gen_addsi3 (operands[0], operands[0],
+	    emit_insn (gen_iorsi3 (operands[0], operands[0],
 				   GEN_INT (val & 0xffff)));
 	    DONE;
 	  }
@@ -243,7 +243,7 @@
 	(lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
 		   (match_operand:SI 2 "general_operand" "i")))]
   ""
-  "l.addi\t%0, %1, lo(%2)"
+  "l.ori\t%0, %1, lo(%2)"
   [(set_attr "type" "alu")])
 
 
