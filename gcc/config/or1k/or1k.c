@@ -82,13 +82,10 @@ or1k_option_override (void)
   init_machine_status = or1k_init_machine_status;
 }
 
-/* OpenRISC callee saved regs are even regs r14-r30.  */
 static bool
 callee_saved_regno_p (int regno)
 {
-  return regno <= 30
-         && regno >= 14
-         && (regno % 2 == 0);
+  return !call_used_regs[regno];
 }
 
 /* Compute the size of the local area and the size to be adjusted by the
