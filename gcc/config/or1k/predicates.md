@@ -28,4 +28,6 @@
 	    (ior (match_operand 0 "memory_operand")
 		 (match_operand 0 "const_int_operand")))))
 
+(define_predicate "or1k_hilo_operand"
+  (match_code "symbol_ref,label_ref,const_int"))
 

@@ -85,6 +85,10 @@ or1k_option_override (void)
 static bool
 callee_saved_regno_p (int regno)
 {
+  /* If we are already saving the frame pointer don't save it 2 times.  */
+  if (frame_pointer_needed && regno == HARD_FRAME_POINTER_REGNUM)
+    return false;
+
   return !call_used_regs[regno];
 }
 

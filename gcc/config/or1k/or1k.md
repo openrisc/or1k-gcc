@@ -166,11 +166,10 @@
   l.or\t%0, %1, %2
   l.ori\t%0, %1, %2")
 
+; One's complement is easy as xori will sign extend 0xffff
 (define_expand "one_cmplsi2"
-  [(set (match_operand:SI 0 "register_operand" "") (high:SI (const_int -65536)))
-   (set (match_dup 0) (plus:SI (match_dup 0) (const_int 65535)))
-   (set (match_dup 0) (xor:SI (match_dup 0)
-			      (match_operand:SI 1 "register_operand" "")))]
+  [(set (match_operand:SI 0 "register_operand" "")
+	(xor:SI (match_operand:SI 1 "register_operand" "") (const_int 65535)))]
   ""
   "")
 
@@ -190,29 +189,43 @@
     if (MEM_P (operands[0]))
       operands[1] = force_reg (<I:MODE>mode, operands[1]);
 
-    /* Load labels as hi/lo sums.  */
     if (LABEL_P (operands[1]) || SYMBOL_REF_P (operands[1]))
       {
+	/* Load labels as hi/lo sums.  */
 	emit_insn (gen_movsi_high (operands[0], operands[1]));
 	emit_insn (gen_movsi_lo_sum (operands[0], operands[0], operands[1]));
 	DONE;
       }
-
-    /* Load constants as hi/lo sums, which can be optimized out if 0.  */
-    if (CONSTANT_P (operands[1]))
+    else if (CONST_INT_P (operands[1]))
       {
-	/* If its not a 16-bit constant expand.  */
-	if (!(satisfies_constraint_J (operands[1])
-	      || satisfies_constraint_M (operands[1])))
+	/* Load constants as hi/lo sums, which can be optimized out if 0.  */
+	if (!satisfies_constraint_J (operands[1])
+	    && !satisfies_constraint_M (operands[1]))
 	  {
-	    int val = INTVAL (operands[1]);
-
-	    emit_insn (gen_movsi_high (operands[0], GEN_INT (val & ~0xffff)));
-	    emit_insn (gen_iorsi3 (operands[0], operands[0],
-				   GEN_INT (val & 0xffff)));
+	    emit_insn (gen_movsi_high (operands[0], operands[1]));
+	    emit_insn (gen_movsi_lo_sum (operands[0], operands[0],
+					 operands[1]));
 	    DONE;
 	  }
       }
+    else if (CONSTANT_P (operands[1])
+	     && GET_CODE (XEXP (operands[1], 0)) == PLUS)
+      {
+	/* Load labels in for form (const (plus (symbol) (const_int))) as
+	   tmp = symbol; op0 = (plus (tmp) (const_int)).  */
+	rtx p0 = XEXP (XEXP (operands[1], 0), 0);
+	rtx p1 = XEXP (XEXP (operands[1], 0), 1);
+
+	if ((GET_CODE (p0) == SYMBOL_REF || GET_CODE (p0) == LABEL_REF)
+	    && GET_CODE(p1) == CONST_INT)
+	  {
+	    rtx sym_temp = force_reg (SImode, p0);
+
+	    emit_move_insn (operands[0], gen_rtx_PLUS (SImode, sym_temp, p1));
+	    DONE;
+	  }
+      }
+
 })
 
 ;; 8-bit, 16-bit and 32-bit moves
@@ -233,7 +246,7 @@
 
 (define_insn "movsi_high"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(high:SI (match_operand:SI 1 "general_operand" "i")))]
+	(high:SI (match_operand:SI 1 "or1k_hilo_operand" "i")))]
   ""
   "l.movhi\t%0, hi(%1)"
   [(set_attr "type" "alu")])
@@ -241,7 +254,7 @@
 (define_insn "movsi_lo_sum"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
-		   (match_operand:SI 2 "general_operand" "i")))]
+		   (match_operand:SI 2 "or1k_hilo_operand" "i")))]
   ""
   "l.ori\t%0, %1, lo(%2)"
   [(set_attr "type" "alu")])
