@@ -52,18 +52,21 @@
 
 /* Per-function machine data.  */
 struct GTY(()) machine_function
- {
-   /* Number of bytes saved on the stack for callee saved registers.  */
-   int callee_saved_reg_size;
+{
+  /* Number of bytes saved on the stack for callee saved registers.  */
+  int callee_saved_reg_size;
 
-   /* Number of bytes saved on the stack for local variables.  */
-   int local_vars_size;
+  /* Number of bytes saved on the stack for local variables.  */
+  int local_vars_size;
 
-   /* The sum of sizes: locals vars, called saved regs, stack pointer
-    * and an optional frame pointer.
-    * Used in expand_prologue () and expand_epilogue().  */
-   int total_size;
- };
+  /* Number of bytes saved on the stack for outgoing/sub-fucntion args.  */
+  int args_size;
+
+  /* The sum of sizes: locals vars, called saved regs, stack pointer
+   * and an optional frame pointer.
+   * Used in expand_prologue () and expand_epilogue().  */
+  int total_size;
+};
 
 /* Zero initialization is OK for all current fields.  */
 
@@ -99,13 +102,13 @@ callee_saved_regno_p (int regno)
  *
  *  ---- previous frame --------
  *  current func arg[n]
- *  current func arg[0]   <-- r2 [FP]
+ *  current func arg[0]   <-- r2 [HFP]
  *  ---- current stack frame ---  ^  ---\
  *  return address      r9        |     |
  *  old frame pointer   r2       (+)    |-- machine->total_size
  *  callee saved regs             |     | > machine->callee_saved_reg_size
- *  local variables               |  ---/ > machine->local_vars_size
- *  sub function args     <-- r1 [SP]
+ *  local variables               |  ---/ > machine->local_vars_size       <-FP
+ *  sub function args     <-- r1 [SP]                                      <-AP
  *  ----------------------------  |
  *                               (-)
  *         (future)               |
@@ -114,23 +117,21 @@ callee_saved_regno_p (int regno)
  * All of these contents are optional.
  *
  * */
+
+#define OR1K_STACK_ALIGN(LOC)						\
+  (((LOC) + ((STACK_BOUNDARY / BITS_PER_UNIT) - 1))			\
+   & ~((STACK_BOUNDARY / BITS_PER_UNIT) - 1))
+
 static void
 or1k_compute_frame_layout (void)
 {
   /* For aligning the local variables.  */
   int stack_alignment = STACK_BOUNDARY / BITS_PER_UNIT;
-  int padding_locals;
+  int padding;
   int regno;
 
-  /* Padding needed for each element of the frame.  */
-  cfun->machine->local_vars_size = get_frame_size ();
-
-  /* Align to the stack alignment.  */
-  padding_locals = cfun->machine->local_vars_size % stack_alignment;
-  if (padding_locals)
-    padding_locals = stack_alignment - padding_locals;
-
-  cfun->machine->local_vars_size += padding_locals;
+  cfun->machine->local_vars_size = OR1K_STACK_ALIGN (get_frame_size ());
+  cfun->machine->args_size = OR1K_STACK_ALIGN (crtl->outgoing_args_size);
 
   /* Save callee-saved registers.  */
   cfun->machine->callee_saved_reg_size = 0;
@@ -141,7 +142,8 @@ or1k_compute_frame_layout (void)
 
   cfun->machine->total_size =
     + cfun->machine->local_vars_size
-    + cfun->machine->callee_saved_reg_size;
+    + cfun->machine->callee_saved_reg_size
+    + cfun->machine->args_size;
 
   if (frame_pointer_needed)
     cfun->machine->total_size += 4;
@@ -179,8 +181,9 @@ or1k_expand_prologue (void)
   if (flag_stack_usage_info)
     current_function_static_stack_size = cfun->machine->total_size;
 
-  /* Reserve space for local vars.  */
-  offset += cfun->machine->local_vars_size;
+  /* Reserve space for local vars and outgoing args.  */
+  offset += cfun->machine->local_vars_size
+	 + cfun->machine->args_size;
 
   /* Save callee-saved registers.  */
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
@@ -231,8 +234,9 @@ or1k_expand_epilogue (void)
 			   stack_pointer_rtx,
 			   GEN_INT (-1 * offset)));
 
-  /* Reverse space for local vars.  */
-  offset += cfun->machine->local_vars_size;
+  /* Reverse space for local vars and args.  */
+  offset += cfun->machine->local_vars_size
+	 + cfun->machine->args_size;
 
   /* Restore callee-saved registers.  */
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
@@ -282,8 +286,11 @@ or1k_initial_elimination_offset (int from, int to)
   switch (from)
     {
     case ARG_POINTER_REGNUM:
+      offset = 0;
+      break;
+
     case FRAME_POINTER_REGNUM:
-      offset = cfun->machine->total_size;
+      offset = cfun->machine->args_size;
       break;
 
 
@@ -292,7 +299,7 @@ or1k_initial_elimination_offset (int from, int to)
     }
 
   if (to == HARD_FRAME_POINTER_REGNUM)
-    offset = 0;
+    offset -= cfun->machine->total_size;
 
   return offset;
 
