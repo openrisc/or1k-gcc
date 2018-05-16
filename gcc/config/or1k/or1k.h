@@ -275,21 +275,17 @@ do {                                                    \
    should increase the stack frame size by this amount.  */
 #define ACCUMULATE_OUTGOING_ARGS 0
 
-/* Offset from the argument pointer register to the first argument's
-   address.  On some machines it may depend on the data type of the
-   function.  If 'ARGS_GROW_DOWNWARD', this is the offset to the
-   location above the first argument's address.  */
-#define FIRST_PARM_OFFSET(FNDECL) (UNITS_PER_WORD)
-
 /* Stack layout and stack pointer usage.  */
+
+/* This plus ARG_POINTER_REGNUM points to the first word of incoming args.  */
+#define FIRST_PARM_OFFSET(FNDECL) (0)
+
+/* This plus STACK_POINTER_REGNUM points to the first work of outgoing args.  */
+#define STACK_POINTER_OFFSET (0)
 
 /* Define this macro if pushing a word onto the stack moves the stack
    pointer to a smaller address.  */
 #define STACK_GROWS_DOWNWARD 1
-
-/* Offset from the stack pointer register to the first location at which
-   outgoing arguments are placed.  */
-#define STACK_POINTER_OFFSET (UNITS_PER_WORD)
 
 /* An alias for a machine mode name.  This is the machine mode that
    elements of a jump-table should have.  */

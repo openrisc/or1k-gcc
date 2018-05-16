@@ -102,13 +102,13 @@ callee_saved_regno_p (int regno)
  *
  *  ---- previous frame --------
  *  current func arg[n]
- *  current func arg[0]   <-- r2 [HFP]
+ *  current func arg[0]   <-- r2 [HFP,AP]
  *  ---- current stack frame ---  ^  ---\
  *  return address      r9        |     |
  *  old frame pointer   r2       (+)    |-- machine->total_size
  *  callee saved regs             |     | > machine->callee_saved_reg_size
  *  local variables               |  ---/ > machine->local_vars_size       <-FP
- *  sub function args     <-- r1 [SP]                                      <-AP
+ *  sub function args     <-- r1 [SP]
  *  ----------------------------  |
  *                               (-)
  *         (future)               |
@@ -275,7 +275,7 @@ or1k_expand_eh_return (rtx eh_addr)
     FP -> HARD_FP or SP
     AP -> HARD_FP or SP
 
-  FP and AP are the same so.
+  HFP and AP are the same which is handled below.
  */
 int
 or1k_initial_elimination_offset (int from, int to)
@@ -285,14 +285,15 @@ or1k_initial_elimination_offset (int from, int to)
   /* Set OFFSET to the offset from the stack pointer.  */
   switch (from)
     {
+    /* Incoming args are all the way up at the previous frame.  */
     case ARG_POINTER_REGNUM:
-      offset = 0;
+      offset = cfun->machine->total_size;
       break;
 
+    /* Local args, are just past the ougoing args if any.  */
     case FRAME_POINTER_REGNUM:
       offset = cfun->machine->args_size;
       break;
-
 
     default:
       gcc_unreachable ();
@@ -362,7 +363,7 @@ or1k_function_arg (cumulative_args_t cum_v, machine_mode mode,
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
 
-  if (*cum <= 6)
+  if (*cum < 6)
     return gen_rtx_REG (mode, *cum + 3);
   else
     return NULL_RTX;
