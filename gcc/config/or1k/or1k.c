@@ -416,6 +416,15 @@ or1k_legitimate_address_p (machine_mode mode ATTRIBUTE_UNUSED,
   return false;
 }
 
+/* Worker function for TARGET_PASS_BY_REFERENCE.  */
+
+static bool
+or1k_pass_by_reference (cumulative_args_t, machine_mode,
+			const_tree type, bool)
+{
+  return type && (AGGREGATE_TYPE_P (type) || int_size_in_bytes (type) > 8);
+}
+
 /* Worker function for TARGET_FUNCTION_VALUE.  */
 
 static rtx
@@ -619,10 +628,8 @@ or1k_print_operand (FILE *file, rtx x, int code)
 #define TARGET_FUNCTION_ARG_ADVANCE or1k_function_arg_advance
 #undef TARGET_RETURN_IN_MEMORY
 #define TARGET_RETURN_IN_MEMORY	or1k_return_in_memory
-#undef TARGET_MUST_PASS_IN_STACK
-#define	TARGET_MUST_PASS_IN_STACK must_pass_in_stack_var_size
 #undef TARGET_PASS_BY_REFERENCE
-#define	TARGET_PASS_BY_REFERENCE hook_pass_by_reference_must_pass_in_stack
+#define	TARGET_PASS_BY_REFERENCE or1k_pass_by_reference
 
 /* Assembly generation.  */
 #undef  TARGET_PRINT_OPERAND
