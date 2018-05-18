@@ -450,50 +450,57 @@ or1k_print_operand (FILE *file, rtx x, int code)
 {
   rtx operand = x;
 
-  if (PRINT_OPERAND_PUNCT_VALID_P (code))
+  switch (code)
     {
-      switch (code)
+    case '#':
+      /* Conditionally add a nop in unfilled delay slot.  */
+      if (final_sequence == NULL)
+	fputs ("\n\t l.nop\n", file);
+      break;
+
+    case 'r':
+      if (REG_P (x))
+        fprintf (file, "%s", reg_names[REGNO (operand)]);
+      else if (x == CONST0_RTX (GET_MODE (x)))
+        fprintf (file, "r0");
+      else
+	output_operand_lossage ("invalid %%r value");
+      break;
+
+    case 0:
+      /* Print an operand as without a modifier letter.  */
+      switch (GET_CODE (operand))
 	{
-	case '#':
-	  /* Conditionally add a nop in unfilled delay slot.  */
-	  if (final_sequence == NULL)
-	    fputs ("\n\t l.nop\n", file);
+	case REG:
+	  if (REGNO (operand) > 31)
+	    internal_error ("internal error: bad register: %d",
+			    REGNO (operand));
+	  fprintf (file, "%s", reg_names[REGNO (operand)]);
+	  break;
+
+	case MEM:
+	  output_address (GET_MODE (XEXP (operand, 0)), XEXP (operand, 0));
+	  break;
+
+	case CODE_LABEL:
+	case LABEL_REF:
+	  output_asm_label (operand);
 	  break;
 
 	default:
-	  output_operand_lossage ("unknown operand letter: '%c'", code);
+	  /* No need to handle all strange variants, let output_addr_const
+	     do it for us.  */
+	  if (CONSTANT_P (operand))
+	    output_addr_const (file, operand);
+	  else
+	    internal_error ("unexpected operand: %d", GET_CODE (operand));
 	  break;
 	}
-      return;
-    }
-
-  /* Print an operand as without a modifier letter.  */
-  switch (GET_CODE (operand))
-    {
-    case REG:
-      if (REGNO (operand) > 31)
-	internal_error ("internal error: bad register: %d", REGNO (operand));
-      fprintf (file, "%s", reg_names[REGNO (operand)]);
-      return;
-
-    case MEM:
-      output_address (GET_MODE (XEXP (operand, 0)), XEXP (operand, 0));
-      return;
-
-    case CODE_LABEL:
-    case LABEL_REF:
-      output_asm_label (operand);
       break;
 
     default:
-      /* No need to handle all strange variants, let output_addr_const
-	 do it for us.  */
-      if (CONSTANT_P (operand))
-	{
-	  output_addr_const (file, operand);
-	  return;
-	}
-      internal_error ("unexpected operand: %d", GET_CODE (operand));
+      output_operand_lossage ("unknown operand letter: '%c'", code);
+      break;
     }
 }
 

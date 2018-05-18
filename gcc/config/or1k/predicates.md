@@ -31,3 +31,25 @@
 (define_predicate "or1k_hilo_operand"
   (match_code "symbol_ref,label_ref,const_int"))
 
+(define_predicate "const0_operand"
+  (and (match_code "const_int,const_wide_int,const_double,const_vector")
+       (match_test "op == CONST0_RTX (mode)")))
+
+(define_predicate "reg_or_0_operand"
+  (ior (match_operand 0 "register_operand")
+       (match_operand 0 "const0_operand")))
+
+(define_predicate "reg_or_u6_operand"
+  (if_then_else (match_code "const_int")
+    (match_test "INTVAL (op) >= 0 && INTVAL (op) <= 0x3f")
+    (match_operand 0 "register_operand")))
+
+(define_predicate "reg_or_u16_operand"
+  (if_then_else (match_code "const_int")
+    (match_test "INTVAL (op) >= 0 && INTVAL (op) <= 0xffff")
+    (match_operand 0 "register_operand")))
+
+(define_predicate "reg_or_s16_operand"
+  (if_then_else (match_code "const_int")
+    (match_test "INTVAL (op) >= -32768 && INTVAL (op) <= 32767")
+    (match_operand 0 "register_operand")))
