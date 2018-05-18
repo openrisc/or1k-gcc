@@ -480,11 +480,11 @@
 (define_expand "epilogue"
   [(return)]
   ""
-  "
 {
   or1k_expand_epilogue ();
+  emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, LR_REGNUM)));
   DONE;
-}")
+})
 
 (define_insn "return_internal"
   [(use (match_operand:SI 0 "register_operand" "r"))

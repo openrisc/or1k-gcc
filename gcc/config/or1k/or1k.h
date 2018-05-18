@@ -91,7 +91,7 @@
    r10   thread local storage
    r11   function return value
    r12   function return value high (upper 64-bit)
-   r13   temporary
+   r13   temporary (used in prologue and epilogue)
    r14   callee saved
    r15   temporary
    r16   callee saved
@@ -117,6 +117,7 @@
 #define TLS_REGNUM  10
 #define RV_REGNUM   11
 #define RVH_REGNUM  12
+#define PRO_EPI_TMP_REGNUM 13
 #define AP_REGNUM   32
 #define CC_REGNUM   33
 #define FP_REGNUM   34

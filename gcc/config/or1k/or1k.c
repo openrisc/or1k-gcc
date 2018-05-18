@@ -153,114 +153,207 @@ or1k_compute_frame_layout (void)
 }
 
 static void
-or1k_save_restore_reg (int regno, int offset, bool save_p)
+or1k_save_reg (int regno, HOST_WIDE_INT offset)
 {
-  rtx reg;
-  rtx mem;
+  rtx reg = gen_rtx_REG (Pmode, regno);
+  rtx mem = gen_frame_mem (SImode, plus_constant (Pmode, stack_pointer_rtx,
+						  offset));
+  rtx insn = emit_move_insn (mem, reg);
+  RTX_FRAME_RELATED_P (insn) = 1;
+}
 
-  reg = gen_rtx_REG (Pmode, regno);
-  mem = gen_rtx_MEM (SImode, gen_rtx_PLUS (Pmode, stack_pointer_rtx,
-                                           GEN_INT (offset)));
-  if (save_p)
-    {
-      rtx insn = emit_move_insn (mem, reg);
-      RTX_FRAME_RELATED_P (insn) = 1;
-    }
-  else
-    emit_move_insn (reg, mem);
+static rtx
+or1k_restore_reg (int regno, HOST_WIDE_INT offset, rtx cfa_restores)
+{
+  rtx reg = gen_rtx_REG (Pmode, regno);
+  rtx mem = gen_frame_mem (SImode, plus_constant (Pmode, stack_pointer_rtx,
+						  offset));
+  emit_move_insn (reg, mem);
+  return alloc_reg_note (REG_CFA_RESTORE, reg, cfa_restores);
 }
 
 void
 or1k_expand_prologue (void)
 {
-  int offset;
+  HOST_WIDE_INT sp_offset = -cfun->machine->total_size;
+  HOST_WIDE_INT reg_offset, this_offset;
   int regno;
-
-  offset = -1 * cfun->machine->total_size;
+  rtx insn;
 
   if (flag_stack_usage_info)
-    current_function_static_stack_size = cfun->machine->total_size;
+    current_function_static_stack_size = -sp_offset;
 
-  /* Reserve space for local vars and outgoing args.  */
-  offset += cfun->machine->local_vars_size
-	 + cfun->machine->args_size;
+  /* Early exit for frameless functions.  */
+  if (sp_offset == 0)
+    return;
+
+  /* Adjust the stack pointer.  For large stack offsets we will
+     do this in multiple parts, before and after saving registers.  */
+  reg_offset = (sp_offset + cfun->machine->local_vars_size
+		+ cfun->machine->args_size);
+  this_offset = MAX (sp_offset, -32764);
+  reg_offset -= this_offset;
+  sp_offset -= this_offset;
+
+  insn = emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx,
+				GEN_INT (this_offset)));
+  RTX_FRAME_RELATED_P (insn) = 1;
 
   /* Save callee-saved registers.  */
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
     {
       if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
 	{
-	  or1k_save_restore_reg (regno, offset, true);
-
-	  offset += 4;
+	  or1k_save_reg (regno, reg_offset);
+	  reg_offset += 4;
 	}
     }
 
   /* Save and update frame pointer.  */
   if (frame_pointer_needed)
     {
-      gcc_assert (offset == -8);
-      or1k_save_restore_reg (HARD_FRAME_POINTER_REGNUM, offset, true);
-      emit_move_insn (hard_frame_pointer_rtx, stack_pointer_rtx);
-      offset += 4;
+      gcc_assert (reg_offset + this_offset == -8);
+      or1k_save_reg (HARD_FRAME_POINTER_REGNUM, reg_offset);
+      insn = emit_insn (gen_addsi3 (hard_frame_pointer_rtx,
+				    stack_pointer_rtx,
+				    GEN_INT (-this_offset)));
+      RTX_FRAME_RELATED_P (insn) = 1;
+      reg_offset += 4;
     }
 
   /* Save the link register.  */
-  gcc_assert (offset == -4);
-  or1k_save_restore_reg (LR_REGNUM, offset, true);
+  gcc_assert (reg_offset + this_offset == -4);
+  or1k_save_reg (LR_REGNUM, reg_offset);
 
-  /* Finally, adjust the stack pointer.  */
-  offset = -1 * cfun->machine->total_size;
-  if (offset != 0)
+  /* Allocate the rest of the stack frame, if any.  */
+  if (sp_offset != 0)
     {
-      rtx insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
-					stack_pointer_rtx,
-				    	GEN_INT (offset)));
-      RTX_FRAME_RELATED_P (insn) = 1;
+      if (sp_offset < 2 * -32768)
+	{
+          /* For very large offsets, we need a temporary register.  */
+	  rtx tmp = gen_rtx_REG (Pmode, PRO_EPI_TMP_REGNUM);
+	  emit_move_insn (tmp, GEN_INT (sp_offset));
+	  insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
+					stack_pointer_rtx, tmp));
+	  if (!frame_pointer_needed)
+	    {
+	      RTX_FRAME_RELATED_P (insn) = 1;
+	      add_reg_note (insn, REG_CFA_ADJUST_CFA,
+			    gen_rtx_SET (stack_pointer_rtx,
+					 plus_constant (Pmode,
+							stack_pointer_rtx,
+							sp_offset)));
+	    }
+	}
+      else
+	{
+	  /* Otherwise, emit one or two sequential subtracts.  */
+	  do
+	    {
+	      this_offset = MAX (sp_offset, -32768);
+	      sp_offset -= this_offset;
+
+	      insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
+					    stack_pointer_rtx,
+					    GEN_INT (this_offset)));
+	      if (!frame_pointer_needed)
+		RTX_FRAME_RELATED_P (insn) = 1;
+	    }
+	  while (sp_offset != 0);
+	}
     }
 }
 
 void
 or1k_expand_epilogue (void)
 {
+  HOST_WIDE_INT reg_offset, sp_offset;
+  rtx insn, cfa_restores = NULL;
   int regno;
-  int offset;
 
-  /* First, restore the stack pointer.  */
-  offset = -1 * cfun->machine->total_size;
+  sp_offset = cfun->machine->total_size;
+  if (sp_offset == 0)
+    return;
 
-  if (offset != 0)
-    emit_insn (gen_addsi3 (stack_pointer_rtx,
-			   stack_pointer_rtx,
-			   GEN_INT (-1 * offset)));
+  reg_offset = cfun->machine->local_vars_size + cfun->machine->args_size;
 
-  /* Reverse space for local vars and args.  */
-  offset += cfun->machine->local_vars_size
-	 + cfun->machine->args_size;
+  if (sp_offset >= 32768 || cfun->calls_alloca)
+    {
+      /* The saved registers are out of range of the stack pointer.
+	 We need to partially deallocate the stack frame now.  */
+      if (frame_pointer_needed)
+	{
+	  /* Reset the stack pointer to the bottom of the saved regs.  */
+	  sp_offset -= reg_offset;
+	  reg_offset = 0;
+	  insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
+					hard_frame_pointer_rtx,
+					GEN_INT (-sp_offset)));
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	  add_reg_note (insn, REG_CFA_DEF_CFA,
+			plus_constant (Pmode, stack_pointer_rtx, sp_offset));
+	}
+      else if (sp_offset >= 3 * 32768)
+	{
+	  /* For very large offsets, we need a temporary register.  */
+	  rtx tmp = gen_rtx_REG (Pmode, PRO_EPI_TMP_REGNUM);
+	  emit_move_insn (tmp, GEN_INT (reg_offset));
+	  insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
+					stack_pointer_rtx, tmp));
+	  sp_offset -= reg_offset;
+	  reg_offset = 0;
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	  add_reg_note (insn, REG_CFA_DEF_CFA,
+			plus_constant (Pmode, stack_pointer_rtx, sp_offset));
+	}
+      else
+	{
+	  /* Otherwise, emit one or two sequential additions.  */
+	  do
+	    {
+	      HOST_WIDE_INT this_offset = MIN (reg_offset, 32764);
+	      reg_offset -= this_offset;
+	      sp_offset -= this_offset;
+
+	      insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
+					    stack_pointer_rtx,
+					    GEN_INT (this_offset)));
+	      RTX_FRAME_RELATED_P (insn) = 1;
+	      add_reg_note (insn, REG_CFA_DEF_CFA,
+			    plus_constant (Pmode, stack_pointer_rtx,
+					   sp_offset));
+	    }
+	  while (sp_offset >= 32768);
+	}
+    }
 
   /* Restore callee-saved registers.  */
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    {
-      if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
-	{
-	  or1k_save_restore_reg (regno, offset, false);
-	  offset += 4;
-	}
-    }
+    if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
+      {
+	cfa_restores = or1k_restore_reg (regno, reg_offset, cfa_restores);
+	reg_offset += 4;
+      }
 
   /* Restore frame pointer.  */
   if (frame_pointer_needed)
     {
-      gcc_assert (offset == -8);
-      or1k_save_restore_reg (HARD_FRAME_POINTER_REGNUM, offset, false);
-      offset += 4;
+      gcc_assert (reg_offset == sp_offset - 8);
+      cfa_restores = or1k_restore_reg (HARD_FRAME_POINTER_REGNUM,
+				       reg_offset, cfa_restores);
+      reg_offset += 4;
     }
 
   /* Restore link register.  */
-  gcc_assert (offset == -4);
-  or1k_save_restore_reg (LR_REGNUM, offset, false);
+  gcc_assert (reg_offset == sp_offset - 4);
+  cfa_restores = or1k_restore_reg (LR_REGNUM, reg_offset, cfa_restores);
 
-  emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, LR_REGNUM)));
+  /* Restore stack pointer.  */
+  insn = emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx,
+				GEN_INT (sp_offset)));
+  RTX_FRAME_RELATED_P (insn) = 1;
+  REG_NOTES (insn) = cfa_restores;
+  add_reg_note (insn, REG_CFA_DEF_CFA, stack_pointer_rtx);
 }
 
 /* TODO, do we need to just set to r9? or should we put it to where r9
