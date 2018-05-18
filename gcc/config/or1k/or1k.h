@@ -89,7 +89,7 @@
    r8    arg 5
    r9    function call return link address
    r10   thread local storage
-   r11   function return value
+   r11   function return value & static chain
    r12   function return value high (upper 64-bit)
    r13   temporary (used in prologue and epilogue)
    r14   callee saved
@@ -228,8 +228,8 @@ do {                                                    \
 
 
 /* Trampolines, for nested functions */
-#define TRAMPOLINE_SIZE 12
-#define TRAMPOLINE_ALIGNMENT (abort (), 0)
+#define TRAMPOLINE_SIZE      20
+#define TRAMPOLINE_ALIGNMENT 32
 
 /* Pointer mode */
 #define Pmode	SImode
@@ -237,6 +237,7 @@ do {                                                    \
 #define STACK_POINTER_REGNUM SP_REGNUM
 #define FRAME_POINTER_REGNUM FP_REGNUM
 #define HARD_FRAME_POINTER_REGNUM 2
+#define STATIC_CHAIN_REGNUM RV_REGNUM
 
 /* The register number of the arg pointer register, which is used to
    access the function's argument list.  */

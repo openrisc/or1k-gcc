@@ -40,6 +40,7 @@
 #include "calls.h"
 #include "expr.h"
 #include "builtins.h"
+#include "optabs.h"
 
 /* These 4 are needed to allow using satisfies_constraint_J.  */
 #include "insn-config.h"
@@ -606,6 +607,62 @@ or1k_print_operand (FILE *file, rtx x, int code)
     }
 }
 
+/* Worker function for TARGET_TRAMPOLINE_INIT.  */
+
+static void
+or1k_trampoline_init (rtx m_tramp, tree fndecl, rtx chain)
+{
+  const unsigned movhi_r13 = (0x06u << 26) | (13 << 21);
+  const unsigned movhi_r11 = (0x06u << 26) | (11 << 21);
+  const unsigned ori_r13_r13 = (0x21 << 26) | (13 << 21) | (13 << 16);
+  const unsigned ori_r11_r11 = (0x21 << 26) | (11 << 21) | (11 << 16);
+  const unsigned jr_r13 = (0x11 << 26) | (13 << 11);
+  rtx tramp[5], fnaddr, f_hi, f_lo, c_hi, c_lo;
+
+  fnaddr = force_operand (XEXP (DECL_RTL (fndecl), 0), NULL);
+  f_hi = expand_binop (SImode, lshr_optab, fnaddr, GEN_INT (16),
+		       NULL, true, OPTAB_DIRECT);
+  f_lo = expand_binop (SImode, and_optab, fnaddr, GEN_INT (0xffff),
+		       NULL, true, OPTAB_DIRECT);
+
+  chain = force_operand (chain, NULL);
+  c_hi = expand_binop (SImode, lshr_optab, chain, GEN_INT (16),
+		       NULL, true, OPTAB_DIRECT);
+  c_lo = expand_binop (SImode, and_optab, chain, GEN_INT (0xffff),
+		       NULL, true, OPTAB_DIRECT);
+
+  /* We want to generate
+   *
+   *	l.movhi r13,hi(nested_func)
+   *	l.movhi r11,hi(static_chain)
+   *	l.ori	r13,r13,lo(nested_func)
+   *	l.jr	r13
+   *	 l.ori	r11,r11,lo(static_chain)
+   */
+  tramp[0] = expand_binop (SImode, ior_optab, f_hi,
+			   gen_int_mode (movhi_r13, SImode),
+			   f_hi, true, OPTAB_DIRECT);
+  tramp[1] = expand_binop (SImode, ior_optab, c_hi,
+			   gen_int_mode (movhi_r11, SImode),
+			   c_hi, true, OPTAB_DIRECT);
+  tramp[2] = expand_binop (SImode, ior_optab, f_lo,
+			   gen_int_mode (ori_r13_r13, SImode),
+			   f_lo, true, OPTAB_DIRECT);
+  tramp[4] = expand_binop (SImode, ior_optab, c_lo,
+			   gen_int_mode (ori_r11_r11, SImode),
+			   c_lo, true, OPTAB_DIRECT);
+  tramp[3] = gen_int_mode (jr_r13, SImode);
+
+  for (int i = 0; i < 5; ++i)
+    {
+      rtx mem = adjust_address (m_tramp, SImode, i * 4);
+      emit_move_insn (mem, tramp[i]);
+    }
+
+  /* Flushing the trampoline from the instruction cache needs
+     to be done here. */
+}
+
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override
 
@@ -630,6 +687,8 @@ or1k_print_operand (FILE *file, rtx x, int code)
 #define TARGET_RETURN_IN_MEMORY	or1k_return_in_memory
 #undef TARGET_PASS_BY_REFERENCE
 #define	TARGET_PASS_BY_REFERENCE or1k_pass_by_reference
+#undef TARGET_TRAMPOLINE_INIT
+#define TARGET_TRAMPOLINE_INIT or1k_trampoline_init
 
 /* Assembly generation.  */
 #undef  TARGET_PRINT_OPERAND
