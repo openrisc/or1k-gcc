@@ -184,55 +184,66 @@
   [(set (match_operand:I 0 "nonimmediate_operand" "")
 	(match_operand:I 1 "general_operand" ""))]
   ""
-  {
-    if (MEM_P (operands[0]))
-      operands[1] = force_reg (<I:MODE>mode, operands[1]);
+{
+  rtx op0 = operands[0];
+  rtx op1 = operands[1];
+  rtx subtarget = op0;
+  rtx offset = NULL;
 
-    if (LABEL_P (operands[1]) || SYMBOL_REF_P (operands[1]))
-      {
-	/* Load labels as hi/lo sums.  */
-	emit_insn (gen_movsi_high (operands[0], operands[1]));
-	emit_insn (gen_movsi_lo_sum (operands[0], operands[0], operands[1]));
-	DONE;
-      }
-    else if (CONST_INT_P (operands[1]))
-      {
-	/* Load constants as hi/lo sums, which can be optimized out if 0.  */
-	if (<MODE>mode == SImode
-            && !satisfies_constraint_J (operands[1])
-	    && !satisfies_constraint_K (operands[1])
-	    && !satisfies_constraint_M (operands[1]))
-	  {
-            HOST_WIDE_INT i = INTVAL (operands[1]);
-            HOST_WIDE_INT lo = i & 0xffff;
-            HOST_WIDE_INT hi = i ^ lo;
-            rtx subtarget = operands[0];
+  if (MEM_P (op0) && !const0_operand(op1, <MODE>mode))
+    operands[1] = op1 = force_reg (<MODE>mode, op1);
 
-            if (!cse_not_expected && can_create_pseudo_p ())
-              subtarget = gen_reg_rtx (SImode);
-            emit_move_insn (subtarget, GEN_INT (hi));
-	    emit_insn (gen_iorsi3 (operands[0], subtarget, GEN_INT (lo)));
-	    DONE;
-	  }
-      }
-    else if (CONSTANT_P (operands[1])
-	     && GET_CODE (XEXP (operands[1], 0)) == PLUS)
-      {
-	/* Load labels in for form (const (plus (symbol) (const_int))) as
-	   tmp = symbol; op0 = (plus (tmp) (const_int)).  */
-	rtx p0 = XEXP (XEXP (operands[1], 0), 0);
-	rtx p1 = XEXP (XEXP (operands[1], 0), 1);
+  switch (GET_CODE (op1))
+    {
+    case CONST_INT:
+      /* Constants smaller than SImode can be loaded directly.
+         Otherwise, check to see if it requires splitting.  */
+      if (<MODE>mode == SImode
+	  && !satisfies_constraint_J (op1)
+	  && !satisfies_constraint_K (op1)
+	  && !satisfies_constraint_M (op1))
+	{
+          HOST_WIDE_INT i = INTVAL (op1);
+          HOST_WIDE_INT lo = i & 0xffff;
+          HOST_WIDE_INT hi = i ^ lo;
 
-	if ((GET_CODE (p0) == SYMBOL_REF || GET_CODE (p0) == LABEL_REF)
-	    && GET_CODE(p1) == CONST_INT)
-	  {
-	    rtx sym_temp = force_reg (SImode, p0);
+          if (!cse_not_expected && can_create_pseudo_p ())
+            subtarget = gen_reg_rtx (SImode);
+          emit_move_insn (subtarget, GEN_INT (hi));
+	  emit_insn (gen_iorsi3 (op0, subtarget, GEN_INT (lo)));
+	  DONE;
+	}
+      break;
 
-	    emit_move_insn (operands[0], gen_rtx_PLUS (SImode, sym_temp, p1));
-	    DONE;
-	  }
-      }
+    case CONST:
+      if (GET_CODE (XEXP (op1, 0)) == PLUS
+          && CONST_INT_P (XEXP (XEXP (op1, 0), 1)))
+	{
+	  offset = XEXP (XEXP (op1, 0), 1);
+          op1 = XEXP (XEXP (op1, 0), 0);
 
+          if (!cse_not_expected && can_create_pseudo_p ())
+	    subtarget = gen_reg_rtx (Pmode);
+        }
+      /* fallthru */
+
+    case SYMBOL_REF:
+    case LABEL_REF:
+      emit_insn (gen_movsi_high (subtarget, op1));
+      emit_insn (gen_movsi_lo_sum (subtarget, subtarget, op1));
+
+      if (offset != NULL)
+	{
+	  subtarget = expand_simple_binop (Pmode, PLUS, subtarget, offset,
+                                           op0, 1, OPTAB_DIRECT);
+          if (subtarget != op0)
+	    emit_move_insn(op0, subtarget);
+	}
+      DONE;
+
+    default:
+      break;
+    }
 })
 
 ;; 8-bit, 16-bit and 32-bit moves
