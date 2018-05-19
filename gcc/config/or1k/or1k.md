@@ -367,6 +367,27 @@
   ""
   "")
 
+(define_expand "mov<I:mode>cc"
+  [(set (match_operand:I 0 "register_operand" "")
+	(if_then_else:I (match_operand 1 "comparison_operator" "")
+	  (match_operand:I 2 "reg_or_0_operand" "")
+	  (match_operand:I 3 "reg_or_0_operand" "")))]
+  ""
+{
+  emit_insn (gen_mov<mode>cc_internal (operands[0], operands[1],
+				       operands[2], operands[3]));
+  DONE;
+})
+
+(define_expand "mov<I:mode>cc_internal"
+  [(set (reg:CC CC_REGNUM) (match_operand 1 "comparison_operator" ""))
+   (set (match_operand:I 0 "register_operand" "")
+	(if_then_else:I (ne (reg:CC CC_REGNUM) (const_int 0))
+	  (match_operand:I 2 "reg_or_0_operand" "")
+	  (match_operand:I 3 "reg_or_0_operand" "")))]
+  ""
+  "")
+
 (define_insn "*cmov<I:mode>_insn"
   [(set (match_operand:I 0 "register_operand" "=r")
 	(if_then_else:I (ne (reg:CC CC_REGNUM) (const_int 0))
