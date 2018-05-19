@@ -279,6 +279,48 @@
   "l.ori\t%0, %1, lo(%2)"
   [(set_attr "type" "alu")])
 
+;; 64-bit moves
+;; ??? The clobber that emit_move_multi_word emits is arguably incorrect.
+;; Consider gcc.c-torture/execute/20030222-1.c, where a reg-reg DImode
+;; move gets register allocated to a no-op move.  At which point the
+;; we actively clobber the input.
+
+(define_expand "movdi"
+  [(set (match_operand:DI 0 "nonimmediate_operand" "")
+	(match_operand:DI 1 "general_operand" ""))]
+  ""
+{
+  if (MEM_P (operands[0]) && !const0_operand(operands[1], DImode))
+    operands[1] = force_reg (DImode, operands[1]);
+})
+
+(define_insn_and_split "*movdi"
+  [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")
+	(match_operand:DI 1 "general_operand"      " r,o,rI,n"))]
+  "register_operand (operands[0], DImode)
+   || reg_or_0_operand (operands[1], DImode)"
+  "#"
+  ""
+  [(const_int 0)]
+{
+  rtx l0 = operand_subword (operands[0], 0, 0, DImode);
+  rtx l1 = operand_subword (operands[1], 0, 0, DImode);
+  rtx h0 = operand_subword (operands[0], 1, 0, DImode);
+  rtx h1 = operand_subword (operands[1], 1, 0, DImode);
+
+  if (reload_completed && reg_overlap_mentioned_p (l0, h1))
+    {
+      gcc_assert (!reg_overlap_mentioned_p (h0, l1));
+      emit_move_insn (h0, h1);
+      emit_move_insn (l0, l1);
+    }
+  else
+    {
+      emit_move_insn (l0, l1);
+      emit_move_insn (h0, h1);
+    }
+  DONE;
+})
 
 ;; -------------------------------------------------------------------------
 ;; Sign Extending
