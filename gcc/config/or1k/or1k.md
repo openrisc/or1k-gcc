@@ -383,10 +383,10 @@
 			(gt "gts") (gtu "gtu") (ge "ges") (le "les")
 			(geu "geu") (leu "leu") ])
 
-(define_insn "*sf<intcmpcc:code>_insn"
+(define_insn "*sf_insn"
   [(set (reg:CC CC_REGNUM)
-	(intcmpcc (match_operand:I 0 "register_operand"   "r,r")
-	          (match_operand:I 1 "reg_or_s16_operand" "r,M")))]
+	(intcmpcc (match_operand:SI 0 "register_operand"   "r,r")
+	          (match_operand:SI 1 "reg_or_s16_operand" "r,M")))]
   ""
   "@
    l.sf<insn>\t%0, %1
@@ -396,16 +396,17 @@
 ;; Conditional Store instructions
 ;; -------------------------------------------------------------------------
 
-(define_expand "cstore<I:mode>4"
-  [(set (match_operand:I 0 "register_operand" "") (const_int 1))
-   (set (reg:CC CC_REGNUM)
+(define_expand "cstoresi4"
+  [(set (reg:CC CC_REGNUM)
 	(match_operator 1 "comparison_operator"
-	  [(match_operand:I 2 "register_operand" "")
-	   (match_operand:I 3 "reg_or_s16_operand" "")]))
+	  [(match_operand:SI 2 "register_operand" "")
+	   (match_operand:SI 3 "reg_or_s16_operand" "")]))
+   (set (match_operand:SI 0 "register_operand" "")
+	(const_int 1))
    (set (match_dup 0)
-	(if_then_else:I (ne (reg:CC CC_REGNUM) (const_int 0))
-		      (match_dup 0)
-		      (reg:I ZERO_REGNUM)))]
+	(if_then_else:SI (ne (reg:CC CC_REGNUM) (const_int 0))
+	  (match_dup 0)
+	  (const_int 0)))]
   ""
   "")
 
