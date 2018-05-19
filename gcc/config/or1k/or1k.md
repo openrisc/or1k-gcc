@@ -443,7 +443,7 @@
 ;; Branch instructions
 ;; -------------------------------------------------------------------------
 
-(define_insn "*cbranch_internal"
+(define_insn "*cbranch_positive"
   [(set (pc)
 	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
 		      (label_ref (match_operand 0 "" ""))
@@ -452,6 +452,14 @@
   "l.bf\t%0%#"
   [(set_attr "type" "control")])
 
+(define_insn "*cbranch_negative"
+  [(set (pc)
+	(if_then_else (eq (reg:CC CC_REGNUM) (const_int 0))
+		      (label_ref (match_operand 0 "" ""))
+		      (pc)))]
+  ""
+  "l.bnf\t%0%#"
+  [(set_attr "type" "control")])
 
 (define_expand "cbranchsi4"
   [(set (reg:CC CC_REGNUM)
