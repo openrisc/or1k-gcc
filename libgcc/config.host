@@ -1009,7 +1009,7 @@ nios2-*-*)
 	extra_parts="$extra_parts crti.o crtn.o"
 	;;
 or1k-*-*)
-	tmake_file="$tmake_file or1k/t-or1k"
+	tmake_file="$tmake_file or1k/t-or1k t-softfp-sfdf t-softfp-excl t-softfp"
 	extra_parts="$extra_parts crti.o crtn.o"
 	;;
 pdp11-*-*)
