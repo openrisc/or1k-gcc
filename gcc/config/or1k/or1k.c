@@ -420,10 +420,19 @@ or1k_legitimate_address_p (machine_mode mode ATTRIBUTE_UNUSED,
 /* Worker function for TARGET_PASS_BY_REFERENCE.  */
 
 static bool
-or1k_pass_by_reference (cumulative_args_t, machine_mode,
+or1k_pass_by_reference (cumulative_args_t, machine_mode mode,
 			const_tree type, bool)
 {
-  return type && (AGGREGATE_TYPE_P (type) || int_size_in_bytes (type) > 8);
+  HOST_WIDE_INT size;
+  if (type)
+    {
+      if (AGGREGATE_TYPE_P (type))
+	return true;
+      size = int_size_in_bytes (type);
+    }
+  else
+    size = GET_MODE_SIZE (mode);
+  return size < 0 || size > 8;
 }
 
 /* Worker function for TARGET_FUNCTION_VALUE.  */
@@ -462,19 +471,22 @@ or1k_function_value_regno_p (const unsigned int regno)
 static rtx
 or1k_function_arg (cumulative_args_t cum_v, machine_mode mode,
 		   const_tree type ATTRIBUTE_UNUSED,
-		   bool named ATTRIBUTE_UNUSED)
+		   bool named)
 {
-  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+  /* VOIDmode is passed as a special flag for "last argument".  */
+  if (mode == VOIDmode)
+    return NULL_RTX;
 
-  if (*cum < 6)
+  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+  int nreg = CEIL (GET_MODE_SIZE (mode), UNITS_PER_WORD);
+
+  /* Note that all large arguments are passed by reference.  */
+  gcc_assert (nreg <= 2);
+  if (named && *cum + nreg <= 6)
     return gen_rtx_REG (mode, *cum + 3);
   else
     return NULL_RTX;
 }
-
-#define OR1K_FUNCTION_ARG_SIZE(MODE, TYPE)	\
-  ((MODE) != BLKmode ? GET_MODE_SIZE (MODE)	\
-   : (unsigned) int_size_in_bytes (TYPE))
 
 /* Worker function for TARGET_FUNCTION_ARG_ADVANCE.  Update the cumulative
    args to advnaced past the next function argument.  This is not needed
@@ -482,11 +494,15 @@ or1k_function_arg (cumulative_args_t cum_v, machine_mode mode,
 
 static void
 or1k_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
-			   const_tree type, bool named ATTRIBUTE_UNUSED)
+			   const_tree type ATTRIBUTE_UNUSED, bool named)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+  int nreg = CEIL (GET_MODE_SIZE (mode), UNITS_PER_WORD);
 
-  *cum += ((3 + OR1K_FUNCTION_ARG_SIZE (mode, type)) / 4);
+  /* Note that all large arguments are passed by reference.  */
+  gcc_assert (nreg <= 2);
+  if (named)
+    *cum += nreg;
 }
 
 /* worker function for TARGET_RETURN_IN_MEMORY.  What type of args get returned
