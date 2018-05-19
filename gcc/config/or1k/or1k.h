@@ -298,6 +298,15 @@ do {                                                    \
 /* Indicates how loads of narrow mode values are loaded into words.  */
 #define LOAD_EXTEND_OP(MODE) (ZERO_EXTEND)
 
+/* EXIT_IGNORE_STACK should be nonzero if, when returning from a function,
+   the stack pointer does not matter.  */
+#define EXIT_IGNORE_STACK 1
+
+/* Macros related to the access of the stack frame chain.  */
+#define INITIAL_FRAME_ADDRESS_RTX  or1k_initial_frame_addr ()
+#define DYNAMIC_CHAIN_ADDRESS      or1k_dynamic_chain_addr
+#define RETURN_ADDR_RTX            or1k_return_addr
+
 /* Profiling */
 #define FUNCTION_PROFILER(FILE,LABELNO) (abort (), 0)
 

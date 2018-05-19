@@ -357,6 +357,42 @@ or1k_expand_epilogue (void)
   add_reg_note (insn, REG_CFA_DEF_CFA, stack_pointer_rtx);
 }
 
+/* Worker for INITIAL_FRAME_ADDRESS_RTX.  */
+
+rtx
+or1k_initial_frame_addr ()
+{
+  /* Use this to force a stack frame for the current function.  */
+  crtl->accesses_prior_frames = 1;
+  return arg_pointer_rtx;
+}
+
+/* Worker for DYNAMIC_CHAIN_ADDRESS.  */
+
+rtx
+or1k_dynamic_chain_addr (rtx frame)
+{
+  return plus_constant (Pmode, frame, -2 * UNITS_PER_WORD);
+}
+
+/* Worker for RETURN_ADDR_RTX.  */
+
+rtx
+or1k_return_addr (int, rtx frame)
+{
+  return gen_frame_mem (Pmode, plus_constant (Pmode, frame, -UNITS_PER_WORD));
+}
+
+/* Worker for TARGET_FRAME_POINTER_REQUIRED.  */
+
+static bool
+or1k_frame_pointer_required ()
+{
+  /* ??? While IRA checks accesses_prior_frames, reload does not.
+     We do want the frame pointer for this case.  */
+  return (crtl->accesses_prior_frames || crtl->profile);
+}
+
 /* TODO, do we need to just set to r9? or should we put it to where r9
    is stored on the stack?  */
 void
@@ -705,6 +741,8 @@ or1k_trampoline_init (rtx m_tramp, tree fndecl, rtx chain)
 #define	TARGET_PASS_BY_REFERENCE or1k_pass_by_reference
 #undef TARGET_TRAMPOLINE_INIT
 #define TARGET_TRAMPOLINE_INIT or1k_trampoline_init
+#undef TARGET_FRAME_POINTER_REQUIRED
+#define TARGET_FRAME_POINTER_REQUIRED or1k_frame_pointer_required
 
 /* Assembly generation.  */
 #undef  TARGET_PRINT_OPERAND
