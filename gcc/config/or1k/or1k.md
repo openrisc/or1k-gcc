@@ -494,12 +494,11 @@
 	      (clobber (reg:SI LR_REGNUM))
 	     ])]
   ""
-  "
 {
   rtx addr = XEXP (operands[0], 0);
   if (!CONSTANT_ADDRESS_P (addr))
     XEXP (operands[0], 0) = force_reg (Pmode, addr);
-}")
+})
 
 (define_insn "*call"
   [(call (mem:SI (match_operand:SI 0 "general_operand" "r,i"))
@@ -518,12 +517,11 @@
 		   (match_operand 2 "" "")))
 	      (clobber (reg:SI LR_REGNUM))])]
   ""
-  "
 {
   rtx addr = XEXP (operands[1], 0);
   if (!CONSTANT_ADDRESS_P (addr))
     XEXP (operands[1], 0) = force_reg (Pmode, addr);
-}")
+})
 
 (define_insn "*call_value"
   [(set (match_operand 0 "register_operand" "=r,r")
@@ -539,14 +537,14 @@
 ;; -------------------------------------------------------------------------
 ;; Prologue & Epilogue
 ;; -------------------------------------------------------------------------
+
 (define_expand "prologue"
   [(const_int 1)]
   ""
-  "
 {
   or1k_expand_prologue ();
   DONE;
-}")
+})
 
 ;; Expand epilogue as RTL
 (define_expand "epilogue"
