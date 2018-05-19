@@ -55,18 +55,18 @@
 struct GTY(()) machine_function
 {
   /* Number of bytes saved on the stack for callee saved registers.  */
-  int callee_saved_reg_size;
+  HOST_WIDE_INT callee_saved_reg_size;
 
   /* Number of bytes saved on the stack for local variables.  */
-  int local_vars_size;
+  HOST_WIDE_INT local_vars_size;
 
   /* Number of bytes saved on the stack for outgoing/sub-fucntion args.  */
-  int args_size;
+  HOST_WIDE_INT args_size;
 
   /* The sum of sizes: locals vars, called saved regs, stack pointer
    * and an optional frame pointer.
    * Used in expand_prologue () and expand_epilogue().  */
-  int total_size;
+  HOST_WIDE_INT total_size;
 };
 
 /* Zero initialization is OK for all current fields.  */
@@ -86,14 +86,31 @@ or1k_option_override (void)
   init_machine_status = or1k_init_machine_status;
 }
 
+/* Return true if REGNO must be saved for the current function.  */
+
 static bool
 callee_saved_regno_p (int regno)
 {
-  /* If we are already saving the frame pointer don't save it 2 times.  */
-  if (frame_pointer_needed && regno == HARD_FRAME_POINTER_REGNUM)
-    return false;
+  /* Check call-saved registers.  */
+  if (!call_used_regs[regno] && df_regs_ever_live_p (regno))
+    return true;
 
-  return !call_used_regs[regno];
+  switch (regno)
+    {
+    case HARD_FRAME_POINTER_REGNUM:
+      return frame_pointer_needed;
+
+    case LR_REGNUM:
+      /* Always save LR if we are saving HFP, producing a walkable
+	 stack chain with -fno-omit-frame-pointer.  */
+      return (frame_pointer_needed
+	      || !crtl->is_leaf
+	      || crtl->uses_pic_offset_table
+	      || df_regs_ever_live_p (regno));
+
+    default:
+      return false;
+    }
 }
 
 /* Compute the size of the local area and the size to be adjusted by the
@@ -116,41 +133,28 @@ callee_saved_regno_p (int regno)
  *                                V
  *
  * All of these contents are optional.
- *
- * */
-
-#define OR1K_STACK_ALIGN(LOC)						\
-  (((LOC) + ((STACK_BOUNDARY / BITS_PER_UNIT) - 1))			\
-   & ~((STACK_BOUNDARY / BITS_PER_UNIT) - 1))
+ */
 
 static void
 or1k_compute_frame_layout (void)
 {
-  /* For aligning the local variables.  */
-  int stack_alignment = STACK_BOUNDARY / BITS_PER_UNIT;
-  int padding;
-  int regno;
+  HOST_WIDE_INT local_vars_size, args_size, save_reg_size;
 
-  cfun->machine->local_vars_size = OR1K_STACK_ALIGN (get_frame_size ());
-  cfun->machine->args_size = OR1K_STACK_ALIGN (crtl->outgoing_args_size);
+  local_vars_size = get_frame_size ();
+  local_vars_size = ROUND_UP (local_vars_size, UNITS_PER_WORD);
 
-  /* Save callee-saved registers.  */
-  cfun->machine->callee_saved_reg_size = 0;
+  args_size = crtl->outgoing_args_size;
+  args_size = ROUND_UP (args_size, UNITS_PER_WORD);
 
-  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
-      cfun->machine->callee_saved_reg_size += 4;
+  save_reg_size = 0;
+  for (int regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
+    if (callee_saved_regno_p (regno))
+      save_reg_size += UNITS_PER_WORD;
 
-  cfun->machine->total_size =
-    + cfun->machine->local_vars_size
-    + cfun->machine->callee_saved_reg_size
-    + cfun->machine->args_size;
-
-  if (frame_pointer_needed)
-    cfun->machine->total_size += 4;
-
-  /* Add space for the stack pointer.  */
-  cfun->machine->total_size += 4;
+  cfun->machine->local_vars_size = local_vars_size;
+  cfun->machine->args_size = args_size;
+  cfun->machine->callee_saved_reg_size = save_reg_size;
+  cfun->machine->total_size = save_reg_size + local_vars_size + args_size;
 }
 
 static void
@@ -178,7 +182,6 @@ or1k_expand_prologue (void)
 {
   HOST_WIDE_INT sp_offset = -cfun->machine->total_size;
   HOST_WIDE_INT reg_offset, this_offset;
-  int regno;
   rtx insn;
 
   if (flag_stack_usage_info)
@@ -201,30 +204,36 @@ or1k_expand_prologue (void)
   RTX_FRAME_RELATED_P (insn) = 1;
 
   /* Save callee-saved registers.  */
-  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    {
-      if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
-	{
-	  or1k_save_reg (regno, reg_offset);
-	  reg_offset += 4;
-	}
-    }
+  for (int regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
+    if (regno != HARD_FRAME_POINTER_REGNUM
+        && regno != LR_REGNUM
+        && callee_saved_regno_p (regno))
+      {
+	or1k_save_reg (regno, reg_offset);
+	reg_offset += UNITS_PER_WORD;
+      }
 
   /* Save and update frame pointer.  */
-  if (frame_pointer_needed)
+  if (callee_saved_regno_p (HARD_FRAME_POINTER_REGNUM))
     {
-      gcc_assert (reg_offset + this_offset == -8);
       or1k_save_reg (HARD_FRAME_POINTER_REGNUM, reg_offset);
-      insn = emit_insn (gen_addsi3 (hard_frame_pointer_rtx,
-				    stack_pointer_rtx,
-				    GEN_INT (-this_offset)));
-      RTX_FRAME_RELATED_P (insn) = 1;
-      reg_offset += 4;
+      if (frame_pointer_needed)
+	{
+	  insn = emit_insn (gen_addsi3 (hard_frame_pointer_rtx,
+					stack_pointer_rtx,
+					GEN_INT (-this_offset)));
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	}
+      reg_offset += UNITS_PER_WORD;
     }
 
   /* Save the link register.  */
-  gcc_assert (reg_offset + this_offset == -4);
-  or1k_save_reg (LR_REGNUM, reg_offset);
+  if (callee_saved_regno_p (LR_REGNUM))
+    {
+      or1k_save_reg (LR_REGNUM, reg_offset);
+      reg_offset += UNITS_PER_WORD;
+    }
+  gcc_assert (reg_offset + this_offset == 0);
 
   /* Allocate the rest of the stack frame, if any.  */
   if (sp_offset != 0)
@@ -270,7 +279,6 @@ or1k_expand_epilogue (void)
 {
   HOST_WIDE_INT reg_offset, sp_offset;
   rtx insn, cfa_restores = NULL;
-  int regno;
 
   sp_offset = cfun->machine->total_size;
   if (sp_offset == 0)
@@ -329,25 +337,30 @@ or1k_expand_epilogue (void)
     }
 
   /* Restore callee-saved registers.  */
-  for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    if (df_regs_ever_live_p (regno) && callee_saved_regno_p (regno))
+  for (int regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
+    if (regno != HARD_FRAME_POINTER_REGNUM
+        && regno != LR_REGNUM
+        && callee_saved_regno_p (regno))
       {
 	cfa_restores = or1k_restore_reg (regno, reg_offset, cfa_restores);
-	reg_offset += 4;
+	reg_offset += UNITS_PER_WORD;
       }
 
   /* Restore frame pointer.  */
-  if (frame_pointer_needed)
+  if (callee_saved_regno_p (HARD_FRAME_POINTER_REGNUM))
     {
-      gcc_assert (reg_offset == sp_offset - 8);
       cfa_restores = or1k_restore_reg (HARD_FRAME_POINTER_REGNUM,
 				       reg_offset, cfa_restores);
-      reg_offset += 4;
+      reg_offset += UNITS_PER_WORD;
     }
 
   /* Restore link register.  */
-  gcc_assert (reg_offset == sp_offset - 4);
-  cfa_restores = or1k_restore_reg (LR_REGNUM, reg_offset, cfa_restores);
+  if (callee_saved_regno_p (LR_REGNUM))
+    {
+      cfa_restores = or1k_restore_reg (LR_REGNUM, reg_offset, cfa_restores);
+      reg_offset += UNITS_PER_WORD;
+    }
+  gcc_assert (reg_offset == sp_offset);
 
   /* Restore stack pointer.  */
   insn = emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx,
