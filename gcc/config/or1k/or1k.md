@@ -27,9 +27,15 @@
 
 ;; Register numbers
 (define_constants
-  [(ZERO_REGNUM     0)
+  [(SP_REGNUM       1)
+   (HFP_REGNUM      2)
    (LR_REGNUM       9)
-   (CC_REGNUM      33)]
+   (TLS_REGNUM     10)
+   (RV_REGNUM      11)
+   (PE_TMP_REGNUM  13)
+   (AP_REGNUM      32)
+   (SFP_REGNUM     33)
+   (CC_REGNUM      34)]
 )
 
 ;; Instruction scheduler

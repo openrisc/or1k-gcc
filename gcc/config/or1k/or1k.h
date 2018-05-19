@@ -109,18 +109,13 @@
    r28   callee saved
    r29   temporary
    r30   callee saved
-   r31   temporary  */
+   r31   temporary
 
-#define ZERO_REGNUM   0
-#define SP_REGNUM   1
-#define LR_REGNUM   9
-#define TLS_REGNUM  10
-#define RV_REGNUM   11
-#define RVH_REGNUM  12
-#define PRO_EPI_TMP_REGNUM 13
-#define AP_REGNUM   32
-#define CC_REGNUM   33
-#define FP_REGNUM   34
+   r32   soft argument pointer
+   r33   soft frame pointer
+   r34   flag (bit) register
+ */
+
 #define FIRST_PSEUDO_REGISTER  35
 
 #define FIXED_REGISTERS \
@@ -172,7 +167,7 @@ enum reg_class
   ((REGNO >= FIRST_PSEUDO_REGISTER ) ? NO_REGS :		\
    (REGNO == AP_REGNUM						\
     || REGNO == CC_REGNUM					\
-    || REGNO == FP_REGNUM ? SPECIAL_REGS : GENERAL_REGS))
+    || REGNO == SFP_REGNUM ? SPECIAL_REGS : GENERAL_REGS))
 
 #define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)               \
 do {                                                    \
@@ -206,7 +201,7 @@ do {                                                    \
   "r8",   "r9",   "r10",  "r11",  "r12",  "r13",  "r14",  "r15",	\
   "r16",  "r17",  "r18",  "r19",  "r20",  "r21",  "r22",  "r23",	\
   "r24",  "r25",  "r26",  "r27",  "r28",  "r29",  "r30",  "r31",	\
-  "?ap",  "?cc",  "?fp" }
+  "?ap",  "?fp",  "?cc" }
 
 /* This is how to output an assembler line
    that says to advance the location counter
@@ -235,8 +230,8 @@ do {                                                    \
 #define Pmode	SImode
 #define FUNCTION_MODE	SImode
 #define STACK_POINTER_REGNUM SP_REGNUM
-#define FRAME_POINTER_REGNUM FP_REGNUM
-#define HARD_FRAME_POINTER_REGNUM 2
+#define FRAME_POINTER_REGNUM SFP_REGNUM
+#define HARD_FRAME_POINTER_REGNUM HFP_REGNUM
 #define STATIC_CHAIN_REGNUM RV_REGNUM
 
 /* The register number of the arg pointer register, which is used to

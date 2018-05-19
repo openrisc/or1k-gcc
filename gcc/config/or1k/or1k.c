@@ -241,7 +241,7 @@ or1k_expand_prologue (void)
       if (sp_offset < 2 * -32768)
 	{
           /* For very large offsets, we need a temporary register.  */
-	  rtx tmp = gen_rtx_REG (Pmode, PRO_EPI_TMP_REGNUM);
+	  rtx tmp = gen_rtx_REG (Pmode, PE_TMP_REGNUM);
 	  emit_move_insn (tmp, GEN_INT (sp_offset));
 	  insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
 					stack_pointer_rtx, tmp));
@@ -305,7 +305,7 @@ or1k_expand_epilogue (void)
       else if (sp_offset >= 3 * 32768)
 	{
 	  /* For very large offsets, we need a temporary register.  */
-	  rtx tmp = gen_rtx_REG (Pmode, PRO_EPI_TMP_REGNUM);
+	  rtx tmp = gen_rtx_REG (Pmode, PE_TMP_REGNUM);
 	  emit_move_insn (tmp, GEN_INT (reg_offset));
 	  insn = emit_insn (gen_addsi3 (stack_pointer_rtx,
 					stack_pointer_rtx, tmp));
