@@ -666,8 +666,8 @@ or1k_trampoline_init (rtx m_tramp, tree fndecl, rtx chain)
 {
   const unsigned movhi_r13 = (0x06u << 26) | (13 << 21);
   const unsigned movhi_r11 = (0x06u << 26) | (11 << 21);
-  const unsigned ori_r13_r13 = (0x21 << 26) | (13 << 21) | (13 << 16);
-  const unsigned ori_r11_r11 = (0x21 << 26) | (11 << 21) | (11 << 16);
+  const unsigned ori_r13_r13 = (0x2a << 26) | (13 << 21) | (13 << 16);
+  const unsigned ori_r11_r11 = (0x2a << 26) | (11 << 21) | (11 << 16);
   const unsigned jr_r13 = (0x11 << 26) | (13 << 11);
   rtx tramp[5], fnaddr, f_hi, f_lo, c_hi, c_lo;
 
