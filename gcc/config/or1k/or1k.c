@@ -41,6 +41,7 @@
 #include "expr.h"
 #include "builtins.h"
 #include "optabs.h"
+#include "explow.h"
 
 /* These 4 are needed to allow using satisfies_constraint_J.  */
 #include "insn-config.h"
@@ -775,6 +776,70 @@ or1k_expand_compare (rtx *operands)
   operands[1] = sr_f;
   operands[2] = const0_rtx;
 }
+
+void
+or1k_expand_call (rtx retval, rtx fnaddr, rtx callarg1, bool sibcall)
+{
+  rtx call, use = NULL;
+
+#if 0
+  /* Calls via the PLT require the PIC register.  */
+  if (flag_pic
+      && GET_CODE (XEXP (fnaddr, 0)) == SYMBOL_REF
+      && !SYMBOL_REF_LOCAL_P (XEXP (fnaddr, 0)))
+    {
+      crtl->uses_pic_offset_table = 1;
+      use_reg (&use, pic_offset_table_rtx);
+    }
+#endif
+
+  if (!call_insn_operand (XEXP (fnaddr, 0), Pmode))
+    {
+      fnaddr = copy_to_mode_reg (Pmode, XEXP (fnaddr, 0));
+      fnaddr = gen_rtx_MEM (SImode, fnaddr);
+    }
+
+  call = gen_rtx_CALL (VOIDmode, fnaddr, callarg1);
+  if (retval)
+    call = gen_rtx_SET (retval, call);
+
+  /* Normal calls clobber LR.  This is required in order to
+     prevent e.g. a prologue store of LR being placed into
+     the delay slot of the call, after it has been updated.  */
+  if (!sibcall)
+    {
+      rtx clob = gen_rtx_CLOBBER (VOIDmode, gen_rtx_REG (Pmode, LR_REGNUM));
+      call = gen_rtx_PARALLEL (VOIDmode, gen_rtvec (2, call, clob));
+    }
+  call = emit_call_insn (call);
+
+  CALL_INSN_FUNCTION_USAGE (call) = use;
+}
+
+/* Worker for TARGET_FUNCTION_OK_FOR_SIBCALL.  */
+
+static bool
+or1k_function_ok_for_sibcall (tree decl ATTRIBUTE_UNUSED,
+			      tree exp ATTRIBUTE_UNUSED)
+{
+#if 0
+  /* We can sibcall to any function if not PIC.  */
+  if (!flag_pic)
+    return true;
+
+  /* We can sibcall any indirect function.  */
+  if (decl == NULL)
+    return true;
+
+  /* If the call may go through the PLT, we need r16 live.  */
+  if (!targetm.binds_local_p (decl))
+    return false;
+#endif
+  return true;
+}
+
+#undef TARGET_FUNCTION_OK_FOR_SIBCALL
+#define TARGET_FUNCTION_OK_FOR_SIBCALL or1k_function_ok_for_sibcall
 
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override

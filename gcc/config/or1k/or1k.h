@@ -178,6 +178,7 @@
 enum reg_class
 {
   NO_REGS,
+  SIBCALL_REGS,
   GENERAL_REGS,
   FLAG_REGS,
   ALL_REGS,
@@ -188,15 +189,22 @@ enum reg_class
 
 #define REG_CLASS_NAMES {	\
   "NO_REGS", 			\
+  "SIBCALL_REGS",		\
   "GENERAL_REGS",		\
   "FLAG_REGS",			\
   "ALL_REGS" }
 
+/* The SIBCALL_REGS must be call-clobbered, and not used as a temporary
+   in the epilogue.  This excludes R9 (LR), R11 (STATIC_CHAIN), and
+   R13 (PE_TMP_REGNUM).  */
+#define SIBCALL_REGS_MASK  0x00ff95f8u
+
 #define REG_CLASS_CONTENTS      \
-{ {0x00000000, 0x00000000},	\
-  {0xffffffff, 0x00000003},	\
-  {0x00000000, 0x00000004},	\
-  {0xffffffff, 0x00000007}	\
+{ { 0x00000000, 0x00000000 },	\
+  { SIBCALL_REGS_MASK,   0 },	\
+  { 0xffffffff, 0x00000003 },	\
+  { 0x00000000, 0x00000004 },	\
+  { 0xffffffff, 0x00000007 }	\
 }
 
 /* A C expression whose value is a register class containing hard
@@ -204,7 +212,9 @@ enum reg_class
    choose a class which is "minimal", meaning that no smaller class
    also contains the register.  */
 #define REGNO_REG_CLASS(REGNO) \
-  ((REGNO) >= SR_F_REGNUM ? FLAG_REGS : GENERAL_REGS)
+  ((REGNO) >= SR_F_REGNUM ? FLAG_REGS \
+   : (REGNO) < 32 && ((SIBCALL_REGS_MASK >> (REGNO)) & 1) ? SIBCALL_REGS \
+   : GENERAL_REGS)
 
 #define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)               \
 do {                                                    \
@@ -292,8 +302,7 @@ do {                                                    \
 
 #define REGNO_OK_FOR_INDEX_P(REGNO) 0
 #define REGNO_OK_FOR_BASE_P(REGNO) \
-  ((REGNO) < FIRST_PSEUDO_REGISTER			\
-   || ((unsigned int) reg_renumber[REGNO]) < FIRST_PSEUDO_REGISTER)
+  ((REGNO) <= SFP_REGNUM || (unsigned int) reg_renumber[REGNO] < SFP_REGNUM)
 
 /* If defined, the maximum amount of space required for outgoing
    arguments will be computed and placed into the variable

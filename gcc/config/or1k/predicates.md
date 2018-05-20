@@ -53,3 +53,7 @@
   (if_then_else (match_code "const_int")
     (match_test "INTVAL (op) >= -32768 && INTVAL (op) <= 32767")
     (match_operand 0 "register_operand")))
+
+(define_predicate "call_insn_operand"
+  (ior (match_code "symbol_ref")
+       (match_operand 0 "register_operand")))

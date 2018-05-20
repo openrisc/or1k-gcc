@@ -480,8 +480,9 @@
 })
 
 ;; -------------------------------------------------------------------------
-;; Call and Jump instructions
+;; Jump instructions
 ;; -------------------------------------------------------------------------
+
 (define_insn "jump"
   [(set (pc) (label_ref (match_operand 0 "" "")))]
   ""
@@ -492,52 +493,6 @@
   [(set (pc) (match_operand:SI 0 "register_operand" "r"))]
   ""
   "l.jr\t%0%#"
-  [(set_attr "type" "control")])
-
-(define_expand "call"
-  [(parallel [(call (match_operand 0 "" "")
-		    (match_operand 1 "" ""))
-	      (clobber (reg:SI LR_REGNUM))
-	     ])]
-  ""
-{
-  rtx addr = XEXP (operands[0], 0);
-  if (!CONSTANT_ADDRESS_P (addr))
-    XEXP (operands[0], 0) = force_reg (Pmode, addr);
-})
-
-(define_insn "*call"
-  [(call (mem:SI (match_operand:SI 0 "general_operand" "r,i"))
-	 (match_operand 1 "" ""))
-   (clobber (reg:SI LR_REGNUM))]
-  ""
-  "@
-   l.jalr\t%0%#
-   l.jal\t%0%#"
-  [(set_attr "type" "control")])
-
-;; Call with a retun value
-(define_expand "call_value"
-  [(parallel [(set (match_operand 0 "" "")
-		   (call (match_operand 1 "" "")
-		   (match_operand 2 "" "")))
-	      (clobber (reg:SI LR_REGNUM))])]
-  ""
-{
-  rtx addr = XEXP (operands[1], 0);
-  if (!CONSTANT_ADDRESS_P (addr))
-    XEXP (operands[1], 0) = force_reg (Pmode, addr);
-})
-
-(define_insn "*call_value"
-  [(set (match_operand 0 "register_operand" "=r,r")
-	(call (mem:SI (match_operand:SI 1 "general_operand" "r,i"))
-	      (match_operand 2 "" "")))
-   (clobber (reg:SI LR_REGNUM))]
-  ""
-  "@
-   l.jalr\t%1%#
-   l.jal\t%1%#"
   [(set_attr "type" "control")])
 
 ;; -------------------------------------------------------------------------
@@ -562,6 +517,19 @@
   DONE;
 })
 
+(define_expand "sibcall_epilogue"
+  [(return)]
+  ""
+{
+  or1k_expand_epilogue ();
+  /* Placing a USE of LR here, rather than as a REG_USE on the
+     sibcall itself, means that LR is not unnecessarily live
+     within the function itself, which would force creation of
+     a stack frame.  */
+  emit_insn (gen_rtx_USE (VOIDmode, gen_rtx_REG (Pmode, LR_REGNUM)));
+  DONE;
+})
+
 (define_insn "return_internal"
   [(use (match_operand:SI 0 "register_operand" "r"))
    (return)]
@@ -576,3 +544,82 @@
   or1k_expand_eh_return (operands[0]);
   DONE;
 })
+
+;; -------------------------------------------------------------------------
+;; Call Instructions
+;; -------------------------------------------------------------------------
+
+;; Leave these to last, as the modeless operand for call_value
+;; interferes with normal patterns.
+
+(define_expand "call"
+  [(call (match_operand 0) (match_operand 1))]
+  ""
+{
+  or1k_expand_call (NULL, operands[0], operands[1], false);
+  DONE;
+})
+
+(define_expand "sibcall"
+  [(call (match_operand 0) (match_operand 1))]
+  ""
+{
+  or1k_expand_call (NULL, operands[0], operands[1], true);
+  DONE;
+})
+
+(define_expand "call_value"
+  [(set (match_operand 0) (call (match_operand 1) (match_operand 2)))]
+  ""
+{
+  or1k_expand_call (operands[0], operands[1], operands[2], false);
+  DONE;
+})
+
+(define_expand "sibcall_value"
+  [(set (match_operand 0) (call (match_operand 1) (match_operand 2)))]
+  ""
+{
+  or1k_expand_call (operands[0], operands[1], operands[2], true);
+  DONE;
+})
+
+(define_insn "*call"
+  [(call (mem:SI (match_operand:SI 0 "call_insn_operand" "r,s"))
+	 (match_operand 1))
+   (clobber (reg:SI LR_REGNUM))]
+  "!SIBLING_CALL_P (insn)"
+  "@
+   l.jalr\t%0%#
+   l.jal\t%0%#"
+  [(set_attr "type" "control")])
+
+(define_insn "*sibcall"
+  [(call (mem:SI (match_operand:SI 0 "call_insn_operand" "c,s"))
+	 (match_operand 1))]
+  "SIBLING_CALL_P (insn)"
+  "@
+   l.jr\t%0%#
+   l.j\t%0%#"
+  [(set_attr "type" "control")])
+
+(define_insn "*call_value"
+  [(set (match_operand 0)
+	(call (mem:SI (match_operand:SI 1 "call_insn_operand" "r,s"))
+	      (match_operand 2)))
+   (clobber (reg:SI LR_REGNUM))]
+  "!SIBLING_CALL_P (insn)"
+  "@
+   l.jalr\t%1%#
+   l.jal\t%1%#"
+  [(set_attr "type" "control")])
+
+(define_insn "*sibcall_value"
+  [(set (match_operand 0)
+	(call (mem:SI (match_operand:SI 1 "call_insn_operand" "c,s"))
+	      (match_operand 2)))]
+  "SIBLING_CALL_P (insn)"
+  "@
+   l.jr\t%1%#
+   l.j\t%1%#"
+  [(set_attr "type" "control")])

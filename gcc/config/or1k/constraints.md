@@ -23,12 +23,16 @@
 ;; -------------------------------------------------------------------------
 
 ; We use:
+;  c - sibcall registers
 ;  W - register indirect memory
 ;  I - constant zero
 ;  J - constant unsigned 16-bit
 ;  K - constant signed 16-bit shifted left 16-bits (l.movhi)
 ;  L - constant signed 26-bit (l.jal)
 ;  M - constant signed 16-bit
+
+(define_register_constraint "c" "SIBCALL_REGS"
+  "Registers which can hold a sibling call address")
 
 ;; Memory
 (define_constraint "W"
