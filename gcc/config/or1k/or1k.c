@@ -728,6 +728,54 @@ or1k_trampoline_init (rtx m_tramp, tree fndecl, rtx chain)
      to be done here. */
 }
 
+/* Worker for TARGET_HARD_REGNO_MODE_OK.  */
+
+static bool
+or1k_hard_regno_mode_ok (unsigned int regno, machine_mode mode)
+{
+  /* For OpenRISC, GENERAL_REGS can hold anything, while
+     FLAG_REGS are really single bits within SP[SR].  */
+  if (REGNO_REG_CLASS (regno) == FLAG_REGS)
+    return mode == BImode;
+  return true;
+}
+
+#undef TARGET_HARD_REGNO_MODE_OK
+#define TARGET_HARD_REGNO_MODE_OK or1k_hard_regno_mode_ok
+
+/* Worker for TARGET_CAN_CHANGE_MODE_CLASS.  */
+
+static bool
+or1k_can_change_mode_class (machine_mode from, machine_mode to,
+			    reg_class_t rclass)
+{
+  if (rclass == FLAG_REGS)
+    return from == to;
+  return true;
+}
+
+#undef TARGET_CAN_CHANGE_MODE_CLASS
+#define TARGET_CAN_CHANGE_MODE_CLASS or1k_can_change_mode_class
+
+/* Expand a comparison in operands[0] .. operands[2], where
+   [0] is the operator and [1],[2] are the operands.  Split out
+   the compare into SR[F] and return a new operation in operands[0].  */
+
+void
+or1k_expand_compare (rtx *operands)
+{
+  rtx sr_f = gen_rtx_REG (BImode, SR_F_REGNUM);
+
+  /* Emit the given comparison into the Flag bit.  */
+  PUT_MODE (operands[0], BImode);
+  emit_insn (gen_rtx_SET (sr_f, operands[0]));
+
+  /* Adjust the operands for use in the caller.  */
+  operands[0] = gen_rtx_NE (VOIDmode, sr_f, const0_rtx);
+  operands[1] = sr_f;
+  operands[2] = const0_rtx;
+}
+
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override
 

@@ -35,7 +35,7 @@
    (PE_TMP_REGNUM  13)
    (AP_REGNUM      32)
    (SFP_REGNUM     33)
-   (CC_REGNUM      34)]
+   (SR_F_REGNUM    34)]
 )
 
 ;; Instruction scheduler
@@ -390,31 +390,31 @@
 			(geu "geu") (leu "leu") ])
 
 (define_insn "*sf_insn"
-  [(set (reg:CC CC_REGNUM)
-	(intcmpcc (match_operand:SI 0 "register_operand"   "r,r")
-	          (match_operand:SI 1 "reg_or_s16_operand" "r,M")))]
+  [(set (reg:BI SR_F_REGNUM)
+	(intcmpcc:BI (match_operand:SI 0 "reg_or_0_operand"   "rI,rI")
+		     (match_operand:SI 1 "reg_or_s16_operand" "r,M")))]
   ""
   "@
-   l.sf<insn>\t%0, %1
-   l.sf<insn>i\t%0, %1")
+   l.sf<insn>\t%r0, %1
+   l.sf<insn>i\t%r0, %1")
 
 ;; -------------------------------------------------------------------------
 ;; Conditional Store instructions
 ;; -------------------------------------------------------------------------
 
 (define_expand "cstoresi4"
-  [(set (reg:CC CC_REGNUM)
-	(match_operator 1 "comparison_operator"
-	  [(match_operand:SI 2 "register_operand" "")
-	   (match_operand:SI 3 "reg_or_s16_operand" "")]))
-   (set (match_operand:SI 0 "register_operand" "")
-	(const_int 1))
-   (set (match_dup 0)
-	(if_then_else:SI (ne (reg:CC CC_REGNUM) (const_int 0))
+  [(set (match_operand:SI 0 "register_operand" "")
+	(if_then_else:SI
+	  (match_operator 1 "comparison_operator"
+	    [(match_operand:SI 2 "reg_or_0_operand" "")
+	     (match_operand:SI 3 "reg_or_s16_operand" "")])
 	  (match_dup 0)
 	  (const_int 0)))]
   ""
-  "")
+{
+  or1k_expand_compare (operands + 1);
+  emit_move_insn (operands[0], const1_rtx);
+})
 
 (define_expand "mov<I:mode>cc"
   [(set (match_operand:I 0 "register_operand" "")
@@ -423,27 +423,26 @@
 	  (match_operand:I 3 "reg_or_0_operand" "")))]
   ""
 {
-  emit_insn (gen_mov<mode>cc_internal (operands[0], operands[1],
-				       operands[2], operands[3]));
-  DONE;
+  rtx xops[3] = { operands[1], XEXP (operands[1], 0), XEXP (operands[1], 1) };
+  or1k_expand_compare (xops);
+  operands[1] = xops[0];
 })
 
-(define_expand "mov<I:mode>cc_internal"
-  [(set (reg:CC CC_REGNUM) (match_operand 1 "comparison_operator" ""))
-   (set (match_operand:I 0 "register_operand" "")
-	(if_then_else:I (ne (reg:CC CC_REGNUM) (const_int 0))
-	  (match_operand:I 2 "reg_or_0_operand" "")
-	  (match_operand:I 3 "reg_or_0_operand" "")))]
-  ""
-  "")
-
-(define_insn "*cmov<I:mode>_insn"
+(define_insn "*cmov<I:mode>_positive"
   [(set (match_operand:I 0 "register_operand" "=r")
-	(if_then_else:I (ne (reg:CC CC_REGNUM) (const_int 0))
+	(if_then_else:I (ne (reg:BI SR_F_REGNUM) (const_int 0))
 		      (match_operand:I 1 "reg_or_0_operand" "rI")
 		      (match_operand:I 2 "reg_or_0_operand" "rI")))]
   ""
   "l.cmov\t%0, %r1, %r2")
+
+(define_insn "*cmov<I:mode>_negative"
+  [(set (match_operand:I 0 "register_operand" "=r")
+	(if_then_else:I (eq (reg:BI SR_F_REGNUM) (const_int 0))
+		      (match_operand:I 1 "reg_or_0_operand" "rI")
+		      (match_operand:I 2 "reg_or_0_operand" "rI")))]
+  ""
+  "l.cmov\t%0, %r2, %r1")
 
 ;; -------------------------------------------------------------------------
 ;; Branch instructions
@@ -451,7 +450,7 @@
 
 (define_insn "*cbranch_positive"
   [(set (pc)
-	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
+	(if_then_else (ne (reg:BI SR_F_REGNUM) (const_int 0))
 		      (label_ref (match_operand 0 "" ""))
 		      (pc)))]
   ""
@@ -460,7 +459,7 @@
 
 (define_insn "*cbranch_negative"
   [(set (pc)
-	(if_then_else (eq (reg:CC CC_REGNUM) (const_int 0))
+	(if_then_else (eq (reg:BI SR_F_REGNUM) (const_int 0))
 		      (label_ref (match_operand 0 "" ""))
 		      (pc)))]
   ""
@@ -468,16 +467,17 @@
   [(set_attr "type" "control")])
 
 (define_expand "cbranchsi4"
-  [(set (reg:CC CC_REGNUM)
-	(match_operator 0 "comparison_operator"
-	  [(match_operand:SI 1 "register_operand" "")
-	   (match_operand:SI 2 "reg_or_s16_operand" "")]))
-   (set (pc)
-	(if_then_else (ne (reg:CC CC_REGNUM) (const_int 0))
-		      (label_ref (match_operand 3 "" ""))
-		      (pc)))]
+  [(set (pc)
+	(if_then_else
+	  (match_operator 0 "comparison_operator"
+	    [(match_operand:SI 1 "reg_or_0_operand" "")
+	     (match_operand:SI 2 "reg_or_s16_operand" "")])
+	  (label_ref (match_operand 3 "" ""))
+	  (pc)))]
   ""
-  "")
+{
+  or1k_expand_compare (operands);
+})
 
 ;; -------------------------------------------------------------------------
 ;; Call and Jump instructions

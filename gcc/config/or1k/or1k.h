@@ -113,7 +113,7 @@
 
    r32   soft argument pointer
    r33   soft frame pointer
-   r34   flag (bit) register
+   r34   SR[F] (bit) register
  */
 
 #define FIRST_PSEUDO_REGISTER  35
@@ -139,23 +139,23 @@ enum reg_class
 {
   NO_REGS,
   GENERAL_REGS,
-  SPECIAL_REGS,
+  FLAG_REGS,
   ALL_REGS,
   LIM_REG_CLASSES
 };
 
 #define N_REG_CLASSES (int) LIM_REG_CLASSES
 
-#define REG_CLASS_NAMES { \
+#define REG_CLASS_NAMES {	\
   "NO_REGS", 			\
   "GENERAL_REGS",		\
-  "SPECIAL_REGS",		\
+  "FLAG_REGS",			\
   "ALL_REGS" }
 
 #define REG_CLASS_CONTENTS      \
 { {0x00000000, 0x00000000},	\
-  {0xffffffff, 0x00000000},	\
-  {0x00000000, 0x00000007},	\
+  {0xffffffff, 0x00000003},	\
+  {0x00000000, 0x00000004},	\
   {0xffffffff, 0x00000007}	\
 }
 
@@ -164,10 +164,7 @@ enum reg_class
    choose a class which is "minimal", meaning that no smaller class
    also contains the register.  */
 #define REGNO_REG_CLASS(REGNO) \
-  ((REGNO >= FIRST_PSEUDO_REGISTER ) ? NO_REGS :		\
-   (REGNO == AP_REGNUM						\
-    || REGNO == CC_REGNUM					\
-    || REGNO == SFP_REGNUM ? SPECIAL_REGS : GENERAL_REGS))
+  ((REGNO) >= SR_F_REGNUM ? FLAG_REGS : GENERAL_REGS)
 
 #define PROMOTE_MODE(MODE,UNSIGNEDP,TYPE)               \
 do {                                                    \
@@ -201,7 +198,7 @@ do {                                                    \
   "r8",   "r9",   "r10",  "r11",  "r12",  "r13",  "r14",  "r15",	\
   "r16",  "r17",  "r18",  "r19",  "r20",  "r21",  "r22",  "r23",	\
   "r24",  "r25",  "r26",  "r27",  "r28",  "r29",  "r30",  "r31",	\
-  "?ap",  "?fp",  "?cc" }
+  "?ap",  "?fp",  "?sr_f" }
 
 /* This is how to output an assembler line
    that says to advance the location counter
