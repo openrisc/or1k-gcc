@@ -94,8 +94,8 @@
    r13   temporary (used in prologue and epilogue)
    r14   callee saved
    r15   temporary
-   r16   callee saved
-   r17   position independent code base pointer
+   r16   callee saved & pic base register
+   r17   temporary
    r18   callee saved
    r19   temporary
    r20   callee saved
@@ -114,26 +114,66 @@
    r32   soft argument pointer
    r33   soft frame pointer
    r34   SR[F] (bit) register
- */
+
+   This ABI has no adjacent call-saved register, which means that
+   DImode/DFmode pseudos cannot be call-saved and will always be
+   spilled across calls.  To solve this without changing the ABI,
+   remap the compiler internal register numbers to place the even
+   call-saved registers r16-r30 in 24-31, and the odd call-clobbered
+   registers r17-r31 in 16-23.  */
 
 #define FIRST_PSEUDO_REGISTER  35
 
-#define FIXED_REGISTERS \
-{ 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, \
-  1, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
-  0, 0,				\
-  1, 1, 1}
+#define HW_TO_GCC_REGNO(X)		\
+  ((X) < 16 || (X) > 31 ? (X)		\
+   : (X) & 1 ? ((X) - 16) / 2 + 16	\
+   : ((X) - 16) / 2 + 24)
+
+#define GCC_TO_HW_REGNO(X)		\
+  ((X) < 16 || (X) > 31 ? (X)		\
+   : (X) < 24 ? ((X) - 16) * 2 + 16	\
+   : ((X) - 24) * 2 + 16)
+
+#define DBX_REGISTER_NUMBER(X)  GCC_TO_HW_REGNO(X)
+
+#define REGISTER_NAMES { \
+  "r0",   "r1",   "r2",   "r3",   "r4",   "r5",   "r6",   "r7",   \
+  "r8",   "r9",   "r10",  "r11",  "r12",  "r13",  "r14",  "r15",  \
+  "r17",  "r19",  "r21",  "r23",  "r25",  "r27",  "r29",  "r31",  \
+  "r16",  "r18",  "r20",  "r22",  "r24",  "r26",  "r28",  "r30",  \
+  "?ap",  "?fp",  "?sr_f" }
+
+#define FIXED_REGISTERS		\
+{ 1, 1, 0, 0, 0, 0, 0, 0,	\
+  0, 0, 1, 0, 0, 0, 0, 0,	\
+  0, 0, 0, 0, 0, 0, 0, 0,	\
+  0, 0, 0, 0, 0, 0, 0, 0,	\
+  1, 1, 1 }
 
 /* Caller saved/temporary registers + args + fixed */
-/*
-  0  1  2  3  4  5  6  7  8  9  */
-#define CALL_USED_REGISTERS \
-{ 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, \
-  1, 1, 1, 1, 0, 1, 0, 1, 0, 1, \
-  0, 1, 0, 1, 0, 1, 0, 1, 0, 1, \
-  0, 1,				\
-  1, 1, 1}
+#define CALL_USED_REGISTERS	\
+{ 1, 1, 0, 1, 1, 1, 1, 1,	\
+  1, 1, 1, 1, 1, 1, 0, 1,	\
+  1, 1, 1, 1, 1, 1, 1, 1,	\
+  0, 0, 0, 0, 0, 0, 0, 0,	\
+  1, 1, 1 }
+
+/* List the order in which to allocate registers.  Each register must
+   be listed once, even those in FIXED_REGISTERS.  */
+
+#define REG_ALLOC_ORDER { \
+  16, 17, 18, 19, 20, 21, 22, 23,	/* r17-r31 (odd), non-saved */	\
+  13, 15,				/* non-saved */			\
+  12, 11,				/* non-saved return values */	\
+  8, 7, 6, 5, 4, 3,			/* non-saved argument regs */	\
+  14, 24, 25, 26, 27, 28, 29, 30, 31,	/* r14,r16-r31 (even), saved */	\
+  2,					/* saved hard frame pointer */	\
+  9,					/* saved return address */	\
+  0,					/* fixed zero reg */		\
+  1,					/* fixed stack pointer */	\
+  10,					/* fixed thread pointer */	\
+  32, 33, 34,				/* fixed ap, fp, sr[f], */	\
+}
 
 enum reg_class
 {
@@ -192,13 +232,6 @@ do {                                                    \
 #define DATA_SECTION_ASM_OP "\t.section\t.data"
 #define BSS_SECTION_ASM_OP "\t.section\t.bss"
 #define SBSS_SECTION_ASM_OP "\t.section\t.sbss"
-
-#define REGISTER_NAMES {						\
-  "r0",   "r1",   "r2",   "r3",   "r4",   "r5",   "r6",   "r7",		\
-  "r8",   "r9",   "r10",  "r11",  "r12",  "r13",  "r14",  "r15",	\
-  "r16",  "r17",  "r18",  "r19",  "r20",  "r21",  "r22",  "r23",	\
-  "r24",  "r25",  "r26",  "r27",  "r28",  "r29",  "r30",  "r31",	\
-  "?ap",  "?fp",  "?sr_f" }
 
 /* This is how to output an assembler line
    that says to advance the location counter
