@@ -513,7 +513,7 @@
   ""
 {
   or1k_expand_epilogue ();
-  emit_jump_insn (gen_return_internal (gen_rtx_REG (Pmode, LR_REGNUM)));
+  emit_jump_insn (gen_simple_return ());
   DONE;
 })
 
@@ -530,9 +530,16 @@
   DONE;
 })
 
-(define_insn "return_internal"
-  [(use (match_operand:SI 0 "register_operand" "r"))
-   (return)]
+(define_expand "simple_return"
+  [(parallel [(simple_return) (use (match_dup 0))])]
+  ""
+{
+  operands[0] = gen_rtx_REG (Pmode, LR_REGNUM);
+})
+
+(define_insn "*simple_return"
+  [(simple_return)
+   (use (match_operand:SI 0 "register_operand" "r"))]
   ""
   "l.jr\t%0%#"
   [(set_attr "type" "control")])
