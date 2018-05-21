@@ -26,7 +26,12 @@
   "%{mboard=*:-lboard-%*; :-lboard-or1ksim} --end-group"
 
 #undef	LINK_SPEC
-#define	LINK_SPEC "--entry=0x100"
+#define LINK_SPEC "%{h*}			\
+   %{static:-Bstatic}				\
+   %{shared:-shared}				\
+   %{symbolic:-Bsymbolic}			\
+   %{!static:%{rdynamic:-export-dynamic}}	\
+   --entry=0x100"
 
 #undef  STARTFILE_SPEC
 #define STARTFILE_SPEC "crt0.o%s crtbegin.o%s crti.o%s"
