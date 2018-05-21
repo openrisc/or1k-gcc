@@ -476,6 +476,25 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
 	return false;
       break;
 
+    case LO_SUM:
+      base = XEXP (x, 0);
+      if (!REG_P (base))
+	return false;
+      x = XEXP (x, 1);
+      switch (GET_CODE (x))
+	{
+	case CONST:
+	case SYMBOL_REF:
+	case LABEL_REF:
+	  /* Assume legitimize_address properly categorized
+	     the symbol.  Continue to check the base.  */
+	  break;
+
+	default:
+	  return false;
+	}
+      break;
+
     default:
       return false;
     }
@@ -493,6 +512,84 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
   else
     return REGNO_OK_FOR_BASE_P (regno);
 }
+
+/* Worker function for TARGET_LEGITIMIZE_ADDRESS.  */
+
+static rtx
+or1k_legitimize_address_1 (rtx x, rtx scratch)
+{
+  rtx base, addend, t1, t2;
+
+  base = x;
+  addend = const0_rtx;
+  if (GET_CODE (x) == CONST)
+    base = XEXP (x, 0);
+  if (GET_CODE (base) == PLUS && CONST_INT_P (XEXP (base, 1)))
+    {
+      addend = XEXP (base, 1);
+      base = XEXP (base, 0);
+    }
+
+  switch (GET_CODE (base))
+    {
+    default:
+      gcc_assert (can_create_pseudo_p ());
+      base = force_reg (Pmode, base);
+      break;
+
+    case REG:
+    case SUBREG:
+      break;
+
+    case SYMBOL_REF:
+    case LABEL_REF:
+      t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+      emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, x)));
+      return gen_rtx_LO_SUM (Pmode, t1, x);
+
+    /*
+     * Re-recognize what we may have already emitted.
+     */
+
+    case LO_SUM:
+      gcc_assert (register_operand (XEXP (base, 0), Pmode));
+      if (addend == const0_rtx)
+	return base;
+
+      t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+      emit_insn (gen_rtx_SET (t1, base));
+      base = t1;
+      break;
+    }
+
+  /* If we get here, we still have addend outstanding.  */
+  gcc_checking_assert (register_operand (base, Pmode));
+  if (addend == const0_rtx)
+    return base;
+  if (satisfies_constraint_I (addend))
+    return gen_rtx_PLUS (Pmode, base, addend);
+  else
+    {
+      HOST_WIDE_INT i = INTVAL (addend);
+      HOST_WIDE_INT lo = sext_hwi (i, 16);
+      HOST_WIDE_INT hi = i - lo;
+
+      t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+      t2 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+      emit_move_insn (t1, gen_int_mode (hi, Pmode));
+      emit_insn (gen_add3_insn (t2, base, t1));
+      return plus_constant (Pmode, t2, lo);
+    }
+}
+
+static rtx
+or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, machine_mode)
+{
+  return or1k_legitimize_address_1 (x, NULL_RTX);
+}
+
+#undef  TARGET_LEGITIMIZE_ADDRESS
+#define TARGET_LEGITIMIZE_ADDRESS or1k_legitimize_address
 
 /* Worker function for TARGET_PASS_BY_REFERENCE.  */
 
@@ -592,51 +689,100 @@ or1k_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
   return (size == -1 || size > (2 * UNITS_PER_WORD));
 }
 
+/* Print reloc(x + add).  */
+
+static void
+output_addr_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, const char *reloc)
+{
+  if (*reloc)
+    {
+      fputs (reloc, stream);
+      fputc ('(', stream);
+    }
+  output_addr_const (stream, x);
+  if (add)
+    {
+      if (add > 0)
+	fputc ('+', stream);
+      fprintf (stream, HOST_WIDE_INT_PRINT_DEC, add);
+    }
+  if (*reloc)
+    fputc (')', stream);
+}
+
+enum reloc_kind
+{
+  RKIND_LO,
+  RKIND_HI,
+  RKIND_MAX
+};
+
+enum reloc_type
+{
+  RTYPE_DIRECT,
+  RTYPE_MAX
+};
+
+static void
+print_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, reloc_kind kind)
+{
+  /* All data relocations.  A NULL in this table indicates a form that
+     we expect to never generate, while "" indicates a form that requires
+     no special markup.  */
+  static const char * const relocs[RKIND_MAX][RTYPE_MAX] = {
+    { "lo" },
+    { "ha" },
+  };
+  reloc_type type = RTYPE_DIRECT;
+
+  if (GET_CODE (x) == CONST)
+    x = XEXP (x, 0);
+
+  const char *reloc = relocs[kind][type];
+  if (reloc == NULL)
+    output_operand_lossage("invalid relocation");
+  else
+    output_addr_reloc (stream, x, add, reloc);
+}
+
 /* Worker function for TARGET_PRINT_OPERAND_ADDRESS.  */
 
 static void
-or1k_print_operand_address (FILE *file, machine_mode, rtx x)
+or1k_print_operand_address (FILE *file, machine_mode, rtx addr)
 {
-  switch (GET_CODE (x))
+  rtx offset;
+
+  switch (GET_CODE (addr))
     {
     case REG:
-      fprintf (file, "0(%s)", reg_names[REGNO (x)]);
+      fputc ('0', file);
       break;
 
     case PLUS:
-      switch (GET_CODE (XEXP (x, 1)))
+      offset = XEXP (addr, 1);
+      addr = XEXP (addr, 0);
+      gcc_assert (CONST_INT_P (offset));
+      if (GET_CODE (addr) == LO_SUM)
 	{
-	case CONST_INT:
-	  fprintf (file, "%ld(%s)",
-		   INTVAL(XEXP (x, 1)), reg_names[REGNO (XEXP (x, 0))]);
-	  break;
-	case SYMBOL_REF:
-	  output_addr_const (file, XEXP (x, 1));
-	  fprintf (file, "(%s)", reg_names[REGNO (XEXP (x, 0))]);
-	  break;
-	case CONST:
-	  {
-	    rtx plus = XEXP (XEXP (x, 1), 0);
-	    if (GET_CODE (XEXP (plus, 0)) == SYMBOL_REF
-		&& CONST_INT_P (XEXP (plus, 1)))
-	      {
-		output_addr_const(file, XEXP (plus, 0));
-		fprintf (file,"+%ld(%s)", INTVAL (XEXP (plus, 1)),
-			 reg_names[REGNO (XEXP (x, 0))]);
-	      }
-	    else
-	      abort();
-	  }
-	  break;
-	default:
-	  abort();
+	  print_reloc (file, XEXP (addr, 1), INTVAL (offset), RKIND_LO);
+	  addr = XEXP (addr, 0);
 	}
+      else
+	output_addr_const (file, offset);
+      break;
+
+    case LO_SUM:
+      offset = XEXP (addr, 1);
+      addr = XEXP (addr, 0);
+      print_reloc (file, offset, 0, RKIND_LO);
       break;
 
     default:
-      output_addr_const (file, x);
-      break;
+      output_addr_const (file, addr);
+      return;
     }
+
+  fprintf (file, "(%s)", reg_names[REGNO (addr)]);
 }
 
 /* Worker function for TARGET_PRINT_OPERAND.  */
@@ -661,6 +807,13 @@ or1k_print_operand (FILE *file, rtx x, int code)
         fprintf (file, "r0");
       else
 	output_operand_lossage ("invalid %%r value");
+      break;
+
+    case 'H':
+      print_reloc (file, x, 0, RKIND_HI);
+      break;
+    case 'L':
+      print_reloc (file, x, 0, RKIND_LO);
       break;
 
     case 0:
@@ -784,6 +937,52 @@ or1k_can_change_mode_class (machine_mode from, machine_mode to,
 
 #undef TARGET_CAN_CHANGE_MODE_CLASS
 #define TARGET_CAN_CHANGE_MODE_CLASS or1k_can_change_mode_class
+
+void
+or1k_expand_move (machine_mode mode, rtx op0, rtx op1)
+{
+  if (MEM_P (op0))
+    {
+      if (!const0_operand(op1, mode))
+	op1 = force_reg (mode, op1);
+    }
+  else if (mode == QImode || mode == HImode)
+    {
+      /* ??? Maybe promote MEMs and CONST_INT to SImode,
+	 and then squish back with gen_lowpart.  */
+    }
+  else
+    {
+      switch (GET_CODE (op1))
+        {
+        case CONST_INT:
+	  if (!input_operand (op1, mode))
+	    {
+	      HOST_WIDE_INT i = INTVAL (op1);
+	      HOST_WIDE_INT lo = i & 0xffff;
+	      HOST_WIDE_INT hi = i ^ lo;
+	      rtx subtarget = op0;
+
+	      if (!cse_not_expected && can_create_pseudo_p ())
+		subtarget = gen_reg_rtx (SImode);
+	      emit_insn (gen_rtx_SET (subtarget, GEN_INT (hi)));
+	      emit_insn (gen_iorsi3 (op0, subtarget, GEN_INT (lo)));
+	      return;
+	    }
+	  break;
+
+	case CONST:
+	case SYMBOL_REF:
+	case LABEL_REF:
+	  op1 = or1k_legitimize_address_1 (op1, op0);
+	  break;
+
+	default:
+	  break;
+	}
+    }
+  emit_insn (gen_rtx_SET (op0, op1));
+}
 
 /* Expand a comparison in operands[0] .. operands[2], where
    [0] is the operator and [1],[2] are the operands.  Split out

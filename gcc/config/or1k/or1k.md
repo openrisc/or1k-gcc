@@ -191,72 +191,15 @@
 	(match_operand:I 1 "general_operand" ""))]
   ""
 {
-  rtx op0 = operands[0];
-  rtx op1 = operands[1];
-  rtx subtarget = op0;
-  rtx offset = NULL;
-
-  if (MEM_P (op0) && !const0_operand(op1, <MODE>mode))
-    operands[1] = op1 = force_reg (<MODE>mode, op1);
-
-  switch (GET_CODE (op1))
-    {
-    case CONST_INT:
-      /* Constants smaller than SImode can be loaded directly.
-         Otherwise, check to see if it requires splitting.  */
-      if (<MODE>mode == SImode
-	  && !satisfies_constraint_I (op1)
-	  && !satisfies_constraint_K (op1)
-	  && !satisfies_constraint_M (op1))
-	{
-          HOST_WIDE_INT i = INTVAL (op1);
-          HOST_WIDE_INT lo = i & 0xffff;
-          HOST_WIDE_INT hi = i ^ lo;
-
-          if (!cse_not_expected && can_create_pseudo_p ())
-            subtarget = gen_reg_rtx (SImode);
-          emit_move_insn (subtarget, GEN_INT (hi));
-	  emit_insn (gen_iorsi3 (op0, subtarget, GEN_INT (lo)));
-	  DONE;
-	}
-      break;
-
-    case CONST:
-      if (GET_CODE (XEXP (op1, 0)) == PLUS
-          && CONST_INT_P (XEXP (XEXP (op1, 0), 1)))
-	{
-	  offset = XEXP (XEXP (op1, 0), 1);
-          op1 = XEXP (XEXP (op1, 0), 0);
-
-          if (!cse_not_expected && can_create_pseudo_p ())
-	    subtarget = gen_reg_rtx (Pmode);
-        }
-      /* fallthru */
-
-    case SYMBOL_REF:
-    case LABEL_REF:
-      emit_insn (gen_movsi_high (subtarget, op1));
-      emit_insn (gen_movsi_lo_sum (subtarget, subtarget, op1));
-
-      if (offset != NULL)
-	{
-	  subtarget = expand_simple_binop (Pmode, PLUS, subtarget, offset,
-                                           op0, 1, OPTAB_DIRECT);
-          if (subtarget != op0)
-	    emit_move_insn(op0, subtarget);
-	}
-      DONE;
-
-    default:
-      break;
-    }
+  or1k_expand_move (<MODE>mode, operands[0], operands[1]);
+  DONE;
 })
 
 ;; 8-bit, 16-bit and 32-bit moves
 
 (define_insn "*mov<I:mode>_internal"
-  [(set (match_operand:I 0 "nonimmediate_operand" "=r,r,r,r,m,r")
-	(match_operand:I 1 "or1k_mov_operand"      "r,M,K,I,rO,m"))]
+  [(set (match_operand:I 0 "nonimmediate_operand" "=r,r,r,r, m,r")
+	(match_operand:I 1 "input_operand"        " r,M,K,I,rO,m"))]
   "register_operand (operands[0], <I:MODE>mode)
    || reg_or_0_operand (operands[1], <I:MODE>mode)"
   "@
@@ -272,17 +215,17 @@
 
 (define_insn "movsi_high"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(high:SI (match_operand:SI 1 "or1k_hilo_operand" "i")))]
+	(high:SI (match_operand:SI 1 "immediate_operand" "i")))]
   ""
-  "l.movhi\t%0, hi(%1)"
+  "l.movhi\t%0, %H1"
   [(set_attr "type" "alu")])
 
-(define_insn "movsi_lo_sum"
+(define_insn "*movsi_lo_sum_addi"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
-		   (match_operand:SI 2 "or1k_hilo_operand" "i")))]
+		   (match_operand:SI 2 "immediate_operand" "i")))]
   ""
-  "l.ori\t%0, %1, lo(%2)"
+  "l.addi\t%0, %1, %L2"
   [(set_attr "type" "alu")])
 
 ;; 64-bit moves

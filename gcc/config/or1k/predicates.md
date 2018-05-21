@@ -22,14 +22,13 @@
 ;; Predicates
 ;; -------------------------------------------------------------------------
 
-(define_predicate "or1k_mov_operand"
-  (and (match_code "reg,subreg,mem,const,const_int,const_poly_int")
-       (ior (match_operand 0 "register_operand")
-	    (ior (match_operand 0 "memory_operand")
-		 (match_operand 0 "const_int_operand")))))
-
-(define_predicate "or1k_hilo_operand"
-  (match_code "symbol_ref,label_ref,const_int"))
+(define_predicate "input_operand"
+  (ior (match_operand 0 "register_operand")
+       (match_operand 0 "memory_operand")
+       (and (match_code "const_int")
+	    (match_test "satisfies_constraint_I (op)
+			 || satisfies_constraint_K (op)
+			 || satisfies_constraint_M (op)"))))
 
 (define_predicate "const0_operand"
   (and (match_code "const_int,const_wide_int,const_double,const_vector")

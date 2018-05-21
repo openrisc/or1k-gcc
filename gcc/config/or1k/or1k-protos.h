@@ -24,5 +24,6 @@ extern void or1k_expand_eh_return (rtx);
 extern rtx  or1k_initial_frame_addr (void);
 extern rtx  or1k_dynamic_chain_addr (rtx);
 extern rtx  or1k_return_addr (int, rtx);
+extern void or1k_expand_move (machine_mode, rtx, rtx);
 extern void or1k_expand_compare (rtx *);
 extern void or1k_expand_call (rtx, rtx, rtx, bool);
