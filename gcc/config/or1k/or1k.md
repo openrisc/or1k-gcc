@@ -44,8 +44,12 @@
 (define_attr "length" "" (const_int 4))
 
 (define_attr "type"
-  "alu,st,ld,control"
+  "alu,st,ld,control,multi"
   (const_string "alu"))
+
+;; Describe a user's asm statement.
+(define_asm_attributes
+  [(set_attr "type" "multi")])
 
 (define_automaton "or1k")
 (define_cpu_unit "cpu" "or1k")
@@ -64,7 +68,7 @@
 
 ; Define delay slots for any branch
 (define_delay (eq_attr "type" "control")
-  [(eq_attr "type" "!control") (nil) (nil)])
+  [(eq_attr "type" "alu,st,ld") (nil) (nil)])
 
 ;; -------------------------------------------------------------------------
 ;; nop instruction
