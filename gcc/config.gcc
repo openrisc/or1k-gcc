@@ -2380,6 +2380,7 @@ or1k*-*-*)
         case ${target} in
         or1k*-*-linux*)
                 tm_file="${tm_file} gnu-user.h linux.h glibc-stdint.h"
+                tm_file="${tm_file} or1k/linux.h"
                 ;;
 	or1k*-*-elf*)
 		tm_file="${tm_file} newlib-stdint.h or1k/elf.h"
