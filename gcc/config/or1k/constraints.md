@@ -24,10 +24,10 @@
 
 ; We use:
 ;  c - sibcall registers
+;  I - constant signed 16-bit
 ;  J - constant unsigned 16-bit
 ;  K - constant signed 16-bit shifted left 16-bits (l.movhi)
 ;  L - constant signed 26-bit (l.jal)
-;  M - constant signed 16-bit
 ;  O - constant zero
 
 (define_register_constraint "c" "SIBCALL_REGS"
@@ -41,6 +41,11 @@
 					       XEXP (op, 0), false)")))
 
 ;; Immediates
+(define_constraint "I"
+  "A signed 16-bit immediate in the range -32768 to 32767."
+  (and (match_code "const_int")
+       (match_test "IN_RANGE (ival, -32768, 32767)")))
+
 (define_constraint "J"
   "An unsigned 16-bit immediate in the range 0 to 0xffff."
   (and (match_code "const_int")
@@ -56,11 +61,6 @@
   "A signed 26-bit constant suitable for l.jal."
   (and (match_code "const_int")
        (match_test "IN_RANGE (ival, -33554432, 33554431)")))
-
-(define_constraint "M"
-  "A signed 16-bit immediate in the range -32768 to 32767."
-  (and (match_code "const_int")
-       (match_test "IN_RANGE (ival, -32768, 32767)")))
 
 (define_constraint "O"
   "The constant zero"

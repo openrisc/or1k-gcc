@@ -458,7 +458,7 @@ or1k_legitimate_address_p (machine_mode mode ATTRIBUTE_UNUSED,
 {
   if (GET_CODE(x) == PLUS
       && REG_P (XEXP (x, 0))
-      && satisfies_constraint_M (XEXP (x, 1)))
+      && satisfies_constraint_I (XEXP (x, 1)))
     return true;
 
   if (REG_P (x))

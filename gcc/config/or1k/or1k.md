@@ -83,7 +83,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	  (plus:SI
 	   (match_operand:SI 1 "register_operand"   "%r,r")
-	   (match_operand:SI 2 "reg_or_s16_operand" " r,M")))]
+	   (match_operand:SI 2 "reg_or_s16_operand" " r,I")))]
   ""
   "@
   l.add\t%0, %1, %2
@@ -93,7 +93,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	  (mult:SI
 	   (match_operand:SI 1 "register_operand"   "%r,r")
-	   (match_operand:SI 2 "reg_or_s16_operand" " r,M")))]
+	   (match_operand:SI 2 "reg_or_s16_operand" " r,I")))]
   ""
   "@
   l.mul\t%0, %1, %2
@@ -156,7 +156,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r,r")
 	  (xor:SI
 	   (match_operand:SI 1 "register_operand"   "%r,r")
-	   (match_operand:SI 2 "reg_or_s16_operand" " r,M")))]
+	   (match_operand:SI 2 "reg_or_s16_operand" " r,I")))]
   ""
   "@
   l.xor\t%0, %1, %2
@@ -205,9 +205,9 @@
       /* Constants smaller than SImode can be loaded directly.
          Otherwise, check to see if it requires splitting.  */
       if (<MODE>mode == SImode
+	  && !satisfies_constraint_I (op1)
 	  && !satisfies_constraint_J (op1)
-	  && !satisfies_constraint_K (op1)
-	  && !satisfies_constraint_M (op1))
+	  && !satisfies_constraint_K (op1))
 	{
           HOST_WIDE_INT i = INTVAL (op1);
           HOST_WIDE_INT lo = i & 0xffff;
@@ -256,7 +256,7 @@
 
 (define_insn "*mov<I:mode>_internal"
   [(set (match_operand:I 0 "nonimmediate_operand" "=r,r,r,r,m,r")
-	(match_operand:I 1 "or1k_mov_operand"      "r,K,J,M,rO,m"))]
+	(match_operand:I 1 "or1k_mov_operand"      "r,K,J,I,rO,m"))]
   "register_operand (operands[0], <I:MODE>mode)
    || reg_or_0_operand (operands[1], <I:MODE>mode)"
   "@
@@ -392,7 +392,7 @@
 (define_insn "*sf_insn"
   [(set (reg:BI SR_F_REGNUM)
 	(intcmpcc:BI (match_operand:SI 0 "reg_or_0_operand"   "rO,rO")
-		     (match_operand:SI 1 "reg_or_s16_operand" "r,M")))]
+		     (match_operand:SI 1 "reg_or_s16_operand" "r,I")))]
   ""
   "@
    l.sf<insn>\t%r0, %1
