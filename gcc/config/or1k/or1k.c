@@ -468,6 +468,10 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
       addend = XEXP (x, 1);
       if (!REG_P (base))
 	return false;
+      /* Register elimination is going to adjust all of these offsets.
+	 We might as well keep them as a unit until then.  */
+      if (!strict_p && (base == arg_pointer_rtx || base == frame_pointer_rtx))
+	return CONST_INT_P (addend);
       if (!satisfies_constraint_I (addend))
 	return false;
       break;
