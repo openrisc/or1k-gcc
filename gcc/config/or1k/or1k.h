@@ -62,12 +62,16 @@
 #define FLOAT_TYPE_SIZE 32
 #define DOUBLE_TYPE_SIZE 64
 #define LONG_DOUBLE_TYPE_SIZE 64
+#define WCHAR_TYPE_SIZE	32
 
 #undef SIZE_TYPE
 #define SIZE_TYPE "unsigned int"
 
 #undef PTRDIFF_TYPE
 #define PTRDIFF_TYPE "int"
+
+#undef WCHAR_TYPE
+#define WCHAR_TYPE "unsigned int"
 
 /* Describing Relative Costs of Operations.  */
 #define MOVE_MAX 4
