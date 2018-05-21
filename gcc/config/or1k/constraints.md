@@ -25,7 +25,7 @@
 ; We use:
 ;  c - sibcall registers
 ;  I - constant signed 16-bit
-;  J - constant unsigned 16-bit
+;  K - constant unsigned 16-bit
 ;  M - constant signed 16-bit shifted left 16-bits (l.movhi)
 ;  O - constant zero
 
@@ -45,7 +45,7 @@
   (and (match_code "const_int")
        (match_test "IN_RANGE (ival, -32768, 32767)")))
 
-(define_constraint "J"
+(define_constraint "K"
   "An unsigned 16-bit immediate in the range 0 to 0xffff."
   (and (match_code "const_int")
        (match_test "IN_RANGE (ival, 0, 65535)")))
