@@ -27,7 +27,6 @@
 ;  I - constant signed 16-bit
 ;  J - constant unsigned 16-bit
 ;  K - constant signed 16-bit shifted left 16-bits (l.movhi)
-;  L - constant signed 26-bit (l.jal)
 ;  O - constant zero
 
 (define_register_constraint "c" "SIBCALL_REGS"
@@ -56,11 +55,6 @@
   (and (match_code "const_int")
        (match_test "(ival & 0xffff) == 0
                     && (ival >> 31 == -1 || ival >> 31 == 0)")))
-
-(define_constraint "L"
-  "A signed 26-bit constant suitable for l.jal."
-  (and (match_code "const_int")
-       (match_test "IN_RANGE (ival, -33554432, 33554431)")))
 
 (define_constraint "O"
   "The constant zero"
