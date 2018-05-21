@@ -301,8 +301,7 @@ do {                                                    \
   } while (0)
 
 #define REGNO_OK_FOR_INDEX_P(REGNO) 0
-#define REGNO_OK_FOR_BASE_P(REGNO) \
-  ((REGNO) <= SFP_REGNUM || (unsigned int) reg_renumber[REGNO] < SFP_REGNUM)
+#define REGNO_OK_FOR_BASE_P(REGNO)  ((REGNO) <= SFP_REGNUM)
 
 /* If defined, the maximum amount of space required for outgoing
    arguments will be computed and placed into the variable

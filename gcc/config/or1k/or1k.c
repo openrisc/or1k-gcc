@@ -452,19 +452,42 @@ or1k_initial_elimination_offset (int from, int to)
 
 /* Worker function for TARGET_LEGITIMATE_ADDRESS_P.  */
 
-bool
-or1k_legitimate_address_p (machine_mode mode ATTRIBUTE_UNUSED,
-			   rtx x, bool strict_p ATTRIBUTE_UNUSED)
+static bool
+or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
 {
-  if (GET_CODE(x) == PLUS
-      && REG_P (XEXP (x, 0))
-      && satisfies_constraint_I (XEXP (x, 1)))
-    return true;
+  rtx base, addend;
 
-  if (REG_P (x))
-    return true;
+  switch (GET_CODE (x))
+    {
+    case REG:
+      base = x;
+      break;
 
-  return false;
+    case PLUS:
+      base = XEXP (x, 0);
+      addend = XEXP (x, 1);
+      if (!REG_P (base))
+	return false;
+      if (!satisfies_constraint_I (addend))
+	return false;
+      break;
+
+    default:
+      return false;
+    }
+
+  unsigned regno = REGNO (base);
+  if (regno >= FIRST_PSEUDO_REGISTER)
+    {
+      if (strict_p)
+	regno = reg_renumber[regno];
+      else
+	return true;
+    }
+  if (strict_p)
+    return regno <= 31;
+  else
+    return REGNO_OK_FOR_BASE_P (regno);
 }
 
 /* Worker function for TARGET_PASS_BY_REFERENCE.  */

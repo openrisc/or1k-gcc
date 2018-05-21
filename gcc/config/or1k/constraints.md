@@ -32,13 +32,6 @@
 (define_register_constraint "c" "SIBCALL_REGS"
   "Registers which can hold a sibling call address")
 
-;; Memory
-(define_constraint "W"
-  "A register indirect memory operand."
-  (and (match_code "mem")
-       (match_test "or1k_legitimate_address_p (GET_MODE (op),
-					       XEXP (op, 0), false)")))
-
 ;; Immediates
 (define_constraint "I"
   "A signed 16-bit immediate in the range -32768 to 32767."
