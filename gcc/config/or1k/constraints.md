@@ -24,12 +24,11 @@
 
 ; We use:
 ;  c - sibcall registers
-;  W - register indirect memory
-;  I - constant zero
 ;  J - constant unsigned 16-bit
 ;  K - constant signed 16-bit shifted left 16-bits (l.movhi)
 ;  L - constant signed 26-bit (l.jal)
 ;  M - constant signed 16-bit
+;  O - constant zero
 
 (define_register_constraint "c" "SIBCALL_REGS"
   "Registers which can hold a sibling call address")
@@ -42,11 +41,6 @@
 					       XEXP (op, 0), false)")))
 
 ;; Immediates
-(define_constraint "I"
-  "The constant zero"
-  (and (match_code "const_int")
-       (match_test "ival == 0")))
-
 (define_constraint "J"
   "An unsigned 16-bit immediate in the range 0 to 0xffff."
   (and (match_code "const_int")
@@ -68,3 +62,7 @@
   (and (match_code "const_int")
        (match_test "IN_RANGE (ival, -32768, 32767)")))
 
+(define_constraint "O"
+  "The constant zero"
+  (and (match_code "const_int")
+       (match_test "ival == 0")))

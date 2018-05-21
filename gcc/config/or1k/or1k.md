@@ -118,7 +118,7 @@
 (define_insn "subsi3"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	  (minus:SI
-	   (match_operand:SI 1 "reg_or_0_operand" "rI")
+	   (match_operand:SI 1 "reg_or_0_operand" "rO")
 	   (match_operand:SI 2 "register_operand" "r")))]
   ""
   "l.sub\t%0, %r1, %2")
@@ -256,7 +256,7 @@
 
 (define_insn "*mov<I:mode>_internal"
   [(set (match_operand:I 0 "nonimmediate_operand" "=r,r,r,r,m,r")
-	(match_operand:I 1 "or1k_mov_operand"      "r,K,J,M,rI,m"))]
+	(match_operand:I 1 "or1k_mov_operand"      "r,K,J,M,rO,m"))]
   "register_operand (operands[0], <I:MODE>mode)
    || reg_or_0_operand (operands[1], <I:MODE>mode)"
   "@
@@ -302,7 +302,7 @@
 
 (define_insn_and_split "*movdi"
   [(set (match_operand:DI 0 "nonimmediate_operand" "=r,r,o,r")
-	(match_operand:DI 1 "general_operand"      " r,o,rI,n"))]
+	(match_operand:DI 1 "general_operand"      " r,o,rO,n"))]
   "register_operand (operands[0], DImode)
    || reg_or_0_operand (operands[1], DImode)"
   "#"
@@ -391,7 +391,7 @@
 
 (define_insn "*sf_insn"
   [(set (reg:BI SR_F_REGNUM)
-	(intcmpcc:BI (match_operand:SI 0 "reg_or_0_operand"   "rI,rI")
+	(intcmpcc:BI (match_operand:SI 0 "reg_or_0_operand"   "rO,rO")
 		     (match_operand:SI 1 "reg_or_s16_operand" "r,M")))]
   ""
   "@
@@ -431,16 +431,16 @@
 (define_insn "*cmov<I:mode>_positive"
   [(set (match_operand:I 0 "register_operand" "=r")
 	(if_then_else:I (ne (reg:BI SR_F_REGNUM) (const_int 0))
-		      (match_operand:I 1 "reg_or_0_operand" "rI")
-		      (match_operand:I 2 "reg_or_0_operand" "rI")))]
+		      (match_operand:I 1 "reg_or_0_operand" "rO")
+		      (match_operand:I 2 "reg_or_0_operand" "rO")))]
   ""
   "l.cmov\t%0, %r1, %r2")
 
 (define_insn "*cmov<I:mode>_negative"
   [(set (match_operand:I 0 "register_operand" "=r")
 	(if_then_else:I (eq (reg:BI SR_F_REGNUM) (const_int 0))
-		      (match_operand:I 1 "reg_or_0_operand" "rI")
-		      (match_operand:I 2 "reg_or_0_operand" "rI")))]
+		      (match_operand:I 1 "reg_or_0_operand" "rO")
+		      (match_operand:I 2 "reg_or_0_operand" "rO")))]
   ""
   "l.cmov\t%0, %r2, %r1")
 
