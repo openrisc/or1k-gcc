@@ -26,7 +26,7 @@
 ;  c - sibcall registers
 ;  I - constant signed 16-bit
 ;  J - constant unsigned 16-bit
-;  K - constant signed 16-bit shifted left 16-bits (l.movhi)
+;  M - constant signed 16-bit shifted left 16-bits (l.movhi)
 ;  O - constant zero
 
 (define_register_constraint "c" "SIBCALL_REGS"
@@ -50,7 +50,7 @@
   (and (match_code "const_int")
        (match_test "IN_RANGE (ival, 0, 65535)")))
 
-(define_constraint "K"
+(define_constraint "M"
   "A shifted signed 16-bit constant suitable for l.movhi."
   (and (match_code "const_int")
        (match_test "(ival & 0xffff) == 0
