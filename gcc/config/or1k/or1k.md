@@ -38,6 +38,16 @@
    (SR_F_REGNUM    34)]
 )
 
+(define_c_enum "unspec" [
+  UNSPEC_SET_GOT
+  UNSPEC_GOT
+  UNSPEC_GOTOFF
+])
+
+(define_c_enum "unspecv" [
+  UNSPECV_SET_GOT
+])
+
 ;; Instruction scheduler
 
 ; Most instructions are 4 bytes long.
@@ -219,7 +229,7 @@
 
 (define_insn "movsi_high"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(high:SI (match_operand:SI 1 "immediate_operand" "i")))]
+	(high:SI (match_operand:SI 1 "high_operand" "")))]
   ""
   "l.movhi\t%0, %H1"
   [(set_attr "type" "alu")])
@@ -227,7 +237,7 @@
 (define_insn "*movsi_lo_sum_addi"
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
-		   (match_operand:SI 2 "immediate_operand" "i")))]
+		   (match_operand:SI 2 "losum_add_operand" "")))]
   ""
   "l.addi\t%0, %1, %L2"
   [(set_attr "type" "alu")])
@@ -499,6 +509,34 @@
   DONE;
 })
 
+;; This is a placeholder, during RA, in order to create the PIC regiter.
+;; We do this so that we don't unconditionally mark the LR register as
+;; clobbered.  It is replaced during prologue generation with the proper
+;; set_got pattern below.  This works because the set_got_tmp insn is the
+;; first insn in the stream and that it isn't moved during RA.
+(define_insn "set_got_tmp"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec_volatile:SI [(const_int 0)] UNSPECV_SET_GOT))]
+  ""
+{
+  gcc_unreachable ();
+})
+
+;; The insn to initialize the GOT.
+(define_insn "set_got"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec:SI [(const_int 0)] UNSPEC_SET_GOT))
+   (clobber (reg:SI LR_REGNUM))]
+  ""
+{
+  return ("l.jal\t8\;"
+	  " l.movhi\t%0, gotpchi(_GLOBAL_OFFSET_TABLE_-4)\;"
+	  "l.ori\t%0, %0, gotpclo(_GLOBAL_OFFSET_TABLE_+0)\;"
+	  "l.add\t%0, %0, r9");
+}
+  [(set_attr "length" "16")
+   (set_attr "type" "multi")])
+
 ;; -------------------------------------------------------------------------
 ;; Call Instructions
 ;; -------------------------------------------------------------------------
@@ -545,7 +583,7 @@
   "!SIBLING_CALL_P (insn)"
   "@
    l.jalr\t%0%#
-   l.jal\t%0%#"
+   l.jal\t%P0%#"
   [(set_attr "type" "control")])
 
 (define_insn "*sibcall"
@@ -554,7 +592,7 @@
   "SIBLING_CALL_P (insn)"
   "@
    l.jr\t%0%#
-   l.j\t%0%#"
+   l.j\t%P0%#"
   [(set_attr "type" "control")])
 
 (define_insn "*call_value"
@@ -565,7 +603,7 @@
   "!SIBLING_CALL_P (insn)"
   "@
    l.jalr\t%1%#
-   l.jal\t%1%#"
+   l.jal\t%P1%#"
   [(set_attr "type" "control")])
 
 (define_insn "*sibcall_value"
@@ -575,5 +613,5 @@
   "SIBLING_CALL_P (insn)"
   "@
    l.jr\t%1%#
-   l.j\t%1%#"
+   l.j\t%P1%#"
   [(set_attr "type" "control")])

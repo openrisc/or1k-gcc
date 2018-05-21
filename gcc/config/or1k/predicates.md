@@ -56,3 +56,9 @@
 (define_predicate "call_insn_operand"
   (ior (match_code "symbol_ref")
        (match_operand 0 "register_operand")))
+
+(define_predicate "high_operand"
+  (match_code "symbol_ref,label_ref,const,unspec"))
+
+(define_predicate "losum_add_operand"
+  (match_code "symbol_ref,label_ref,const,unspec"))

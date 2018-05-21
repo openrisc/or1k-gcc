@@ -42,6 +42,7 @@
 #include "builtins.h"
 #include "optabs.h"
 #include "explow.h"
+#include "cfgrtl.h"
 
 /* These 4 are needed to allow using satisfies_constraint_J.  */
 #include "insn-config.h"
@@ -68,6 +69,9 @@ struct GTY(()) machine_function
    * and an optional frame pointer.
    * Used in expand_prologue () and expand_epilogue().  */
   HOST_WIDE_INT total_size;
+
+  /* Remember where the set_got_placeholder is located.  */
+  rtx_insn *set_got_insn;
 };
 
 /* Zero initialization is OK for all current fields.  */
@@ -190,7 +194,7 @@ or1k_expand_prologue (void)
 
   /* Early exit for frameless functions.  */
   if (sp_offset == 0)
-    return;
+    goto fini;
 
   /* Adjust the stack pointer.  For large stack offsets we will
      do this in multiple parts, before and after saving registers.  */
@@ -273,6 +277,18 @@ or1k_expand_prologue (void)
 	  while (sp_offset != 0);
 	}
     }
+
+ fini:
+  /* Fix up, or remove, the insn that initialized the pic register.  */
+  rtx_insn *set_got_insn = cfun->machine->set_got_insn;
+  if (crtl->uses_pic_offset_table)
+    {
+      rtx reg = SET_DEST (PATTERN (set_got_insn));
+      rtx_insn *insn = emit_insn_before (gen_set_got (reg), set_got_insn);
+      RTX_FRAME_RELATED_P (insn) = 1;
+      add_reg_note (insn, REG_CFA_FLUSH_QUEUE, NULL_RTX);
+    }
+  delete_insn (set_got_insn);
 }
 
 void
@@ -370,6 +386,29 @@ or1k_expand_epilogue (void)
   REG_NOTES (insn) = cfa_restores;
   add_reg_note (insn, REG_CFA_DEF_CFA, stack_pointer_rtx);
 }
+
+/* Worker for TARGET_INIT_PIC_REG.  */
+
+static void
+or1k_init_pic_reg (void)
+{
+  start_sequence ();
+
+  cfun->machine->set_got_insn
+    = emit_insn (gen_set_got_tmp (pic_offset_table_rtx));
+
+  rtx_insn *seq = get_insns ();
+  end_sequence ();
+
+  edge entry_edge = single_succ_edge (ENTRY_BLOCK_PTR_FOR_FN (cfun));
+  insert_insn_on_edge (seq, entry_edge);
+  commit_one_edge_insertion (entry_edge);
+}
+
+#undef TARGET_INIT_PIC_REG
+#define TARGET_INIT_PIC_REG  or1k_init_pic_reg
+#undef TARGET_USE_PSEUDO_PIC_REG
+#define TARGET_USE_PSEUDO_PIC_REG  hook_bool_void_true
 
 /* Worker for INITIAL_FRAME_ADDRESS_RTX.  */
 
@@ -490,6 +529,19 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
 	     the symbol.  Continue to check the base.  */
 	  break;
 
+	case UNSPEC:
+	  switch (XINT (x, 1))
+	    {
+	    case UNSPEC_GOT:
+	    case UNSPEC_GOTOFF:
+	      /* Assume legitimize_address properly categorized
+	         the symbol.  Continue to check the base.  */
+	      break;
+	    default:
+	      return false;
+	    }
+	  break;
+
 	default:
 	  return false;
 	}
@@ -513,23 +565,22 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
     return REGNO_OK_FOR_BASE_P (regno);
 }
 
+/* Helper for or1k_legitimize_address_1.  Wrap X in an unspec.  */
+static rtx
+gen_sym_unspec (rtx x, int kind)
+{
+  return gen_rtx_UNSPEC (Pmode, gen_rtvec (1, x), kind);
+}
+
 /* Worker function for TARGET_LEGITIMIZE_ADDRESS.  */
 
 static rtx
 or1k_legitimize_address_1 (rtx x, rtx scratch)
 {
   rtx base, addend, t1, t2;
+  bool is_local = true;
 
-  base = x;
-  addend = const0_rtx;
-  if (GET_CODE (x) == CONST)
-    base = XEXP (x, 0);
-  if (GET_CODE (base) == PLUS && CONST_INT_P (XEXP (base, 1)))
-    {
-      addend = XEXP (base, 1);
-      base = XEXP (base, 0);
-    }
-
+  split_const(x, &base, &addend);
   switch (GET_CODE (base))
     {
     default:
@@ -542,24 +593,42 @@ or1k_legitimize_address_1 (rtx x, rtx scratch)
       break;
 
     case SYMBOL_REF:
+      is_local = SYMBOL_REF_LOCAL_P (base);
+      /* FALLTHRU */
+
     case LABEL_REF:
       t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
-      emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, x)));
-      return gen_rtx_LO_SUM (Pmode, t1, x);
+      if (!flag_pic)
+	{
+          emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, x)));
+          return gen_rtx_LO_SUM (Pmode, t1, x);
+	}
+      else if (is_local)
+	{
+	  crtl->uses_pic_offset_table = 1;
+	  t2 = gen_sym_unspec (x, UNSPEC_GOTOFF);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, t2)));
+	  emit_insn (gen_add3_insn (t1, t1, pic_offset_table_rtx));
+	  return gen_rtx_LO_SUM (Pmode, t1, copy_rtx (t2));
+	}
+      else
+	{
+	  base = gen_sym_unspec (base, UNSPEC_GOT);
+	  crtl->uses_pic_offset_table = 1;
+	  t2 = gen_rtx_LO_SUM (Pmode, pic_offset_table_rtx, base);
+	  t2 = gen_const_mem (Pmode, t2);
+	  emit_insn (gen_rtx_SET (t1, t2));
+	  base = t1;
+	}
+      break;
 
     /*
-     * Re-recognize what we may have already emitted.
+     * Accept what we may have already emitted.
      */
 
     case LO_SUM:
-      gcc_assert (register_operand (XEXP (base, 0), Pmode));
-      if (addend == const0_rtx)
-	return base;
-
-      t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
-      emit_insn (gen_rtx_SET (t1, base));
-      base = t1;
-      break;
+    case UNSPEC:
+      return x;
     }
 
   /* If we get here, we still have addend outstanding.  */
@@ -590,6 +659,40 @@ or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, machine_mode)
 
 #undef  TARGET_LEGITIMIZE_ADDRESS
 #define TARGET_LEGITIMIZE_ADDRESS or1k_legitimize_address
+
+/* Worker for TARGET_DELEGITIMIZE_ADDRESS.
+   In the name of slightly smaller debug output, and to cater to
+   general assembler lossage, recognize PIC+GOTOFF and turn it back
+   into a direct symbol reference.  */
+
+static rtx
+or1k_delegitimize_address (rtx x)
+{
+  if (GET_CODE (x) == UNSPEC)
+    {
+      /* The LO_SUM to which X was attached has been stripped.
+	 Since the only legitimate address we could have been computing
+	 is that of the symbol, assume that's what we've done.  */
+      if (XINT (x, 1) == UNSPEC_GOTOFF)
+	return XVECEXP (x, 0, 0);
+    }
+  else if (MEM_P (x))
+    {
+      rtx addr = XEXP (x, 0);
+      if (GET_CODE (addr) == LO_SUM
+	  && XEXP (addr, 0) == pic_offset_table_rtx)
+	{
+	  rtx inner = XEXP (addr, 1);
+	  if (GET_CODE (inner) == UNSPEC
+	      && XINT (inner, 1) == UNSPEC_GOT)
+	    return XVECEXP (inner, 0, 0);
+	}
+    }
+  return delegitimize_mem_from_attrs (x);
+}
+
+#undef  TARGET_DELEGITIMIZE_ADDRESS
+#define TARGET_DELEGITIMIZE_ADDRESS or1k_delegitimize_address
 
 /* Worker function for TARGET_PASS_BY_REFERENCE.  */
 
@@ -720,6 +823,8 @@ enum reloc_kind
 enum reloc_type
 {
   RTYPE_DIRECT,
+  RTYPE_GOT,
+  RTYPE_GOTOFF,
   RTYPE_MAX
 };
 
@@ -730,13 +835,27 @@ print_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, reloc_kind kind)
      we expect to never generate, while "" indicates a form that requires
      no special markup.  */
   static const char * const relocs[RKIND_MAX][RTYPE_MAX] = {
-    { "lo" },
-    { "ha" },
+    { "lo", "got", "gotofflo" },
+    { "ha", NULL,  "gotoffha" },
   };
   reloc_type type = RTYPE_DIRECT;
 
-  if (GET_CODE (x) == CONST)
-    x = XEXP (x, 0);
+  if (GET_CODE (x) == UNSPEC)
+    {
+      switch (XINT (x, 1))
+	{
+	case UNSPEC_GOT:
+	  type = RTYPE_GOT;
+	  break;
+	case UNSPEC_GOTOFF:
+	  type = RTYPE_GOTOFF;
+	  break;
+	default:
+	  output_operand_lossage("invalid relocation");
+	  return;
+	}
+      x = XVECEXP (x, 0, 0);
+    }
 
   const char *reloc = relocs[kind][type];
   if (reloc == NULL)
@@ -814,6 +933,12 @@ or1k_print_operand (FILE *file, rtx x, int code)
       break;
     case 'L':
       print_reloc (file, x, 0, RKIND_LO);
+      break;
+    case 'P':
+      if (!flag_pic || SYMBOL_REF_LOCAL_P (x))
+	output_addr_const (file, x);
+      else
+	output_addr_reloc (file, x, 0, "plt");
       break;
 
     case 0:
@@ -1008,16 +1133,16 @@ or1k_expand_call (rtx retval, rtx fnaddr, rtx callarg1, bool sibcall)
 {
   rtx call, use = NULL;
 
-#if 0
   /* Calls via the PLT require the PIC register.  */
   if (flag_pic
       && GET_CODE (XEXP (fnaddr, 0)) == SYMBOL_REF
       && !SYMBOL_REF_LOCAL_P (XEXP (fnaddr, 0)))
     {
       crtl->uses_pic_offset_table = 1;
-      use_reg (&use, pic_offset_table_rtx);
+      rtx hard_pic = gen_rtx_REG (Pmode, REAL_PIC_OFFSET_TABLE_REGNUM);
+      emit_move_insn (hard_pic, pic_offset_table_rtx);
+      use_reg (&use, hard_pic);
     }
-#endif
 
   if (!call_insn_operand (XEXP (fnaddr, 0), Pmode))
     {
@@ -1048,7 +1173,6 @@ static bool
 or1k_function_ok_for_sibcall (tree decl ATTRIBUTE_UNUSED,
 			      tree exp ATTRIBUTE_UNUSED)
 {
-#if 0
   /* We can sibcall to any function if not PIC.  */
   if (!flag_pic)
     return true;
@@ -1058,10 +1182,7 @@ or1k_function_ok_for_sibcall (tree decl ATTRIBUTE_UNUSED,
     return true;
 
   /* If the call may go through the PLT, we need r16 live.  */
-  if (!targetm.binds_local_p (decl))
-    return false;
-#endif
-  return true;
+  return targetm.binds_local_p (decl);
 }
 
 #undef TARGET_FUNCTION_OK_FOR_SIBCALL
