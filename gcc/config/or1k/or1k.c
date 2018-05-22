@@ -1067,6 +1067,72 @@ or1k_function_ok_for_sibcall (tree decl ATTRIBUTE_UNUSED,
 #undef TARGET_FUNCTION_OK_FOR_SIBCALL
 #define TARGET_FUNCTION_OK_FOR_SIBCALL or1k_function_ok_for_sibcall
 
+/* Worker for TARGET_RTX_COSTS.  */
+
+static bool
+or1k_rtx_costs (rtx x, machine_mode mode, int outer_code,
+		int opno ATTRIBUTE_UNUSED, int *total,
+		bool speed ATTRIBUTE_UNUSED)
+{
+  switch (GET_CODE (x))
+    {
+    case CONST_INT:
+      if (x == const0_rtx)
+	*total = 0;
+      else if ((outer_code == PLUS || outer_code == XOR || outer_code == MULT)
+	       && satisfies_constraint_I (x))
+	*total = 0;
+      else if ((outer_code == AND || outer_code == IOR)
+	       && satisfies_constraint_K (x))
+	*total = 0;
+      else if (satisfies_constraint_I (x)
+	       || satisfies_constraint_K (x)
+	       || satisfies_constraint_M (x))
+	*total = 2;
+      else
+	*total = COSTS_N_INSNS (2);
+      return true;
+
+    case CONST_DOUBLE:
+      *total = (x == CONST0_RTX (mode) ? 0 : COSTS_N_INSNS (2));
+      return true;
+
+    case HIGH:
+      /* This is effectively an 'M' constraint.  */
+      *total = 2;
+      return true;
+
+    case LO_SUM:
+      /* This is effectively an 'I' constraint.  */
+      *total = (outer_code == MEM ? 0 : 2);
+      return true;
+
+    case CONST:
+    case SYMBOL_REF:
+    case LABEL_REF:
+      if (outer_code == LO_SUM || outer_code == HIGH)
+	*total = 0;
+      else
+	{
+	  /* ??? Extra cost for GOT or TLS symbols.  */
+	  *total = COSTS_N_INSNS (1 + (outer_code != MEM));
+	}
+      return true;
+
+    case PLUS:
+      if (outer_code == MEM)
+	*total = 0;
+      break;
+
+    default:
+      break;
+    }
+  return false;
+}
+
+#undef TARGET_RTX_COSTS
+#define TARGET_RTX_COSTS or1k_rtx_costs
+
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override
 
