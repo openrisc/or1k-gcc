@@ -456,7 +456,6 @@ nvptx-*-*)
 	;;
 or1k*-*-*)
 	cpu_type=or1k
-	target_has_targetm_common=no
 	;;
 powerpc*-*-*spe*)
 	cpu_type=powerpcspe

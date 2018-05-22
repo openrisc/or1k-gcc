@@ -1168,6 +1168,11 @@ or1k_rtx_costs (rtx x, machine_mode mode, int outer_code,
 #undef  TARGET_PRINT_OPERAND_ADDRESS
 #define TARGET_PRINT_OPERAND_ADDRESS or1k_print_operand_address
 
+/* Section anchor support.  */
+#undef  TARGET_MIN_ANCHOR_OFFSET
+#define TARGET_MIN_ANCHOR_OFFSET  -32768
+#undef  TARGET_MAX_ANCHOR_OFFSET
+#define TARGET_MAX_ANCHOR_OFFSET  32767
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
