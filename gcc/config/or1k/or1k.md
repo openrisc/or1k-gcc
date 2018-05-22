@@ -42,6 +42,9 @@
   UNSPEC_SET_GOT
   UNSPEC_GOT
   UNSPEC_GOTOFF
+  UNSPEC_TPOFF
+  UNSPEC_GOTTPOFF
+  UNSPEC_TLSGD
 ])
 
 (define_c_enum "unspecv" [
@@ -232,6 +235,14 @@
 	(high:SI (match_operand:SI 1 "high_operand" "")))]
   ""
   "l.movhi\t%0, %H1"
+  [(set_attr "type" "alu")])
+
+(define_insn "*movsi_lo_sum_iori"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(lo_sum:SI (match_operand:SI 1 "register_operand"  "r")
+		   (match_operand:SI 2 "losum_ior_operand" "")))]
+  ""
+  "l.ori\t%0, %1, %L2"
   [(set_attr "type" "alu")])
 
 (define_insn "*movsi_lo_sum_addi"

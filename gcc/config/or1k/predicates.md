@@ -60,5 +60,11 @@
 (define_predicate "high_operand"
   (match_code "symbol_ref,label_ref,const,unspec"))
 
+;; Return true for relocations that must use MOVHI+ADDI
 (define_predicate "losum_add_operand"
   (match_code "symbol_ref,label_ref,const,unspec"))
+
+;; Return true for relocations that must use MOVHI+ORI
+(define_predicate "losum_ior_operand"
+  (and (match_code "unspec")
+       (match_test "XINT(op, 1) == UNSPEC_TLSGD")))

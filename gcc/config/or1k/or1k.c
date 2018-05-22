@@ -534,6 +534,8 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
 	    {
 	    case UNSPEC_GOT:
 	    case UNSPEC_GOTOFF:
+	    case UNSPEC_TPOFF:
+	    case UNSPEC_GOTTPOFF:
 	      /* Assume legitimize_address properly categorized
 	         the symbol.  Continue to check the base.  */
 	      break;
@@ -565,6 +567,39 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
     return REGNO_OK_FOR_BASE_P (regno);
 }
 
+/* Return the TLS type for TLS symbols, 0 otherwise.  */
+
+tls_model
+or1k_tls_symbolic_operand (rtx op)
+{
+  rtx sym, addend;
+  split_const (op, &sym, &addend);
+  if (SYMBOL_REF_P (sym))
+    return SYMBOL_REF_TLS_MODEL (sym);
+  return TLS_MODEL_NONE;
+}
+
+/* Get a reference to the '__tls_get_addr' symbol.  */
+
+static GTY(()) rtx gen_tls_tga;
+
+static rtx
+gen_tls_get_addr (void)
+{
+  if (!gen_tls_tga)
+    gen_tls_tga = init_one_libfunc ("__tls_get_addr");
+  return gen_tls_tga;
+}
+
+/* Emit a call to '__tls_get_addr'.  */
+
+static void
+or1k_tls_call (rtx dest, rtx arg)
+{
+  emit_library_call_value (gen_tls_get_addr (), dest, LCT_CONST,
+			   Pmode, arg, Pmode);
+}
+
 /* Helper for or1k_legitimize_address_1.  Wrap X in an unspec.  */
 static rtx
 gen_sym_unspec (rtx x, int kind)
@@ -578,6 +613,7 @@ static rtx
 or1k_legitimize_address_1 (rtx x, rtx scratch)
 {
   rtx base, addend, t1, t2;
+  tls_model tls_kind = TLS_MODEL_NONE;
   bool is_local = true;
 
   split_const(x, &base, &addend);
@@ -593,32 +629,76 @@ or1k_legitimize_address_1 (rtx x, rtx scratch)
       break;
 
     case SYMBOL_REF:
+      tls_kind = SYMBOL_REF_TLS_MODEL (base);
       is_local = SYMBOL_REF_LOCAL_P (base);
       /* FALLTHRU */
 
     case LABEL_REF:
-      t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
-      if (!flag_pic)
+      switch (tls_kind)
 	{
-          emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, x)));
-          return gen_rtx_LO_SUM (Pmode, t1, x);
-	}
-      else if (is_local)
-	{
+	case TLS_MODEL_NONE:
+	  t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+	  if (!flag_pic)
+	    {
+	      emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, x)));
+	      return gen_rtx_LO_SUM (Pmode, t1, x);
+	    }
+	  else if (is_local)
+	    {
+	      crtl->uses_pic_offset_table = 1;
+	      t2 = gen_sym_unspec (x, UNSPEC_GOTOFF);
+	      emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, t2)));
+	      emit_insn (gen_add3_insn (t1, t1, pic_offset_table_rtx));
+	      return gen_rtx_LO_SUM (Pmode, t1, copy_rtx (t2));
+	    }
+	  else
+	    {
+	      base = gen_sym_unspec (base, UNSPEC_GOT);
+	      crtl->uses_pic_offset_table = 1;
+	      t2 = gen_rtx_LO_SUM (Pmode, pic_offset_table_rtx, base);
+	      t2 = gen_const_mem (Pmode, t2);
+	      emit_insn (gen_rtx_SET (t1, t2));
+	      base = t1;
+	    }
+	  break;
+
+	case TLS_MODEL_GLOBAL_DYNAMIC:
+	case TLS_MODEL_LOCAL_DYNAMIC:
+	  /* TODO: For now, treat LD as GD.  */
+	  t1 = gen_reg_rtx (Pmode);
+	  base = gen_sym_unspec (base, UNSPEC_TLSGD);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, base)));
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_LO_SUM (Pmode, t1, base)));
 	  crtl->uses_pic_offset_table = 1;
-	  t2 = gen_sym_unspec (x, UNSPEC_GOTOFF);
-	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, t2)));
 	  emit_insn (gen_add3_insn (t1, t1, pic_offset_table_rtx));
-	  return gen_rtx_LO_SUM (Pmode, t1, copy_rtx (t2));
-	}
-      else
-	{
-	  base = gen_sym_unspec (base, UNSPEC_GOT);
+	  base = gen_reg_rtx (Pmode);
+	  or1k_tls_call (base, t1);
+	  break;
+
+	case TLS_MODEL_INITIAL_EXEC:
+	  t1 = gen_reg_rtx (Pmode);
+	  t2 = gen_reg_rtx (Pmode);
+	  base = gen_sym_unspec (base, UNSPEC_GOTTPOFF);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, base)));
 	  crtl->uses_pic_offset_table = 1;
-	  t2 = gen_rtx_LO_SUM (Pmode, pic_offset_table_rtx, base);
-	  t2 = gen_const_mem (Pmode, t2);
-	  emit_insn (gen_rtx_SET (t1, t2));
-	  base = t1;
+	  emit_insn (gen_add3_insn (t1, t1, pic_offset_table_rtx));
+	  t1 = gen_rtx_LO_SUM (Pmode, t1, base);
+	  emit_move_insn (t2, gen_const_mem (Pmode, t1));
+	  t1 = gen_rtx_REG (Pmode, TLS_REGNUM);
+	  emit_insn (gen_add3_insn (t2, t2, t1));
+	  base = t2;
+	  break;
+
+	case TLS_MODEL_LOCAL_EXEC:
+	  x = gen_sym_unspec (x, UNSPEC_TPOFF);
+	  t1 = gen_reg_rtx (Pmode);
+	  emit_insn (gen_rtx_SET (t1, gen_rtx_HIGH (Pmode, x)));
+	  t2 = gen_rtx_REG (Pmode, TLS_REGNUM);
+	  emit_insn (gen_add3_insn (t1, t1, t2));
+	  return gen_rtx_LO_SUM (Pmode, t1, x);
+
+	default:
+	  gcc_unreachable ();
 	}
       break;
 
@@ -693,6 +773,49 @@ or1k_delegitimize_address (rtx x)
 
 #undef  TARGET_DELEGITIMIZE_ADDRESS
 #define TARGET_DELEGITIMIZE_ADDRESS or1k_delegitimize_address
+
+/* Worker for TARGET_CANNOT_FORCE_CONST_MEM.
+   Primarily this is required for TLS symbols, but given that our move
+   patterns *ought* to be able to handle any symbol at any time, we
+   should never be spilling symbolic operands to the constant pool, ever.  */
+
+static bool
+or1k_cannot_force_const_mem (machine_mode, rtx x)
+{
+  rtx_code code = GET_CODE (x);
+  return (code == SYMBOL_REF
+	  || code == LABEL_REF
+	  || code == CONST
+	  || code == HIGH);
+}
+
+#undef  TARGET_CANNOT_FORCE_CONST_MEM
+#define TARGET_CANNOT_FORCE_CONST_MEM or1k_cannot_force_const_mem
+
+static bool
+or1k_legitimate_constant_p (machine_mode, rtx x)
+{
+  switch (GET_CODE (x))
+    {
+    case CONST_INT:
+    case CONST_WIDE_INT:
+    case HIGH:
+      /* We construct these, rather than spilling to memory.  */
+      return true;
+
+    case CONST:
+    case SYMBOL_REF:
+    case LABEL_REF:
+      /* These may need to be split and not reconstructed.  */
+      return or1k_tls_symbolic_operand (x) == TLS_MODEL_NONE;
+
+    default:
+      return false;
+    }
+}
+
+#undef  TARGET_LEGITIMATE_CONSTANT_P
+#define TARGET_LEGITIMATE_CONSTANT_P or1k_legitimate_constant_p
 
 /* Worker function for TARGET_PASS_BY_REFERENCE.  */
 
@@ -825,6 +948,9 @@ enum reloc_type
   RTYPE_DIRECT,
   RTYPE_GOT,
   RTYPE_GOTOFF,
+  RTYPE_TPOFF,
+  RTYPE_GOTTPOFF,
+  RTYPE_TLSGD,
   RTYPE_MAX
 };
 
@@ -835,8 +961,8 @@ print_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, reloc_kind kind)
      we expect to never generate, while "" indicates a form that requires
      no special markup.  */
   static const char * const relocs[RKIND_MAX][RTYPE_MAX] = {
-    { "lo", "got", "gotofflo" },
-    { "ha", NULL,  "gotoffha" },
+    { "lo", "got", "gotofflo", "tpofflo", "gottpofflo", "tlsgdlo" },
+    { "ha", NULL,  "gotoffha", "tpoffha", "gottpoffha", "tlsgdhi" },
   };
   reloc_type type = RTYPE_DIRECT;
 
@@ -849,6 +975,15 @@ print_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, reloc_kind kind)
 	  break;
 	case UNSPEC_GOTOFF:
 	  type = RTYPE_GOTOFF;
+	  break;
+	case UNSPEC_TPOFF:
+	  type = RTYPE_TPOFF;
+	  break;
+	case UNSPEC_GOTTPOFF:
+	  type = RTYPE_GOTTPOFF;
+	  break;
+	case UNSPEC_TLSGD:
+	  type = RTYPE_TLSGD;
 	  break;
 	default:
 	  output_operand_lossage("invalid relocation");
@@ -1262,6 +1397,9 @@ or1k_rtx_costs (rtx x, machine_mode mode, int outer_code,
 
 #undef TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P or1k_legitimate_address_p
+
+#undef  TARGET_HAVE_TLS
+#define TARGET_HAVE_TLS true
 
 /* Calling Conventions.  */
 #undef TARGET_FUNCTION_VALUE
