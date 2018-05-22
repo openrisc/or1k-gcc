@@ -18,4 +18,5 @@
 # along with GCC; see the file COPYING3.  If not see
 # <http://www.gnu.org/licenses/>.
 
-
+LIB1ASMSRC = or1k/lib1funcs.S
+LIB1ASMFUNCS = __mulsi3 __udivsi3 __divsi3 __umodsi3 __modsi3
