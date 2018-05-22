@@ -344,6 +344,9 @@ do {                                                    \
 #define DYNAMIC_CHAIN_ADDRESS      or1k_dynamic_chain_addr
 #define RETURN_ADDR_RTX            or1k_return_addr
 
+/* Always pass the SYMBOL_REF for direct calls to the expanders.  */
+#define NO_FUNCTION_CSE 1
+
 /* Profiling */
 #define FUNCTION_PROFILER(FILE,LABELNO) (abort (), 0)
 
