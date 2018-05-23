@@ -607,6 +607,47 @@ gen_sym_unspec (rtx x, int kind)
   return gen_rtx_UNSPEC (Pmode, gen_rtvec (1, x), kind);
 }
 
+/* Worker for TARGET_LEGITIMIZE_ADDRESS_DISPLACEMENT.
+   Split an out-of-range address displacement into hi and lo parts.
+   The hi part will have to be loaded into a register separately,
+   but the low part will be folded into the memory operand.  */
+
+static bool
+or1k_legitimize_address_displacement (rtx *off1, rtx *off2,
+				      poly_int64 poly_offset, machine_mode)
+{
+  HOST_WIDE_INT orig_offset = poly_offset;
+  HOST_WIDE_INT lo, hi;
+
+  /* If the displacement is within range of 2 addi insns, prefer that.
+     Otherwise split as per normal, at which point the register allocator
+     will see that OFF1 is not a valid add3 operand and load it into
+     a register, as desired.  */
+  if (orig_offset >= 0 && orig_offset < 2 * 32767)
+    {
+      hi = 32767;
+      lo = orig_offset - hi;
+    }
+  else if (orig_offset < 0 && orig_offset >= 2 * -32768)
+    {
+      hi = -32768;
+      lo = orig_offset - hi;
+    }
+  else
+    {
+      lo = sext_hwi (orig_offset, 16);
+      hi = orig_offset - lo;
+    }
+
+  *off1 = GEN_INT (hi);
+  *off2 = GEN_INT (lo);
+  return true;
+}
+
+#undef  TARGET_LEGITIMIZE_ADDRESS_DISPLACEMENT
+#define TARGET_LEGITIMIZE_ADDRESS_DISPLACEMENT \
+  or1k_legitimize_address_displacement
+
 /* Worker function for TARGET_LEGITIMIZE_ADDRESS.  */
 
 static rtx
@@ -720,15 +761,24 @@ or1k_legitimize_address_1 (rtx x, rtx scratch)
     return gen_rtx_PLUS (Pmode, base, addend);
   else
     {
-      HOST_WIDE_INT i = INTVAL (addend);
-      HOST_WIDE_INT lo = sext_hwi (i, 16);
-      HOST_WIDE_INT hi = i - lo;
+      rtx hi, lo;
+      bool ok = (or1k_legitimize_address_displacement
+		 (&hi, &lo, INTVAL (addend), SImode));
+      gcc_assert (ok);
 
-      t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
       t2 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
-      emit_move_insn (t1, gen_int_mode (hi, Pmode));
-      emit_insn (gen_add3_insn (t2, base, t1));
-      return plus_constant (Pmode, t2, lo);
+      if (satisfies_constraint_I (hi))
+	emit_insn (gen_addsi3 (t2, base, hi));
+      else
+	{
+	  t1 = can_create_pseudo_p () ? gen_reg_rtx (Pmode) : scratch;
+	  emit_move_insn (t1, hi);
+	  emit_insn (gen_add3_insn (t2, base, t1));
+	}
+      if (lo == const0_rtx)
+	return t2;
+      else
+	return gen_rtx_PLUS (Pmode, t2, lo);
     }
 }
 
