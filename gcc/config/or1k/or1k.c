@@ -509,7 +509,7 @@ or1k_legitimate_address_p (machine_mode, rtx x, bool strict_p)
 	return false;
       /* Register elimination is going to adjust all of these offsets.
 	 We might as well keep them as a unit until then.  */
-      if (!strict_p && (base == arg_pointer_rtx || base == frame_pointer_rtx))
+      if (!strict_p && virtual_frame_reg_operand (base, VOIDmode))
 	return CONST_INT_P (addend);
       if (!satisfies_constraint_I (addend))
 	return false;
@@ -715,7 +715,8 @@ or1k_legitimize_address_1 (rtx x, rtx scratch)
   gcc_checking_assert (register_operand (base, Pmode));
   if (addend == const0_rtx)
     return base;
-  if (satisfies_constraint_I (addend))
+  if (satisfies_constraint_I (addend)
+      || virtual_frame_reg_operand (base, VOIDmode))
     return gen_rtx_PLUS (Pmode, base, addend);
   else
     {
