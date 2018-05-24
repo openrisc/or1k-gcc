@@ -27,3 +27,12 @@ extern rtx  or1k_return_addr (int, rtx);
 extern void or1k_expand_move (machine_mode, rtx, rtx);
 extern void or1k_expand_compare (rtx *);
 extern void or1k_expand_call (rtx, rtx, rtx, bool);
+
+#ifdef RTX_CODE
+void or1k_expand_atomic_compare_and_swap (rtx operands[]);
+void or1k_expand_atomic_compare_and_swap_qihi (rtx operands[]);
+void or1k_expand_atomic_exchange (rtx operands[]);
+void or1k_expand_atomic_exchange_qihi (rtx operands[]);
+void or1k_expand_atomic_op (rtx_code, rtx, rtx, rtx, rtx);
+void or1k_expand_atomic_op_qihi (rtx_code, rtx, rtx, rtx, rtx);
+#endif

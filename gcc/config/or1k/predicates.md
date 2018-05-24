@@ -79,3 +79,6 @@
           && regno != HARD_FRAME_POINTER_REGNUM
           && REGNO_PTR_FRAME_P (regno));
 })
+
+(define_predicate "equality_comparison_operator"
+  (match_code "ne,eq"))

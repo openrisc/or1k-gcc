@@ -43,6 +43,7 @@
 #include "optabs.h"
 #include "explow.h"
 #include "cfgrtl.h"
+#include "alias.h"
 
 /* These 4 are needed to allow using satisfies_constraint_J.  */
 #include "insn-config.h"
@@ -1439,6 +1440,419 @@ or1k_rtx_costs (rtx x, machine_mode mode, int outer_code,
 
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS or1k_rtx_costs
+
+
+/* A subroutine of the atomic operation splitters.  Jump to LABEL if
+   COND is true.  Mark the jump as unlikely to be taken.  */
+
+static void
+emit_unlikely_jump (rtx_code code, rtx label)
+{
+  rtx x;
+
+  x = gen_rtx_REG (BImode, SR_F_REGNUM);
+  x = gen_rtx_fmt_ee (code, VOIDmode, x, const0_rtx);
+  x = gen_rtx_IF_THEN_ELSE (VOIDmode, x, label, pc_rtx);
+  emit_jump_insn (gen_rtx_SET (pc_rtx, x));
+
+  // Disable this for now -- producing verify_cfg failures on probabilities.
+  // int very_unlikely = REG_BR_PROB_BASE / 100 - 1;
+  // add_int_reg_note (insn, REG_BR_PROB, very_unlikely);
+}
+
+/* A subroutine of the atomic operation splitters.
+   Emit a raw comparison for A CODE B.  */
+
+static void
+emit_compare (rtx_code code, rtx a, rtx b)
+{
+  emit_insn (gen_rtx_SET (gen_rtx_REG (BImode, SR_F_REGNUM),
+			  gen_rtx_fmt_ee (code, BImode, a, b)));
+}
+
+/* A subroutine of the atomic operation splitters.
+   Emit a load-locked instruction in MODE.  */
+
+static void
+emit_load_locked (machine_mode mode, rtx reg, rtx mem)
+{
+  gcc_assert (mode == SImode);
+  emit_insn (gen_load_locked_si (reg, mem));
+}
+
+/* A subroutine of the atomic operation splitters.
+   Emit a store-conditional instruction in MODE.  */
+
+static void
+emit_store_conditional (machine_mode mode, rtx mem, rtx val)
+{
+  gcc_assert (mode == SImode);
+  emit_insn (gen_store_conditional_si (mem, val));
+}
+
+/* A subroutine of the various atomic expanders.  For sub-word operations,
+   we must adjust things to operate on SImode.  Given the original MEM,
+   return a new aligned memory.  Also build and return the quantities by
+   which to shift and mask.  */
+
+static rtx
+or1k_adjust_atomic_subword (rtx orig_mem, rtx *pshift, rtx *pmask)
+{
+  rtx addr, align, shift, mask, mem;
+  machine_mode mode = GET_MODE (orig_mem);
+
+  addr = XEXP (orig_mem, 0);
+  addr = force_reg (Pmode, addr);
+
+  /* Aligned memory containing subword.  Generate a new memory.  We
+     do not want any of the existing MEM_ATTR data, as we're now
+     accessing memory outside the original object.  */
+  align = expand_binop (Pmode, and_optab, addr, GEN_INT (-4),
+			NULL_RTX, 1, OPTAB_LIB_WIDEN);
+  mem = gen_rtx_MEM (SImode, align);
+  MEM_VOLATILE_P (mem) = MEM_VOLATILE_P (orig_mem);
+  if (MEM_ALIAS_SET (orig_mem) == ALIAS_SET_MEMORY_BARRIER)
+    set_mem_alias_set (mem, ALIAS_SET_MEMORY_BARRIER);
+
+  /* Shift amount for subword relative to aligned word.  */
+  rtx mode_mask = GEN_INT (mode == QImode ? 3 : 2);
+  shift = expand_binop (SImode, and_optab, gen_lowpart (SImode, addr),
+			mode_mask, NULL_RTX, 1, OPTAB_LIB_WIDEN);
+  if (BYTES_BIG_ENDIAN)
+    shift = expand_binop (SImode, xor_optab, shift, mode_mask,
+			  shift, 1, OPTAB_LIB_WIDEN);
+  shift = expand_binop (SImode, ashl_optab, shift, GEN_INT (3),
+			shift, 1, OPTAB_LIB_WIDEN);
+  *pshift = shift;
+
+  /* Mask for insertion.  */
+  mask = expand_binop (SImode, ashl_optab, GEN_INT (GET_MODE_MASK (mode)),
+		       shift, NULL_RTX, 1, OPTAB_LIB_WIDEN);
+  *pmask = mask;
+
+  return mem;
+}
+
+/* A subroutine of the various atomic expanders.  For sub-word operations,
+   complete the operation by shifting result to the lsb of the SImode
+   temporary and then extracting the result in MODE with a SUBREG.  */
+
+static void
+or1k_finish_atomic_subword (machine_mode mode, rtx o, rtx n, rtx shift)
+{
+  n = expand_binop (SImode, lshr_optab, n, shift,
+		    NULL_RTX, 1, OPTAB_LIB_WIDEN);
+  emit_move_insn (o, gen_lowpart (mode, n));
+}
+
+/* Expand an atomic compare and swap operation.  */
+
+void
+or1k_expand_atomic_compare_and_swap (rtx operands[])
+{
+  rtx boolval, retval, mem, oldval, newval;
+  rtx label1, label2;
+  machine_mode mode;
+  bool is_weak;
+
+  boolval = operands[0];
+  retval = operands[1];
+  mem = operands[2];
+  oldval = operands[3];
+  newval = operands[4];
+  is_weak = (INTVAL (operands[5]) != 0);
+  mode = GET_MODE (mem);
+
+  if (reg_overlap_mentioned_p (retval, oldval))
+    oldval = copy_to_reg (oldval);
+
+  label1 = NULL_RTX;
+  if (!is_weak)
+    {
+      label1 = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+      emit_label (XEXP (label1, 0));
+    }
+  label2 = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+
+  emit_load_locked (mode, retval, mem);
+  emit_compare (EQ, retval, oldval);
+  emit_unlikely_jump (EQ, label2);
+  emit_store_conditional (mode, mem, newval);
+
+  if (!is_weak)
+    emit_unlikely_jump (EQ, label1);
+  emit_label (XEXP (label2, 0));
+
+  /* In all cases, SR_F contains 1 on success, and 0 on failure.  */
+  emit_insn (gen_sne_sr_f (boolval));
+}
+
+void
+or1k_expand_atomic_compare_and_swap_qihi (rtx operands[])
+{
+  rtx boolval, orig_retval, retval, scratch, mem, oldval, newval;
+  rtx label1, label2, mask, shift;
+  machine_mode mode;
+  bool is_weak;
+
+  boolval = operands[0];
+  orig_retval = operands[1];
+  mem = operands[2];
+  oldval = operands[3];
+  newval = operands[4];
+  is_weak = (INTVAL (operands[5]) != 0);
+  mode = GET_MODE (mem);
+
+  mem = or1k_adjust_atomic_subword (mem, &shift, &mask);
+
+  /* Shift and mask OLDVAL and NEWVAL into position with the word.  */
+  if (oldval != const0_rtx)
+    {
+      oldval = convert_modes (SImode, mode, oldval, 1);
+      oldval = expand_binop (SImode, ashl_optab, oldval, shift,
+			     NULL_RTX, 1, OPTAB_LIB_WIDEN);
+    }
+  if (newval != const0_rtx)
+    {
+      newval = convert_modes (SImode, mode, newval, 1);
+      newval = expand_binop (SImode, ashl_optab, newval, shift,
+			     NULL_RTX, 1, OPTAB_LIB_WIDEN);
+    }
+
+  label1 = NULL_RTX;
+  if (!is_weak)
+    {
+      label1 = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+      emit_label (XEXP (label1, 0));
+    }
+  label2 = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+
+  scratch = gen_reg_rtx (SImode);
+  emit_load_locked (SImode, scratch, mem);
+
+  retval = expand_binop (SImode, and_optab, scratch, mask,
+			 NULL_RTX, 1, OPTAB_LIB_WIDEN);
+  scratch = expand_binop (SImode, xor_optab, scratch, retval,
+			  scratch, 1, OPTAB_LIB_WIDEN);
+
+  emit_compare (EQ, retval, oldval);
+  emit_unlikely_jump (EQ, label2);
+
+  if (newval != const0_rtx)
+    scratch = expand_binop (SImode, ior_optab, scratch, newval,
+			    scratch, 1, OPTAB_LIB_WIDEN);
+
+  emit_store_conditional (SImode, mem, scratch);
+
+  if (!is_weak)
+    emit_unlikely_jump (EQ, label1);
+  emit_label (XEXP (label2, 0));
+
+  or1k_finish_atomic_subword (mode, orig_retval, retval, shift);
+
+  /* In all cases, CR0 contains EQ on success, and NE on failure.  */
+  emit_insn (gen_sne_sr_f (boolval));
+}
+
+/* Expand an atomic exchange operation.  */
+
+void
+or1k_expand_atomic_exchange (rtx operands[])
+{
+  rtx retval, mem, val, label;
+  machine_mode mode;
+
+  retval = operands[0];
+  mem = operands[1];
+  val = operands[2];
+  mode = GET_MODE (mem);
+
+  if (reg_overlap_mentioned_p (retval, val))
+    val = copy_to_reg (val);
+
+  label = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+  emit_label (XEXP (label, 0));
+
+  emit_load_locked (mode, retval, mem);
+  emit_store_conditional (mode, mem, val);
+  emit_unlikely_jump (EQ, label);
+}
+
+void
+or1k_expand_atomic_exchange_qihi (rtx operands[])
+{
+  rtx orig_retval, retval, mem, val, scratch;
+  rtx label, mask, shift;
+  machine_mode mode;
+
+  orig_retval = operands[0];
+  mem = operands[1];
+  val = operands[2];
+  mode = GET_MODE (mem);
+
+  mem = or1k_adjust_atomic_subword (mem, &shift, &mask);
+
+  /* Shift and mask VAL into position with the word.  */
+  if (val != const0_rtx)
+    {
+      val = convert_modes (SImode, mode, val, 1);
+      val = expand_binop (SImode, ashl_optab, val, shift,
+		          NULL_RTX, 1, OPTAB_LIB_WIDEN);
+    }
+
+  label = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+  emit_label (XEXP (label, 0));
+
+  scratch = gen_reg_rtx (SImode);
+  emit_load_locked (SImode, scratch, mem);
+
+  retval = expand_binop (SImode, and_optab, scratch, mask,
+			 NULL_RTX, 1, OPTAB_LIB_WIDEN);
+  scratch = expand_binop (SImode, xor_optab, scratch, retval,
+			  scratch, 1, OPTAB_LIB_WIDEN);
+  if (val != const0_rtx)
+    scratch = expand_binop (SImode, ior_optab, scratch, val,
+			    scratch, 1, OPTAB_LIB_WIDEN);
+
+  emit_store_conditional (SImode, mem, scratch);
+  emit_unlikely_jump (EQ, label);
+
+  or1k_finish_atomic_subword (mode, orig_retval, retval, shift);
+}
+
+/* Expand an atomic fetch-and-operate pattern.  CODE is the binary operation
+   to perform (with MULT as a stand-in for NAND).  MEM is the memory on which
+   to operate.  VAL is the second operand of the binary operator.  BEFORE and
+   AFTER are optional locations to return the value of MEM either before of
+   after the operation.  */
+
+void
+or1k_expand_atomic_op (rtx_code code, rtx mem, rtx val,
+		       rtx orig_before, rtx orig_after)
+{
+  machine_mode mode = GET_MODE (mem);
+  rtx before = orig_before, after = orig_after;
+  rtx label;
+
+  label = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+  emit_label (XEXP (label, 0));
+
+  if (before == NULL_RTX)
+    before = gen_reg_rtx (mode);
+
+  emit_load_locked (mode, before, mem);
+
+  if (code == MULT)
+    {
+      after = expand_binop (mode, and_optab, before, val,
+			    after, 1, OPTAB_LIB_WIDEN);
+      after = expand_unop (mode, one_cmpl_optab, after, after, 1);
+    }
+  else
+    after = expand_simple_binop (mode, code, before, val,
+				 after, 1, OPTAB_LIB_WIDEN);
+
+  emit_store_conditional (mode, mem, after);
+  emit_unlikely_jump (EQ, label);
+
+  if (orig_before)
+    emit_move_insn (orig_before, before);
+  if (orig_after)
+    emit_move_insn (orig_after, after);
+}
+
+void
+or1k_expand_atomic_op_qihi (rtx_code code, rtx mem, rtx val,
+			    rtx orig_before, rtx orig_after)
+{
+  machine_mode mode = GET_MODE (mem);
+  rtx label, mask, shift, x;
+  rtx before, after, scratch;
+
+  mem = or1k_adjust_atomic_subword (mem, &shift, &mask);
+
+  /* Shift and mask VAL into position with the word.  */
+  val = convert_modes (SImode, mode, val, 1);
+  val = expand_binop (SImode, ashl_optab, val, shift,
+		      NULL_RTX, 1, OPTAB_LIB_WIDEN);
+
+  switch (code)
+    {
+    case IOR:
+    case XOR:
+      /* We've already zero-extended VAL.  That is sufficient to
+	 make certain that it does not affect other bits.  */
+      break;
+
+    case AND:
+    case MULT: /* NAND */
+      /* If we make certain that all of the other bits in VAL are
+	 set, that will be sufficient to not affect other bits.  */
+      x = expand_unop (SImode, one_cmpl_optab, mask, NULL_RTX, 1);
+      val = expand_binop (SImode, ior_optab, val, x,
+			  val, 1, OPTAB_LIB_WIDEN);
+      break;
+
+    case PLUS:
+    case MINUS:
+      /* These will all affect bits outside the field and need
+	 adjustment via MASK within the loop.  */
+      break;
+
+    default:
+      gcc_unreachable ();
+    }
+
+  label = gen_rtx_LABEL_REF (VOIDmode, gen_label_rtx ());
+  emit_label (XEXP (label, 0));
+
+  before = scratch = gen_reg_rtx (SImode);
+  emit_load_locked (SImode, before, mem);
+
+  switch (code)
+    {
+    case IOR:
+    case XOR:
+    case AND:
+      after = expand_simple_binop (SImode, code, before, val,
+				   NULL_RTX, 1, OPTAB_LIB_WIDEN);
+      scratch = after;
+      break;
+
+    case PLUS:
+    case MINUS:
+      before = expand_binop (SImode, and_optab, scratch, mask,
+			     NULL_RTX, 1, OPTAB_LIB_WIDEN);
+      scratch = expand_binop (SImode, xor_optab, scratch, before,
+			      scratch, 1, OPTAB_LIB_WIDEN);
+      after = expand_simple_binop (SImode, code, before, val,
+				   NULL_RTX, 1, OPTAB_LIB_WIDEN);
+      after = expand_binop (SImode, and_optab, after, mask,
+			    after, 1, OPTAB_LIB_WIDEN);
+      scratch = expand_binop (SImode, ior_optab, scratch, after,
+			      scratch, 1, OPTAB_LIB_WIDEN);
+      break;
+
+    case MULT: /* NAND */
+      after = expand_binop (SImode, and_optab, before, val,
+			    NULL_RTX, 1, OPTAB_LIB_WIDEN);
+      after = expand_binop (SImode, xor_optab, after, mask,
+			    after, 1, OPTAB_LIB_WIDEN);
+      scratch = after;
+      break;
+
+    default:
+      gcc_unreachable ();
+    }
+
+  emit_store_conditional (SImode, mem, scratch);
+  emit_unlikely_jump (EQ, label);
+
+  if (orig_before)
+    or1k_finish_atomic_subword (mode, orig_before, before, shift);
+  if (orig_after)
+    or1k_finish_atomic_subword (mode, orig_after, after, shift);
+}
 
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override

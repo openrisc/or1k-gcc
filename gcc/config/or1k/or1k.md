@@ -45,10 +45,13 @@
   UNSPEC_TPOFF
   UNSPEC_GOTTPOFF
   UNSPEC_TLSGD
+  UNSPEC_MSYNC
 ])
 
 (define_c_enum "unspecv" [
   UNSPECV_SET_GOT
+  UNSPECV_LL
+  UNSPECV_SC
 ])
 
 ;; Instruction scheduler
@@ -200,6 +203,7 @@
 ;; -------------------------------------------------------------------------
 
 (define_mode_iterator I [QI HI SI])
+(define_mode_iterator I12 [QI HI])
 
 (define_mode_attr ldst [(QI "b") (HI "h") (SI "w")])
 
@@ -349,7 +353,7 @@
 ;;     l.sfge{s,u}[i] - greater than or equal, signed or unsigned, r r or r i
 ;;
 ;;  EQ,NE,LT,LTU,LE,LEU,GT,GTU,GE,GEU
-;;  We try to iterate all of thse
+;;  We iterate through all of these
 ;;
 
 (define_code_iterator intcmpcc [ne eq lt ltu gt gtu ge le geu leu])
@@ -381,8 +385,35 @@
   ""
 {
   or1k_expand_compare (operands + 1);
-  emit_move_insn (operands[0], const1_rtx);
+  PUT_MODE (operands[1], SImode);
+  emit_insn (gen_rtx_SET (operands[0], operands[1]));
+  DONE;
 })
+
+;; Being able to "copy" SR_F to a general register is helpful for
+;; the atomic insns, wherein the usual usage is to test the success
+;; of the compare-and-swap.  Representing the operation in this way,
+;; rather than exposing the cmov immediately, allows the optimizers
+;; to propagate the use of SR_F directly into a branch.
+
+(define_expand "sne_sr_f"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(ne:SI (reg:BI SR_F_REGNUM) (const_int 0)))]
+  "")
+
+(define_insn_and_split "*scc"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(match_operator:SI 1 "equality_comparison_operator"
+	  [(reg:BI SR_F_REGNUM) (const_int 0)]))]
+  ""
+  "#"
+  "reload_completed"
+  [(set (match_dup 0) (const_int 1))
+   (set (match_dup 0)
+	(if_then_else:SI (match_dup 1)
+	  (match_dup 0)
+	  (const_int 0)))]
+  "")
 
 (define_expand "mov<I:mode>cc"
   [(set (match_operand:I 0 "register_operand" "")
@@ -396,43 +427,23 @@
   operands[1] = xops[0];
 })
 
-(define_insn "*cmov<I:mode>_positive"
+(define_insn "*cmov<I:mode>"
   [(set (match_operand:I 0 "register_operand" "=r")
-	(if_then_else:I (ne (reg:BI SR_F_REGNUM) (const_int 0))
-		      (match_operand:I 1 "reg_or_0_operand" "rO")
-		      (match_operand:I 2 "reg_or_0_operand" "rO")))]
+	(if_then_else:I
+	  (match_operator 3 "equality_comparison_operator"
+	    [(reg:BI SR_F_REGNUM) (const_int 0)])
+	  (match_operand:I 1 "reg_or_0_operand" "rO")
+	  (match_operand:I 2 "reg_or_0_operand" "rO")))]
   ""
-  "l.cmov\t%0, %r1, %r2")
-
-(define_insn "*cmov<I:mode>_negative"
-  [(set (match_operand:I 0 "register_operand" "=r")
-	(if_then_else:I (eq (reg:BI SR_F_REGNUM) (const_int 0))
-		      (match_operand:I 1 "reg_or_0_operand" "rO")
-		      (match_operand:I 2 "reg_or_0_operand" "rO")))]
-  ""
-  "l.cmov\t%0, %r2, %r1")
+{
+  return (GET_CODE (operands[3]) == NE
+	  ? "l.cmov\t%0, %r1, %r2"
+	  : "l.cmov\t%0, %r2, %r1");
+})
 
 ;; -------------------------------------------------------------------------
 ;; Branch instructions
 ;; -------------------------------------------------------------------------
-
-(define_insn "*cbranch_positive"
-  [(set (pc)
-	(if_then_else (ne (reg:BI SR_F_REGNUM) (const_int 0))
-		      (label_ref (match_operand 0 "" ""))
-		      (pc)))]
-  ""
-  "l.bf\t%0%#"
-  [(set_attr "type" "control")])
-
-(define_insn "*cbranch_negative"
-  [(set (pc)
-	(if_then_else (eq (reg:BI SR_F_REGNUM) (const_int 0))
-		      (label_ref (match_operand 0 "" ""))
-		      (pc)))]
-  ""
-  "l.bnf\t%0%#"
-  [(set_attr "type" "control")])
 
 (define_expand "cbranchsi4"
   [(set (pc)
@@ -446,6 +457,21 @@
 {
   or1k_expand_compare (operands);
 })
+
+(define_insn "*cbranch"
+  [(set (pc)
+	(if_then_else
+	  (match_operator 1 "equality_comparison_operator"
+	    [(reg:BI SR_F_REGNUM) (const_int 0)])
+	  (label_ref (match_operand 0 "" ""))
+	  (pc)))]
+  ""
+{
+  return (GET_CODE (operands[1]) == NE
+	  ? "l.bf\t%0%#"
+	  : "l.bnf\t%0%#");
+}
+  [(set_attr "type" "control")])
 
 ;; -------------------------------------------------------------------------
 ;; Jump instructions
@@ -547,6 +573,194 @@
 }
   [(set_attr "length" "16")
    (set_attr "type" "multi")])
+
+;; -------------------------------------------------------------------------
+;; Atomic Operations
+;; -------------------------------------------------------------------------
+
+;; Note that MULT stands in for the non-existant NAND rtx_code.
+(define_code_iterator FETCHOP [plus minus ior xor and mult])
+
+(define_code_attr fetchop_name
+  [(plus "add")
+   (minus "sub")
+   (ior "or")
+   (xor "xor")
+   (and "and")
+   (mult "nand")])
+
+(define_code_attr fetchop_pred
+  [(plus "reg_or_s16_operand")
+   (minus "register_operand")
+   (ior "reg_or_u16_operand")
+   (xor "reg_or_s16_operand")
+   (and "reg_or_u16_operand")
+   (mult "reg_or_u16_operand")])
+
+(define_expand "mem_thread_fence"
+  [(match_operand:SI 0 "const_int_operand" "")]		;; model
+  ""
+{
+  memmodel model = memmodel_base (INTVAL (operands[0]));
+  if (model != MEMMODEL_RELAXED)
+    emit_insn (gen_msync ());
+  DONE;
+})
+
+(define_expand "msync"
+  [(set (match_dup 0) (unspec:BLK [(match_dup 0)] UNSPEC_MSYNC))]
+  ""
+{
+  operands[0] = gen_rtx_MEM (BLKmode, gen_rtx_SCRATCH (Pmode));
+  MEM_VOLATILE_P (operands[0]) = 1;
+})
+
+(define_insn "*msync"
+  [(set (match_operand:BLK 0 "" "")
+	(unspec:BLK [(match_dup 0)] UNSPEC_MSYNC))]
+  ""
+  "l.msync")
+
+(define_insn "load_locked_si"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec_volatile:SI
+	  [(match_operand:SI 1 "memory_operand" "m")] UNSPECV_LL))]
+  ""
+  "l.lwa\t%0,%1"
+  [(set_attr "type" "ld")])
+
+(define_insn "store_conditional_si"
+  [(set (reg:BI SR_F_REGNUM)
+	(unspec_volatile:BI [(const_int 0)] UNSPECV_SC))
+   (set (match_operand:SI 0 "memory_operand" "=m")
+	(match_operand:SI 1 "reg_or_0_operand" "rO"))]
+  ""
+  "l.swa\t%0,%r1"
+  [(set_attr "type" "st")])
+
+(define_expand "atomic_compare_and_swapsi"
+  [(match_operand:SI 0 "register_operand")   ;; bool output
+   (match_operand:SI 1 "register_operand")   ;; val output
+   (match_operand:SI 2 "memory_operand")     ;; memory
+   (match_operand:SI 3 "reg_or_s16_operand") ;; expected
+   (match_operand:SI 4 "reg_or_0_operand")   ;; desired
+   (match_operand:SI 5 "const_int_operand")  ;; is_weak
+   (match_operand:SI 6 "const_int_operand")  ;; mod_s
+   (match_operand:SI 7 "const_int_operand")] ;; mod_f
+  ""
+{
+  or1k_expand_atomic_compare_and_swap (operands);
+  DONE;
+})
+
+(define_expand "atomic_compare_and_swap<mode>"
+  [(match_operand:SI 0 "register_operand")   ;; bool output
+   (match_operand:I12 1 "register_operand")  ;; val output
+   (match_operand:I12 2 "memory_operand")    ;; memory
+   (match_operand:I12 3 "register_operand")  ;; expected
+   (match_operand:I12 4 "reg_or_0_operand")  ;; desired
+   (match_operand:SI 5 "const_int_operand")  ;; is_weak
+   (match_operand:SI 6 "const_int_operand")  ;; mod_s
+   (match_operand:SI 7 "const_int_operand")] ;; mod_f
+  ""
+{
+  or1k_expand_atomic_compare_and_swap_qihi (operands);
+  DONE;
+})
+
+(define_expand "atomic_exchangesi"
+  [(match_operand:SI 0 "register_operand")	;; output
+   (match_operand:SI 1 "memory_operand")	;; memory
+   (match_operand:SI 2 "reg_or_0_operand")	;; input
+   (match_operand:SI 3 "const_int_operand")]	;; model
+  ""
+{
+  or1k_expand_atomic_exchange (operands);
+  DONE;
+})
+
+(define_expand "atomic_exchange<mode>"
+  [(match_operand:I12 0 "register_operand")	;; output
+   (match_operand:I12 1 "memory_operand")	;; memory
+   (match_operand:I12 2 "reg_or_0_operand")	;; input
+   (match_operand:SI 3 "const_int_operand")]	;; model
+  ""
+{
+  or1k_expand_atomic_exchange_qihi (operands);
+  DONE;
+})
+
+(define_expand "atomic_<fetchop_name>si"
+  [(match_operand:SI 0 "memory_operand")	;; memory
+   (FETCHOP:SI (match_dup 0)
+     (match_operand:SI 1 "<fetchop_pred>"))	;; operand
+   (match_operand:SI 2 "const_int_operand")]	;; model
+  ""
+{
+  or1k_expand_atomic_op (<CODE>, operands[0], operands[1], NULL, NULL);
+  DONE;
+})
+
+(define_expand "atomic_<fetchop_name><mode>"
+  [(match_operand:I12 0 "memory_operand")	;; memory
+   (FETCHOP:I12 (match_dup 0)
+     (match_operand:I12 1 "register_operand"))	;; operand
+   (match_operand:SI 2 "const_int_operand")]	;; model
+  ""
+{
+  or1k_expand_atomic_op_qihi (<CODE>, operands[0], operands[1], NULL, NULL);
+  DONE;
+})
+
+(define_expand "atomic_fetch_<fetchop_name>si"
+  [(match_operand:SI 0 "register_operand" "")		;; output
+   (match_operand:SI 1 "memory_operand" "")		;; memory
+   (FETCHOP:SI (match_dup 1)
+     (match_operand:SI 2 "<fetchop_pred>" ""))		;; operand
+   (match_operand:SI 3 "const_int_operand" "")]		;; model
+  ""
+{
+  or1k_expand_atomic_op (<CODE>, operands[1], operands[2], operands[0], NULL);
+  DONE;
+})
+
+(define_expand "atomic_fetch_<fetchop_name><mode>"
+  [(match_operand:I12 0 "register_operand" "")		;; output
+   (match_operand:I12 1 "memory_operand" "")		;; memory
+   (FETCHOP:I12 (match_dup 1)
+     (match_operand:I12 2 "<fetchop_pred>" ""))		;; operand
+   (match_operand:SI 3 "const_int_operand" "")]		;; model
+  ""
+{
+  or1k_expand_atomic_op_qihi (<CODE>, operands[1], operands[2],
+			      operands[0], NULL);
+  DONE;
+})
+
+(define_expand "atomic_<fetchop_name>_fetchsi"
+  [(match_operand:SI 0 "register_operand" "")		;; output
+   (match_operand:SI 1 "memory_operand" "")		;; memory
+   (FETCHOP:SI (match_dup 1)
+     (match_operand:SI 2 "<fetchop_pred>" ""))		;; operand
+   (match_operand:SI 3 "const_int_operand" "")]		;; model
+  ""
+{
+  or1k_expand_atomic_op (<CODE>, operands[1], operands[2], NULL, operands[0]);
+  DONE;
+})
+
+(define_expand "atomic_<fetchop_name>_fetch<mode>"
+  [(match_operand:I12 0 "register_operand" "")		;; output
+   (match_operand:I12 1 "memory_operand" "")		;; memory
+   (FETCHOP:I12 (match_dup 1)
+     (match_operand:I12 2 "<fetchop_pred>" ""))	;; operand
+   (match_operand:SI 3 "const_int_operand" "")]		;; model
+  ""
+{
+  or1k_expand_atomic_op_qihi (<CODE>, operands[1], operands[2],
+			      NULL, operands[0]);
+  DONE;
+})
 
 ;; -------------------------------------------------------------------------
 ;; Call Instructions
