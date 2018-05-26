@@ -917,6 +917,18 @@ or1k_function_value_regno_p (const unsigned int regno)
   return (regno == RV_REGNUM);
 }
 
+/* Worker function for TARGET_STRICT_ARGUMENT_NAMING.
+   The final named argument in a variatic function is named.  */
+
+static bool
+or1k_strict_argument_naming (cumulative_args_t ca ATTRIBUTE_UNUSED)
+{
+  return true;
+}
+
+#undef  TARGET_STRICT_ARGUMENT_NAMING
+#define TARGET_STRICT_ARGUMENT_NAMING or1k_strict_argument_naming
+
 /* Worker function for TARGET_FUNCTION_ARG.  Return the next register to be
    used to hold a function argument or NULL_RTX if there's no more space.  */
 
