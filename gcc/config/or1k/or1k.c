@@ -114,6 +114,13 @@ callee_saved_regno_p (int regno)
 	      || crtl->uses_pic_offset_table
 	      || df_regs_ever_live_p (regno));
 
+    case HW_TO_GCC_REGNO (25):
+    case HW_TO_GCC_REGNO (27):
+    case HW_TO_GCC_REGNO (29):
+    case HW_TO_GCC_REGNO (31):
+      /* See EH_RETURN_DATA_REGNO.  */
+      return crtl->calls_eh_return;
+
     default:
       return false;
     }
@@ -375,7 +382,9 @@ or1k_expand_epilogue (void)
   /* Restore link register.  */
   if (callee_saved_regno_p (LR_REGNUM))
     {
-      cfa_restores = or1k_restore_reg (LR_REGNUM, reg_offset, cfa_restores);
+      /* Note that eh_return sets the LR -- do not overwrite.  */
+      if (!crtl->calls_eh_return)
+	cfa_restores = or1k_restore_reg (LR_REGNUM, reg_offset, cfa_restores);
       reg_offset += UNITS_PER_WORD;
     }
   gcc_assert (reg_offset == sp_offset);
@@ -386,6 +395,11 @@ or1k_expand_epilogue (void)
   RTX_FRAME_RELATED_P (insn) = 1;
   REG_NOTES (insn) = cfa_restores;
   add_reg_note (insn, REG_CFA_DEF_CFA, stack_pointer_rtx);
+
+  /* Move up to the stack frame of an exception handler.  */
+  if (crtl->calls_eh_return)
+    emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx,
+			   EH_RETURN_STACKADJ_RTX));
 }
 
 /* Worker for TARGET_INIT_PIC_REG.  */

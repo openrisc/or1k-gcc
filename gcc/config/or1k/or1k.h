@@ -370,4 +370,15 @@ do {                                                    \
 #define INCOMING_RETURN_ADDR_RTX gen_rtx_REG (Pmode, LR_REGNUM)
 #define DWARF_FRAME_RETURN_COLUMN LR_REGNUM
 
+/* Describe how we implement __builtin_eh_return.  */
+#define EH_RETURN_REGNUM	HW_TO_GCC_REGNO (23)
+/* Use r25, r27, r29 and r31 (clobber regs) for exception data.
+   Recall that these are remapped consecutively.  */
+#define EH_RETURN_DATA_REGNO(N)	\
+    ((N) < 4 ? HW_TO_GCC_REGNO (25) + (N) : INVALID_REGNUM)
+#define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
+/* Make eh_return use the link register. Epilogue LR restore
+   is suppressed for eh_return. */
+#define EH_RETURN_HANDLER_RTX   INCOMING_RETURN_ADDR_RTX
+
 #endif /* GCC_OR1K_H */
