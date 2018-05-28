@@ -135,7 +135,7 @@
 
 #define GCC_TO_HW_REGNO(X)		\
   ((X) < 16 || (X) > 31 ? (X)		\
-   : (X) < 24 ? ((X) - 16) * 2 + 16	\
+   : (X) < 24 ? ((X) - 16) * 2 + 17	\
    : ((X) - 24) * 2 + 16)
 
 #define DBX_REGISTER_NUMBER(X)  GCC_TO_HW_REGNO(X)
