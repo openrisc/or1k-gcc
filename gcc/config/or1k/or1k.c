@@ -1880,6 +1880,111 @@ or1k_expand_atomic_op_qihi (rtx_code code, rtx mem, rtx val,
     or1k_finish_atomic_subword (mode, orig_after, after, shift);
 }
 
+/* Worker for TARGET_ASM_OUTPUT_MI_THUNK.
+   Output the assembler code for a thunk function.  THUNK_DECL is the
+   declaration for the thunk function itself, FUNCTION is the decl for
+   the target function.  DELTA is an immediate constant offset to be
+   added to THIS.  If VCALL_OFFSET is nonzero, the word at address
+   (*THIS + VCALL_OFFSET) should be additionally added to THIS.  */
+
+static void
+or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
+		      HOST_WIDE_INT delta, HOST_WIDE_INT vcall_offset,
+		      tree function)
+{
+  rtx this_rtx, funexp;
+  rtx_insn *insn;
+
+  reload_completed = 1;
+  epilogue_completed = 1;
+
+  emit_note (NOTE_INSN_PROLOGUE_END);
+
+  /* Find the "this" pointer.  Normally in r3, but if the function
+     returns a structure, the structure return pointer is in r3 and
+     the "this" pointer is in r4 instead.  */
+  if (aggregate_value_p (TREE_TYPE (TREE_TYPE (function)), function))
+    this_rtx = gen_rtx_REG (Pmode, 4);
+  else
+    this_rtx = gen_rtx_REG (Pmode, 3);
+
+  /* Add DELTA.  When possible use a plain add, otherwise load it
+     into a register first.  */
+  if (delta)
+    {
+      rtx delta_rtx = GEN_INT (delta);
+
+      if (!satisfies_constraint_I (delta_rtx))
+	{
+	  rtx scratch = gen_rtx_REG (Pmode, PE_TMP_REGNUM);
+	  emit_move_insn (scratch, delta_rtx);
+	  delta_rtx = scratch;
+	}
+
+      /* THIS_RTX += DELTA.  */
+      emit_insn (gen_add2_insn (this_rtx, delta_rtx));
+    }
+
+  /* Add the word at address (*THIS_RTX + VCALL_OFFSET).  */
+  if (vcall_offset)
+    {
+      rtx scratch = gen_rtx_REG (Pmode, PE_TMP_REGNUM);
+      HOST_WIDE_INT lo = sext_hwi(vcall_offset, 16);
+      HOST_WIDE_INT hi = vcall_offset - lo;
+      rtx tmp = this_rtx;
+
+      if (hi != 0)
+	{
+	  emit_move_insn (scratch, GEN_INT (hi));
+	  emit_insn (gen_add2_insn (scratch, this_rtx));
+          tmp = scratch;
+        }
+
+      /* SCRATCH = *(*THIS_RTX + VCALL_OFFSET).  */
+      tmp = plus_constant (Pmode, tmp, lo);
+      tmp = gen_rtx_MEM (Pmode, tmp);
+      emit_move_insn (scratch, tmp);
+
+      /* THIS_RTX += *(*THIS_RTX + VCALL_OFFSET).  */
+      emit_insn (gen_add2_insn (this_rtx, scratch));
+    }
+
+  /* Generate a tail call to the target function.  */
+  if (! TREE_USED (function))
+    {
+      assemble_external (function);
+      TREE_USED (function) = 1;
+    }
+  funexp = XEXP (DECL_RTL (function), 0);
+
+  /* The symbol will be a local alias and therefore always binds local.  */
+  gcc_assert (SYMBOL_REF_LOCAL_P (funexp));
+
+  funexp = gen_rtx_MEM (FUNCTION_MODE, funexp);
+  insn = emit_call_insn (gen_sibcall (funexp, const0_rtx));
+  SIBLING_CALL_P (insn) = 1;
+  emit_barrier ();
+
+  /* Run just enough of rest_of_compilation to get the insns emitted.
+     There's not really enough bulk here to make other passes such as
+     instruction scheduling worth while.  Note that use_thunk calls
+     assemble_start_function and assemble_end_function.  */
+  insn = get_insns ();
+  shorten_branches (insn);
+  final_start_function (insn, file, 1);
+  final (insn, file, 1);
+  final_end_function ();
+
+  reload_completed = 0;
+  epilogue_completed = 0;
+}
+
+#undef  TARGET_ASM_OUTPUT_MI_THUNK
+#define TARGET_ASM_OUTPUT_MI_THUNK or1k_output_mi_thunk
+#undef  TARGET_ASM_CAN_OUTPUT_MI_THUNK
+#define TARGET_ASM_CAN_OUTPUT_MI_THUNK \
+  hook_bool_const_tree_hwi_hwi_const_tree_true
+
 #undef TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override
 
