@@ -475,10 +475,10 @@ or1k_expand_eh_return (rtx eh_addr)
 
   HFP and AP are the same which is handled below.
  */
-int
+HOST_WIDE_INT
 or1k_initial_elimination_offset (int from, int to)
 {
-  int offset;
+  HOST_WIDE_INT offset;
 
   /* Set OFFSET to the offset from the stack pointer.  */
   switch (from)
@@ -488,9 +488,9 @@ or1k_initial_elimination_offset (int from, int to)
       offset = cfun->machine->total_size;
       break;
 
-    /* Local args, are just past the ougoing args if any.  */
+    /* Local args grow downward from the saved registers.  */
     case FRAME_POINTER_REGNUM:
-      offset = cfun->machine->args_size;
+      offset = cfun->machine->args_size + cfun->machine->local_vars_size;
       break;
 
     default:
@@ -501,7 +501,6 @@ or1k_initial_elimination_offset (int from, int to)
     offset -= cfun->machine->total_size;
 
   return offset;
-
 }
 
 /* Worker function for TARGET_LEGITIMATE_ADDRESS_P.  */

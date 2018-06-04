@@ -341,6 +341,8 @@ do {                                                    \
    pointer to a smaller address.  */
 #define STACK_GROWS_DOWNWARD 1
 
+#define FRAME_GROWS_DOWNWARD 1
+
 /* An alias for a machine mode name.  This is the machine mode that
    elements of a jump-table should have.  */
 #define CASE_VECTOR_MODE SImode
