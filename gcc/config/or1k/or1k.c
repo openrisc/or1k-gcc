@@ -1930,17 +1930,21 @@ or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
       rtx scratch = gen_rtx_REG (Pmode, PE_TMP_REGNUM);
       HOST_WIDE_INT lo = sext_hwi(vcall_offset, 16);
       HOST_WIDE_INT hi = vcall_offset - lo;
-      rtx tmp = this_rtx;
+      rtx tmp;
+
+      /* SCRATCH = *THIS_RTX.  */
+      tmp = gen_rtx_MEM (Pmode, this_rtx);
+      emit_move_insn (scratch, tmp);
 
       if (hi != 0)
 	{
-	  emit_move_insn (scratch, GEN_INT (hi));
-	  emit_insn (gen_add2_insn (scratch, this_rtx));
-          tmp = scratch;
+	  rtx scratch2 = gen_rtx_REG (Pmode, RV_REGNUM);
+	  emit_move_insn (scratch2, GEN_INT (hi));
+	  emit_insn (gen_add2_insn (scratch, scratch2));
         }
 
       /* SCRATCH = *(*THIS_RTX + VCALL_OFFSET).  */
-      tmp = plus_constant (Pmode, tmp, lo);
+      tmp = plus_constant (Pmode, scratch, lo);
       tmp = gen_rtx_MEM (Pmode, tmp);
       emit_move_insn (scratch, tmp);
 
