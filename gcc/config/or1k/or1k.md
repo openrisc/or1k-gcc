@@ -238,7 +238,7 @@
   [(set (match_operand:SI 0 "register_operand" "=r")
 	(high:SI (match_operand:SI 1 "high_operand" "")))]
   ""
-  "l.movhi\t%0, %H1"
+  "l.movhi\t%0, %h1"
   [(set_attr "type" "alu")])
 
 (define_insn "*movsi_lo_sum_iori"

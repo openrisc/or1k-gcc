@@ -1133,14 +1133,21 @@ or1k_print_operand (FILE *file, rtx x, int code)
 
     case 'r':
       if (REG_P (x))
-        fprintf (file, "%s", reg_names[REGNO (operand)]);
+	fprintf (file, "%s", reg_names[REGNO (operand)]);
       else if (x == CONST0_RTX (GET_MODE (x)))
-        fprintf (file, "r0");
+	fprintf (file, "r0");
       else
 	output_operand_lossage ("invalid %%r value");
       break;
 
     case 'H':
+      if (REG_P (x))
+	fprintf (file, "%s", reg_names[REGNO (operand) + 1]);
+      else
+	output_operand_lossage ("invalid %%H value");
+      break;
+
+    case 'h':
       print_reloc (file, x, 0, RKIND_HI);
       break;
     case 'L':
