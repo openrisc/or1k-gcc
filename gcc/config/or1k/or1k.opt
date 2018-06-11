@@ -23,4 +23,19 @@
 
 ; Please try to keep this file in ASCII collating order.
 
+mhard-mul
+Target RejectNegative InverseMask(SOFT_MUL).
+Use hardware multiply instructions, use -msoft-mul for emulation.
+
+mhard-div
+Target RejectNegative InverseMask(SOFT_DIV)
+Use hardware divide instructions, use -msoft-div for emulation.
+
+msoft-mul
+Target RejectNegative Mask(SOFT_MUL).
+Use multiply emulation.
+
+msoft-div
+Target RejectNegative Mask(SOFT_DIV)
+Use divide emulation.
 
