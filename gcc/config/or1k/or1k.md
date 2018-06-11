@@ -114,7 +114,7 @@
 	  (mult:SI
 	   (match_operand:SI 1 "register_operand"   "%r,r")
 	   (match_operand:SI 2 "reg_or_s16_operand" " r,I")))]
-  ""
+  "!TARGET_SOFT_MUL"
   "@
   l.mul\t%0, %1, %2
   l.muli\t%0, %1, %2")
@@ -124,7 +124,7 @@
 	  (div:SI
 	   (match_operand:SI 1 "register_operand" "r")
 	   (match_operand:SI 2 "register_operand" "r")))]
-  ""
+  "!TARGET_SOFT_DIV"
   "l.div\t%0, %1, %2")
 
 (define_insn "udivsi3"
@@ -132,7 +132,7 @@
 	  (udiv:SI
 	   (match_operand:SI 1 "register_operand" "r")
 	   (match_operand:SI 2 "register_operand" "r")))]
-  ""
+  "!TARGET_SOFT_DIV"
   "l.divu\t%0, %1, %2")
 
 (define_insn "subsi3"
