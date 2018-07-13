@@ -907,7 +907,6 @@ or1k_function_value (const_tree valtype,
 		     const_tree fn_decl_or_type ATTRIBUTE_UNUSED,
 		     bool outgoing ATTRIBUTE_UNUSED)
 {
-  /* TODO support 2 reg return values and return on stack?  */
   return gen_rtx_REG (TYPE_MODE (valtype), RV_REGNUM);
 }
 
@@ -917,7 +916,6 @@ static rtx
 or1k_libcall_value (machine_mode mode,
 		    const_rtx fun ATTRIBUTE_UNUSED)
 {
-  /* TODO support 2 reg return values and return on stack?  */
   return gen_rtx_REG (mode, RV_REGNUM);
 }
 
