@@ -265,6 +265,16 @@ do {                                                    \
     }							\
   while (0)
 
+/* This is used in crtstuff to create call stubs in the
+   _init() and _fini() functions.  Defining this here saves
+   a few bytes created by the dummy call_xxx() functions.  */
+#define CRT_CALL_STATIC_FUNCTION(SECTION_OP, FUNC)	\
+  asm (SECTION_OP "\n"					\
+"	l.jal " #FUNC "\n"				\
+"	 l.nop\n"					\
+"	.previous");
+
+
 #define PRINT_OPERAND_PUNCT_VALID_P(CODE) (code == '#')
 
 /* Calling convention definitions.  */
