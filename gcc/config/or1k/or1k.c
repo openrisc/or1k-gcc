@@ -382,9 +382,7 @@ or1k_expand_epilogue (void)
   /* Restore link register.  */
   if (callee_saved_regno_p (LR_REGNUM))
     {
-      /* Note that eh_return sets the LR -- do not overwrite.  */
-      if (!crtl->calls_eh_return)
-	cfa_restores = or1k_restore_reg (LR_REGNUM, reg_offset, cfa_restores);
+      cfa_restores = or1k_restore_reg (LR_REGNUM, reg_offset, cfa_restores);
       reg_offset += UNITS_PER_WORD;
     }
   gcc_assert (reg_offset == sp_offset);
@@ -461,12 +459,23 @@ or1k_frame_pointer_required ()
   return (crtl->accesses_prior_frames || crtl->profile);
 }
 
-/* TODO, do we need to just set to r9? or should we put it to where r9
-   is stored on the stack?  */
+/* Helper for defining __builtin_eh_return, this will override the current
+   function's return address stored on the stack.  This is called before
+   running the function epilogue so we can't just update the link register.
+   This is used when handling exceptions to jump into the exception handler
+   catch block upon return from _Unwind_RaiseException.  */
+
 void
 or1k_expand_eh_return (rtx eh_addr)
 {
-  emit_move_insn (gen_rtx_REG (Pmode, LR_REGNUM), eh_addr);
+  rtx lraddr;
+
+  lraddr = gen_frame_mem (Pmode, plus_constant (Pmode,
+					      hard_frame_pointer_rtx,
+					      -UNITS_PER_WORD));
+  /* Set address to volitile to ensure the store doesn't get optimized out.  */
+  MEM_VOLATILE_P (lraddr) = true;
+  emit_move_insn (lraddr, eh_addr);
 }
 
 /* We allow the following eliminiations:

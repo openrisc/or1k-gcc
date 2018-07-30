@@ -389,8 +389,5 @@ do {                                                    \
 #define EH_RETURN_DATA_REGNO(N)	\
     ((N) < 4 ? HW_TO_GCC_REGNO (25) + (N) : INVALID_REGNUM)
 #define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
-/* Make eh_return use the link register. Epilogue LR restore
-   is suppressed for eh_return. */
-#define EH_RETURN_HANDLER_RTX   INCOMING_RETURN_ADDR_RTX
 
 #endif /* GCC_OR1K_H */
