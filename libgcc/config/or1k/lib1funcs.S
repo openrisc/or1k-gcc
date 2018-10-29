@@ -68,8 +68,8 @@ __udivmodsi3_internal:
 	   is not clobbered by this routine, and use that as to
 	   save a return address without creating a stack frame.  */
 
-        l.sfeqi		r4, 0		/* division by zero; return 0.  */
-        l.ori		r11, r0, 0	/* initial quotient */
+	l.sfeqi		r4, 0		/* division by zero; return 0.  */
+	l.ori		r11, r0, 0	/* initial quotient */
 	l.bf		9f
 	 l.ori		r12, r3, 0	/* initial remainder */
 
@@ -167,13 +167,13 @@ __divsi3:
 
 	/* If the result will not require sign flip, tail call.  */
 	l.sflts		r6, r0
-        l.bnf		__udivmodsi3_internal
+	l.bnf		__udivmodsi3_internal
 	 l.ori		r13, r9, 0	/* save lr */
 
 	/* Otherwise, know that __udivmodsi3_internal does not clobber r13.
 	   Perform a normal call, then negate and return via saved lr.  */
 	.cfi_register	9, 13
-        l.jal		__udivmodsi3_internal
+	l.jal		__udivmodsi3_internal
 	 l.nop
 	l.jr		r13
 	 l.sub		r11, r0, r11
