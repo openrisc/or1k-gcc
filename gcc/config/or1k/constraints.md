@@ -47,7 +47,7 @@
   "A shifted signed 16-bit constant suitable for l.movhi."
   (and (match_code "const_int")
        (match_test "(ival & 0xffff) == 0
-                    && (ival >> 31 == -1 || ival >> 31 == 0)")))
+		    && (ival >> 31 == -1 || ival >> 31 == 0)")))
 
 (define_constraint "O"
   "The constant zero"

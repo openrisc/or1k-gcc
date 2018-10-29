@@ -63,12 +63,12 @@ struct GTY(()) machine_function
   /* Number of bytes saved on the stack for local variables.  */
   HOST_WIDE_INT local_vars_size;
 
-  /* Number of bytes saved on the stack for outgoing/sub-fucntion args.  */
+  /* Number of bytes saved on the stack for outgoing/sub-function args.  */
   HOST_WIDE_INT args_size;
 
   /* The sum of sizes: locals vars, called saved regs, stack pointer
-   * and an optional frame pointer.
-   * Used in expand_prologue () and expand_epilogue().  */
+     and an optional frame pointer.
+     Used in expand_prologue () and expand_epilogue ().  */
   HOST_WIDE_INT total_size;
 
   /* Remember where the set_got_placeholder is located.  */
@@ -232,8 +232,8 @@ or1k_expand_prologue (void)
   /* Save callee-saved registers.  */
   for (int regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
     if (regno != HARD_FRAME_POINTER_REGNUM
-        && regno != LR_REGNUM
-        && callee_saved_regno_p (regno))
+	&& regno != LR_REGNUM
+	&& callee_saved_regno_p (regno))
       {
 	or1k_save_reg (regno, reg_offset);
 	reg_offset += UNITS_PER_WORD;
@@ -266,7 +266,7 @@ or1k_expand_prologue (void)
     {
       if (sp_offset < 2 * -32768)
 	{
-          /* For very large offsets, we need a temporary register.  */
+	  /* For very large offsets, we need a temporary register.  */
 	  rtx tmp = gen_rtx_REG (Pmode, PE_TMP_REGNUM);
 	  emit_move_insn (tmp, GEN_INT (sp_offset));
 	  insn = emit_insn (gen_frame_addsi3 (stack_pointer_rtx,
@@ -379,8 +379,8 @@ or1k_expand_epilogue (void)
   /* Restore callee-saved registers.  */
   for (int regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
     if (regno != HARD_FRAME_POINTER_REGNUM
-        && regno != LR_REGNUM
-        && callee_saved_regno_p (regno))
+	&& regno != LR_REGNUM
+	&& callee_saved_regno_p (regno))
       {
 	cfa_restores = or1k_restore_reg (regno, reg_offset, cfa_restores);
 	reg_offset += UNITS_PER_WORD;
@@ -498,7 +498,7 @@ or1k_expand_eh_return (rtx eh_addr)
   lraddr = gen_frame_mem (Pmode, plus_constant (Pmode,
 						arg_pointer_rtx,
 						-UNITS_PER_WORD));
-  /* Set address to volitile to ensure the store doesn't get optimized out.  */
+  /* Set address to volatile to ensure the store doesn't get optimized out.  */
   MEM_VOLATILE_P (lraddr) = true;
   emit_move_insn (lraddr, eh_addr);
 }
@@ -508,7 +508,7 @@ or1k_expand_eh_return (rtx eh_addr)
      FP -> HARD_FP or SP
      AP -> HARD_FP or SP
 
-   HFP and AP are the same which is handled below.  */
+   HARD_FP and AP are the same which is handled below.  */
 
 HOST_WIDE_INT
 or1k_initial_elimination_offset (int from, int to)
@@ -711,7 +711,7 @@ or1k_legitimize_address_1 (rtx x, rtx scratch)
   tls_model tls_kind = TLS_MODEL_NONE;
   bool is_local = true;
 
-  split_const(x, &base, &addend);
+  split_const (x, &base, &addend);
   switch (GET_CODE (base))
     {
     default:
@@ -797,9 +797,7 @@ or1k_legitimize_address_1 (rtx x, rtx scratch)
 	}
       break;
 
-    /*
-     * Accept what we may have already emitted.
-     */
+    /* Accept what we may have already emitted.  */
 
     case LO_SUM:
     case UNSPEC:
@@ -840,7 +838,7 @@ or1k_legitimize_address_1 (rtx x, rtx scratch)
    This delegates implementation to or1k_legitimize_address_1.  */
 
 static rtx
-or1k_legitimize_address (rtx x, rtx oldx ATTRIBUTE_UNUSED, machine_mode)
+or1k_legitimize_address (rtx x, rtx /* oldx */, machine_mode)
 {
   return or1k_legitimize_address_1 (x, NULL_RTX);
 }
@@ -957,8 +955,8 @@ or1k_pass_by_reference (cumulative_args_t, machine_mode mode,
 
 static rtx
 or1k_function_value (const_tree valtype,
-		     const_tree fn_decl_or_type ATTRIBUTE_UNUSED,
-		     bool outgoing ATTRIBUTE_UNUSED)
+		     const_tree /* fn_decl_or_type */,
+		     bool /* outgoing */)
 {
   return gen_rtx_REG (TYPE_MODE (valtype), RV_REGNUM);
 }
@@ -970,7 +968,7 @@ or1k_function_value (const_tree valtype,
 
 static rtx
 or1k_libcall_value (machine_mode mode,
-		    const_rtx fun ATTRIBUTE_UNUSED)
+		    const_rtx /* fun */)
 {
   return gen_rtx_REG (mode, RV_REGNUM);
 }
@@ -987,10 +985,11 @@ or1k_function_value_regno_p (const unsigned int regno)
 }
 
 /* Worker for TARGET_STRICT_ARGUMENT_NAMING.
-   The final named argument in a variatic function is named.  */
+   Return true always as on OpenRISC the last argument in a variatic function
+   is named.  */
 
 static bool
-or1k_strict_argument_naming (cumulative_args_t ca ATTRIBUTE_UNUSED)
+or1k_strict_argument_naming (cumulative_args_t /* ca */)
 {
   return true;
 }
@@ -1006,8 +1005,7 @@ or1k_strict_argument_naming (cumulative_args_t ca ATTRIBUTE_UNUSED)
 
 static rtx
 or1k_function_arg (cumulative_args_t cum_v, machine_mode mode,
-		   const_tree type ATTRIBUTE_UNUSED,
-		   bool named)
+		   const_tree /* type */, bool named)
 {
   /* VOIDmode is passed as a special flag for "last argument".  */
   if (mode == VOIDmode)
@@ -1030,7 +1028,7 @@ or1k_function_arg (cumulative_args_t cum_v, machine_mode mode,
 
 static void
 or1k_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
-			   const_tree type ATTRIBUTE_UNUSED, bool named)
+			   const_tree /* type */, bool named)
 {
   CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
   int nreg = CEIL (GET_MODE_SIZE (mode), UNITS_PER_WORD);
@@ -1046,13 +1044,13 @@ or1k_function_arg_advance (cumulative_args_t cum_v, machine_mode mode,
    OpenRISC this is any value larger than 64-bits.  */
 
 static bool
-or1k_return_in_memory (const_tree type, const_tree fntype ATTRIBUTE_UNUSED)
+or1k_return_in_memory (const_tree type, const_tree /* fntype */)
 {
   const HOST_WIDE_INT size = int_size_in_bytes (type);
   return (size == -1 || size > (2 * UNITS_PER_WORD));
 }
 
-/* Print reloc(x + add).  */
+/* Print reloc (x + add).  */
 
 static void
 output_addr_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, const char *reloc)
@@ -1123,7 +1121,7 @@ print_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, reloc_kind kind)
 	  type = RTYPE_TLSGD;
 	  break;
 	default:
-	  output_operand_lossage("invalid relocation");
+	  output_operand_lossage ("invalid relocation");
 	  return;
 	}
       x = XVECEXP (x, 0, 0);
@@ -1131,7 +1129,7 @@ print_reloc (FILE *stream, rtx x, HOST_WIDE_INT add, reloc_kind kind)
 
   const char *reloc = relocs[kind][type];
   if (reloc == NULL)
-    output_operand_lossage("invalid relocation");
+    output_operand_lossage ("invalid relocation");
   else
     output_addr_reloc (stream, x, add, reloc);
 }
@@ -1308,12 +1306,12 @@ or1k_trampoline_init (rtx m_tramp, tree fndecl, rtx chain)
 		       NULL, true, OPTAB_DIRECT);
 
   /* We want to generate
-   *
-   *	l.movhi r13,hi(nested_func)
-   *	l.movhi r11,hi(static_chain)
-   *	l.ori	r13,r13,lo(nested_func)
-   *	l.jr	r13
-   *	 l.ori	r11,r11,lo(static_chain)
+
+	l.movhi r13,hi(nested_func)
+	l.movhi r11,hi(static_chain)
+	l.ori	r13,r13,lo(nested_func)
+	l.jr	r13
+	 l.ori	r11,r11,lo(static_chain)
    */
   tramp[0] = expand_binop (SImode, ior_optab, f_hi,
 			   gen_int_mode (movhi_r13, SImode),
@@ -1377,14 +1375,14 @@ or1k_can_change_mode_class (machine_mode from, machine_mode to,
    destination and OP1 is the source.  This expands to set OP0 to OP1.  OpenRISC
    cannot do memory to memory assignments so for those cases we force one
    argument to a register.  Constants that can't fit into a 16-bit immediate are
-   split.  Symbols are lagitimized using split relocations.  */
+   split.  Symbols are legitimized using split relocations.  */
 
 void
 or1k_expand_move (machine_mode mode, rtx op0, rtx op1)
 {
   if (MEM_P (op0))
     {
-      if (!const0_operand(op1, mode))
+      if (!const0_operand (op1, mode))
 	op1 = force_reg (mode, op1);
     }
   else if (mode == QImode || mode == HImode)
@@ -1395,8 +1393,8 @@ or1k_expand_move (machine_mode mode, rtx op0, rtx op1)
   else
     {
       switch (GET_CODE (op1))
-        {
-        case CONST_INT:
+	{
+	case CONST_INT:
 	  if (!input_operand (op1, mode))
 	    {
 	      HOST_WIDE_INT i = INTVAL (op1);
@@ -1505,7 +1503,7 @@ or1k_expand_call (rtx retval, rtx fnaddr, rtx callarg1, bool sibcall)
    function.  */
 
 static bool
-or1k_function_ok_for_sibcall (tree decl, tree exp ATTRIBUTE_UNUSED)
+or1k_function_ok_for_sibcall (tree decl, tree /* exp */)
 {
   /* We can sibcall to any function if not PIC.  */
   if (!flag_pic)
@@ -1525,9 +1523,8 @@ or1k_function_ok_for_sibcall (tree decl, tree exp ATTRIBUTE_UNUSED)
 /* Worker for TARGET_RTX_COSTS.  */
 
 static bool
-or1k_rtx_costs (rtx x, machine_mode mode, int outer_code,
-		int opno ATTRIBUTE_UNUSED, int *total,
-		bool speed ATTRIBUTE_UNUSED)
+or1k_rtx_costs (rtx x, machine_mode mode, int outer_code, int /* opno */,
+		int *total, bool /* speed */)
 {
   switch (GET_CODE (x))
     {
@@ -2031,7 +2028,7 @@ or1k_expand_atomic_op_qihi (rtx_code code, rtx mem, rtx val,
    (*THIS + VCALL_OFFSET) should be additionally added to THIS.  */
 
 static void
-or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
+or1k_output_mi_thunk (FILE *file, tree /* thunk_fndecl */,
 		      HOST_WIDE_INT delta, HOST_WIDE_INT vcall_offset,
 		      tree function)
 {
@@ -2072,7 +2069,7 @@ or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
   if (vcall_offset)
     {
       rtx scratch = gen_rtx_REG (Pmode, PE_TMP_REGNUM);
-      HOST_WIDE_INT lo = sext_hwi(vcall_offset, 16);
+      HOST_WIDE_INT lo = sext_hwi (vcall_offset, 16);
       HOST_WIDE_INT hi = vcall_offset - lo;
       rtx tmp;
 
@@ -2085,7 +2082,7 @@ or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
 	  rtx scratch2 = gen_rtx_REG (Pmode, RV_REGNUM);
 	  emit_move_insn (scratch2, GEN_INT (hi));
 	  emit_insn (gen_add2_insn (scratch, scratch2));
-        }
+	}
 
       /* SCRATCH = *(*THIS_RTX + VCALL_OFFSET).  */
       tmp = plus_constant (Pmode, scratch, lo);
@@ -2097,7 +2094,7 @@ or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
     }
 
   /* Generate a tail call to the target function.  */
-  if (! TREE_USED (function))
+  if (!TREE_USED (function))
     {
       assemble_external (function);
       TREE_USED (function) = 1;
@@ -2132,13 +2129,13 @@ or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
 #define TARGET_ASM_CAN_OUTPUT_MI_THUNK \
   hook_bool_const_tree_hwi_hwi_const_tree_true
 
-#undef TARGET_OPTION_OVERRIDE
+#undef  TARGET_OPTION_OVERRIDE
 #define TARGET_OPTION_OVERRIDE or1k_option_override
 
-#undef TARGET_COMPUTE_FRAME_LAYOUT
+#undef  TARGET_COMPUTE_FRAME_LAYOUT
 #define TARGET_COMPUTE_FRAME_LAYOUT or1k_compute_frame_layout
 
-#undef TARGET_LEGITIMATE_ADDRESS_P
+#undef  TARGET_LEGITIMATE_ADDRESS_P
 #define TARGET_LEGITIMATE_ADDRESS_P or1k_legitimate_address_p
 
 #undef  TARGET_HAVE_TLS
@@ -2148,25 +2145,25 @@ or1k_output_mi_thunk (FILE *file, tree thunk_fndecl ATTRIBUTE_UNUSED,
 #define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
 
 /* Calling Conventions.  */
-#undef TARGET_FUNCTION_VALUE
+#undef  TARGET_FUNCTION_VALUE
 #define TARGET_FUNCTION_VALUE or1k_function_value
-#undef TARGET_LIBCALL_VALUE
+#undef  TARGET_LIBCALL_VALUE
 #define TARGET_LIBCALL_VALUE or1k_libcall_value
-#undef TARGET_FUNCTION_VALUE_REGNO_P
+#undef  TARGET_FUNCTION_VALUE_REGNO_P
 #define TARGET_FUNCTION_VALUE_REGNO_P or1k_function_value_regno_p
-#undef TARGET_FUNCTION_ARG
+#undef  TARGET_FUNCTION_ARG
 #define TARGET_FUNCTION_ARG or1k_function_arg
-#undef TARGET_FUNCTION_ARG_ADVANCE
+#undef  TARGET_FUNCTION_ARG_ADVANCE
 #define TARGET_FUNCTION_ARG_ADVANCE or1k_function_arg_advance
-#undef TARGET_RETURN_IN_MEMORY
-#define TARGET_RETURN_IN_MEMORY	or1k_return_in_memory
-#undef TARGET_PASS_BY_REFERENCE
-#define	TARGET_PASS_BY_REFERENCE or1k_pass_by_reference
-#undef TARGET_TRAMPOLINE_INIT
+#undef  TARGET_RETURN_IN_MEMORY
+#define TARGET_RETURN_IN_MEMORY or1k_return_in_memory
+#undef  TARGET_PASS_BY_REFERENCE
+#define TARGET_PASS_BY_REFERENCE or1k_pass_by_reference
+#undef  TARGET_TRAMPOLINE_INIT
 #define TARGET_TRAMPOLINE_INIT or1k_trampoline_init
-#undef TARGET_FRAME_POINTER_REQUIRED
+#undef  TARGET_FRAME_POINTER_REQUIRED
 #define TARGET_FRAME_POINTER_REQUIRED or1k_frame_pointer_required
-#undef TARGET_CUSTOM_FUNCTION_DESCRIPTORS
+#undef  TARGET_CUSTOM_FUNCTION_DESCRIPTORS
 #define TARGET_CUSTOM_FUNCTION_DESCRIPTORS 1
 
 /* Assembly generation.  */

@@ -61,7 +61,7 @@
 #define FLOAT_TYPE_SIZE 32
 #define DOUBLE_TYPE_SIZE 64
 #define LONG_DOUBLE_TYPE_SIZE 64
-#define WCHAR_TYPE_SIZE	32
+#define WCHAR_TYPE_SIZE 32
 
 #undef SIZE_TYPE
 #define SIZE_TYPE "unsigned int"
@@ -287,8 +287,8 @@ do {                                                    \
 #define TRAMPOLINE_ALIGNMENT 32
 
 /* Pointer mode */
-#define Pmode	SImode
-#define FUNCTION_MODE	SImode
+#define Pmode SImode
+#define FUNCTION_MODE SImode
 #define STACK_POINTER_REGNUM SP_REGNUM
 #define FRAME_POINTER_REGNUM SFP_REGNUM
 #define HARD_FRAME_POINTER_REGNUM HFP_REGNUM
@@ -320,7 +320,7 @@ do {                                                    \
 #define ELIMINABLE_REGS					\
 {{ FRAME_POINTER_REGNUM, STACK_POINTER_REGNUM },	\
  { FRAME_POINTER_REGNUM, HARD_FRAME_POINTER_REGNUM },	\
- { ARG_POINTER_REGNUM,	 STACK_POINTER_REGNUM },	\
+ { ARG_POINTER_REGNUM,   STACK_POINTER_REGNUM },	\
  { ARG_POINTER_REGNUM,   HARD_FRAME_POINTER_REGNUM }}
 
 #define INITIAL_ELIMINATION_OFFSET(FROM, TO, OFFSET) \
@@ -382,11 +382,11 @@ do {                                                    \
 #define DWARF_FRAME_RETURN_COLUMN LR_REGNUM
 
 /* Describe how we implement __builtin_eh_return.  */
-#define EH_RETURN_REGNUM	HW_TO_GCC_REGNO (23)
+#define EH_RETURN_REGNUM HW_TO_GCC_REGNO (23)
 /* Use r25, r27, r29 and r31 (clobber regs) for exception data.
    Recall that these are remapped consecutively.  */
 #define EH_RETURN_DATA_REGNO(N)	\
     ((N) < 4 ? HW_TO_GCC_REGNO (25) + (N) : INVALID_REGNUM)
-#define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
+#define EH_RETURN_STACKADJ_RTX gen_rtx_REG (Pmode, EH_RETURN_REGNUM)
 
 #endif /* GCC_OR1K_H */

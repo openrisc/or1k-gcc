@@ -76,8 +76,8 @@
 {
   unsigned regno = REGNO (op);
   return (regno != STACK_POINTER_REGNUM
-          && regno != HARD_FRAME_POINTER_REGNUM
-          && REGNO_PTR_FRAME_P (regno));
+	  && regno != HARD_FRAME_POINTER_REGNUM
+	  && REGNO_PTR_FRAME_P (regno));
 })
 
 (define_predicate "equality_comparison_operator"
