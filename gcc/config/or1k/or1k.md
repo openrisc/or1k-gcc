@@ -229,6 +229,7 @@
 (define_mode_iterator I12 [QI HI])
 
 (define_mode_attr ldst [(QI "b") (HI "h") (SI "w")])
+(define_mode_attr zext_andi [(QI "0xff") (HI "0xffff")])
 
 (define_expand "mov<I:mode>"
   [(set (match_operand:I 0 "nonimmediate_operand" "")
@@ -327,44 +328,33 @@
 ;; Sign Extending
 ;; -------------------------------------------------------------------------
 
-(define_insn "zero_extendhisi2"
-  [(set (match_operand:SI 0 "register_operand"                    "=r,r")
-	(zero_extend:SI (match_operand:HI 1 "nonimmediate_operand" "r,m")))]
-  ""
-  "@
-   l.exthz\t%0, %1
-   l.lhz\t%0, %1"
-  [(set_attr "insn_support" "sext,*")])
+;; Zero extension can always be done with AND and an extending load.
 
-(define_insn "zero_extendqisi2"
-  [(set (match_operand:SI 0 "register_operand"                    "=r,r")
-	(zero_extend:SI (match_operand:QI 1 "nonimmediate_operand" "r,m")))]
-  ""
-  "@
-   l.extbz\t%0, %1
-   l.lbz\t%0, %1"
-  [(set_attr "insn_support" "sext,*")])
-
-;; Sign extension patterns
-
-;; We can do memory extensions with a single load
-(define_insn "extendhisi2"
+(define_insn "zero_extend<mode>si2"
   [(set (match_operand:SI 0 "register_operand"                     "=r,r")
-	(sign_extend:SI (match_operand:HI 1 "nonimmediate_operand"  "r,m")))]
+	(zero_extend:SI (match_operand:I12 1 "nonimmediate_operand" "r,m")))]
   ""
   "@
-   l.exths\t%0, %1
-   l.lhs\t%0, %1"
-  [(set_attr "insn_support" "sext,*")])
+   l.andi\t%0, %1, <zext_andi>
+   l.l<ldst>z\t%0, %1")
 
-(define_insn "extendqisi2"
-  [(set (match_operand:SI 0 "register_operand"                     "=r,r")
-	(sign_extend:SI (match_operand:QI 1 "nonimmediate_operand"  "r,m")))]
-  ""
+;; Sign extension in registers is an optional extension, but the
+;; extending load is always available.  If SEXT is not available,
+;; force the middle-end to do the expansion to shifts.
+
+(define_insn "extend<mode>si2"
+  [(set (match_operand:SI 0 "register_operand"                      "=r,r")
+	(sign_extend:SI (match_operand:I12 1 "nonimmediate_operand"  "r,m")))]
+  "TARGET_SEXT"
   "@
-   l.extbs\t%0, %1
-   l.lbs\t%0, %1"
-  [(set_attr "insn_support" "sext,*")])
+   l.ext<ldst>s\t%0, %1
+   l.l<ldst>s\t%0, %1")
+
+(define_insn "*extend<mode>si2_mem"
+  [(set (match_operand:SI 0 "register_operand"                "=r")
+	(sign_extend:SI (match_operand:I12 1 "memory_operand"  "m")))]
+  ""
+  "l.l<ldst>s\t%0, %1")
 
 ;; -------------------------------------------------------------------------
 ;; Compare instructions
