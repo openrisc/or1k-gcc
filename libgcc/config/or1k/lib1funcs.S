@@ -128,13 +128,12 @@ __umodsi3:
 #endif
 
 /* For signed division we do:
- *
- *   -x / y = x / -y = -(x / y)
- *   -x % y = -(x % y)
- *   x % -y = x % b
- *
- * which has the property that (x/y)*y + (x%y) = x.
- */
+
+     -x / y = x / -y = -(x / y)
+     -x % y = -(x % y)
+      x % -y = x % y
+
+   which has the property that (x/y)*y + (x%y) = x.  */
 
 #ifdef L__divsi3
 	.balign	4
