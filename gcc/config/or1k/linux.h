@@ -37,8 +37,9 @@
    %{static:-Bstatic}				\
    %{shared:-shared}				\
    %{symbolic:-Bsymbolic}			\
-   %{!static:					\
+   %{!static:%{!static-pie:			\
      %{rdynamic:-export-dynamic}		\
-     %{!shared:-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}}"
+     %{!shared:-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}}} \
+   %{static-pie:-Bstatic -pie --no-dynamic-linker -z text}"
 
 #endif /* GCC_OR1K_LINUX_H */
