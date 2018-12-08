@@ -1028,6 +1028,7 @@ Objective-C and Objective-C++ Dialects}.
 @emph{OpenRISC Options}
 @gccoptlist{-mboard=@var{name}  -mnewlib  -mhard-mul  -mhard-div @gol
 -msoft-mul  -msoft-div @gol
+-msoft-float  -mhard-float  -mdouble-float @gol
 -mcmov  -mror  -msext  -msfimm  -mshftimm}
 
 @emph{PDP-11 Options}
@@ -23550,6 +23551,20 @@ default.
 @opindex mhard-mul
 Generate code for hardware which supports multiply instructions.  This is the
 default.
+
+@item -msoft-float
+@opindex msoft-float
+Generate code which uses library calls for floating point operations.  This is
+the default.
+
+@item -mhard-float
+@opindex mhard-float
+Generate code for hardware which supports floating point instructions.
+
+@item -mdouble-float
+@opindex mdouble-float
+Generate code for hardware which supports 64-bit floating point operations
+on 32-bit OpenRISC targets.
 
 @item -mcmov
 @opindex mcmov
