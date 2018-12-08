@@ -60,7 +60,7 @@
 (define_attr "length" "" (const_int 4))
 
 (define_attr "type"
-  "alu,st,ld,control,multi"
+  "alu,st,ld,control,multi,fpu"
   (const_string "alu"))
 
 (define_attr "insn_support" "class1,sext,sfimm,shftimm" (const_string "class1"))
@@ -93,6 +93,10 @@
 (define_insn_reservation "control" 1
   (eq_attr "type" "control")
   "cpu")
+(define_insn_reservation "fpu" 2
+  (eq_attr "type" "fpu")
+  "cpu")
+
 
 ; Define delay slots for any branch
 (define_delay (eq_attr "type" "control")
@@ -154,6 +158,48 @@
 	   (match_operand:SI 2 "register_operand" "r")))]
   ""
   "l.sub\t%0, %r1, %2")
+
+;; -------------------------------------------------------------------------
+;; Floating Point Arithmetic instructions
+;; -------------------------------------------------------------------------
+
+;; Mode iterator for single/double float
+(define_mode_iterator F [(SF "TARGET_HARD_FLOAT")
+			 (DF "TARGET_DOUBLE_FLOAT")])
+(define_mode_attr f [(SF "s") (DF "d")])
+
+;; Basic arithmetic instructions
+(define_code_iterator FOP [plus minus mult div])
+(define_code_attr fop [(plus "add") (minus "sub") (mult "mul") (div "div")])
+
+(define_insn "<fop><F:mode>3"
+  [(set (match_operand:F 0 "register_operand" "=r")
+        (FOP:F (match_operand:F 1 "register_operand" "r")
+	       (match_operand:F 2 "register_operand" "r")))]
+  "TARGET_HARD_FLOAT"
+  "lf.<fop>.<f>\t%0, %1, %2"
+  [(set_attr "type" "fpu")])
+
+;; Mode iterator for float compatible int registers
+(define_mode_iterator FI [(SI "TARGET_HARD_FLOAT")
+			  (DI "TARGET_DOUBLE_FLOAT")])
+
+;; Basic float<->int conversion
+(define_insn "float<FI:mode><F:mode>2"
+  [(set (match_operand:F 0 "register_operand" "=f")
+	(float:F
+	    (match_operand:FI 1 "reg_or_0_operand" "rO")))]
+  "TARGET_HARD_FLOAT"
+  "lf.itof.<f>\t%0, %r1"
+  [(set_attr "type" "fpu")])
+
+(define_insn "fix<F:mode><FI:mode>2"
+  [(set (match_operand:FI 0 "register_operand" "=r")
+	(fix:FI
+	    (match_operand:F 1 "register_operand" "r")))]
+  "TARGET_HARD_FLOAT"
+  "lf.ftoi.<f>\t%0, %1"
+  [(set_attr "type" "fpu")])
 
 ;; -------------------------------------------------------------------------
 ;; Logical operators
