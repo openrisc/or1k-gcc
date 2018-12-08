@@ -1226,6 +1226,17 @@ or1k_print_operand (FILE *file, rtx x, int code)
 	output_operand_lossage ("invalid %%H value");
       break;
 
+    case 'd':
+      if (REG_P (x))
+	  if (GET_MODE (x) == DFmode || GET_MODE (x) == DImode)
+	    fprintf (file, "%s,%s", reg_names[REGNO (operand)],
+				    reg_names[REGNO (operand) + 1]);
+	  else
+	    fprintf (file, "%s", reg_names[REGNO (operand)]);
+      else
+	output_operand_lossage ("invalid %%d value");
+      break;
+
     case 'h':
       print_reloc (file, x, 0, RKIND_HI);
       break;
