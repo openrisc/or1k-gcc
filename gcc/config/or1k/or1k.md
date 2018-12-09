@@ -186,14 +186,14 @@
 
 ;; Basic float<->int conversion
 (define_insn "float<FI:mode><F:mode>2"
-  [(set (match_operand:F 0 "register_operand" "=f")
+  [(set (match_operand:F 0 "register_operand" "=r")
 	(float:F
 	    (match_operand:FI 1 "reg_or_0_operand" "rO")))]
   "TARGET_HARD_FLOAT"
   "lf.itof.<f>\t%0, %r1"
   [(set_attr "type" "fpu")])
 
-(define_insn "fix<F:mode><FI:mode>2"
+(define_insn "fix_trunc<F:mode><FI:mode>2"
   [(set (match_operand:FI 0 "register_operand" "=r")
 	(fix:FI
 	    (match_operand:F 1 "register_operand" "r")))]
@@ -433,6 +433,16 @@
    l.sf<insn>\t%r0, %1
    l.sf<insn>i\t%r0, %1"
   [(set_attr "insn_support" "*,sfimm")])
+
+;; Support FP comparisons too
+(define_insn "*sf_fp_insn"
+  [(set (reg:BI SR_F_REGNUM)
+	(intcmpcc:BI (match_operand:F 0 "register_operand" "r")
+		     (match_operand:F 1 "register_operand" "r")))]
+  "TARGET_HARD_FLOAT"
+  "lf.sf<insn>.<f>>\t%r0, %1"
+  [(set_attr "type" "fpu")])
+
 
 ;; -------------------------------------------------------------------------
 ;; Conditional Store instructions
