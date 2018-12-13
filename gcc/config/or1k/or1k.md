@@ -167,6 +167,8 @@
 (define_mode_iterator F [(SF "TARGET_HARD_FLOAT")
 			 (DF "TARGET_DOUBLE_FLOAT")])
 (define_mode_attr f [(SF "s") (DF "d")])
+(define_mode_attr fi [(SF "si") (DF "di")])
+(define_mode_attr FI [(SF "SI") (DF "DI")])
 
 ;; Basic arithmetic instructions
 (define_code_iterator FOP [plus minus mult div])
@@ -180,22 +182,18 @@
   "lf.<fop>.<f>\t%0, %1, %2"
   [(set_attr "type" "fpu")])
 
-;; Mode iterator for float convertible int modes
-(define_mode_iterator FI [(SI "TARGET_HARD_FLOAT")
-			  (DI "TARGET_DOUBLE_FLOAT")])
-
 ;; Basic float<->int conversion
-(define_insn "float<FI:mode><F:mode>2"
+(define_insn "float<fi><F:mode>2"
   [(set (match_operand:F 0 "register_operand" "=r")
 	(float:F
-	    (match_operand:FI 1 "reg_or_0_operand" "rO")))]
+	    (match_operand:<FI> 1 "reg_or_0_operand" "rO")))]
   "TARGET_HARD_FLOAT"
   "lf.itof.<f>\t%0, %r1"
   [(set_attr "type" "fpu")])
 
-(define_insn "fix_trunc<F:mode><FI:mode>2"
-  [(set (match_operand:FI 0 "register_operand" "=r")
-	(fix:FI
+(define_insn "fix_trunc<F:mode><fi>2"
+  [(set (match_operand:<FI> 0 "register_operand" "=r")
+	(fix:<FI>
 	    (match_operand:F 1 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
   "lf.ftoi.<f>\t%0, %1"
