@@ -481,7 +481,7 @@
 (define_expand "cstore<F:mode>4"
   [(set (match_operand:SI 0 "register_operand" "")
 	(if_then_else:F
-	  (match_operator 1 "comparison_operator"
+	  (match_operator 1 "ordered_comparison_operator"
 	    [(match_operand:F 2 "register_operand" "")
 	     (match_operand:F 3 "register_operand" "")])
 	  (match_dup 0)
@@ -592,7 +592,7 @@
 (define_expand "cbranch<F:mode>4"
   [(set (pc)
 	(if_then_else
-	  (match_operator 0 "comparison_operator"
+	  (match_operator 0 "ordered_comparison_operator"
 	    [(match_operand:F 1 "register_operand" "")
 	     (match_operand:F 2 "register_operand" "")])
 	  (label_ref (match_operand 3 "" ""))
