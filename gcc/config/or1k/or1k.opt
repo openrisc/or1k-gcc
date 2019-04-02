@@ -29,14 +29,18 @@ mhard-mul
 Target RejectNegative InverseMask(SOFT_MUL).
 Use hardware multiply instructions, use -msoft-mul for emulation.
 
+msoft-float
+Target RejectNegative InverseMask(HARD_FLOAT)
+Use gcc provided software routines for floating point operations.
+
 mhard-float
-Target Mask(HARD_FLOAT)
+Target RejectNegative Mask(HARD_FLOAT)
 Use hardware floating point instructions.
 
 mdouble-float
 Target Mask(DOUBLE_FLOAT)
 Allows generation of binaries which support 64-bit doubles on 32-bit systems by
-soring doubles in register pairs.
+storing doubles in register pairs.
 
 mcmov
 Target RejectNegative Mask(CMOV)
