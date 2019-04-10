@@ -1435,11 +1435,13 @@ void
 or1k_expand_compare (rtx *operands)
 {
   rtx sr_f = gen_rtx_REG (BImode, SR_F_REGNUM);
+  rtx righthand_op = XEXP (operands[0], 1);
 
-  /* The RTL may receive an immediate in argument 1 of the compare, this is not
-     supported unless we have l.sf*i instructions, force them into registers.  */
-  if (!TARGET_SFIMM)
-    XEXP (operands[0], 1) = force_reg (SImode, XEXP (operands[0], 1));
+  /* Integer RTL may receive an immediate in argument 1 of the compare, this is
+     not supported unless we have l.sf*i instructions, force them into
+     registers.  */
+  if (!TARGET_SFIMM && CONST_INT_P (righthand_op))
+    XEXP (operands[0], 1) = force_reg (SImode, righthand_op);
 
   /* Emit the given comparison into the Flag bit.  */
   PUT_MODE (operands[0], BImode);
