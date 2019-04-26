@@ -179,7 +179,7 @@
 	(FOP:F (match_operand:F 1 "register_operand" "r")
 	       (match_operand:F 2 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.<fop>.<f>\t%0, %1, %2"
+  "lf.<fop>.<f>\t%d0, %d1, %d2"
   [(set_attr "type" "fpu")])
 
 ;; Basic float<->int conversion
@@ -188,7 +188,7 @@
 	(float:F
 	    (match_operand:<FI> 1 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.itof.<f>\t%0, %1"
+  "lf.itof.<f>\t%d0, %d1"
   [(set_attr "type" "fpu")])
 
 (define_insn "fix_trunc<F:mode><fi>2"
@@ -196,7 +196,7 @@
 	(fix:<FI>
 	    (match_operand:F 1 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.ftoi.<f>\t%0, %1"
+  "lf.ftoi.<f>\t%d0, %d1"
   [(set_attr "type" "fpu")])
 
 ;; -------------------------------------------------------------------------
@@ -453,7 +453,7 @@
 	(fpcmpcc:BI (match_operand:F 0 "register_operand" "r")
 		    (match_operand:F 1 "register_operand" "r")))]
   "TARGET_HARD_FLOAT"
-  "lf.sf<code>.<f>\t%0, %1"
+  "lf.sf<code>.<f>\t%d0, %d1"
   [(set_attr "type" "fpu")])
 
 
